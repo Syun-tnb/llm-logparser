@@ -62,7 +62,7 @@ The parser can optionally use a manifest file to control parsing policies
 - You can explicitly provide a custom manifest:
   ```bash
   llm-logparser parse --in raw.json --manifest custom_manifest.json
-```
+  ```
 
 * Programmatically:
 
