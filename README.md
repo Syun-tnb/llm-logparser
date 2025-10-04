@@ -211,3 +211,11 @@ MIT. Choose permissive to encourage community adapters.
 Issues and PRs welcome. Adapters and exporters are ideal first contributions.
 Please keep **core deterministic** and **raw-only**; put variability into plugins.
 
+---
+
+## Author
+
+© 2025 Ashes Division — Reyz Laboratory
+
+
+
