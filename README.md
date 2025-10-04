@@ -95,6 +95,27 @@ The parser can optionally use a manifest file to control parsing policies
 
 > The manifest is the “contract” for Viewer: where shards live, how IDs are formed, optional provider hints.
 
+### Policy keys
+
+The manifest can include optional policies to guide parsing:
+
+- **id_policy**  
+  (see [ID Policy](#id-policy) section for details)
+
+- **text_policy**  
+  Controls text normalization.  
+  ```json
+  {
+    "normalize_whitespace": false,
+    "strip_control_chars": true,
+    "emoji_handling": "keep"   // "keep" | "remove" | "normalize"
+  }
+  ```
+
+* `normalize_whitespace`: replace full-width spaces with half-width
+* `strip_control_chars`: drop invisible control characters
+* `emoji_handling`: whether to keep, remove, or normalize emoji
+
 ---
 
 ## ID Policy
