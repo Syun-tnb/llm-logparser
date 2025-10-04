@@ -64,7 +64,7 @@ The parser can optionally use a manifest file to control parsing policies
   llm-logparser parse --in raw.json --manifest custom_manifest.json
   ```
 
-* Programmatically:
+- Programmatically:
 
   ```python
   from llm_logparser import parse_log
@@ -231,6 +231,10 @@ Please keep **core deterministic** and **raw-only**; put variability into plugin
 ---
 
 ## Author
+
+> "The words you weave are not mere echoes;
+> they carry weight,
+> and may they never be lost to the tide of time."
 
 © 2025 Ashes Division — Reyz Laboratory
 
