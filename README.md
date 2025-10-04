@@ -52,7 +52,24 @@ Recommended factual fields (do not change semantics):
 
 ---
 
-## Manifest (minimal)
+## Manifest
+
+The parser can optionally use a manifest file to control parsing policies
+(e.g., ID handling, provider info).
+
+- By default, it looks for `./artifacts/manifest.json`.
+- If not found, it runs in "no-manifest mode" with safe defaults.
+- You can explicitly provide a custom manifest:
+  ```bash
+  llm-logparser parse --in raw.json --manifest custom_manifest.json
+```
+
+* Programmatically:
+
+  ```python
+  from llm_logparser import parse_log
+  data = parse_log("raw.json", manifest_path="custom_manifest.json")
+  ```
 
 `manifest.json` accompanies `messages-*.jsonl` shards.
 
