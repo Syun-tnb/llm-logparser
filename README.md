@@ -193,24 +193,27 @@ llm-logparser/
 
 ## Quickstart (MVP)
 
-> Commands are placeholders until the first release. Keep them as usage goals.
+> Note: Commands are **usage goals**. Actual CLI may differ until first release.
 
 ```bash
-# 1) Parse raw → JSONL
-python -m parser.cli fetch \
+# 1) Install (local dev)
+pip install -e .
+
+# 2) Parse raw → JSONL
+python3 -m llm_logparser.parser.cli fetch \
   --provider openai \
   --in examples/raw.json \
   --out artifacts/ \
   --full
 
-# 2) Incremental (append-only)
-python -m parser.cli fetch \
+# 3) Incremental (append-only)
+python3 -m llm_logparser.parser.cli fetch \
   --provider openai \
   --out artifacts/ \
   --since-state .state/fetch.json \
   --watermark 300
 
-# 3) View (static)
+# 4) View (static)
 # open viewer/index.html in a browser and load artifacts/manifest.json
 ```
 
