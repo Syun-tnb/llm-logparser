@@ -200,14 +200,14 @@ llm-logparser/
 pip install -e .
 
 # 2) Parse raw → JSONL
-python3 -m llm_logparser.parser.cli fetch \
+python3 -m llm_logparser.cli fetch \
   --provider openai \
   --in examples/raw.json \
   --out artifacts/ \
   --full
 
 # 3) Incremental (append-only)
-python3 -m llm_logparser.parser.cli fetch \
+python3 -m llm_logparser.cli fetch \
   --provider openai \
   --out artifacts/ \
   --since-state .state/fetch.json \
