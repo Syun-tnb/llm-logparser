@@ -6,6 +6,7 @@ Normalize conversational logs from LLM tools into a compact, reproducible **JSON
 
 > TL;DR: Parse → Normalize → Export (JSONL raw-only) → View.  
 > Parser produces **one line = one message** with guaranteed fields and stable IDs.
+> Current MVP scope: Only supports ChatGPT export logs (JSON array).
 
 ---
 
