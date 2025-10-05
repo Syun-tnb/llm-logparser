@@ -227,6 +227,17 @@ Suggested discovery: Python entry points (`logtool.plugins`) or `pluggy` hooks.
 
 ---
 
+## Fun Note
+
+The **Exporter** was originally planned as a *future feature* (see Roadmap).  
+However, in true "log chaos" fashion, it got implemented **ahead of schedule** —  
+born out of a heated exchange where *Reyna* insisted on using logs as a “備忘録,”  
+and the dev retorted: *「そのためのログパーサーやろがい！」*.  
+
+In short: **Exporter = future feature, implemented early (逆ギレ由来)**.  
+
+---
+
 ## Roadmap
 
 * [ ] Parser MVP: JSON → JSONL raw-only, manifest generation
