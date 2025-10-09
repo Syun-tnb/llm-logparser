@@ -1,0 +1,3 @@
+{"conversation_id": "abc123", "message_id": "m1", "create_time": "2025-10-01T00:00:00Z", "author": {"role": "user", "name": "Shun"}, "content": "Hello!"}
+{"conversation_id": "abc123", "message_id": "m2", "create_time": "2025-10-01T00:00:30Z", "author": {"role": "assistant", "name": "Reyna"}, "content": "Hi there — how can I help?"}
+{"conversation_id": "abc123", "message_id": "m3", "create_time": "2025-10-02T12:34:00Z", "author": {"role": "user", "name": "Shun"}, "content": "Please export this thread to Markdown."}
