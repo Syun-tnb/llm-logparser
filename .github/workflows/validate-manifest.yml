@@ -24,6 +24,6 @@ jobs:
           man = json.load(open(artifacts/manifest.json))
           Draft202012Validator.check_schema(sch)
           validate(instance=man, schema=sch)
-          print(manifest.json is valid ✅)
+          print("manifest.json is valid ✅")
           PY
 
