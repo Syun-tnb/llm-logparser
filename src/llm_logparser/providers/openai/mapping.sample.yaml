@@ -1,0 +1,30 @@
+# Unified schema target:
+# conversation_id, message_id, ts(ms epoch), author_role, author_name?, model?, content
+
+schema_version: 1
+provider: openai
+
+mapping:
+  conversation_id: $.conversation_id
+  message_id: $.message_id
+  ts:
+    path: $.create_time        # ISO8601 or seconds -> convert to epoch ms
+    transform: to_epoch_ms
+  author_role: $.author.role
+  author_name: $.author.name | null
+  model: $.metadata.model | null
+  content: $.content
+
+defaults:
+  author_name: null
+  model: null
+
+validate:
+  required:
+    - conversation_id
+    - message_id
+    - ts
+    - author_role
+    - content
+  enums:
+    author_role: [system, user, assistant, tool]

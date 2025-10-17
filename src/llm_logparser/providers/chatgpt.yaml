@@ -1,0 +1,97 @@
+# Provider Config — ChatGPT (OpenAI)
+# 目的: ChatGPT エクスポートの“生データ”を共通スキーマへ正規化するためのマッピング定義。
+# この設定はコード改変なしで調整可能。必要に応じて書式・フィールド名を合わせてください。
+
+id: chatgpt
+version: 1
+export_formats: [jsonl, json, ndjson]
+
+# 受け入れ判定（任意情報）：ファイル先頭のヒューリスティクスに使う
+detection:
+  probable_keys: ["conversation_id", "author", "content", "create_time"]
+
+# ===== フィールドマッピング =====
+# 例: エクスポート1行のJSONが以下のような形を想定（実データに合わせて調整）
+# {
+#   "conversation_id": "conv_abc123",
+#   "id": "msg_001",
+#   "create_time": 1719829200,           # epoch sec (例)
+#   "author": { "role": "user", "name": "シュン" },
+#   "metadata": { "model_slug": "gpt-5" },
+#   "content": { "parts": ["本文その1", "本文その2"] }
+# }
+
+fields:
+  conversation_id:
+    path: "$.conversation_id"
+
+  message_id:
+    path: "$.id"
+
+  timestamp:
+    path: "$.create_time"
+    type: "epoch"             # iso | epoch | epoch_ms
+    timezone_hint: "UTC"      # 解析時のヒント（未使用可）
+
+  role:
+    path: "$.author.role"
+
+  author_name:
+    path: "$.author.name"
+    default: null
+
+  model:
+    path: "$.metadata.model_slug"
+    map:
+      "o4-mini": "gpt-4o-mini"
+      "gpt-5": "gpt-5"
+
+  content:
+    # parts が配列の場合は結合
+    path: "$.content.parts"
+    joiner: "\n"              # パーツの連結文字
+    fallback_path: "$.content.text"  # 片系エクスポートでの代替
+
+  attachments:
+    # 必要に応じて追加（URL一覧や画像情報など）
+    path: null
+
+# ===== 正規化ルール =====
+role_map:
+  user: user
+  assistant: assistant
+  system: system
+  tool: tool
+
+missing_field_policy: "warn"   # skip | warn | fill_default
+
+# ===== 既定値のフォールバック =====
+fallbacks:
+  author_name: null
+  model: null
+
+# ===== 文字エンコーディング・制御文字 =====
+text:
+  normalize_newlines: true      # \r\n → \n
+  strip_control_chars: true     # 制御文字を可及的に除去/置換
+  max_message_bytes: 10485760   # 10MB超はWARNして通す（切り捨てはしない）
+
+# ===== タイムスタンプ補正 =====
+timestamp_correction:
+  monotonic_if_missing: true    # 欠落時は読み込み順で単調増加付与
+
+# ===== バリデーション =====
+validation:
+  required_fields:
+    - conversation_id
+    - message_id
+    - role
+    - content
+  warn_if_missing:
+    - model
+    - author_name
+
+# ===== 出力メタ（Markdownヘッダに反映） =====
+output_meta:
+  provider_label_i18n_key: "provider.name.chatgpt" # i18nで「ChatGPT」を解決
+  model_label_i18n_key: "output.header.models"

@@ -1,0 +1,22 @@
+{
+  "schema": "1.0",
+  "provider": "openai-chatgpt",
+  "generated_at": "2025-10-09T12:00:00Z",
+  "timezone_display": "Asia/Tokyo",
+  "index": {
+    "shards": [
+      {"path": "messages-00001.jsonl", "count": 1200},
+      {"path": "messages-00002.jsonl", "count": 800}
+    ]
+  },
+  "id_policy": {
+    "strategy": "composite",
+    "composite": {"parts": ["conv_id", "msg_id"], "separator": ":"},
+    "notes": "conversation_id + message_id are globally unique."
+  },
+  "text_policy": {
+    "normalize_whitespace": false,
+    "strip_control_chars": true,
+    "emoji_handling": "keep"
+  }
+}

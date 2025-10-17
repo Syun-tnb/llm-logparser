@@ -57,3 +57,25 @@ When produced, place alongside Markdown as `meta.json`:
 - No HTML sanitization in exporter (viewer handles it).
 - All timestamps in front matter are **UTC ISO 8601** with `Z`.
 - Locale/timezone only affect **rendered labels**, not timestamps.
+
+## Re-parse & Idempotency (Full Export Inputs)
+
+This tool assumes **every provider export is a full snapshot**.
+
+### Thread-level decision
+
+- Let `update_time` be the thread’s last-updated timestamp (ISO8601 UTC).
+- Comparison rule:
+  - If the new `update_time` **equals** the cached one → **SKIP** (unchanged)
+  - If the new `update_time` **is newer than** the cached one → **REPLACE** (regenerate full thread)
+  - If the new `update_time` **is older than** the cached one → **WARN & SKIP**
+    (e.g. the user accidentally parsed an outdated export)
+
+> `last_message_id` may be recorded for diagnostics only. It does not affect the decision above.
+
+### Fallback when `update_time` is unavailable
+- **MVP policy:** treat as **REPLACE** on re-parse for safety. (Heuristics like count/fingerprint may be introduced later behind a flag.)
+
+### Non-goals (MVP)
+- Append-only incremental writes are **not** performed when `update_time` differs (always full re-split).
+- Source JSON is **never modified**.

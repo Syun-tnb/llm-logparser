@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/manifest.schema.json",
+  "type": "object",
+  "required": ["schema", "providers", "generated_at", "timezone_display", "index", "id_policy"],
+  "properties": {
+    "schema": { "type": "string", "const": "1.0" },
+    "providers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "timezone_display": { "type": "string" },
+    "index": {
+      "type": "object",
+      "required": ["shards"],
+      "properties": {
+        "shards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "count"],
+            "properties": {
+              "path": { "type": "string" },
+              "count": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "id_policy": {
+      "type": "object",
+      "required": ["strategy", "composite"],
+      "properties": {
+        "strategy": { "type": "string", "const": "composite" },
+        "composite": {
+          "type": "object",
+          "required": ["parts", "separator"],
+          "properties": {
+            "parts": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 2
+            },
+            "separator": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

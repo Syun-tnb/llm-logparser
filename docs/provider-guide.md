@@ -12,6 +12,10 @@
   - `metadata.model?`→ `model`
   - `content`        → `content` (verbatim)
 
+> **Note:** In the current MVP, normalization is handled internally.  
+> The file `mapping.yaml` is provided only as a **sample** for future external mapping support.  
+> It is **not yet used** by the CLI or parser.
+
 ## Adding a Provider
 
 1. Create adapter under `providers/<id>/adapter.py`.

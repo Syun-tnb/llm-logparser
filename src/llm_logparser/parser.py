@@ -1,16 +1,27 @@
 # src/llm_logparser/parser.py
 from pathlib import Path
 import json
-from .providers import get_provider
+from .providers import _get_provider
 from .utils import dumps_jsonl, to_iso_utc
+import importlib
 
-def parse_export(infile: Path, provider_name: str = "openai") -> list[dict]:
-    data = json.loads(infile.read_text(encoding="utf-8"))
-    if not isinstance(data, list):
-        raise ValueError("input must be a JSON array")
-    adapter = get_provider(provider_name)
-    out = []
-    for conv in data:
+def get_provider(name: str):
+    try:
+        mod = importlib.import_module(f"providers.{name}.adapter")
+    except ModuleNotFoundError as e:
+        raise RuntimeError(f"Provider '{name}' not found") from e
+    # adapter側は「callable」をエクスポート（関数 or クラスのインスタンス化）
+    if hasattr(mod, "get_adapter"):
+        return mod.get_adapter()
+    if hasattr(mod, "adapter"):
+        return mod.adapter
+    raise RuntimeError(f"Provider '{name}' has no adapter entry")
+
+def parse_export(infile: Path, provider_name: str = "openai"):
+    conversations = json.load(infile.open("r", encoding="utf-8"))
+    adapter = _get_provider(provider_name)   # providers.<name>.adapter に一本化
+    out: list[dict] = []
+    for conv in conversations:
         out.extend(adapter(conv))
     return out
 

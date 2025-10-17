@@ -1,12 +1,15 @@
-from typing import Callable, Dict, Any, Iterable
-from . import openai_chatgpt
+from importlib import import_module
+from typing import Callable, Any, Dict, Iterable
 
-_REGISTRY: Dict[str, Callable[[Dict[str, Any]], Iterable[Dict[str, Any]]]] = {
-    "openai": openai_chatgpt.iter_messages,
-}
-
-def get_provider(name: str):
+def get_provider(name: str) -> Callable[[Dict[str, Any]], Iterable[Dict[str, Any]]]:
+    """
+    providers.<name>.adapter から adapter/get_adapter を取得して返す。
+    ここでは動的importのみ（レガシー互換なし）。
+    """
     key = (name or "openai").lower()
-    if key in _REGISTRY:
-        return _REGISTRY[key]
-    raise ValueError(f"Unknown provider: {name}. Available: {', '.join(_REGISTRY)}")
+    mod = import_module(f"{__name__}.{key}.adapter")
+    if hasattr(mod, "get_adapter"):
+        return mod.get_adapter()
+    if hasattr(mod, "adapter"):
+        return mod.adapter
+    raise ValueError(f"Provider '{name}' has no adapter or get_adapter()")
