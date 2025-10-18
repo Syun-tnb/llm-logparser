@@ -1,6 +1,6 @@
 # providers/openai/adapter.py
 from typing import Any, Dict, List, Iterable
-from llm_logparser.utils import normalize_text
+from .utils import normalize_text
 
 OPENAI_PREFERRED_KEYS = ("summary", "result", "user_profile", "user_instructions")
 

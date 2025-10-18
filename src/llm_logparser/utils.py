@@ -12,6 +12,7 @@ def to_iso_utc(ts) -> str | None:
         return None
 
 def sanitize_text(s: object) -> str:
+    """軽量用、強力版は provider 側へ"""
     s = str(s) if not isinstance(s, str) else s
     s = s.replace("\r\n", "\n").replace("\r", "\n")
     return _CTRL.sub(" ", s)
