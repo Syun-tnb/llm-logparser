@@ -88,7 +88,7 @@ def adapter(conversation: dict) -> list[dict]:
         }
 
         out.append({
-            "conv_id": conv_id,
+            "conversation_id": conv_id,
             "msg_id": msg.get("id") or node_id,
             "role": role,
             "text": text,
