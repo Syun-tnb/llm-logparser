@@ -1137,7 +1137,26 @@ msg = i18n.t("parser.complete", count=128)
 
 ---
 
-### 9.4 翻訳ファイル構成
+### 9.4 翻訳ファイル構成及びCLIエラーメッセージの多言語化
+
+**目的**
+CLIのエラーメッセージ・警告・進行ログを外部辞書で管理し、
+`--locale` 引数または環境設定に応じて動的に切り替えられるようにする。
+
+**要件**
+
+* すべてのCLI出力メッセージ（例：`invalid argument`, `missing file`, `parse failed` など）を **i18n辞書キー化** する。
+* 翻訳リソースは `src/llm_logparser/i18n/{locale}.yaml` に定義し、`parser/exporter/error` キー体系を共通化。
+* ロード時にロケールを自動検出（`--locale` > `LLP_LOCALE` > `config.yaml` > `en-US`）。
+* 未訳キーは `en-US` にフォールバックし、警告を `[WARN][i18n] Missing key ...` として出力。
+* CLI側の例外処理・エラーハンドラは `message_key` と `params` を受け取り、
+  ロケール辞書から解決した文字列を出力する。
+* 翻訳対象範囲には以下を含む：
+
+  * 引数エラー（argparse / click系メッセージ）
+  * ファイルI/Oエラー
+  * パース／エクスポート失敗時の要約
+  * 成功／統計メッセージ（「Parsed N threads」など）
 
 ```
 src/llm_logparser/i18n/
@@ -1147,10 +1166,16 @@ src/llm_logparser/i18n/
  └── _schema.yaml（キー定義）
 ```
 
+**備考**
+
+* 実装は `i18n.get_text(key, **params)` 経由で統一。
+* MVP段階では英語固定でも可、locale辞書構造だけ先行定義。
 * YAML形式（UTF-8）。
 * ルートキーはモジュール単位（parser/exporter/cli/error等）。
 * 各ファイルは `_schema.yaml` を基準にキー整合をLintで検査。
 * 未訳キーは自動的に英語フォールバック。
+
+> **補足:** CLI層（argparse / logging出力）のi18n適用は本設計に含まれるが、MVP段階では未実装。今後、例外処理層に`i18n.get_text()`を導入してメッセージを外部辞書化する予定。
 
 ---
 
