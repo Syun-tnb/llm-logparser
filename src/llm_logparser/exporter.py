@@ -5,7 +5,8 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Iterable, List, Dict, Any, Optional
+from dataclasses import dataclass
+from typing import Iterable, List, Dict, Any, Optional, Literal
 
 from .utils import parse_size_expr, format_bytes, sanitize_filename
 
@@ -23,6 +24,59 @@ def _to_local_human(ts: float | int | None, tz=timezone.utc) -> str:
 def _as_yaml_list(items: Iterable[str]) -> str:
     # YAMLの安全な配列形式（クォート付与）
     return "[" + ", ".join(f'"{s}"' for s in items) + "]"
+
+@dataclass
+class ExportPolicy:
+    """Export behavior toggles for Markdown generation."""
+    formatting: Literal["none", "light"] = "light"
+
+def _render_message_text(raw: str, policy: ExportPolicy) -> str:
+    """
+    軽量整形:
+    - 連続空行を 1 行に圧縮
+    - コードブロック (```...) を未閉鎖なら自動クローズ
+    - Markdown構文（**bold** など）は極力そのまま保持
+    """
+    if policy.formatting == "none":
+        return raw
+
+    lines = raw.splitlines()
+    out: List[str] = []
+    in_code = False
+    blank_streak = 0
+
+    for line in lines:
+        current = line.rstrip("\n")
+
+        # コードフェンス検出（インデントありも許容）
+        if current.lstrip().startswith("```"):
+            in_code = not in_code
+            out.append(current)
+            blank_streak = 0
+            continue
+
+        if not in_code:
+            if current.strip() == "":
+                # 連続空行は 1 行まで
+                if blank_streak == 0:
+                    out.append("")
+                blank_streak += 1
+            else:
+                out.append(current)
+                blank_streak = 0
+        else:
+            # コードブロック内はそのまま
+            out.append(current)
+
+    # 開きっぱなしの ``` があれば自動クローズ
+    if in_code:
+        out.append("```")
+
+    # 末尾の余計な空行は削る
+    while out and out[-1] == "":
+        out.pop()
+
+    return "\n".join(out)
 
 def _resolve_split(opts: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -57,6 +111,8 @@ def export_thread_md(
     parsed_path: Path,
     out_path: Path,           # 単一出力時のファイルパス（分割時はディレクトリ基準）
     tz=timezone.utc,
+    *,
+    formatting: str = "light",
     **opts: Any
 ) -> List[Path]:
     """
@@ -66,6 +122,7 @@ def export_thread_md(
     戻り値: 生成したファイルの List[Path]
     """
     logger = logging.getLogger("exporter")
+    policy = ExportPolicy(formatting="none" if formatting is None else formatting)
 
     messages: List[Dict[str, Any]] = []
     thread_meta: Dict[str, Any] | None = None
@@ -113,7 +170,8 @@ def export_thread_md(
     for m in messages:
         role = m.get("role", "unknown")
         ts_human = _to_local_human(m.get("ts"), tz=tz)
-        text = (m.get("text") or "").rstrip()
+        raw_text = (m.get("text") or "")
+        text = _render_message_text(raw_text, policy)
         block = f"## [{role}] {ts_human}\n{text}\n\n"
         body_blocks.append(block)
 
