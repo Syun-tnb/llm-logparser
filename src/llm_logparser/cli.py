@@ -65,6 +65,11 @@ def main():
     export_cmd.add_argument("--input", required=True, type=Path, help="Path to thread parsed.jsonl")
     export_cmd.add_argument("--out", required=False, type=Path, help="Output Markdown path")
     export_cmd.add_argument("--tz", required=False, default="UTC", help="IANA timezone (e.g., Asia/Tokyo)")
+    export_cmd.add_argument("--split", dest="split", help="size=<4M|512KiB|...> or count=<N> or auto (auto = size=4M & count=1500)")
+    export_cmd.add_argument("--split-soft-overflow", dest="split_soft_overflow", type=float, default=0.20)
+    export_cmd.add_argument("--split-hard", dest="split_hard", action="store_true")
+    export_cmd.add_argument("--split-preview", dest="split_preview", action="store_true")
+    export_cmd.add_argument("--tiny-tail-threshold", dest="tiny_tail_threshold", type=int, default=20, help="Threshold for tail merge (message count)")
 
     # プレースホルダコマンド
     subparsers.add_parser("viewer", help="(placeholder) Run lightweight HTML viewer")
@@ -102,11 +107,32 @@ def main():
                 logger.warning(f"Unknown timezone '{args.tz}', fallback to UTC")
                 tz = _dt_timezone.utc
 
+            # --split の軽いバリデーション
+            if args.split:
+                s = args.split.strip().lower()
+                if not (s == "auto" or s.startswith("size=") or s.startswith("count=")):
+                    raise SystemExit(f"invalid --split: {args.split}")
+
             logger.info(f"Input JSONL: {in_path}")
-            logger.info(f"Output MD  : {out_md}")
+            logger.info(f"Output MD  : {out_md.parent}/thread-<cid>*.md" if args.split else f"Output MD  : {out_md}")
             logger.info(f"Timezone   : {args.tz}")
-            export_thread_md(in_path, out_md, tz=tz)
-            logger.info("✅ Exported 1 Markdown")
+
+            opts = {
+                "split": args.split,
+                "split_soft_overflow": args.split_soft_overflow,
+                "split_hard": args.split_hard,
+                "split_preview": args.split_preview,
+                "tiny_tail_threshold": args.tiny_tail_threshold,
+            }
+            paths = export_thread_md(in_path, out_md, tz=tz, **opts)
+
+            if args.split_preview:
+                logger.info("✅ Preview only (no files written)")
+            else:
+                if len(paths) == 1:
+                    logger.info("✅ Exported 1 Markdown")
+                else:
+                    logger.info(f"✅ Exported {len(paths)} Markdown")
 
         elif args.command == "viewer":
             logger.warning("[TODO] Viewer not implemented yet.")
