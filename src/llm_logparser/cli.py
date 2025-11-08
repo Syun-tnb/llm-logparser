@@ -5,6 +5,9 @@ import sys
 import logging
 from pathlib import Path
 from llm_logparser.parser import parse_to_jsonl
+from llm_logparser.exporter import export_thread_md
+from zoneinfo import ZoneInfo
+from datetime import timezone as _dt_timezone
 
 
 def setup_logger():
@@ -52,8 +55,18 @@ def main():
         help="Output root directory",
     )
 
+    # ------------------------------------------------------------
+    # export サブコマンド（最小実装：1 JSONL → 1 Markdown）
+    # ------------------------------------------------------------
+    export_cmd = subparsers.add_parser(
+        "export",
+        help="Export a normalized thread JSONL into a single Markdown file",
+    )
+    export_cmd.add_argument("--input", required=True, type=Path, help="Path to thread parsed.jsonl")
+    export_cmd.add_argument("--out", required=False, type=Path, help="Output Markdown path")
+    export_cmd.add_argument("--tz", required=False, default="UTC", help="IANA timezone (e.g., Asia/Tokyo)")
+
     # プレースホルダコマンド
-    subparsers.add_parser("export", help="(placeholder) Export parsed logs to Markdown/HTML")
     subparsers.add_parser("viewer", help="(placeholder) Run lightweight HTML viewer")
     subparsers.add_parser("config", help="(placeholder) Manage runtime configuration")
 
@@ -71,7 +84,29 @@ def main():
             logger.info(f"✅ Parsed {stats['threads']} threads ({stats['messages']} messages)")
 
         elif args.command == "export":
-            logger.warning("[TODO] Export command not implemented yet.")
+            in_path = args.input
+            if not in_path.exists():
+                raise FileNotFoundError(f"指定されたパスが存在しません: {in_path}")
+            if in_path.is_dir():
+                raise IsADirectoryError(f"ファイルパスを指定してください: {in_path}")
+
+            if args.out:
+                out_md = args.out
+            else:
+                parent = in_path.parent
+                out_md = parent / f"{parent.name}.md"
+
+            try:
+                tz = ZoneInfo(args.tz)
+            except Exception:
+                logger.warning(f"Unknown timezone '{args.tz}', fallback to UTC")
+                tz = _dt_timezone.utc
+
+            logger.info(f"Input JSONL: {in_path}")
+            logger.info(f"Output MD  : {out_md}")
+            logger.info(f"Timezone   : {args.tz}")
+            export_thread_md(in_path, out_md, tz=tz)
+            logger.info("✅ Exported 1 Markdown")
 
         elif args.command == "viewer":
             logger.warning("[TODO] Viewer not implemented yet.")
