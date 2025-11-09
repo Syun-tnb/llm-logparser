@@ -1,110 +1,146 @@
+# src/llm_logparser/providers/openai/utils.py
 from __future__ import annotations
 import re
 import json
-from typing import Tuple
+import typing as t
 
-# 内部定数（非公開）
-_CONTROL = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F]')
-_NBSP = "\u00A0"
+# -------------------------------------------------------------------
+# Text sanitation utilities
+# -------------------------------------------------------------------
 
-# ==== 内部実装は1箇所に集約 ====
 def _sanitize_impl(s: str) -> str:
-    if not isinstance(s, str):
-        s = str(s)
-    # NBSP→通常空白、制御文字除去、trim
-    s = s.replace(_NBSP, " ")
-    s = _CONTROL.sub("", s)
-    return s.strip()
+    """Remove control characters and normalize whitespace."""
+    s = s.replace("\u00A0", " ")  # NBSP → space
+    s = re.sub(r"[\x00-\x1F\x7F]", "", s)  # control chars
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
-# ==== 公開ラッパ（契約名） ====
-def sanitize_text(s: str) -> str:
-    """公開API：テキストのサニタイズ"""
-    return _sanitize_impl(s)
 
-def _join(parts) -> str:
-    return _sanitize_impl("\n".join([p for p in parts if p is not None]))
-
-def _strict_parts_to_text(parts) -> str:
-    out = []
-    for p in parts:
-        if isinstance(p, str):
-            out.append(p)
-        elif isinstance(p, dict) and isinstance(p.get("text"), str):
-            out.append(p["text"])
-    return _join(out) if out else ""
-
-def _loose_parts_to_text(parts) -> str:
-    out = []
-    for p in parts:
-        if isinstance(p, str):
-            out.append(p)
-        elif isinstance(p, dict):
-            if isinstance(p.get("text"), str):
-                out.append(p["text"])
-            else:
-                # 短縮JSON化（視認性優先）
-                out.append(json.dumps({k: p[k] for k in ("type", "name", "id") if k in p}))
-        else:
-            out.append(str(p))
-    return _join(out)
-
-def normalize_text(content: object, *, preferred_keys: tuple[str, ...] = (), allow_loose: bool = True) -> str:
-    """
-    汎用テキスト正規化（プロバイダ非依存）
-    - preferred_keys: そのプロバイダで優先抽出したいキー（例: ("summary","result",...)）
-    - allow_loose: 厳格抽出で空の時、緩い可視化（dict短縮JSON等）を許可
-    """
-    if content is None:
+def sanitize_text(s: t.Optional[t.Any]) -> str:
+    """Safely convert input into a clean, single-line string."""
+    if s is None:
         return ""
+    if isinstance(s, (dict, list)):
+        try:
+            s = json.dumps(s, ensure_ascii=False)
+        except Exception:
+            s = str(s)
+    return _sanitize_impl(str(s))
 
-    # 1) 素の文字列
+
+# -------------------------------------------------------------------
+# Parts → Text flatten helpers
+# -------------------------------------------------------------------
+
+def _strict_parts_to_text(parts: list[t.Any]) -> str:
+    """Flatten parts strictly. Invalid elements raise ValueError."""
+    texts: list[str] = []
+    for p in parts:
+        if isinstance(p, str):
+            texts.append(_sanitize_impl(p))
+        elif isinstance(p, dict):
+            # structured parts (delta/text)
+            val = p.get("text") or p.get("delta")
+            if isinstance(val, str):
+                texts.append(_sanitize_impl(val))
+            else:
+                raise ValueError(f"Invalid part: {p!r}")
+        else:
+            raise ValueError(f"Unsupported part type: {type(p)}")
+    return " ".join(texts)
+
+
+def _loose_parts_to_text(parts: list[t.Any]) -> str:
+    """Flatten parts loosely. Tolerant of mixed/invalid items."""
+    texts: list[str] = []
+    for p in parts:
+        if isinstance(p, str):
+            texts.append(_sanitize_impl(p))
+        elif isinstance(p, dict):
+            val = p.get("text") or p.get("delta") or json.dumps(p, ensure_ascii=False)
+            texts.append(_sanitize_impl(val))
+        else:
+            texts.append(_sanitize_impl(str(p)))
+    return " ".join(texts)
+
+
+# -------------------------------------------------------------------
+# ChatGPT export normalization helpers
+# -------------------------------------------------------------------
+
+def extract_chatgpt_text(content: t.Any) -> str:
+    """
+    Extract the most human-readable text from ChatGPT export content.
+
+    Supported forms:
+      - {"parts": [...]}
+      - {"content_type": "text", "text": "..."}
+      - {"type": "message", "data": "..."}
+    """
+    if not content:
+        return ""
     if isinstance(content, str):
         return _sanitize_impl(content)
-
-    # 2) dict
     if isinstance(content, dict):
-        # parts 優先（content_typeは見ない）
-        if isinstance(content.get("parts"), list):
-            s = _strict_parts_to_text(content["parts"])
-            if not s and allow_loose:
-                s = _loose_parts_to_text(content["parts"])
-            if s:
-                return s
+        # common key paths
+        if "parts" in content and isinstance(content["parts"], list):
+            return _loose_parts_to_text(content["parts"])
+        if "text" in content:
+            return _sanitize_impl(str(content["text"]))
+        if "data" in content:
+            return _sanitize_impl(str(content["data"]))
+    return sanitize_text(content)
 
-        # プロバイダ好みのキーを優先
+
+# -------------------------------------------------------------------
+# Unified text normalization entrypoint
+# -------------------------------------------------------------------
+
+def normalize_text(
+    content: t.Any,
+    *,
+    preferred_keys: tuple[str, ...] = (),
+    allow_loose: bool = True,
+    preserve_structure: bool = False,
+) -> t.Union[str, dict]:
+    """
+    Normalize ChatGPT content to text (or structured form, if preserve_structure=True).
+
+    - If preserve_structure=True: return {"content_type": ..., "parts": [...]} (for future Exporter v2)
+    - Else: return plain text (for current Exporter compatibility)
+    """
+    # Try preferred keys (like "summary", "result", etc.)
+    if isinstance(content, dict):
         for k in preferred_keys:
-            v = content.get(k)
-            if isinstance(v, str) and v.strip():
-                return _sanitize_impl(v)
+            if k in content and isinstance(content[k], (str, list, dict)):
+                content = content[k]
+                break
 
-        # 単純 text
-        if isinstance(content.get("text"), str):
-            return _sanitize_impl(content["text"])
+    # Structural preservation path (for future exporter)
+    if preserve_structure:
+        if isinstance(content, dict) and "parts" in content:
+            return {
+                "content_type": content.get("content_type", "text"),
+                "parts": content.get("parts", []),
+            }
+        if isinstance(content, str):
+            return {"content_type": "text", "parts": [content]}
+        if isinstance(content, list):
+            return {"content_type": "text", "parts": content}
+        return {"content_type": "text", "parts": [str(content)]}
 
-        # 浅い回収（type==text / 内側parts）
-        out = []
-        for v in content.values():
-            if isinstance(v, str) and v.strip():
-                out.append(v)
-            elif isinstance(v, dict):
-                if v.get("type") == "text" and isinstance(v.get("text"), str):
-                    out.append(v["text"])
-                if isinstance(v.get("parts"), list):
-                    s = _strict_parts_to_text(v["parts"]) or (allow_loose and _loose_parts_to_text(v["parts"])) or ""
-                    if s: out.append(s)
-            elif isinstance(v, list):
-                s = _strict_parts_to_text(v) or (allow_loose and _loose_parts_to_text(v)) or ""
-                if s: out.append(s)
-        return _join(out) if out else ""
+    # Text normalization (current MVP behavior)
+    try:
+        if isinstance(content, dict) and "parts" in content:
+            parts = content["parts"]
+            if allow_loose:
+                return _loose_parts_to_text(parts)
+            return _strict_parts_to_text(parts)
+        if isinstance(content, list):
+            return _loose_parts_to_text(content) if allow_loose else _strict_parts_to_text(content)
+        if isinstance(content, str):
+            return _sanitize_impl(content)
+    except Exception:
+        pass
 
-    # 3) list
-    if isinstance(content, list):
-        s = _strict_parts_to_text(content)
-        if not s and allow_loose:
-            s = _loose_parts_to_text(content)
-        return s
-
-    return ""
-
-# 公開シンボルを固定（内部は露出しない）
-__all__ = ["sanitize_text", "normalize_text"]
+    return extract_chatgpt_text(content)
