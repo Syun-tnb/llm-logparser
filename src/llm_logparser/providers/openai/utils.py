@@ -4,6 +4,28 @@ import re
 import json
 import typing as t
 
+from decimal import Decimal
+
+
+# -------------------------------------------------------------------
+# JSON serialization safety helpers
+# -------------------------------------------------------------------
+
+def json_safe(obj: t.Any) -> t.Any:
+    """Recursively make data JSON-serializable (for exporter output)."""
+    if obj is None:
+        return None
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [json_safe(v) for v in obj]
+    return str(obj)
+
+
 # -------------------------------------------------------------------
 # Text sanitation utilities
 # -------------------------------------------------------------------
@@ -22,7 +44,9 @@ def sanitize_text(s: t.Optional[t.Any]) -> str:
         return ""
     if isinstance(s, (dict, list)):
         try:
-            s = json.dumps(s, ensure_ascii=False)
+            # Decimal などを安全な形に変換してから JSON 文字列化
+            from .utils import json_safe
+            s = json.dumps(json_safe(s), ensure_ascii=False)
         except Exception:
             s = str(s)
     return _sanitize_impl(str(s))
@@ -57,7 +81,7 @@ def _loose_parts_to_text(parts: list[t.Any]) -> str:
         if isinstance(p, str):
             texts.append(_sanitize_impl(p))
         elif isinstance(p, dict):
-            val = p.get("text") or p.get("delta") or json.dumps(p, ensure_ascii=False)
+            val = p.get("text") or p.get("delta") or json.dumps(json_safe(p), ensure_ascii=False)
             texts.append(_sanitize_impl(val))
         else:
             texts.append(_sanitize_impl(str(p)))

@@ -1,7 +1,7 @@
 # src/llm_logparser/providers/openai/adapter.py
 from __future__ import annotations
 import typing as t
-from .utils import normalize_text
+from .utils import normalize_text, json_safe
 
 # -------------------------------------------------------------------
 # Manifest & Policy
@@ -109,19 +109,48 @@ def adapter(conversation: dict) -> list[dict]:
             "relations": relations,
         }
 
-        out.append(
-            {
-                "conversation_id": conv_id,
-                "message_id": msg_id,
-                "author_role": author_role,
-                "text": text or "",
-                "ts": ts,
-                "meta": meta,
-            }
-        )
+        entry = {
+            "conversation_id": conv_id,
+            "message_id": msg_id,
+            "author_role": author_role,
+            "text": text or "",
+            "ts": ts,
+            "meta": meta,
+        }
+
+        out.append(json_safe(entry))
+        
+        # --- DEBUG: detect Decimal presence ---
+        import json, sys
+        try:
+            json.dumps(out[-1])
+        except TypeError as e:
+            if "Decimal" in str(e):
+                sys.stderr.write(
+                    f"[DEBUG] Decimal found in msg_id={msg_id}, author={author_role}, "
+                    f"conv_id={conv_id}\n"
+                )
+                sys.stderr.flush()
+
 
     # sort by timestamp if available
     out.sort(key=lambda e: (e["ts"] is None, e["ts"]))
+
+    # --- DEBUG: detect Decimal content in messages ---
+    import sys, json
+    for entry in out:
+        try:
+            json.dumps(entry)
+        except TypeError as e:
+            if "Decimal" in str(e):
+                sys.stderr.write(
+                    f"[DEBUG] Decimal detected → conv_id={entry.get('conversation_id')}, "
+                    f"msg_id={entry.get('message_id')}, "
+                    f"ts={entry.get('ts')}, "
+                    f"meta={entry.get('meta')}\n"
+                )
+                sys.stderr.flush()
+
     return out
 
 

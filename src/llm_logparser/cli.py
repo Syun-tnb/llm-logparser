@@ -12,11 +12,14 @@ from zoneinfo import ZoneInfo
 from llm_logparser.parser import parse_to_jsonl
 from llm_logparser.exporter import export_thread_md
 
+import os
 
 def setup_logger():
     """標準出力用の簡易ロガー設定"""
+    level_name = os.getenv("LLM_LOGPARSER_LOGLEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format="[%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )

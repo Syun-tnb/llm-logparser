@@ -272,7 +272,9 @@ def parse_to_jsonl(
 
 if __name__ == "__main__":
     import argparse
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    from .cli import setup_logger
+
+    setup_logger()
 
     parser = argparse.ArgumentParser(description="Parse LLM export logs to JSONL (final robust version)")
     parser.add_argument("--provider", required=True)
