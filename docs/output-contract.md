@@ -83,16 +83,16 @@ Rules:
 
 ## 🪶 Formatting Rules (GFM Compliance)
 
-| Element       | Rule                                                          |    |
-| ------------- | ------------------------------------------------------------- | -- |
-| Paragraphs    | Keep original line breaks                                     |    |
-| Code blocks   | Use fenced blocks (` ``` `)                                   |    |
-| Inline code   | Use backticks                                                 |    |
-| Quotes        | Preserve `>` prefix; no trimming                              |    |
-| Tables        | GFM pipe syntax (`                                            | `) |
-| Lists         | Use `-` or numbered lists (`1.`), indent with two spaces      |    |
-| Escape policy | Escape minimal characters (`*`, `_`, `#`, `>`) only as needed |    |
-| Encoding      | UTF-8, LF, no BOM                                             |    |
+| Element       | Rule                                                          |
+| ------------- | ------------------------------------------------------------- |
+| Paragraphs    | Keep original line breaks                                     |
+| Code blocks   | Use fenced blocks (` ``` `)                                   |
+| Inline code   | Use backticks                                                 |
+| Quotes        | Preserve `>` prefix; no trimming                              |
+| Tables        | GFM pipe syntax (`\|` between columns)                        |
+| Lists         | Use `-` or numbered lists (`1.`), indent with two spaces      |
+| Escape policy | Escape minimal characters (`*`, `_`, `#`, `>`) only as needed |
+| Encoding      | UTF-8, LF, no BOM                                             |
 
 Exporter output must lint cleanly under `markdownlint-cli2` using the shared `.markdownlint.yaml`.
 
@@ -137,7 +137,7 @@ Example localized date:
 
 | Locale | Example                |
 | ------ | ---------------------- |
-| ja-JP  | 2025年10月18日 10:15      |
+| ja-JP  | 2025年10月18日 10:15    |
 | en-US  | Oct 18, 2025, 10:15 AM |
 
 ---
