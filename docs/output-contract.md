@@ -1,81 +1,197 @@
-# Output Contract (Markdown) — Minimal, Implementable v1
+# Output Contract (Markdown / HTML) — v1.1 (Exporter MVP Spec)
 
-## Location
-- Root: `artifacts/output/{provider_id}/thread-{conversation_id}/`
-- File name: `thread-{conversation_id}__{chunk_key}.md`
-  - `chunk_key` MUST be ASCII-only. Suggested patterns:
-    - Date: `YYYY-MM-DD[_partNN]` (e.g., `2025-10-09_part01`)
-    - Size: `size20mb_pNN`
-    - Count: `count8000_pNN`
+This document defines the **output format contract** between the Exporter, Viewer, and future Apps SDK.  
+It supersedes the legacy `v1.0` draft (Oct 2025).
 
-## Front Matter (YAML)
-YAML front matter MUST appear as the first block:
+---
+
+## 🗂 Location & Structure
+
+- Root directory:  
+```
+
+artifacts/output/{provider_id}/thread-{conversation_id}/
+
+```
+- Files:
+```
+
+parsed.jsonl                  # Parser output (normalized)
+thread-{conversation_id}__{chunk_key}.md   # Exported Markdown
+meta.json                     # Optional metadata summary
+
+```
+
+- `{chunk_key}` is ASCII-only.  
+Suggested patterns:
+- Date split: `2025-11-15_part01`
+- Size split: `size20mb_p01`
+- Count split: `count8000_p01`
+- No split: omit the suffix entirely.
+
+---
+
+## 🧾 YAML Front Matter
+
+Each Markdown begins with a YAML block that provides thread metadata:
 
 ```yaml
 ---
-thread: "<conversation_id>"
-provider: "<provider_id>"
-messages: <int>            # number of messages in THIS file
-range:
-  start: "YYYY-MM-DDTHH:mm:ssZ"
-  end:   "YYYY-MM-DDTHH:mm:ssZ"
-models: ["gpt-4o", "gpt-5"]   # optional
-locale: "en-US"
+thread: "6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e"
+provider: "openai"
+title: "Reyna – GPUヒートシンク上より出撃"
+messages: 132
+models: ["gpt-4o", "gpt-5"]
+range: "2025-10-01 〜 2025-10-18"
+locale: "ja-JP"
 timezone: "Asia/Tokyo"
-schema_version: "1.0"
+updated: "2025-10-18T10:15:00Z"
+checksum: "f34d2b9a1a98e24b1c3f3dcb01c7e5cbd7a2a4ff"
 ---
 ```
 
-## Message Section
-Each message renders as:
+### Notes
 
+* `range` uses **localized date formatting**, not ISO timestamps.
+* `updated` and `checksum` are optional but recommended for cache validation.
+* All timestamps (internal and meta.json) use **UTC ISO 8601**.
+* `locale` and `timezone` affect *rendered strings only* — timestamps remain UTC internally.
+
+---
+
+## 💬 Message Section
+
+Each message is rendered in strict timestamp order:
+
+```markdown
+## [User] 2025-10-18 10:00
+本文...
+
+## [Reyna] 2025-10-18 10:01
+本文...
 ```
-## [YYYY-MM-DD HH:mm] <role> [<author_name?>]
-<content...>
-```
 
-- `role` ∈ {`system`,`user`,`assistant`,`tool`}
-- Content is **verbatim** (code blocks/links preserved).
-- Lines MUST be separated by `\n` (LF).
+Rules:
 
-## Meta JSON (Optional)
-When produced, place alongside Markdown as `meta.json`:
+* Heading pattern: `## [<role or name>] <localized datetime>`
+* Supported roles: `system`, `user`, `assistant`, `tool`
+* Content is **verbatim** (code blocks, links, images preserved)
+* Line endings must be `\n` (LF)
+* Markdown follows **GFM (GitHub Flavored Markdown)** conventions
+
+---
+
+## 🪶 Formatting Rules (GFM Compliance)
+
+| Element       | Rule                                                          |    |
+| ------------- | ------------------------------------------------------------- | -- |
+| Paragraphs    | Keep original line breaks                                     |    |
+| Code blocks   | Use fenced blocks (` ``` `)                                   |    |
+| Inline code   | Use backticks                                                 |    |
+| Quotes        | Preserve `>` prefix; no trimming                              |    |
+| Tables        | GFM pipe syntax (`                                            | `) |
+| Lists         | Use `-` or numbered lists (`1.`), indent with two spaces      |    |
+| Escape policy | Escape minimal characters (`*`, `_`, `#`, `>`) only as needed |    |
+| Encoding      | UTF-8, LF, no BOM                                             |    |
+
+Exporter output must lint cleanly under `markdownlint-cli2` using the shared `.markdownlint.yaml`.
+
+---
+
+## 🧩 Meta JSON
+
+Optional but recommended for Viewer and SDK integration.
+Generated when `--with-meta` is set.
 
 ```json
 {
-  "thread": "abc123",
-  "file": "thread-abc123__2025-10-09_part01.md",
-  "messages": 3,
-  "range": {"start":"2025-10-01T00:00:00Z","end":"2025-10-02T12:34:00Z"},
-  "split": {"by":"size","size_mb":20,"index":1,"total":1}
+  "conversation_id": "6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e",
+  "message_count": 132,
+  "models": ["gpt-4o"],
+  "date_range": ["2025-10-01", "2025-10-18"],
+  "exported_at": "2025-10-18T10:15:00Z",
+  "split_policy": "date:week",
+  "files": [
+    "thread-6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e__2025-10-18_part01.md",
+    "thread-6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e__2025-10-18_part02.md"
+  ]
 }
 ```
 
-## Invariants
-- File/dir names: ASCII only.
-- Message order: strictly ascending timestamp.
-- No HTML sanitization in exporter (viewer handles it).
-- All timestamps in front matter are **UTC ISO 8601** with `Z`.
-- Locale/timezone only affect **rendered labels**, not timestamps.
+### Meta JSON Usage
 
-## Re-parse & Idempotency (Full Export Inputs)
+* Viewer lists threads and their chunk files.
+* Apps SDK or future GUI can query `message_count` and `date_range` for filtering.
+* File paths are relative to the thread directory.
 
-This tool assumes **every provider export is a full snapshot**.
+---
 
-### Thread-level decision
+## 🌐 i18n and Locale Behavior
 
-- Let `update_time` be the thread’s last-updated timestamp (ISO8601 UTC).
-- Comparison rule:
-  - If the new `update_time` **equals** the cached one → **SKIP** (unchanged)
-  - If the new `update_time` **is newer than** the cached one → **REPLACE** (regenerate full thread)
-  - If the new `update_time` **is older than** the cached one → **WARN & SKIP**
-    (e.g. the user accidentally parsed an outdated export)
+* Controlled via CLI: `--locale <lang-REGION>` and `--timezone <IANA zone>`
+* Translations are resolved through `src/llm_logparser/i18n/{locale}.yaml`
+* Dates and numbers use `babel`-compatible formatting
+* Missing keys fall back to English (`en-US`) with `[WARN][i18n]` notice
 
-> `last_message_id` may be recorded for diagnostics only. It does not affect the decision above.
+Example localized date:
 
-### Fallback when `update_time` is unavailable
-- **MVP policy:** treat as **REPLACE** on re-parse for safety. (Heuristics like count/fingerprint may be introduced later behind a flag.)
+| Locale | Example                |
+| ------ | ---------------------- |
+| ja-JP  | 2025年10月18日 10:15      |
+| en-US  | Oct 18, 2025, 10:15 AM |
 
-### Non-goals (MVP)
-- Append-only incremental writes are **not** performed when `update_time` differs (always full re-split).
-- Source JSON is **never modified**.
+---
+
+## 🔁 Cache and Idempotency Rules
+
+The Exporter follows Parser cache guidance (`§8.1` of requirements):
+
+| Case        | Condition                              | Action                    |
+| ----------- | -------------------------------------- | ------------------------- |
+| NEW         | Thread not in cache                    | Generate new output       |
+| SKIP        | Same `update_time` and `message_count` | Skip export               |
+| REPLACE     | `update_time` newer                    | Overwrite existing thread |
+| WARN & SKIP | `update_time` older                    | Log warning, skip         |
+| ERROR       | Cache inconsistency                    | Raise LP8xxx              |
+
+Cache file: `artifacts/cache/{provider_id}_cache.json`
+
+Exporter **never updates** cache directly; it consumes parser metadata only.
+
+---
+
+## 🚫 Non-goals (MVP)
+
+* Append-only incremental writes — **not implemented**
+* Partial regeneration — **not supported**
+* Attachments download — **not included** (only metadata retained)
+* HTML sanitization — handled by Viewer layer
+
+---
+
+## 🔮 Future Additions (for v1.2+)
+
+* `attachments/` directory for extracted images or files
+* HTML viewer (`index.html + list.html + page.html`)
+* `meta.schema_version` for backward compatibility
+* Optional compression: `--compress` → `thread-*.md.gz`
+
+---
+
+## ✅ Summary
+
+| Element               | Type     | Required | Description                       |
+| --------------------- | -------- | -------- | --------------------------------- |
+| `parsed.jsonl`        | JSONL    | ✔        | Parser output (thread + messages) |
+| `thread-*.md`         | Markdown | ✔        | Human-readable log, GFM format    |
+| `meta.json`           | JSON     | optional | Viewer metadata                   |
+| `locale` / `timezone` | string   | optional | For localized rendering           |
+| `checksum`            | string   | optional | SHA1 for diff detection           |
+
+Exporter output must remain **deterministic** under identical inputs and locale settings.
+
+---
+
+*Last updated: 2025-11-15*
+*Author: Reyna (Exporter Spec Lead)*
+
