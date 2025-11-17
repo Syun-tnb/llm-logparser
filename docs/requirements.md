@@ -42,6 +42,57 @@
 - parserの出力は「1スレッド = 1 JSONLファイル」「1 メッセージ = 1 行」で構成する。
 - 各ファイルの1行目はスレッドメタ情報（`record_type: "thread"`）とし、2行目以降にメッセージ行（`record_type: "message"`）を続ける。
 
+#### 設計指針まとめ
+
+* **Parser は「構造の抽出のみ」**
+* **Exporter が「text の flatten + 可読整形」に責務集中**
+* **adapter で provider 差を吸収**
+* **JSONL (canonical schema) が唯一の正式 contract**
+* **manifest / meta.json は contract の外側にある補助情報**
+
+これにより：
+
+* Multi-provider が低コストで追加可能
+* Exporterの改善が既存パイプラインを壊さない
+* Apps SDK / GUI との連携が容易になる
+
+---
+
+## 2.2 Parser / Adapter / Exporter / Viewer の責務分離
+
+本システムは Provider 差異を吸収しつつ将来拡張性を確保するため、
+**4層に明確に責務を分離するアーキテクチャ**を採用する：
+
+1. **Provider Adapter 層**
+2. **Core Parser 層**
+3. **Exporter 層**
+4. **Viewer 層（将来統合）**
+
+### (1) Provider Adapter の責務
+
+* Provider 固有の構造（OpenAI の mapping、parts[]、metadata 等）を **展開のみ** する。
+* Transformer 的な「内容の変換」「加工」は行わず、**構造を保った dict に正規化**する。
+* 統一スキーマ（normalized schema）の **dict を1件ずつ yield** する。
+
+### (2) Core Parser の責務
+
+* Adapter から受け取った normalized dict を **JSONL（thread+messages）** として吐き出す。
+* ここは **唯一の中間表現（canonical intermediate format）** を生成する層。
+* canonical schema は **v1 系は固定仕様** とし互換性を重視。
+* Parser は text を結合しない（parts → text は Exporter の仕事）。
+
+### (3) Exporter の責務
+
+* JSONL を読み込み、Markdown/HTML に可読整形する。
+* **text 生成（parts の join）** はここで初めて行われる。
+* Provider 差の整形はここで吸収する。
+* YAML Front Matter などの「出力表現」を担当。
+
+### (4) Viewer の責務
+
+* Exporter の成果物（Markdown/HTML）をブラウザで表示するだけ。
+* Parser や Exporter の構造には干渉しない。
+
 ---
 
 ### 2-1. OpenAI（ChatGPT エクスポート仕様）
@@ -299,7 +350,63 @@ Core層が受け取る標準スキーマは以下とする。
 
 ---
 
-### 4.3 Provider Adapter 設計
+## 4.3 canonical normalized schema（中間表現仕様）
+
+MVP での canonical schema を固定し、将来のバージョニングの基点として扱う。
+
+### thread レコード（record_type="thread"）
+
+```json
+{
+  "record_type": "thread",
+  "provider_id": "openai",
+  "conversation_id": "<uuid>",
+  "title": "<string|null>",
+  "ts_first": 1700000000.0,
+  "ts_last": 1700009999.0,
+  "message_count": 152,
+  "extra": {...}   // provider 固有
+}
+```
+
+### message レコード（record_type="message"）
+
+```json
+{
+  "record_type": "message",
+  "provider_id": "openai",
+  "conversation_id": "<uuid>",
+  "message_id": "<uuid>",
+  "ts": 1700000123.12,
+  "author_role": "user|assistant|system|tool",
+  "author_name": "<string|null>",
+  "model": "<string|null>",
+  "content": {
+    "content_type": "text",
+    "parts": ["...", "..."],   // flatten禁止
+    "text": null               // v1.xではExporter側で生成するためnull固定
+  },
+  "relations": {
+    "parent": "<uuid|null>",
+    "children": ["..."]
+  },
+  "extra": {...}
+}
+```
+
+### 仕様方針
+
+* **content.parts は必須（providerが持つ場合）**
+* **content.text は v1.x では常に null（または absent）**
+
+  * flatten は Exporter の専用責務
+* Unicode decode は禁止（`\uXXXX` を保持）
+* 1 conversation = 1 JSONL
+* JSONL は **中間形式（contract）として全コンポーネントで共有**
+
+---
+
+### 4.4 Provider Adapter 設計
 
 #### Adapterの目的
 各Providerの構造差を吸収し、Coreが扱える共通スキーマdictを返す。
@@ -321,7 +428,7 @@ def normalize_messages(raw_thread: dict) -> Iterable[dict]:
 
 ---
 
-### 4.4 OpenAI（ChatGPT）Adapterの要点
+### 4.5 OpenAI（ChatGPT）Adapterの要点
 
 | 項目        | 内容                                                                     |
 | --------- | ---------------------------------------------------------------------- |
@@ -336,7 +443,7 @@ def normalize_messages(raw_thread: dict) -> Iterable[dict]:
 
 ---
 
-### 4.5 Provider登録と選択方式
+### 4.6 Provider登録と選択方式
 
 * CLIまたは設定ファイルにより、対象providerを指定する。
 
@@ -349,7 +456,7 @@ def normalize_messages(raw_thread: dict) -> Iterable[dict]:
 
 ---
 
-### 4.6 責務分離ルール
+### 4.7 責務分離ルール
 
 | 層                    | 役割                                   | 備考              |
 | -------------------- | ------------------------------------ | --------------- |
@@ -360,7 +467,7 @@ def normalize_messages(raw_thread: dict) -> Iterable[dict]:
 
 ---
 
-### 4.7 将来拡張指針
+### 4.8 将来拡張指針
 
 | Provider       | 想定構造                           | 特記事項                                           |
 | -------------- | ------------------------------ | ---------------------------------------------- |
@@ -373,7 +480,56 @@ Core / Exporter / Viewer は provider非依存で動作する。
 
 ---
 
-### 4.8 設計原則まとめ
+## 4.9 schema versioning — 破壊的変更の扱い
+
+canonical schema は将来の互換性のため、明確な versioning を採用する。
+
+### versioning ルール
+
+1. **破壊的変更（breaking change）**
+   → `schema_version` メジャーバンプ
+   例: 1.x → 2.0
+   変更例：
+
+   * content.text を新設して parts と二重保持
+   * ts の精度を変更
+   * record_type の構造変更
+
+2. **拡張（非破壊的 change）**
+   → マイナーバンプ
+   例: 1.3 → 1.4
+   変更例：
+
+   * extra フィールドに新サブキー追加
+   * 新しい provider の追加
+
+3. **ドキュメント整備のみ**
+   → パッチバンプ
+   例: 1.3 → 1.3.1
+
+### 書き込み場所
+
+* schema_version は
+  `parsed.jsonl` 最初の thread レコードか
+  `meta.json` に書き込む。
+
+---
+
+## 4.10 将来の content フィールド拡張（vNext）
+
+v1.x の content は構造保持を最優先し、加工はしない。
+次期版（vNext 2.x）では、次のような方向性で拡張可能とする：
+
+* `content.text`: flatten 済みテキスト（Exporter と同規則で生成）
+* `content.blocks`: ChatGPT Block API に似た階層構造
+* `content.annotations`: code / math / quote / image の識別情報
+
+これらは **完全に optional** とし、
+v1.x のスキーマに対して互換性を壊さない方針で設計する。
+
+---
+
+### 4.11 設計原則まとめ
 
 * すべてのProviderは「**Adapterで吸収、Coreは構造に依存しない**」方針を徹底。
 * 統一スキーマは「可読ではなく、安定であること」を重視。
