@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any, Dict
 import logging
 from pathlib import Path
 from datetime import timezone as _dt_timezone
@@ -14,16 +15,17 @@ from llm_logparser.exporter import export_thread_md
 
 import os
 
-def setup_logger():
-    """標準出力用の簡易ロガー設定"""
-    level_name = os.getenv("LLM_LOGPARSER_LOGLEVEL", "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
-    logging.basicConfig(
-        level=level,
-        format="[%(levelname)s] %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
-    return logging.getLogger("llm_logparser")
+def setup_logger() -> logging.Logger:
+    """プロジェクト全体で共有するルートロガー設定
+    重複ハンドラを避けつつ一度だけ設定する。
+    """
+    logger = logging.getLogger("llm_logparser")
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    return logger
 
 
 def validate_path(path: Path, must_exist: bool = True) -> Path:
@@ -53,7 +55,9 @@ def main():
     )
     parse_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
     parse_cmd.add_argument("--input", required=True, type=Path, help="Input JSON/JSONL path")
-    parse_cmd.add_argument("--outdir", required=False, type=Path, default=Path("artifacts/output"), help="Output root directory for parsed JSONL & manifest")
+    parse_cmd.add_argument("--outdir", required=False, type=Path, default=Path("artifacts"), help="Output root directory (provider subdir will be auto-created)")
+    parse_cmd.add_argument("--dry-run", dest="dry_run", action="store_true", help="Run parse without writing any files (stats/log only).")
+    parse_cmd.add_argument("--fail-fast", dest="fail_fast", action="store_true", help="Stop parsing on first error instead of continuing.")
 
     # ------------------------------------------------------------
     # export サブコマンド
@@ -113,8 +117,16 @@ def main():
             logger.info(f"Provider: {args.provider}")
             logger.info(f"Input file: {input_path}")
             logger.info(f"Output directory: {args.outdir}")
+            logger.info(f"Dry run   : {args.dry_run}")
+            logger.info(f"Fail fast : {args.fail_fast}")
 
-            stats = parse_to_jsonl(args.provider, input_path, args.outdir)
+            stats = parse_to_jsonl(
+                args.provider,
+                input_path,
+                args.outdir,
+                dry_run=args.dry_run,
+                fail_fast=args.fail_fast,
+            )
             logger.info(f"✅ Parsed {stats['threads']} threads ({stats['messages']} messages)")
 
         # --------------------------------------------------------
