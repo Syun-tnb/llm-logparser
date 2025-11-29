@@ -112,22 +112,29 @@ def main():
         # --------------------------------------------------------
         if args.command == "parse":
             input_path = validate_path(args.input)
-            args.outdir.mkdir(parents=True, exist_ok=True)
+            # Provider サブディレクトリを自動生成 (artifacts/<provider>/)
+            provider_outdir = args.outdir / args.provider
+            provider_outdir.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"Provider: {args.provider}")
             logger.info(f"Input file: {input_path}")
-            logger.info(f"Output directory: {args.outdir}")
+            logger.info(f"Output directory: {provider_outdir}")
             logger.info(f"Dry run   : {args.dry_run}")
             logger.info(f"Fail fast : {args.fail_fast}")
 
-            stats = parse_to_jsonl(
+            stats: Dict[str, Any] = parse_to_jsonl(
                 args.provider,
                 input_path,
-                args.outdir,
+                provider_outdir,
                 dry_run=args.dry_run,
                 fail_fast=args.fail_fast,
             )
-            logger.info(f"✅ Parsed {stats['threads']} threads ({stats['messages']} messages)")
+
+            # stats の安全なアクセス
+            threads = stats.get("threads", 0)
+            messages = stats.get("messages", 0)
+            logger.info(f"✅ Parsed {threads} threads ({messages} messages)")
+
 
         # --------------------------------------------------------
         # export
@@ -225,7 +232,9 @@ def main():
 
                 logger.info(f"[chain] Parsing into: {parse_outdir}")
                 stats = parse_to_jsonl(args.provider, input_path, parse_outdir)
-                logger.info(f"[chain] Parsed {stats['threads']} threads ({stats['messages']} messages)")
+                threads = stats.get("threads", 0)
+                messages = stats.get("messages", 0)
+                logger.info(f"[chain] Parsed {threads} threads ({messages} messages)")
 
                 parsed_root = parse_outdir / args.provider
 
