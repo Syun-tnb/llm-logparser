@@ -1,26 +1,30 @@
 # src/llm_logparser/providers/openai/adapter.py
 from __future__ import annotations
 import typing as t
+from collections import defaultdict, deque
+
 from .utils import normalize_text, json_safe
 
-# -------------------------------------------------------------------
-# Manifest & Policy
-# -------------------------------------------------------------------
+
+PREFERRED_KEYS = ("summary", "result", "user_profile", "user_instructions")
+
+
+# ============================================================
+#  Manifest & Policy
+# ============================================================
 
 def get_manifest() -> dict:
-    """Schema/format definition for OpenAI ChatGPT export JSON."""
     return {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "provider": "openai",
         "input_format": "chatgpt_export_v2+",
-        "description": "Adapter for OpenAI ChatGPT export JSON (mapping-based structure)",
+        "description": "Improved adapter with structural correction and linearization.",
         "expected_top_keys": ["mapping", "id", "create_time", "update_time"],
-        "id_fields": ["conversation_id", "message_id"],  # schema統一
+        "id_fields": ["conversation_id", "message_id"],
     }
 
 
 def get_policy() -> dict:
-    """Normalization and output policy for OpenAI exports."""
     return {
         "keep_unicode_escape": True,
         "ignore_fields": ["metadata", "status", "recipient", "weight"],
@@ -31,18 +35,111 @@ def get_policy() -> dict:
     }
 
 
-# -------------------------------------------------------------------
-# Core Adapter
-# -------------------------------------------------------------------
+# ============================================================
+#  Helper: Extract nodes from mapping
+# ============================================================
 
-PREFERRED_KEYS = ("summary", "result", "user_profile", "user_instructions")
+def _extract_nodes(mapping: dict) -> dict[str, dict]:
+    """extract node_id → node_info safely."""
+    nodes = {}
+    for node_id, node in mapping.items():
+        if not isinstance(node, dict):
+            continue
+        msg = node.get("message")
+        if not isinstance(msg, dict):
+            continue
 
+        msg_id = msg.get("id") or node_id
+
+        # REAL skip rules（rootノードのみ）
+        if msg_id in ("client-created-root", "root"):
+            continue
+
+        nodes[node_id] = node
+
+    return nodes
+
+
+# ============================================================
+#  Helper: Build graph based on parent-child relation
+# ============================================================
+
+def _build_graph(nodes: dict[str, dict]):
+    """Construct parent → children adjacency graph."""
+    parents = {}
+    children_map = defaultdict(list)
+
+    for node_id, node in nodes.items():
+        parent = node.get("parent")
+        parents[node_id] = parent
+        if parent and parent in nodes:
+            children_map[parent].append(node_id)
+
+    return parents, children_map
+
+
+# ============================================================
+#  Helper: Determine root nodes
+# ============================================================
+
+def _find_roots(nodes: dict[str, dict], parents: dict[str, str | None]):
+    """Find valid root nodes (no valid parent)."""
+    roots = []
+
+    for nid in nodes:
+        p = parents.get(nid)
+        if not p or p not in nodes:
+            roots.append(nid)
+
+    return roots
+
+
+# ============================================================
+#  Helper: Linearize graph
+# ============================================================
+
+def _linearize(nodes, parents, children_map):
+    """
+    Parent-first traversal (BFS) with timestamp secondary ordering.
+    """
+    roots = _find_roots(nodes, parents)
+
+    # BFS queue
+    queue = deque(roots)
+    order: list[str] = []
+    seen = set()
+
+    while queue:
+        nid = queue.popleft()
+        if nid in seen:
+            continue
+        seen.add(nid)
+        order.append(nid)
+
+        # sort children by timestamp fallback
+        kids = children_map.get(nid, [])
+        kids.sort(
+            key=lambda cid: (
+                nodes[cid]["message"].get("create_time") is None,
+                nodes[cid]["message"].get("create_time"),
+                cid,
+            )
+        )
+        queue.extend(kids)
+
+    # fallback: nodes not reached by BFS (rare)
+    for nid in nodes:
+        if nid not in seen:
+            order.append(nid)
+
+    return order
+
+
+# ============================================================
+#  Main Adapter
+# ============================================================
 
 def adapter(conversation: dict) -> list[dict]:
-    """
-    Convert a single ChatGPT export conversation into normalized message entries.
-    Compatible with mapping-based ChatGPT export v2+.
-    """
     conv_id = (
         conversation.get("id")
         or conversation.get("conversation_id")
@@ -54,29 +151,30 @@ def adapter(conversation: dict) -> list[dict]:
     if not isinstance(mapping, dict):
         return []
 
+    # ---- extract valid nodes ----
+    nodes = _extract_nodes(mapping)
+
+    if not nodes:
+        return []
+
+    # ---- build graph ----
+    parents, children_map = _build_graph(nodes)
+
+    # ---- linearize ----
+    order = _linearize(nodes, parents, children_map)
+
+    # ---- build final messages ----
     out: list[dict] = []
-    for node_id, node in mapping.items():
-        if not isinstance(node, dict):
-            continue
-
+    for node_id in order:
+        node = nodes[node_id]
         msg = node.get("message")
-        if not isinstance(msg, dict):
-            continue
-
-        msg_id = msg.get("id") or node_id
-        # skip dummy/root/system nodes
-        if msg_id in ("client-created-root", "root"):
-            continue
 
         author = msg.get("author") or {}
         author_role = author.get("role") or msg.get("role") or "unknown"
+
         content = msg.get("content")
 
-        # ignore empty nodes
-        if not author_role and not content:
-            continue
-
-        # timestamp resolution (prefer message-level)
+        # timestamp resolution
         ts = (
             msg.get("create_time")
             or node.get("create_time")
@@ -84,11 +182,9 @@ def adapter(conversation: dict) -> list[dict]:
             or msg.get("timestamp")
         )
 
-        # normalize text (Exporter互換のためtextを維持)
         text = normalize_text(content, preferred_keys=PREFERRED_KEYS, allow_loose=True)
 
-        # metadata and model resolution
-        mmeta = (msg.get("metadata") or {})
+        mmeta = msg.get("metadata") or {}
         model = (
             mmeta.get("model_slug")
             or mmeta.get("default_model_slug")
@@ -97,21 +193,19 @@ def adapter(conversation: dict) -> list[dict]:
             or "unknown"
         )
 
-        relations = {
-            "parent": node.get("parent"),
-            "children": node.get("children") or [],
-        }
-
         meta = {
             "provider": "openai",
             "model": model,
             "source": mmeta.get("source") or node.get("type") or None,
-            "relations": relations,
+            "relations": {
+                "parent": parents.get(node_id),
+                "children": children_map.get(node_id, []),
+            },
         }
 
         entry = {
             "conversation_id": conv_id,
-            "message_id": msg_id,
+            "message_id": msg.get("id") or node_id,
             "author_role": author_role,
             "text": text or "",
             "ts": ts,
@@ -119,41 +213,9 @@ def adapter(conversation: dict) -> list[dict]:
         }
 
         out.append(json_safe(entry))
-        
-        # --- DEBUG: detect Decimal presence ---
-        import json, sys
-        try:
-            json.dumps(out[-1])
-        except TypeError as e:
-            if "Decimal" in str(e):
-                sys.stderr.write(
-                    f"[DEBUG] Decimal found in msg_id={msg_id}, author={author_role}, "
-                    f"conv_id={conv_id}\n"
-                )
-                sys.stderr.flush()
-
-
-    # sort by timestamp if available
-    out.sort(key=lambda e: (e["ts"] is None, e["ts"]))
-
-    # --- DEBUG: detect Decimal content in messages ---
-    import sys, json
-    for entry in out:
-        try:
-            json.dumps(entry)
-        except TypeError as e:
-            if "Decimal" in str(e):
-                sys.stderr.write(
-                    f"[DEBUG] Decimal detected → conv_id={entry.get('conversation_id')}, "
-                    f"msg_id={entry.get('message_id')}, "
-                    f"ts={entry.get('ts')}, "
-                    f"meta={entry.get('meta')}\n"
-                )
-                sys.stderr.flush()
 
     return out
 
 
 def get_adapter():
-    """Exported entrypoint (used by parser.load_provider)."""
     return adapter
