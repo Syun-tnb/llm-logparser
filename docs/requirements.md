@@ -2,9 +2,11 @@
 
 ## 1. ゴール / スコープ
 
-* 各LLMサービスのエクスポート（JSON/JSONL/NDJSON）を読み込み、**重複のない会話ログ**を**スレッド単位のMarkdown**へ出力する。
+* 各LLMサービスのエクスポート（JSON/JSONL/NDJSON）を読み込み、
+  重複のない会話ログをスレッド単位で **Markdown(GFM)** に出力する。
 * **CLIで完結するMVP**（Parser → Exporter）。  
-  Viewerは別途GUIで提供予定だが、**軽量HTMLビューア（検索窓＋一覧＋詳細）をMVP範囲に追加**。
+  Viewer は **Exporter が生成した Markdown を読み、HTMLを生成** し、HTMLビューアを提供する。
+  更に、将来的に **GUIを含むアプリケーション** として実装することを念頭に置く。
 * 将来的な拡張を見据え、**マルチプロバイダ対応**・**多言語対応（i18n/L10n）**・**例外契約（JSONエラー）**・**ランタイム設定の永続化**を設計に含める。
 * **Apps SDK統合を見据えた関数/API設計**（入出力をJSON Schema化）を行う。
 
@@ -83,14 +85,14 @@
 
 ### (3) Exporter の責務
 
-* JSONL を読み込み、Markdown/HTML に可読整形する。
+* JSONL を読み込み、Markdown に可読整形する。
 * **text 生成（parts の join）** はここで初めて行われる。
 * Provider 差の整形はここで吸収する。
 * YAML Front Matter などの「出力表現」を担当。
 
 ### (4) Viewer の責務
 
-* Exporter の成果物（Markdown/HTML）をブラウザで表示するだけ。
+* Exporter の成果物（Markdown）からHTMLを生成しブラウザで表示する。
 * Parser や Exporter の構造には干渉しない。
 
 ---
@@ -150,7 +152,7 @@ MVPは、以下の4層構造で構成される。
 ├────────────────────────────┤
 │          Core Parser 層            │  ← 統一スキーマ(JSONL)の生成・正規化管理
 ├────────────────────────────┤
-│          Exporter 層               │  ← Markdown / HTML 等の最終整形・出力
+│          Exporter 層               │  ← Markdownの最終整形・出力
 └────────────────────────────┘
 
 ```
@@ -205,7 +207,7 @@ artifacts/output/openai/thread-<conversation_id>/parsed.jsonl
 ### 3.3 Exporter 層
 
 #### 役割
-- Coreの出力した `parsed.jsonl`（thread単位）をMarkdownやHTMLに変換。
+- Coreの出力した `parsed.jsonl`（thread単位）を **Markdown(GFM)** に変換。
 - `record_type: "thread"` 行をヘッダー情報として利用し、以降の `message` 行を整形。
 - 分割条件（サイズ・件数・日付）を適用して複数ファイルに出力。
 
@@ -215,7 +217,7 @@ artifacts/output/openai/thread-<conversation_id>/parsed.jsonl
 | グルーピング | conversation_id単位で読込 |
 | ソート | ts（時刻）順に整列 |
 | 整形 | content.parts[] を join、改行・引用処理などを適用 |
-| 出力 | Markdown / HTMLファイル生成（UTF-8） |
+| 出力 | Markdown ファイル生成（UTF-8） |
 
 #### 出力構成例
 ```
@@ -253,11 +255,11 @@ split_policy:
 
 ---
 
-### 3.5 Viewer（簡易HTMLビューア）
+### 3.5 Viewer（HTMLビューア）
 
 #### 役割
 
-* Exporterで生成されたMarkdown/HTMLを軽量に閲覧する静的ビューア。
+* Exporterで生成された **Markdown(GFM)** からHTMLを生成し、閲覧するビューア。
 * index.html + menu.html + page.html のテンプレート構成。
 * 検索窓・スレッド一覧・詳細表示を備え、クライアントサイドのみで動作。
 
@@ -283,11 +285,11 @@ split_policy:
         │
         ▼
 [ Exporter ]
-   (Markdown/HTML整形)
+   (Markdown整形)
         │
         ▼
 [ Viewer ]
-   (静的HTML表示)
+   (HTML生成・表示)
 ```
 
 ---
@@ -562,7 +564,7 @@ v1.x のスキーマに対して互換性を壊さない方針で設計する。
 ```
 
 各層の責務を明確に分離し、Provider差やファイル構造差を吸収したうえで、
-スレッド単位のJSONL → Markdown/HTML 変換を行う。
+スレッド単位のJSONL → **Markdown（GFM）** 変換を行う。
 
 ---
 
@@ -624,7 +626,7 @@ artifacts/output/openai/thread-6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e/parsed.jsonl
 
 #### 目的
 
-Parserが出力したスレッド単位JSONLをMarkdownまたはHTML形式に変換する。
+Parserが出力したスレッド単位JSONLをMarkdown形式に変換する。
 
 #### 主な処理
 
@@ -662,8 +664,8 @@ artifacts/output/{provider_id}/thread-{conversation_id}/
 
 ### 5.5 Viewer フェーズ（参照）
 
-Exporterの出力したMarkdown/HTMLを読み取り、軽量HTMLビューアとして一覧・検索・閲覧を提供する。
-ViewerはParser/Exporterとは非同期であり、生成済みファイルのみを参照する。
+Exporterの出力したMarkdown（GFM）からHTMLを生成し、HTMLビューアを提供。一覧・検索・閲覧機能を有する。
+ViewerはParser/Exporterとは非同期である。
 
 ---
 
@@ -702,7 +704,7 @@ ViewerはParser/Exporterとは非同期であり、生成済みファイルの�
                ▼
 ┌───────────────────────────┐
 │           Viewer           │
-│  - HTML表示・検索          │
+│  - HTML生成・表示・検索      │
 └───────────────────────────┘
 ```
 
@@ -771,7 +773,7 @@ Parserは、スレッド単位の正規化JSONLを出力する。
 
 ---
 
-### 6.4 Markdown出力（Exporter）
+### 6.4 Markdown（GFM）出力（Exporter）
 
 #### 目的
 
@@ -1055,7 +1057,7 @@ llm-logparser parse \
   --provider openai \
   --input conversations.json \
   --outdir artifacts/output \
-  --export-format md,html \
+  --export-format md \
   --locale ja-JP \
   --split-by size \
   --split-size-mb 20 \
@@ -1070,7 +1072,6 @@ llm-logparser parse \
 * サブコマンド単位で責務を分離（Parser／Exporter／Viewer）。
 * オプションはフェーズごとに限定適用し、競合を防止。
 * `--chain` により一括実行をサポートしつつ、モジュール的独立性を維持。
-* `--export-format` で出力を柔軟に選択可能（jsonl／md／html）。
 * すべての出力は §6（出力仕様）に準拠。
 * CLIのすべてのメッセージは i18n／L10n 対応。
 
@@ -2563,7 +2564,7 @@ READMEヘッダに以下を配置：
 
 - ドラッグ＆ドロップ、複雑フィルタ、リアルタイムプレビュー等を持つ  
   **完全GUI版Viewer** は対象外。  
-- MVPではCLI＋静的HTMLビューアを提供。  
+- MVPではCLI＋HTMLビューアを提供。  
 - 将来的に **Electron / Tauri** ベースでGUI拡張予定。
 
 ---
