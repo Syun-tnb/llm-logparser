@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from llm_logparser.parser import parse_to_jsonl
 from llm_logparser.exporter import export_thread_md
 
-import os
+from llm_logparser.i18n import _, set_locale
 
 def setup_logger() -> logging.Logger:
     """プロジェクト全体で共有するルートロガー設定
@@ -40,10 +40,19 @@ def validate_path(path: Path, must_exist: bool = True) -> Path:
 def main():
     logger = setup_logger()
 
+    set_locale()
+    
     parser = argparse.ArgumentParser(
         prog="llm-logparser",
-        description="CLI interface for LLM Log Parser (MVP)",
+        description=_("cli.description"),
     )
+    
+    parser.add_argument(
+        "--lang",
+        default=None,
+        help=_("cli.option.lang.help"),
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # ------------------------------------------------------------
@@ -51,6 +60,7 @@ def main():
     # ------------------------------------------------------------
     parse_cmd = subparsers.add_parser(
         "parse", 
+        help=_("cli.parse.help"),
         help="Parse provider export JSON into normalized JSONL threads",
     )
     parse_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
@@ -105,6 +115,9 @@ def main():
     subparsers.add_parser("config", help="(placeholder) Manage runtime configuration")
 
     args = parser.parse_args()
+
+    if args.lang:
+        set_locale(args.lang)
 
     try:
         # --------------------------------------------------------
