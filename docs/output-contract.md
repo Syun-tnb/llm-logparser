@@ -54,7 +54,7 @@ It is generated when `--with-meta` is set.
     "thread-6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e__2025-10-18_part02.md"
   ]
 }
-````
+```
 
 ### Meta JSON Usage
 
@@ -118,6 +118,100 @@ The Exporter follows Parser cache guidance (`§8.1` of requirements):
 | `checksum`            | string   | optional | SHA1 for diff detection           |
 
 Exporter output must remain **deterministic** under identical inputs and locale settings.
+
+---
+
+## 📄 Canonical JSONL Schema (`parsed.jsonl`)
+
+The Parser produces a **canonical**, thread-scoped JSONL file.
+This file is the **single source of truth** for the Exporter, Viewer, and future tools.
+
+Each line is one JSON object.
+Line endings MUST be `\n` (LF).
+
+---
+
+### Record types
+
+Two record types exist:
+
+#### 1️⃣ Thread header
+
+```json
+{
+  "record_type": "thread",
+  "provider_id": "<provider>",
+  "conversation_id": "<uuid>",
+  "message_count": <int>
+}
+```
+
+* Appears **exactly once**, at the very top of the file
+* Describes metadata for the entire thread
+
+---
+
+#### 2️⃣ Message record
+
+```json
+{
+  "record_type": "message",
+  "provider_id": "<provider>",
+  "conversation_id": "<uuid>",
+  "message_id": "<id>",
+  "parent_id": "<id|null>",
+  "role": "system|user|assistant|tool",
+  "ts": <epoch_ms>,
+  "content": {
+    "content_type": "text",
+    "parts": ["...", "..."]
+  },
+  "text": "<flattened text>"
+}
+```
+
+---
+
+### Rules
+
+* Messages are sorted **chronologically**
+  (`ts`, then `message_id` as a tie-breaker)
+
+* `text` is always present and equals:
+
+  ```
+  "\n".join(content.parts)
+  ```
+
+* Additional / unknown fields MAY appear
+  (tools MUST ignore what they don’t understand)
+
+* If a required field is missing:
+
+  * the record is skipped, or
+  * parsing stops when `--fail-fast` is enabled
+
+This schema is intentionally minimal and stable.
+Future fields may be added **without breaking compatibility** as long as these rules hold.
+
+---
+
+### Determinism & compatibility
+
+* Same inputs → **same parsed output** (stable ordering)
+* Viewer / Exporter MUST rely only on fields defined here
+* Additional provider-specific fields MAY appear but MUST NOT break consumers
+
+> If a future version adds fields, they MUST be backward-compatible.
+
+---
+
+### Why this layer matters
+
+* Keeps provider quirks out of higher layers
+* Enables streaming processing and caching
+* Makes diffs and audits predictable
+* Allows future adapters without touching Exporter
 
 ---
 
