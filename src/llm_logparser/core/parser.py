@@ -4,7 +4,7 @@ import json
 import importlib
 import logging
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, Optional
+from typing import Any, Dict, Generator, Optional
 from datetime import datetime
 from inspect import signature
 
@@ -198,24 +198,7 @@ def should_skip_thread(conv_id: str, msgs: list, manifest_old: dict) -> bool:
 
 
 # ============================================================
-# 5. Safe Write Helper
-# ============================================================
-
-def safe_write_jsonl(outpath: Path, lines: Iterable[Dict[str, Any]], logger: logging.Logger):
-    """原子的に近い方法で JSONL を書き出す。"""
-    try:
-        tmp = outpath.with_suffix(".tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            for obj in lines:
-                f.write(json.dumps(obj, ensure_ascii=True) + "\n")
-        tmp.replace(outpath)
-        logger.debug(f"wrote {outpath}")
-    except Exception as e:
-        raise LLPWriteError(f"write error: {e}")
-
-
-# ============================================================
-# 6. Main Parser
+# 5. Main Parser
 # ============================================================
 
 def parse_to_jsonl(
@@ -240,9 +223,10 @@ def parse_to_jsonl(
     provider_dir.mkdir(parents=True, exist_ok=True)
     manifest_old = load_manifest_if_exists(provider_dir)
 
-    grouped: Dict[str, list] = {}
     errors, skipped, count = 0, 0, 0
     sample_errors: list[str] = []
+    stats = {"threads": 0, "messages": 0}
+    manifest_index = []
 
     for raw in iter_json_records(input_path, log):
         try:
@@ -253,21 +237,78 @@ def parse_to_jsonl(
                 except Exception:
                     params = {}
                 if "source" in params:
-                    recs = adapter_func(raw, source=str(input_path))
+                    recs_iter = adapter_func(raw, source=str(input_path))
                 else:
-                    recs = adapter_func(raw)
+                    recs_iter = adapter_func(raw)
             except TypeError:
-                recs = adapter_func(raw)
+                recs_iter = adapter_func(raw)
 
-            for rec in recs:
-                cid = rec.get("conversation_id")
-                if not cid:
-                    skipped += 1
-                    continue
-                grouped.setdefault(cid, []).append(rec)
-                count += 1
-                if count % progress_interval == 0:
-                    log.info(f"processed {count} messages...")
+            recs = list(recs_iter)
+            if not recs:
+                continue
+
+            cid = recs[0].get("conversation_id")
+            if not cid:
+                skipped += len(recs)
+                continue
+
+            count += len(recs)
+            if count % progress_interval == 0:
+                log.info(f"processed {count} messages...")
+
+            recs.sort(key=lambda r: (r.get("ts") is None, r.get("ts"), r.get("message_id") or ""))
+
+            if should_skip_thread(cid, recs, manifest_old):
+                skipped += 1
+                log.info(f"SKIP thread {cid} (unchanged)")
+                continue
+
+            ts_values = [m.get("ts") for m in recs if isinstance(m.get("ts"), (int, float))]
+            ts_min = min(ts_values) if ts_values else None
+            ts_max = max(ts_values) if ts_values else None
+
+            outdir_thread = provider_dir / f"thread-{cid}"
+            outdir_thread.mkdir(parents=True, exist_ok=True)
+            outpath = outdir_thread / "parsed.jsonl"
+
+            if not dry_run:
+                tmp = outpath.with_suffix(".tmp")
+                try:
+                    with tmp.open("w", encoding="utf-8") as f:
+                        thread_meta = {
+                            "record_type": "thread",
+                            "provider_id": provider,
+                            "conversation_id": cid,
+                            "message_count": len(recs),
+                        }
+                        f.write(json.dumps(thread_meta, ensure_ascii=True) + "\n")
+                        for m in recs:
+                            if not validate_message(m, fail_fast=fail_fast):
+                                skipped += 1
+                                continue
+                            f.write(
+                                json.dumps(
+                                    {"record_type": "message", "provider_id": provider, **m},
+                                    ensure_ascii=True,
+                                )
+                                + "\n"
+                            )
+                except Exception as e:
+                    raise LLPWriteError(f"write error: {e}")
+                tmp.replace(outpath)
+
+            stats["threads"] += 1
+            stats["messages"] += len(recs)
+
+            manifest_index.append(
+                {
+                    "conversation_id": cid,
+                    "path": f"thread-{cid}/parsed.jsonl",
+                    "count": len(recs),
+                    "ts_min": ts_min,
+                    "ts_max": ts_max,
+                }
+            )
         except Exception as e:
             msg = f"adapter error: {e}"
             log.warning(msg)
@@ -276,53 +317,6 @@ def parse_to_jsonl(
                 sample_errors.append(msg)
             if fail_fast and errors > 3:
                 raise LLPAdapterError(f"too many adapter errors ({errors})")
-
-    stats = {"threads": 0, "messages": 0}
-    manifest_index = []
-
-    for cid, msgs in grouped.items():
-        msgs.sort(key=lambda r: (r.get("ts") is None, r.get("ts"), r.get("message_id") or ""))
-        thread_meta = {"message_count": len(msgs)}
-
-        # 差分スキップ判定
-        if should_skip_thread(cid, msgs, manifest_old):
-            log.info(f"SKIP thread {cid} (unchanged)")
-            skipped += 1
-            continue
-
-        outdir_thread = provider_dir / f"thread-{cid}"
-        outdir_thread.mkdir(parents=True, exist_ok=True)
-        outpath = outdir_thread / "parsed.jsonl"
-
-        if not dry_run:
-            lines = [
-                {
-                    "record_type": "thread",
-                    "provider_id": provider,
-                    "conversation_id": cid,
-                    **thread_meta,
-                }
-            ]
-            for m in msgs:
-                if not validate_message(m, fail_fast=fail_fast):
-                    skipped += 1
-                    continue
-                lines.append({"record_type": "message", "provider_id": provider, **m})
-            safe_write_jsonl(outpath, lines, log)
-
-        stats["threads"] += 1
-        stats["messages"] += len(msgs)
-
-        ts_values = [m.get("ts") for m in msgs if isinstance(m.get("ts"), (int, float))]
-        ts_min = min(ts_values) if ts_values else None
-        ts_max = max(ts_values) if ts_values else None
-        manifest_index.append({
-            "conversation_id": cid,
-            "path": f"thread-{cid}/parsed.jsonl",
-            "count": len(msgs),
-            "ts_min": ts_min,
-            "ts_max": ts_max,
-        })
 
     # manifest出力
     if not dry_run:
@@ -344,7 +338,7 @@ def parse_to_jsonl(
 
 
 # ============================================================
-# 7. CLI Entry (Debug Only)
+# 6. CLI Entry (Debug Only)
 # ============================================================
 
 if __name__ == "__main__":
