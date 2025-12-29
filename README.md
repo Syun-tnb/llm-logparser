@@ -101,10 +101,10 @@ Messages follow in timestamp order:
 
 ```markdown
 ## [User] 2025-10-18 10:00
-こんにちは！
+Good morning!
 
 ## [Assistant] 2025-10-18 10:01
-こんにちは — どうお手伝いしましょう？
+Good morning — how can I help today?
 ```
 
 Markdown is **GFM-compatible** and preserves:
@@ -118,14 +118,29 @@ Markdown is **GFM-compatible** and preserves:
 
 ## 🌍 Localization
 
+`llm-logparser` supports localized timestamps and messages.
+
+You can control output formatting using:
+
 ```
---locale   en-US | ja-JP (etc.)
---timezone Asia/Tokyo | UTC | ...
+--locale   en-US | ja-JP | …
+--timezone Asia/Tokyo | UTC | …
 ```
 
-* Rendering uses localized date formats
-* Internals remain **UTC** (ISO-8601)
-* Missing keys fall back to `en-US`
+* Dates in Markdown are rendered using the selected **locale**
+* Internally, timestamps remain **UTC ISO-8601** for reproducibility
+* Missing or unknown locales gracefully fall back to `en-US`
+* `--locale` takes precedence when both `--locale` and `--lang` are supplied
+  *(--lang exists for compatibility)*
+
+Example:
+
+```bash
+llm-logparser export \
+  --input parsed.jsonl \
+  --locale ja-JP \
+  --timezone Asia/Tokyo
+```
 
 ---
 
