@@ -12,7 +12,8 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
     "en": {
         # --- CLI / general ---
         "cli.description": "CLI interface for LLM Log Parser (MVP)",
-        "cli.option.lang.help": "Language code for CLI messages (e.g. en, ja)",
+        "cli.option.lang.help": "UI language/locale for CLI output (use --locale, alias --lang; e.g. en, ja)",
+        "cli.option.log_level.help": "Log level override (DEBUG|INFO|WARNING|ERROR|CRITICAL); overrides environment variable",
         "cli.parse.help": "Parse provider export JSON into normalized JSONL threads",
         "cli.export.help": "(placeholder) Export parsed logs to Markdown/HTML",
         "cli.viewer.help": "(placeholder) Run lightweight HTML viewer",
@@ -37,7 +38,8 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
     },
     "ja": {
         "cli.description": "LLM Log Parser 用のCLIインターフェース（MVP）",
-        "cli.option.lang.help": "CLIメッセージの言語コード（例: en, ja）",
+        "cli.option.lang.help": "CLI 表示の言語/ロケール (--locale、旧 --lang。例: en, ja)",
+        "cli.option.log_level.help": "ログレベルを指定 (DEBUG|INFO|WARNING|ERROR|CRITICAL)。環境変数 LLM_LOGPARSER_LOGLEVEL を上書き",
         "cli.parse.help": "プロバイダのエクスポートJSONを正規化JSONLスレッドに変換する",
         "cli.export.help": "（プレースホルダ）parsedログをMarkdown/HTMLに出力する",
         "cli.viewer.help": "（プレースホルダ）簡易HTMLビューアを起動する",

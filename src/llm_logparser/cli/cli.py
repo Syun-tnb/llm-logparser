@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Any, Dict
 import logging
@@ -12,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from llm_logparser.core.i18n import _, set_locale
 
-def setup_logger() -> logging.Logger:
+def setup_logger(level: str | None = None) -> logging.Logger:
     """プロジェクト全体で共有するルートロガー設定
     重複ハンドラを避けつつ一度だけ設定する。
     """
@@ -21,33 +22,61 @@ def setup_logger() -> logging.Logger:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
         logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
+    env_level = os.getenv("LLM_LOGPARSER_LOGLEVEL")
+    raw_level = level or env_level or "INFO"
+    logger.setLevel(getattr(logging, raw_level.upper(), logging.INFO))
     return logger
 
 
-def validate_path(path: Path, must_exist: bool = True) -> Path:
+def validate_path(
+    path: Path,
+    *,
+    must_exist: bool = True,
+    expect_file: bool = False,
+    expect_dir: bool = False,
+) -> Path:
     """入力ファイル・出力ディレクトリのバリデーション"""
-    if must_exist and not path.exists():
-        raise FileNotFoundError(f"指定されたパスが存在しません: {path}")
-    if must_exist and path.is_dir():
-        raise IsADirectoryError(f"ファイルパスを指定してください: {path}")
-    return path
+    target = path.expanduser()
+    if must_exist and not target.exists():
+        raise FileNotFoundError(f"指定されたパスが存在しません: {target}")
+    if expect_file and target.is_dir():
+        raise IsADirectoryError(f"ファイルパスを指定してください: {target}")
+    if expect_dir and not target.is_dir():
+        raise NotADirectoryError(f"ディレクトリパスを指定してください: {target}")
+    return target
+
+
+def validate_split_option(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    normalized = raw.strip()
+    if not normalized:
+        return None
+    lowered = normalized.lower()
+    if lowered == "auto" or lowered.startswith("size=") or lowered.startswith("count="):
+        return normalized
+    raise SystemExit(f"invalid --split: {raw}")
 
 
 def main():
-    logger = setup_logger()
-
     set_locale()
-    
+
     parser = argparse.ArgumentParser(
         prog="llm-logparser",
         description=_("cli.description"),
     )
-    
     parser.add_argument(
+        "--locale",
         "--lang",
+        dest="locale",
         default=None,
         help=_("cli.option.lang.help"),
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default=None,
+        help=_("cli.option.log_level.help"),
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -99,7 +128,14 @@ def main():
     )
     export_cmd.add_argument("--input", required=True, type=Path, help="Path to thread parsed.jsonl")
     export_cmd.add_argument("--out", required=False, type=Path, help="Output Markdown path")
-    export_cmd.add_argument("--tz", required=False, default="UTC", help="IANA timezone (e.g., Asia/Tokyo)")
+    export_cmd.add_argument(
+        "--timezone",
+        "--tz",
+        dest="timezone",
+        required=False,
+        default="UTC",
+        help="IANA timezone (e.g., Asia/Tokyo)",
+    )
     export_cmd.add_argument("--formatting", choices=["none", "light"], default="light", help="Apply minimal Markdown formatting (none|light).")
     export_cmd.add_argument("--split", dest="split", help="size=<4M|512KiB|...> or count=<N> or auto (auto = size=4M & count=1500)")
     export_cmd.add_argument("--split-soft-overflow", dest="split_soft_overflow", type=float, default=0.20)
@@ -115,9 +151,22 @@ def main():
         help="Parse raw export and export all threads to Markdown in one shot",
     )
     chain_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
+    chain_cmd.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help=_("cli.parse.opt.dry_run.help"),
+    )
     chain_cmd.add_argument("--input", required=True, type=Path, help="Input JSON/JSONL path")
     chain_cmd.add_argument("--outdir", required=False, type=Path, default=Path("artifacts"), help="Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...")
-    chain_cmd.add_argument("--tz", required=False, default="UTC", help="IANA timezone (e.g., Asia/Tokyo)")
+    chain_cmd.add_argument(
+        "--timezone",
+        "--tz",
+        dest="timezone",
+        required=False,
+        default="UTC",
+        help="IANA timezone (e.g., Asia/Tokyo)",
+    )
     chain_cmd.add_argument("--formatting", choices=["none", "light"], default="light", help="Apply minimal Markdown formatting (none|light).")
     chain_cmd.add_argument("--split", dest="split", help="size=<4M|512KiB|...> or count=<N> or auto (auto = size=4M & count=1500)")
     chain_cmd.add_argument("--split-soft-overflow", dest="split_soft_overflow", type=float, default=0.20)
@@ -132,13 +181,13 @@ def main():
     # ------------------------------------------------------------
     # プレースホルダコマンド
     # ------------------------------------------------------------
-    subparsers.add_parser("viewer", help="(placeholder) Run lightweight HTML viewer")
-    subparsers.add_parser("config", help="(placeholder) Manage runtime configuration")
+    subparsers.add_parser("viewer", help="(placeholder) Viewer command (not implemented yet)")
+    subparsers.add_parser("config", help="(placeholder) Config command (not implemented yet)")
 
     args = parser.parse_args()
 
-    if args.lang:
-        set_locale(args.lang)
+    set_locale(args.locale)
+    logger = setup_logger(args.log_level)
 
     try:
         # --------------------------------------------------------
@@ -147,7 +196,7 @@ def main():
         if args.command == "parse":
             from llm_logparser.core.parser import parse_to_jsonl
 
-            input_path = validate_path(args.input)
+            input_path = validate_path(args.input, expect_file=True)
             # parse_to_jsonl() 側で <outdir>/<provider>/... を作る
             args.outdir.mkdir(parents=True, exist_ok=True)
             provider_outdir = args.outdir / args.provider
@@ -178,11 +227,7 @@ def main():
         elif args.command == "export":
             from llm_logparser.core.exporter import export_thread_md
 
-            in_path = args.input
-            if not in_path.exists():
-                raise FileNotFoundError(f"指定されたパスが存在しません: {in_path}")
-            if in_path.is_dir():
-                raise IsADirectoryError(f"ファイルパスを指定してください: {in_path}")
+            in_path = validate_path(args.input, expect_file=True)
 
             if args.out:
                 out_md = args.out
@@ -191,16 +236,12 @@ def main():
                 out_md = parent / f"{parent.name}.md"
 
             try:
-                tz = ZoneInfo(args.tz)
+                tz = ZoneInfo(args.timezone)
             except Exception:
-                logger.warning(f"Unknown timezone '{args.tz}', fallback to UTC")
+                logger.warning(f"Unknown timezone '{args.timezone}', fallback to UTC")
                 tz = _dt_timezone.utc
 
-            # --split の軽いバリデーション
-            if args.split:
-                s = args.split.strip().lower()
-                if not (s == "auto" or s.startswith("size=") or s.startswith("count=")):
-                    raise SystemExit(f"invalid --split: {args.split}")
+            split_option = validate_split_option(args.split)
 
             logger.info(f"Input JSONL: {in_path}")
             logger.info(
@@ -208,11 +249,12 @@ def main():
                 if args.split
                 else f"Output MD  : {out_md}"
             )
-            logger.info(f"Timezone   : {args.tz}")
+            logger.info(f"Timezone   : {args.timezone}")
             logger.info(f"Formatting : {args.formatting}")
 
             opts = {
-                "split": args.split,
+                "split": split_option,
+                "split": split_option,
                 "split_soft_overflow": args.split_soft_overflow,
                 "split_hard": args.split_hard,
                 "split_preview": args.split_preview,
@@ -236,14 +278,16 @@ def main():
             from llm_logparser.core.exporter import export_thread_md
             from llm_logparser.core.parser import parse_to_jsonl
 
-            input_path = validate_path(args.input)
+            input_path = validate_path(args.input, expect_file=True)
             args.outdir.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"[chain] Provider : {args.provider}")
             logger.info(f"[chain] Input    : {input_path}")
             logger.info(f"[chain] Root     : {args.outdir}")
-            logger.info(f"[chain] TZ       : {args.tz}")
+            logger.info(f"[chain] TZ       : {args.timezone}")
             logger.info(f"[chain] Formatting: {args.formatting}")
+            logger.info(f"[chain] Dry run  : {args.dry_run}")
+            logger.info(f"[chain] Fail fast: {args.fail_fast}")
 
             if args.jobs and args.jobs > 1:
                 logger.info(f"[chain] --jobs={args.jobs} specified "
@@ -251,20 +295,16 @@ def main():
 
             # timezone
             try:
-                tz = ZoneInfo(args.tz)
+                tz = ZoneInfo(args.timezone)
             except Exception:
-                logger.warning(f"Unknown timezone '{args.tz}', fallback to UTC")
+                logger.warning(f"Unknown timezone '{args.timezone}', fallback to UTC")
                 tz = _dt_timezone.utc
 
-            # --split の軽いバリデーション（export と同様）
-            if args.split:
-                s = args.split.strip().lower()
-                if not (s == "auto" or s.startswith("size=") or s.startswith("count=")):
-                    raise SystemExit(f"invalid --split: {args.split}")
+            split_option = validate_split_option(args.split)
 
             # parsed_root 決定
             if args.parsed_root:
-                parsed_root = args.parsed_root
+                parsed_root = validate_path(args.parsed_root, expect_dir=True)
                 logger.info(f"[chain] Using existing parsed root: {parsed_root}")
             else:
                 # chain 専用: outdir/output/<provider> 配下に parse する
@@ -272,7 +312,13 @@ def main():
                 parse_outdir.mkdir(parents=True, exist_ok=True)
 
                 logger.info(f"[chain] Parsing into: {parse_outdir}")
-                stats = parse_to_jsonl(args.provider, input_path, parse_outdir)
+                stats = parse_to_jsonl(
+                    args.provider,
+                    input_path,
+                    parse_outdir,
+                    dry_run=args.dry_run,
+                    fail_fast=args.fail_fast,
+                )
                 threads = stats.get("threads", 0)
                 messages = stats.get("messages", 0)
                 logger.info(f"[chain] Parsed {threads} threads ({messages} messages)")
@@ -296,7 +342,7 @@ def main():
 
             # export オプション
             export_opts = {
-                "split": args.split,
+                "split": split_option,
                 "split_soft_overflow": args.split_soft_overflow,
                 "split_hard": args.split_hard,
                 "split_preview": args.split_preview,
