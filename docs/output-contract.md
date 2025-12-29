@@ -1,107 +1,45 @@
-# Output Contract (Markdown / HTML) — v1.1 (Exporter MVP Spec)
+# Output Contract (Markdown) — v1.1 (Exporter MVP Spec)
 
-This document defines the **output format contract** between the Exporter, Viewer, and future Apps SDK.  
-It supersedes the legacy `v1.0` draft (Oct 2025).
-
----
-
-## 🗂 Location & Structure
-
-- Root directory:  
-```
-
-artifacts/output/{provider_id}/thread-{conversation_id}/
-
-```
-- Files:
-```
-
-parsed.jsonl                  # Parser output (normalized)
-thread-{conversation_id}__{chunk_key}.md   # Exported Markdown
-meta.json                     # Optional metadata summary
-
-```
-
-- `{chunk_key}` is ASCII-only.  
-Suggested patterns:
-- Date split: `2025-11-15_part01`
-- Size split: `size20mb_p01`
-- Count split: `count8000_p01`
-- No split: omit the suffix entirely.
+This document defines the **output format contract** between the Exporter, Viewer,
+and future Apps SDK. It supersedes the legacy `v1.0` draft (Oct 2025).
 
 ---
 
-## 🧾 YAML Front Matter
+## 💬 Message Heading Rules
 
-Each Markdown begins with a YAML block that provides thread metadata:
+Rules for each rendered message block:
 
-```yaml
----
-thread: "6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e"
-provider: "openai"
-title: "Reyna – GPUヒートシンク上より出撃"
-messages: 132
-models: ["gpt-4o", "gpt-5"]
-range: "2025-10-01 〜 2025-10-18"
-locale: "ja-JP"
-timezone: "Asia/Tokyo"
-updated: "2025-10-18T10:15:00Z"
-checksum: "f34d2b9a1a98e24b1c3f3dcb01c7e5cbd7a2a4ff"
----
-```
-
-### Notes
-
-* `range` uses **localized date formatting**, not ISO timestamps.
-* `updated` and `checksum` are optional but recommended for cache validation.
-* All timestamps (internal and meta.json) use **UTC ISO 8601**.
-* `locale` and `timezone` affect *rendered strings only* — timestamps remain UTC internally.
-
----
-
-## 💬 Message Section
-
-Each message is rendered in strict timestamp order:
-
-```markdown
-## [User] 2025-10-18 10:00
-本文...
-
-## [Reyna] 2025-10-18 10:01
-本文...
-```
-
-Rules:
-
-* Heading pattern: `## [<role or name>] <localized datetime>`
-* Supported roles: `system`, `user`, `assistant`, `tool`
-* Content is **verbatim** (code blocks, links, images preserved)
-* Line endings must be `\n` (LF)
-* Markdown follows **GFM (GitHub Flavored Markdown)** conventions
+- Heading pattern: `## [<role or name>] <localized datetime>`
+- Supported roles: `system`, `user`, `assistant`, `tool`
+- Message content is emitted **verbatim** (code blocks, links, images preserved)
+- Line endings MUST be `\n` (LF)
+- Markdown MUST comply with **GFM (GitHub Flavored Markdown)**
 
 ---
 
 ## 🪶 Formatting Rules (GFM Compliance)
 
-| Element       | Rule                                                          |
-| ------------- | ------------------------------------------------------------- |
-| Paragraphs    | Keep original line breaks                                     |
-| Code blocks   | Use fenced blocks (` ``` `)                                   |
-| Inline code   | Use backticks                                                 |
-| Quotes        | Preserve `>` prefix; no trimming                              |
-| Tables        | GFM pipe syntax (`\|` between columns)                        |
-| Lists         | Use `-` or numbered lists (`1.`), indent with two spaces      |
-| Escape policy | Escape minimal characters (`*`, `_`, `#`, `>`) only as needed |
-| Encoding      | UTF-8, LF, no BOM                                             |
+| Element      | Rule                                                                 |
+| ------------ | -------------------------------------------------------------------- |
+| Paragraphs   | Keep original line breaks                                            |
+| Code blocks  | Use fenced blocks (``` ``` style)                                    |
+| Inline code  | Use backticks                                                        |
+| Quotes       | Preserve the leading `>` prefix; do not trim                        |
+| Tables       | Use GFM pipe syntax (`\|` between columns)                           |
+| Lists        | Use `-` or numbered lists (`1.`), indent with two spaces            |
+| Escape policy| Escape minimal characters (`*`, `_`, `#`, `>`) only when necessary  |
+| Encoding     | UTF-8, LF, no BOM                                                    |
 
-Exporter output must lint cleanly under `markdownlint-cli2` using the shared `.markdownlint.yaml`.
+Exporter output MUST lint cleanly under `markdownlint-cli2` using the shared
+`.markdownlint.yaml`.
 
 ---
 
 ## 🧩 Meta JSON
 
-Optional but recommended for Viewer and SDK integration.
-Generated when `--with-meta` is set.
+`meta.json` is optional but recommended for the Viewer and SDK integration.
+
+It is generated when `--with-meta` is set.
 
 ```json
 {
@@ -116,7 +54,7 @@ Generated when `--with-meta` is set.
     "thread-6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e__2025-10-18_part02.md"
   ]
 }
-```
+````
 
 ### Meta JSON Usage
 
@@ -129,15 +67,15 @@ Generated when `--with-meta` is set.
 ## 🌐 i18n and Locale Behavior
 
 * Controlled via CLI: `--locale <lang-REGION>` and `--timezone <IANA zone>`
-* Translations are resolved through `src/llm_logparser/i18n/{locale}.yaml`
-* Dates and numbers use `babel`-compatible formatting
-* Missing keys fall back to English (`en-US`) with `[WARN][i18n]` notice
+* Translations are resolved through `src/llm_logparser/core/i18n/{locale}.yaml`
+* Dates are rendered using locale-aware formats (UTC internally)
+* Missing keys fall back to English (`en-US`) — warnings may be logged in some cases
 
-Example localized date:
+Example localized dates:
 
 | Locale | Example                |
 | ------ | ---------------------- |
-| ja-JP  | 2025年10月18日 10:15    |
+| ja-JP  | 2025年10月18日 10:15      |
 | en-US  | Oct 18, 2025, 10:15 AM |
 
 ---
@@ -146,17 +84,8 @@ Example localized date:
 
 The Exporter follows Parser cache guidance (`§8.1` of requirements):
 
-| Case        | Condition                              | Action                    |
-| ----------- | -------------------------------------- | ------------------------- |
-| NEW         | Thread not in cache                    | Generate new output       |
-| SKIP        | Same `update_time` and `message_count` | Skip export               |
-| REPLACE     | `update_time` newer                    | Overwrite existing thread |
-| WARN & SKIP | `update_time` older                    | Log warning, skip         |
-| ERROR       | Cache inconsistency                    | Raise LP8xxx              |
-
-Cache file: `artifacts/cache/{provider_id}_cache.json`
-
-Exporter **never updates** cache directly; it consumes parser metadata only.
+| Case | Condition | Action |
+| ---- | --------- | ------ |
 
 ---
 
@@ -192,6 +121,6 @@ Exporter output must remain **deterministic** under identical inputs and locale 
 
 ---
 
-*Last updated: 2025-11-15*
+*Last updated: 2025-12-29*
 *Author: Reyna (Exporter Spec Lead)*
 
