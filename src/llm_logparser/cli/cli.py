@@ -175,7 +175,6 @@ def main():
     chain_cmd.add_argument("--tiny-tail-threshold", dest="tiny_tail_threshold", type=int, default=20, help="Threshold for tail merge (message count)")
     chain_cmd.add_argument("--export-outdir", dest="export_outdir", type=Path,help="Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.")
     chain_cmd.add_argument("--parsed-root", dest="parsed_root", type=Path, help="Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.")
-    chain_cmd.add_argument("--jobs", dest="jobs", type=int, default=1, help="(Future) Maximum parallel exports. Currently ignored (always serial).")
     chain_cmd.add_argument("--fail-fast", dest="fail_fast", action="store_true", help="Stop chain processing on first export error. Default is to continue.")
 
     # ------------------------------------------------------------
@@ -288,10 +287,6 @@ def main():
             logger.info(f"[chain] Formatting: {args.formatting}")
             logger.info(f"[chain] Dry run  : {args.dry_run}")
             logger.info(f"[chain] Fail fast: {args.fail_fast}")
-
-            if args.jobs and args.jobs > 1:
-                logger.info(f"[chain] --jobs={args.jobs} specified "
-                            f"but parallelism is not implemented yet (running serially).")
 
             # timezone
             try:
