@@ -2,11 +2,10 @@
 from __future__ import annotations
 import typing as t
 from collections import defaultdict, deque
+from hashlib import sha1
+from pathlib import Path
 
-from .utils import normalize_text, json_safe
-
-
-PREFERRED_KEYS = ("summary", "result", "user_profile", "user_instructions")
+from .utils import json_safe
 
 
 # ============================================================
@@ -40,21 +39,14 @@ def get_policy() -> dict:
 # ============================================================
 
 def _extract_nodes(mapping: dict) -> dict[str, dict]:
-    """extract node_id → node_info safely."""
+    """extract node_id → node_info safely.
+
+    Note: includes structural nodes (message is None) to preserve graph order.
+    """
     nodes = {}
     for node_id, node in mapping.items():
         if not isinstance(node, dict):
             continue
-        msg = node.get("message")
-        if not isinstance(msg, dict):
-            continue
-
-        msg_id = msg.get("id") or node_id
-
-        # REAL skip rules（rootノードのみ）
-        if msg_id in ("client-created-root", "root"):
-            continue
-
         nodes[node_id] = node
 
     return nodes
@@ -72,8 +64,15 @@ def _build_graph(nodes: dict[str, dict]):
     for node_id, node in nodes.items():
         parent = node.get("parent")
         parents[node_id] = parent
-        if parent and parent in nodes:
-            children_map[parent].append(node_id)
+        for child_id in node.get("children") or []:
+            if isinstance(child_id, str) and child_id in nodes:
+                children_map[node_id].append(child_id)
+
+    # Fallback: parent pointers (when children are missing)
+    if not children_map:
+        for node_id, parent in parents.items():
+            if parent and parent in nodes:
+                children_map[parent].append(node_id)
 
     return parents, children_map
 
@@ -103,6 +102,13 @@ def _linearize(nodes, parents, children_map):
     Parent-first traversal (BFS) with timestamp secondary ordering.
     """
     roots = _find_roots(nodes, parents)
+    roots.sort(
+        key=lambda rid: (
+            (nodes[rid].get("message") or {}).get("create_time") is None,
+            (nodes[rid].get("message") or {}).get("create_time"),
+            rid,
+        )
+    )
 
     # BFS queue
     queue = deque(roots)
@@ -120,8 +126,8 @@ def _linearize(nodes, parents, children_map):
         kids = children_map.get(nid, [])
         kids.sort(
             key=lambda cid: (
-                nodes[cid]["message"].get("create_time") is None,
-                nodes[cid]["message"].get("create_time"),
+                (nodes[cid].get("message") or {}).get("create_time") is None,
+                (nodes[cid].get("message") or {}).get("create_time"),
                 cid,
             )
         )
@@ -139,13 +145,35 @@ def _linearize(nodes, parents, children_map):
 #  Main Adapter
 # ============================================================
 
-def adapter(conversation: dict) -> list[dict]:
+def _derive_conversation_id(conversation: dict, *, source: str | None = None) -> str:
     conv_id = (
-        conversation.get("id")
-        or conversation.get("conversation_id")
+        conversation.get("conversation_id")
+        or conversation.get("id")
         or conversation.get("uuid")
-        or "unknown"
     )
+    if isinstance(conv_id, str) and conv_id:
+        return conv_id
+
+    if source:
+        return Path(source).stem
+
+    title = conversation.get("title") or ""
+    ct = conversation.get("create_time") or conversation.get("update_time") or ""
+    seed = f"{title}|{ct}".encode("utf-8", errors="ignore")
+    return sha1(seed).hexdigest()[:12] if seed else "unknown"
+
+
+def _to_epoch_ms(value: t.Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(float(value) * 1000)
+    except Exception:
+        return None
+
+
+def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
+    conv_id = _derive_conversation_id(conversation, source=source)
 
     mapping = conversation.get("mapping")
     if not isinstance(mapping, dict):
@@ -168,52 +196,47 @@ def adapter(conversation: dict) -> list[dict]:
     for node_id in order:
         node = nodes[node_id]
         msg = node.get("message")
+        if msg is None:
+            # structural node (UI-only)
+            continue
+        if not isinstance(msg, dict):
+            continue
 
         author = msg.get("author") or {}
-        author_role = author.get("role") or msg.get("role") or "unknown"
+        role = author.get("role") or msg.get("role") or "unknown"
+        if not isinstance(role, str) or not role:
+            role = "unknown"
 
-        content = msg.get("content")
+        content = msg.get("content") or {}
+        if not isinstance(content, dict):
+            content = {}
+        content_type = content.get("content_type") if isinstance(content.get("content_type"), str) else "text"
+        raw_parts = content.get("parts")
+        if isinstance(raw_parts, list):
+            parts = [str(p) for p in raw_parts if isinstance(p, str)]
+        else:
+            parts = []
 
-        # timestamp resolution
-        ts = (
-            msg.get("create_time")
-            or node.get("create_time")
-            or msg.get("end_turn_time")
-            or msg.get("timestamp")
-        )
+        ts = _to_epoch_ms(msg.get("create_time") or node.get("create_time"))
+        if ts is None:
+            # create_time is required for stable ordering in normalized schema
+            continue
 
-        text = normalize_text(content, preferred_keys=PREFERRED_KEYS, allow_loose=True)
-
-        mmeta = msg.get("metadata") or {}
-        model = (
-            mmeta.get("model_slug")
-            or mmeta.get("default_model_slug")
-            or mmeta.get("model")
-            or msg.get("model")
-            or "unknown"
-        )
-
-        meta = {
-            "provider": "openai",
-            "model": model,
-            "source": mmeta.get("source") or node.get("type") or None,
-            "relations": {
-                "parent": parents.get(node_id),
-                "children": children_map.get(node_id, []),
-            },
-        }
+        text = "\n".join(parts)
 
         entry = {
             "conversation_id": conv_id,
             "message_id": msg.get("id") or node_id,
-            "author_role": author_role,
-            "text": text or "",
-            "ts": ts,
-            "meta": meta,
+            "parent_id": node.get("parent") if isinstance(node.get("parent"), str) else None,
+            "role": role,
+            "ts": ts,  # epoch milliseconds
+            "content": {"content_type": content_type, "parts": parts},
+            "text": text,
         }
 
         out.append(json_safe(entry))
 
+    out.sort(key=lambda m: (m.get("ts") is None, m.get("ts"), m.get("message_id") or ""))
     return out
 
 

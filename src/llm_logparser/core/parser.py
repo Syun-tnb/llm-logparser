@@ -5,8 +5,13 @@ import importlib
 import logging
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional
-import ijson
 from datetime import datetime
+from inspect import signature
+
+try:
+    import ijson  # type: ignore
+except Exception:  # pragma: no cover
+    ijson = None
 
 # ============================================================
 # 1. Error Classes
@@ -35,7 +40,7 @@ class LLPWriteError(LLPError):
 
 def load_adapter(provider: str):
     """動的に provider adapter をロードする。"""
-    mod = importlib.import_module(f"llm_logparser.providers.{provider}.adapter")
+    mod = importlib.import_module(f"llm_logparser.core.providers.{provider}.adapter")
     get_adapter = getattr(mod, "get_adapter", None)
     if not get_adapter:
         raise LLPAdapterError(f"adapter missing for provider={provider}")
@@ -51,15 +56,24 @@ def load_adapter(provider: str):
 def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str, Any], None, None]:
     """
     巨大JSON/JSONLをストリーム的に読み込む。
-    JSON配列はijsonで逐次読み取り、JSONLは行単位で処理。
+    - JSON配列: ijson（あれば）で逐次読み取り
+    - JSONオブジェクト: json.load で1件として読み取り
+    - JSONL/NDJSON: 行単位で処理
     """
     try:
-        with path.open("r", encoding="utf-8") as f:
-            first = f.read(1)
+        with path.open("r", encoding="utf-8-sig") as f:
+            first = ""
+            while True:
+                ch = f.read(1)
+                if ch == "":
+                    break
+                if not ch.isspace():
+                    first = ch
+                    break
             f.seek(0)
 
             # JSONL / NDJSON
-            if first != "[":
+            if first not in ("[", "{"):
                 for i, line in enumerate(f, start=1):
                     line = line.strip()
                     if not line:
@@ -72,11 +86,31 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                 return
 
             # JSON array
-            for i, item in enumerate(ijson.items(f, "item"), start=1):
-                if not isinstance(item, dict):
-                    logger.warning(f"skip invalid element ({i})")
-                    continue
-                yield item
+            if first == "[":
+                if ijson is not None:
+                    for i, item in enumerate(ijson.items(f, "item"), start=1):
+                        if not isinstance(item, dict):
+                            logger.warning(f"skip invalid element ({i})")
+                            continue
+                        yield item
+                    return
+                # fallback: load entire array (smaller files)
+                data = json.load(f)
+                if not isinstance(data, list):
+                    raise LLPInputError("expected JSON array")
+                for i, item in enumerate(data, start=1):
+                    if not isinstance(item, dict):
+                        logger.warning(f"skip invalid element ({i})")
+                        continue
+                    yield item
+                return
+
+            # JSON object
+            obj = json.load(f)
+            if isinstance(obj, dict):
+                yield obj
+                return
+            raise LLPInputError("expected JSON object at top-level")
 
     except FileNotFoundError:
         raise LLPInputError(f"input not found: {path}")
@@ -92,17 +126,47 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
 
 def validate_message(msg: dict, *, fail_fast=False):
     """基本的なスキーマ検証。"""
-    required = ["conversation_id", "role", "text"]
-    for k in required:
-        if k not in msg:
+    required_str = ["conversation_id", "message_id", "role"]
+    for k in required_str:
+        if not isinstance(msg.get(k), str) or not msg.get(k):
             if fail_fast:
                 raise LLPAdapterError(f"missing required field: {k}")
             return False
-    ts = msg.get("ts")
-    if ts not in (None,) and not isinstance(ts, (int, float)):
+
+    parent_id = msg.get("parent_id")
+    if parent_id is not None and not isinstance(parent_id, str):
         if fail_fast:
-            raise LLPAdapterError("invalid timestamp type")
+            raise LLPAdapterError("invalid parent_id type")
         return False
+
+    ts = msg.get("ts")
+    if not isinstance(ts, int):
+        if fail_fast:
+            raise LLPAdapterError("missing/invalid ts (expected epoch ms int)")
+        return False
+
+    content = msg.get("content")
+    if not isinstance(content, dict):
+        if fail_fast:
+            raise LLPAdapterError("missing/invalid content")
+        return False
+    if not isinstance(content.get("content_type"), str) or not content.get("content_type"):
+        if fail_fast:
+            raise LLPAdapterError("missing/invalid content.content_type")
+        return False
+    parts = content.get("parts")
+    if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
+        if fail_fast:
+            raise LLPAdapterError("missing/invalid content.parts (expected list[str])")
+        return False
+
+    if "text" not in msg:
+        msg["text"] = "\n".join(parts)
+    elif not isinstance(msg.get("text"), str):
+        if fail_fast:
+            raise LLPAdapterError("invalid text type")
+        return False
+
     return True
 
 
@@ -182,7 +246,20 @@ def parse_to_jsonl(
 
     for raw in iter_json_records(input_path, log):
         try:
-            for rec in adapter_func(raw):
+            # adapter may optionally accept source context (e.g., filename)
+            try:
+                try:
+                    params = signature(adapter_func).parameters
+                except Exception:
+                    params = {}
+                if "source" in params:
+                    recs = adapter_func(raw, source=str(input_path))
+                else:
+                    recs = adapter_func(raw)
+            except TypeError:
+                recs = adapter_func(raw)
+
+            for rec in recs:
                 cid = rec.get("conversation_id")
                 if not cid:
                     skipped += 1
@@ -272,7 +349,7 @@ def parse_to_jsonl(
 
 if __name__ == "__main__":
     import argparse
-    from .cli import setup_logger
+    from ..cli.cli import setup_logger
 
     setup_logger()
 

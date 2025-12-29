@@ -10,15 +10,27 @@ from typing import Iterable, List, Dict, Any, Optional, Literal
 
 from .utils import parse_size_expr, format_bytes, sanitize_filename
 
-def _to_iso_utc(ts: float | int | None) -> str:
+def _ts_to_seconds(ts: float | int | None) -> float | None:
     if ts is None:
+        return None
+    try:
+        value = float(ts)
+    except Exception:
+        return None
+    # Heuristic: epoch ms is ~1e12, epoch sec is ~1e9
+    return value / 1000.0 if value >= 1e11 else value
+
+def _to_iso_utc(ts: float | int | None) -> str:
+    ts_sec = _ts_to_seconds(ts)
+    if ts_sec is None:
         return ""
-    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(ts_sec, tz=timezone.utc).isoformat()
 
 def _to_local_human(ts: float | int | None, tz=timezone.utc) -> str:
-    if ts is None:
+    ts_sec = _ts_to_seconds(ts)
+    if ts_sec is None:
         return ""
-    dt = datetime.fromtimestamp(ts, tz=tz)
+    dt = datetime.fromtimestamp(ts_sec, tz=tz)
     return dt.strftime("%Y-%m-%d %H:%M")
 
 def _as_yaml_list(items: Iterable[str]) -> str:
@@ -171,8 +183,21 @@ def export_thread_md(
         role = m.get("role", "unknown")
         ts_human = _to_local_human(m.get("ts"), tz=tz)
         raw_text = (m.get("text") or "")
+        if not raw_text:
+            parts = (m.get("content") or {}).get("parts")
+            if isinstance(parts, list):
+                raw_text = "\n".join(str(p) for p in parts)
         text = _render_message_text(raw_text, policy)
-        block = f"## [{role}] {ts_human}\n{text}\n\n"
+        message_id = m.get("message_id") or ""
+        parent_id = m.get("parent_id")
+        parent_text = parent_id if isinstance(parent_id, str) else ""
+        meta_lines = []
+        if message_id:
+            meta_lines.append(f"- message_id: {message_id}")
+        if parent_text:
+            meta_lines.append(f"- parent_id: {parent_text}")
+        meta = ("\n".join(meta_lines) + "\n\n") if meta_lines else ""
+        block = f"## [{role}] {ts_human}\n{meta}{text}\n\n"
         body_blocks.append(block)
 
     # 分割設定

@@ -10,10 +10,7 @@ from datetime import timezone as _dt_timezone
 
 from zoneinfo import ZoneInfo
 
-from llm_logparser.parser import parse_to_jsonl
-from llm_logparser.exporter import export_thread_md
-
-from llm_logparser.i18n import _, set_locale
+from llm_logparser.core.i18n import _, set_locale
 
 def setup_logger() -> logging.Logger:
     """プロジェクト全体で共有するルートロガー設定
@@ -61,13 +58,37 @@ def main():
     parse_cmd = subparsers.add_parser(
         "parse", 
         help=_("cli.parse.help"),
-        help="Parse provider export JSON into normalized JSONL threads",
     )
-    parse_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
-    parse_cmd.add_argument("--input", required=True, type=Path, help="Input JSON/JSONL path")
-    parse_cmd.add_argument("--outdir", required=False, type=Path, default=Path("artifacts"), help="Output root directory (provider subdir will be auto-created)")
-    parse_cmd.add_argument("--dry-run", dest="dry_run", action="store_true", help="Run parse without writing any files (stats/log only).")
-    parse_cmd.add_argument("--fail-fast", dest="fail_fast", action="store_true", help="Stop parsing on first error instead of continuing.")
+    parse_cmd.add_argument(
+        "--provider",
+        required=True,
+        help=_("cli.parse.opt.provider.help"),
+    )
+    parse_cmd.add_argument(
+        "--input",
+        required=True,
+        type=Path,
+        help=_("cli.parse.opt.input.help"),
+    )
+    parse_cmd.add_argument(
+        "--outdir",
+        required=False,
+        type=Path,
+        default=Path("artifacts"),
+        help=_("cli.parse.opt.outdir.help"),
+    )
+    parse_cmd.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help=_("cli.parse.opt.dry_run.help"),
+    )
+    parse_cmd.add_argument(
+        "--fail-fast",
+        dest="fail_fast",
+        action="store_true",
+        help=_("cli.parse.opt.fail_fast.help"),
+    )
 
     # ------------------------------------------------------------
     # export サブコマンド
@@ -124,10 +145,12 @@ def main():
         # parse
         # --------------------------------------------------------
         if args.command == "parse":
+            from llm_logparser.core.parser import parse_to_jsonl
+
             input_path = validate_path(args.input)
-            # Provider サブディレクトリを自動生成 (artifacts/<provider>/)
+            # parse_to_jsonl() 側で <outdir>/<provider>/... を作る
+            args.outdir.mkdir(parents=True, exist_ok=True)
             provider_outdir = args.outdir / args.provider
-            provider_outdir.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"Provider: {args.provider}")
             logger.info(f"Input file: {input_path}")
@@ -138,7 +161,7 @@ def main():
             stats: Dict[str, Any] = parse_to_jsonl(
                 args.provider,
                 input_path,
-                provider_outdir,
+                args.outdir,
                 dry_run=args.dry_run,
                 fail_fast=args.fail_fast,
             )
@@ -153,6 +176,8 @@ def main():
         # export
         # --------------------------------------------------------
         elif args.command == "export":
+            from llm_logparser.core.exporter import export_thread_md
+
             in_path = args.input
             if not in_path.exists():
                 raise FileNotFoundError(f"指定されたパスが存在しません: {in_path}")
@@ -208,6 +233,9 @@ def main():
         # chain: parse → export (全thread対象)
         # --------------------------------------------------------
         elif args.command == "chain":
+            from llm_logparser.core.exporter import export_thread_md
+            from llm_logparser.core.parser import parse_to_jsonl
+
             input_path = validate_path(args.input)
             args.outdir.mkdir(parents=True, exist_ok=True)
 

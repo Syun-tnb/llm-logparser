@@ -8,14 +8,21 @@ DEFAULT_LOCALE = "en"
 FALLBACK_LOCALE = "en"
 
 # 将来はここを YAML / JSON ロードに差し替える
-_TRANSLATIONS: Dict[str, Dict[str, str]] = {
+_MESSAGES: Dict[str, Dict[str, str]] = {
     "en": {
         # --- CLI / general ---
         "cli.description": "CLI interface for LLM Log Parser (MVP)",
+        "cli.option.lang.help": "Language code for CLI messages (e.g. en, ja)",
         "cli.parse.help": "Parse provider export JSON into normalized JSONL threads",
         "cli.export.help": "(placeholder) Export parsed logs to Markdown/HTML",
         "cli.viewer.help": "(placeholder) Run lightweight HTML viewer",
         "cli.config.help": "(placeholder) Manage runtime configuration",
+
+        "cli.parse.opt.provider.help": "Provider ID (e.g., openai)",
+        "cli.parse.opt.input.help": "Input JSON/JSONL path",
+        "cli.parse.opt.outdir.help": "Output root directory (provider subdir will be auto-created)",
+        "cli.parse.opt.dry_run.help": "Run parse without writing any files (stats/log only).",
+        "cli.parse.opt.fail_fast.help": "Stop parsing on first error instead of continuing.",
 
         # --- log / info ---
         "cli.parse.provider": "Provider: {provider}",
@@ -30,6 +37,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     },
     "ja": {
         "cli.description": "LLM Log Parser 用のCLIインターフェース（MVP）",
+        "cli.option.lang.help": "CLIメッセージの言語コード（例: en, ja）",
         "cli.parse.help": "プロバイダのエクスポートJSONを正規化JSONLスレッドに変換する",
         "cli.export.help": "（プレースホルダ）parsedログをMarkdown/HTMLに出力する",
         "cli.viewer.help": "（プレースホルダ）簡易HTMLビューアを起動する",
@@ -45,6 +53,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "cli.error.unexpected": "予期しないエラー: {detail}",
     },
 }
+
+_TRANSLATIONS = _MESSAGES
+
+_CURRENT_LOCALE = DEFAULT_LOCALE
 
 
 def resolve_locale(cli_locale: str | None = None) -> str:
@@ -62,11 +74,11 @@ def resolve_locale(cli_locale: str | None = None) -> str:
         env = os.getenv("LLP_LOCALE")
         base = _normalize_locale(env) if env else DEFAULT_LOCALE
 
-    if base in _TRANSLATIONS:
+    if base in _MESSAGES:
         return base
     # "en-US" みたいな場合は "en" にフォールバック
     lang = base.split("-")[0]
-    if lang in _TRANSLATIONS:
+    if lang in _MESSAGES:
         return lang
 
     return FALLBACK_LOCALE
@@ -85,11 +97,11 @@ def t(key: str, locale: str, **params: Any) -> str:
     - 見つからなければ fallback locale / key を返す。
     """
     # まず指定ロケール
-    catalog = _TRANSLATIONS.get(locale) or _TRANSLATIONS.get(FALLBACK_LOCALE, {})
+    catalog = _MESSAGES.get(locale) or _MESSAGES.get(FALLBACK_LOCALE, {})
     template = catalog.get(key)
     if template is None and locale != FALLBACK_LOCALE:
         # fallback locale に再チャレンジ
-        catalog = _TRANSLATIONS.get(FALLBACK_LOCALE, {})
+        catalog = _MESSAGES.get(FALLBACK_LOCALE, {})
         template = catalog.get(key)
 
     if template is None:
@@ -104,3 +116,13 @@ def t(key: str, locale: str, **params: Any) -> str:
             return template
 
     return template
+
+
+def set_locale(cli_locale: str | None = None) -> str:
+    global _CURRENT_LOCALE
+    _CURRENT_LOCALE = resolve_locale(cli_locale)
+    return _CURRENT_LOCALE
+
+
+def _(key: str, **params: Any) -> str:
+    return t(key, _CURRENT_LOCALE, **params)
