@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "llm-logparser"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["jsonschema>=4"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -16,3 +16,6 @@ where = ["src"]
 
 [project.scripts]
 llm-logparser = "llm_logparser.cli:main"  # 例：CLIがあるなら
+
+[project.optional-dependencies]
+dev = ["pytest"]
