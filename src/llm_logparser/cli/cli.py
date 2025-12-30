@@ -118,6 +118,12 @@ def main():
         action="store_true",
         help=_("cli.parse.opt.fail_fast.help"),
     )
+    parse_cmd.add_argument(
+        "--validate-schema",
+        dest="validate_schema",
+        action="store_true",
+        help="Validate normalized messages against message.schema.json",
+    )
 
     # ------------------------------------------------------------
     # export サブコマンド
@@ -176,6 +182,12 @@ def main():
     chain_cmd.add_argument("--export-outdir", dest="export_outdir", type=Path,help="Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.")
     chain_cmd.add_argument("--parsed-root", dest="parsed_root", type=Path, help="Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.")
     chain_cmd.add_argument("--fail-fast", dest="fail_fast", action="store_true", help="Stop chain processing on first export error. Default is to continue.")
+    chain_cmd.add_argument(
+        "--validate-schema",
+        dest="validate_schema",
+        action="store_true",
+        help="Validate normalized messages during the parse phase",
+    )
 
     # ------------------------------------------------------------
     # プレースホルダコマンド
@@ -205,6 +217,14 @@ def main():
             logger.info(f"Output directory: {provider_outdir}")
             logger.info(f"Dry run   : {args.dry_run}")
             logger.info(f"Fail fast : {args.fail_fast}")
+            schema_validator = None
+            if args.validate_schema:
+                from llm_logparser.core.schema_validation import MessageSchemaValidator
+
+                schema_validator = MessageSchemaValidator()
+                logger.info(
+                    f"Schema validation: enabled ({schema_validator.schema_path.name})"
+                )
 
             stats: Dict[str, Any] = parse_to_jsonl(
                 args.provider,
@@ -212,6 +232,8 @@ def main():
                 args.outdir,
                 dry_run=args.dry_run,
                 fail_fast=args.fail_fast,
+                validate_schema=args.validate_schema,
+                schema_validator=schema_validator,
             )
 
             # stats の安全なアクセス
@@ -307,12 +329,23 @@ def main():
                 parse_outdir.mkdir(parents=True, exist_ok=True)
 
                 logger.info(f"[chain] Parsing into: {parse_outdir}")
+                schema_validator = None
+                if args.validate_schema:
+                    from llm_logparser.core.schema_validation import MessageSchemaValidator
+
+                    schema_validator = MessageSchemaValidator()
+                    logger.info(
+                        f"[chain] Schema validation: enabled ({schema_validator.schema_path.name})"
+                    )
+
                 stats = parse_to_jsonl(
                     args.provider,
                     input_path,
                     parse_outdir,
                     dry_run=args.dry_run,
                     fail_fast=args.fail_fast,
+                    validate_schema=args.validate_schema,
+                    schema_validator=schema_validator,
                 )
                 threads = stats.get("threads", 0)
                 messages = stats.get("messages", 0)

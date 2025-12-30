@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/message.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "provider_id",
+    "conversation_id",
+    "message_id",
+    "role",
+    "ts",
+    "content",
+    "text"
+  ],
+  "properties": {
+    "record_type": { "const": "message" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "message_id": { "type": "string", "minLength": 1 },
+    "parent_id": { "type": "string" },
+    "role": { "type": "string", "minLength": 1 },
+    "ts": { "type": "integer", "minimum": 0 },
+    "content": {
+      "type": "object",
+      "required": ["content_type", "parts"],
+      "properties": {
+        "content_type": { "type": "string", "minLength": 1 },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "text": { "type": "string" },
+    "meta": { "type": "object" }
+  },
+  "additionalProperties": true
+}

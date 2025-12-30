@@ -210,6 +210,8 @@ def parse_to_jsonl(
     fail_fast: bool = False,
     logger: Optional[logging.Logger] = None,
     progress_interval: int = 100,
+    validate_schema: bool = False,
+    schema_validator: "MessageSchemaValidator" | None = None,
 ) -> Dict[str, Any]:
     """
     各プロバイダのエクスポートJSONを解析し、スレッド単位のJSONLファイルを生成する。
@@ -222,6 +224,16 @@ def parse_to_jsonl(
     provider_dir = outdir / provider
     provider_dir.mkdir(parents=True, exist_ok=True)
     manifest_old = load_manifest_if_exists(provider_dir)
+
+    if validate_schema and schema_validator is None:
+        from .schema_validation import MessageSchemaValidator
+
+        schema_validator = MessageSchemaValidator()
+    message_validation_error_cls = None
+    if schema_validator:
+        from .schema_validation import MessageValidationError
+
+        message_validation_error_cls = MessageValidationError
 
     errors, skipped, count = 0, 0, 0
     sample_errors: list[str] = []
@@ -283,6 +295,22 @@ def parse_to_jsonl(
                         }
                         f.write(json.dumps(thread_meta, ensure_ascii=True) + "\n")
                         for m in recs:
+                            if schema_validator:
+                                try:
+                                    schema_validator.validate_message(m)
+                                except message_validation_error_cls as verr:
+                                    idx = m.get("message_id") or "<unknown>"
+                                    log.warning(
+                                        f"schema validation failed for "
+                                        f"{cid}/{idx}: {verr}"
+                                    )
+                                    skipped += 1
+                                    if fail_fast:
+                                        raise LLPAdapterError(
+                                            "message schema validation failed"
+                                        ) from verr
+                                    continue
+
                             if not validate_message(m, fail_fast=fail_fast):
                                 skipped += 1
                                 continue
