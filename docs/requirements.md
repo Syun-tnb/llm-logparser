@@ -98,16 +98,42 @@ Markdown remains human-readable and tool-friendly (GitHub, VS Code, Obsidian, et
 
 ---
 
-## 6. CLI Commands (MVP)
+##　6. CLI Commands (MVP)
 
-The CLI provides:
+During development the CLI is invoked via the Python module:
 
-* `parse` — normalize logs and write JSONL
-* `export` — generate Markdown (and optional meta files)
-* `config` — manage runtime configuration
-* `viewer` — reserved (minimal HTML preview in the future)
+```bash
+PYTHONPATH=src python3 -m llm_logparser.cli ...
+```
 
-A `--chain` option allows `parse → export` in one run.
+A dedicated `llm-logparser` console script may be added in a later release.
+
+The CLI provides the following subcommands:
+
+* `parse`
+  Normalize raw provider log exports and write normalized JSONL files.
+
+* `export`
+  Generate Markdown (GFM) from a normalized thread JSONL file.
+
+* `chain`
+  Convenience command that runs **parse → export** for all threads in one shot.
+  This is implemented as a separate subcommand, not as a `--chain` option.
+
+Two additional subcommands are reserved for future work:
+
+* `viewer` (placeholder)
+  Reserved for a future lightweight HTML/Markdown viewer.
+  The current implementation only logs a TODO warning.
+
+* `config` (placeholder)
+  Reserved for runtime configuration helpers.
+  The current implementation only logs a TODO warning.
+
+Global options:
+
+* `--locale` / `--lang` to control CLI message localization.
+* `--log-level` to adjust verbosity (DEBUG / INFO / WARNING / ERROR / CRITICAL).
 
 ---
 
