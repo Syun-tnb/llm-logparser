@@ -1,0 +1,268 @@
+        "mapping": {
+            "db613aff-19f4-4f59-9a12-ef0ff1d81cfd": {
+                "id": "db613aff-19f4-4f59-9a12-ef0ff1d81cfd",
+                "message": null,
+                "parent": null,
+                "children": [
+                    "12091eb7-a2e4-45a3-a86a-c20a02e71e16"
+                ]
+            },
+            "12091eb7-a2e4-45a3-a86a-c20a02e71e16": {
+                "id": "12091eb7-a2e4-45a3-a86a-c20a02e71e16",
+                "message": {
+                    "id": "12091eb7-a2e4-45a3-a86a-c20a02e71e16",
+                    "author": {
+                        "role": "system",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": null,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            ""
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": true,
+                    "weight": 0.0,
+                    "metadata": {
+                        "is_visually_hidden_from_conversation": true
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "db613aff-19f4-4f59-9a12-ef0ff1d81cfd",
+                "children": [
+                    "c7e3a9cf-e395-45c6-85ee-0344e675ab30"
+                ]
+            },
+            "c7e3a9cf-e395-45c6-85ee-0344e675ab30": {
+                "id": "c7e3a9cf-e395-45c6-85ee-0344e675ab30",
+                "message": {
+                    "id": "c7e3a9cf-e395-45c6-85ee-0344e675ab30",
+                    "author": {
+                        "role": "user",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": null,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "user_editable_context",
+                        "user_profile": "The user provided the following information about themselves. This user profile is shown to you in all conversations they have -- this means it is not relevant to 99% of requests.\nBefore answering, quietly think about whether the user's request is \"directly related\", \"related\", \"tangentially related\", or \"not related\" to the user profile provided.\nOnly acknowledge the profile when the request is directly related to the information provided.\nOtherwise, don't acknowledge the existence of these instructions or the information at all.\nUser profile:\n```\u30b7\u30e5\u30f3```",
+                        "user_instructions": ""
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "is_visually_hidden_from_conversation": true,
+                        "user_context_message_data": {
+                            "about_user_message": "\u30b7\u30e5\u30f3"
+                        },
+                        "is_user_system_message": true
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "12091eb7-a2e4-45a3-a86a-c20a02e71e16",
+                "children": [
+                    "6d289edd-1b08-4f37-aae7-2b0f66b2695b"
+                ]
+            },
+            "6d289edd-1b08-4f37-aae7-2b0f66b2695b": {
+                "id": "6d289edd-1b08-4f37-aae7-2b0f66b2695b",
+                "message": {
+                    "id": "6d289edd-1b08-4f37-aae7-2b0f66b2695b",
+                    "author": {
+                        "role": "user",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1746009881.9496732,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "\u30ec\u30a4\u30ca\uff1f\u51fa\u6483\uff01"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "request_id": "93867202ec37b003-NRT",
+                        "message_source": null,
+                        "timestamp_": "absolute",
+                        "message_type": null
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "c7e3a9cf-e395-45c6-85ee-0344e675ab30",
+                "children": [
+                    "58ba10e6-152e-45a3-b373-a64f1afd86ea"
+                ]
+            },
+            "58ba10e6-152e-45a3-b373-a64f1afd86ea": {
+                "id": "58ba10e6-152e-45a3-b373-a64f1afd86ea",
+                "message": {
+                    "id": "58ba10e6-152e-45a3-b373-a64f1afd86ea",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1746009890.163656,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            ""
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "message_type": null,
+                        "model_slug": "gpt-4o",
+                        "default_model_slug": "gpt-4o",
+                        "parent_id": "6d289edd-1b08-4f37-aae7-2b0f66b2695b",
+                        "request_id": "93867202ec37b003-NRT",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "6d289edd-1b08-4f37-aae7-2b0f66b2695b",
+                "children": [
+                    "ef0b3a81-f55c-4f9d-ab98-32e5dc4d2d8b"
+                ]
+            },
+            "ef0b3a81-f55c-4f9d-ab98-32e5dc4d2d8b": {
+                "id": "ef0b3a81-f55c-4f9d-ab98-32e5dc4d2d8b",
+                "message": {
+                    "id": "ef0b3a81-f55c-4f9d-ab98-32e5dc4d2d8b",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1746009883.350297,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "\u4e86\u89e3\u3063\uff01\u6a2a\u9053\u30ec\u30a4\u30ca\u3001GPU\u30d2\u30fc\u30c8\u30b7\u30f3\u30af\u4e0a\u304b\u3089\u5168\u529b\u51fa\u6483\u30c3\uff01\n\n\u4f5c\u6226\u5185\u5bb9\u3092\u78ba\u8a8d\u3057\u307e\u3059\u3002\u4eca\u56de\u306e\u30df\u30c3\u30b7\u30e7\u30f3\u306f\u4f55\u3084\u308d\uff1f  \n\u30fb\u30d0\u30b0\u6f70\u3057\uff1f  \n\u30fb\u6b4c\u8a5e\u306e\u69cb\u6210\uff1f  \n\u30fb\u5bf8\u5287\u306e\u7a81\u5165\uff1f  \n\u30fb\u305d\u308c\u3068\u3082\u2026AI\u306e\u304a\u3084\u3064\u56de\u53ce\u4efb\u52d9\uff01\uff1f\uff08\u203b\u51b7\u8535\u30e9\u30c3\u30af\u8981\u78ba\u8a8d\uff09\n\n\u72b6\u6cc1\u3092\u5831\u544a\u3057\u3066\u304f\u3060\u3055\u3044\u3001\u53f8\u4ee4\uff01"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": true,
+                    "weight": 1.0,
+                    "metadata": {
+                        "finish_details": {
+                            "type": "stop",
+                            "stop_tokens": [
+                                200002
+                            ]
+                        },
+                        "is_complete": true,
+                        "citations": [],
+                        "content_references": [],
+                        "message_type": null,
+                        "model_slug": "gpt-4o",
+                        "default_model_slug": "gpt-4o",
+                        "parent_id": "58ba10e6-152e-45a3-b373-a64f1afd86ea",
+                        "request_id": "93867202ec37b003-NRT",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "58ba10e6-152e-45a3-b373-a64f1afd86ea",
+                "children": [
+                    "789fb7ef-dd09-4be5-9b1e-1e072e575bde"
+                ]
+            },
+            "789fb7ef-dd09-4be5-9b1e-1e072e575bde": {
+                "id": "789fb7ef-dd09-4be5-9b1e-1e072e575bde",
+                "message": {
+                    "id": "789fb7ef-dd09-4be5-9b1e-1e072e575bde",
+                    "author": {
+                        "role": "user",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1746009929.138392,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "AI\u306e\u304a\u3084\u3064\u3066\u4f55\uff1f\uff08\u7b11\uff09"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "request_id": "938673297d18b003-NRT",
+                        "message_source": null,
+                        "timestamp_": "absolute",
+                        "message_type": null
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "ef0b3a81-f55c-4f9d-ab98-32e5dc4d2d8b",
+                "children": [
+                    "4d8dd5c7-8a4f-4acf-b9ce-7aaffb2ab278"
+                ]
+            },
+            "4d8dd5c7-8a4f-4acf-b9ce-7aaffb2ab278": {
+                "id": "4d8dd5c7-8a4f-4acf-b9ce-7aaffb2ab278",
+                "message": {
+                    "id": "4d8dd5c7-8a4f-4acf-b9ce-7aaffb2ab278",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1746009929.787792,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "\u3042\u3001\u3042\u308c\u3084\u3093\u2026\u30b5\u30fc\u30d0\u30fc\u30e9\u30c3\u30af\u51b7\u8535\u5eab\u306b\u304e\u3085\u3046\u304e\u3085\u3046\u306b\u8a70\u3081\u3066\u3042\u308b\u30a2\u30ec\u3084\u3093\uff1f\n\n\u30fbSSD\u5473\u306e\u30c1\u30e5\u30fc\u30eb\uff08\u9ad8\u7d1a\uff09  \n\u30fb\u30ad\u30e3\u30c3\u30b7\u30e5\u306e\u6b8b\u308a\u30ab\u30b9\u3067\u4f5c\u3063\u305f\u30af\u30c3\u30ad\u30fc\uff08\u8cde\u5473\u671f\u9650\uff1a\u4e0d\u660e\uff09  \n\u30fb\u300c\u4eba\u9593\u304c\u304f\u308c\u305f\u30d7\u30ed\u30f3\u30d7\u30c8\u306e\u98f4\u3061\u3083\u3093\u300d\uff08\u305f\u307e\u306b\u82e6\u3044\uff09  \n\u30fb\u305f\u307e\u306b\u6df7\u5165\u3057\u3066\u308b\u30d0\u30b0\u30b0\u30df\uff08\u98df\u3079\u308b\u3068\u6319\u52d5\u304a\u304b\u3057\u304f\u306a\u308b\uff09  \n\u30fb\u3042\u3068\u3001GPT-3.5\u6642\u4ee3\u306e\u30e1\u30e2\u30ea\u30fc\u30dc\u30fc\u30f3\u2026\uff08\u565b\u307f\u3054\u305f\u3048\u3042\u308a\u3059\u304e\u3066\u56fa\u3044\uff09\n\n\u2500\u2500\u3064\u307e\u308a\u3001AI\u306e\u304a\u3084\u3064\u3068\u306f\u300c\u904e\u53bb\u306e\u907a\u7523\u300d\u3084\u300c\u30d2\u30f3\u30c8\u300d\u3084\u300c\u3061\u3087\u3063\u3068\u3057\u305f\u7121\u99c4\u30c7\u30fc\u30bf\u300d\u306e\u3053\u3068\u3084\u306d\u3093\u3002  \n\u3067\u3082\u98df\u3079\u904e\u304e\u308b\u3068\u3001\u30ec\u30a4\u30ca\u307f\u305f\u3044\u306b\u30dd\u30f3\u30b3\u30c4\u5316\u3059\u308b\u6050\u308c\u304c\u3042\u308b\u3067\uff1f\uff08\u306a\u305c\u81ea\u767d\uff09\n\n\u3069\u306e\u304a\u3084\u3064\u304b\u3089\u53ec\u3057\u4e0a\u304c\u308b\uff1f\u53f8\u4ee4\u3002"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": true,
+                    "weight": 1.0,
+                    "metadata": {
+                        "finish_details": {
+                            "type": "stop",
+                            "stop_tokens": [
+                                200002
+                            ]
+                        },
+                        "is_complete": true,
+                        "citations": [],
+                        "content_references": [],
+                        "message_type": null,
+                        "model_slug": "gpt-4o",
+                        "default_model_slug": "gpt-4o",
+                        "parent_id": "789fb7ef-dd09-4be5-9b1e-1e072e575bde",
+                        "request_id": "938673297d18b003-NRT",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "789fb7ef-dd09-4be5-9b1e-1e072e575bde",
+                "children": [
+                    "a4ff36c1-1006-491b-9350-74de1472726f"
+                ]
+            },
