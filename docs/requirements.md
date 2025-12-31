@@ -98,7 +98,7 @@ Markdown remains human-readable and tool-friendly (GitHub, VS Code, Obsidian, et
 
 ---
 
-##　6. CLI Commands (MVP)
+## 6. CLI Commands (MVP)
 
 During development the CLI is invoked via the Python module:
 
