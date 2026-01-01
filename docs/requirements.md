@@ -154,9 +154,16 @@ Cache is JSON, local only.
 
 ## 8. Internationalization (i18n)
 
-* CLI messages and Markdown headers support localization
-* `--locale` and `--timezone` are applied consistently
-* English remains the default fallback
+CLI user-facing messages and Markdown headers are localized via a dedicated i18n layer.
+
+- All CLI messages MUST go through the i18n layer.
+  - No user-facing strings are hard-coded with a fixed language in source code.
+- The only required locale is `en-US`.
+  - Other locales (e.g. `ja-JP`) are best-effort and may be partially translated.
+- When a translation for the selected locale is missing, the message MUST fall back to `en-US`.
+- `--locale` and `--timezone` are applied consistently across CLI and exporters.
+- If both `--locale` and `--lang` are supplied, `--locale` takes precedence
+  (`--lang` exists for compatibility and may be removed in future versions).
 
 ---
 
