@@ -182,12 +182,17 @@ def export_thread_md(
     for m in messages:
         role = m.get("role", "unknown")
         ts_human = _to_local_human(m.get("ts"), tz=tz)
+
+        # normally adapters MUST populate `text`
+        # (contract: exporter should not reconstruct text)
+        # this fallback exists only as a safety net for broken adapters / legacy data
         raw_text = (m.get("text") or "")
         if not raw_text:
             parts = (m.get("content") or {}).get("parts")
             if isinstance(parts, list):
                 raw_text = "\n".join(str(p) for p in parts)
         text = _render_message_text(raw_text, policy)
+
         message_id = m.get("message_id") or ""
         parent_id = m.get("parent_id")
         parent_text = parent_id if isinstance(parent_id, str) else ""

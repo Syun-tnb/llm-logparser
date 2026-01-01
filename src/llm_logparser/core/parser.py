@@ -160,9 +160,7 @@ def validate_message(msg: dict, *, fail_fast=False):
             raise LLPAdapterError("missing/invalid content.parts (expected list[str])")
         return False
 
-    if "text" not in msg:
-        msg["text"] = "\n".join(parts)
-    elif not isinstance(msg.get("text"), str):
+    if not isinstance(msg.get("text"), str):
         if fail_fast:
             raise LLPAdapterError("invalid text type")
         return False
