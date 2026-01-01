@@ -14,7 +14,7 @@ Thanks for considering a contribution!
 4. Ensure network-prohibition tests pass.
 5. Submit a PR with scope & rationale.
 
-### Coding style — comments & i18n
+## Coding style — comments & i18n
 * Source code comments should be written in **English**.
 * Comments that describe **design intent, constraints, or subtle behavior** MUST be English.
 * Short temporary notes may be left in Japanese, but should eventually be rewritten or removed.
