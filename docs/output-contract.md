@@ -121,6 +121,38 @@ Exporter output must remain **deterministic** under identical inputs and locale 
 
 ---
 
+## 🏷 Schema Versioning (Compatibility Policy)
+
+The normalized JSONL format is designed to evolve without breaking existing tools.
+
+A schema version identifier MAY appear in one of the following locations:
+
+* **Thread header (preferred, future)**
+
+  ```json
+  { "record_type": "thread", "schema_version": "1.1" }
+  ```
+* or in `meta.json` (when generated)
+
+  ```json
+  { "schema_version": "1.1" }
+  ```
+
+### Rules
+
+* Consumers MUST treat unknown fields as optional.
+* When `schema_version` is missing, it MUST be interpreted as **`1.0`**.
+* New fields MAY be added as long as:
+
+  * existing fields keep their meaning, and
+  * files remain readable by older tools.
+
+Breaking changes (field removal / semantic change) require a **major schema version bump** and MUST be documented in this file.
+
+> Goal: tools can safely process archives produced by older and newer versions of the parser without manual migration.
+
+−−−
+
 ## 📄 Canonical JSONL Schema (`parsed.jsonl`)
 
 The Parser produces a **canonical**, thread-scoped JSONL file.
