@@ -188,11 +188,19 @@ Goal: safe use in private and corporate environments.
 
 ## 10. Performance Targets (MVP)
 
-* up to ~2GB input per file
-* streaming processing (no full file in memory)
-* 1GB processed in ~60 seconds on SSD systems (target)
+* **Input size:** up to ~2GB per export file (JSON / JSONL / NDJSON)
+* **Streaming processing for parsing:**
 
-Parallelism and advanced optimization may come later.
+  * JSONL / NDJSON are processed line-by-line
+  * JSON arrays are streamed when `ijson` is available
+  * Large JSON arrays **without `ijson`** are considered out of scope for the MVP
+* The parser should avoid loading the entire export file into memory.
+  Individual threads may be materialized in memory during normalization.
+* **Performance target (non-strict):**
+
+  * ~1GB processed in ~60 seconds on typical SSD systems (Python 3.x, single process)
+  * This is a best-effort goal, not a strict guarantee.
+* Parallelism and advanced optimizations are explicitly out of scope for the MVP.
 
 ---
 
