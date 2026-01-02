@@ -81,12 +81,12 @@ Exporter is responsible for readability.
 
 ## 5. Markdown Export (GFM)
 
-Exporter reads parsed JSONL and produces Markdown:
+The exporter reads parsed JSONL files and produces Markdown:
 
-* grouped per conversation thread
+* grouped **per conversation thread**
 * sorted chronologically
-* optional splitting by size, count, or date
-* YAML front-matter for metadata
+* optional splitting by **size** or **message count**
+* YAML front-matter with thread metadata
 
 Output location example:
 
@@ -94,7 +94,14 @@ Output location example:
 artifacts/output/{provider}/thread-{conversation_id}/
 ```
 
-Markdown remains human-readable and tool-friendly (GitHub, VS Code, Obsidian, etc.).
+Markdown should remain:
+
+* easy to read for humans
+* stable for version control
+* compatible with common tools (GitHub, VS Code, Obsidian, etc.)
+
+Splitting is intended only for **large threads**, not for logical grouping.
+Date-based splitting is **not part of the MVP**, because conversations commonly span days and splitting by calendar boundaries tends to fragment meaningful context.
 
 ---
 
