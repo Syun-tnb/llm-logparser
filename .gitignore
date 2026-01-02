@@ -210,6 +210,10 @@ __marimo__/
 .DS_Store
 .AppleDouble
 .LSOverride
+.vscode
+
 
 # Logparser artifacts
 artifacts/
+docs/内部資料/
+tmp/

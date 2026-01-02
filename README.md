@@ -1,145 +1,254 @@
 # llm-logparser
 
-**Every full export, deduplicated and clean Markdown — CLI-first, offline by design.**
+**Convert full LLM export dumps into clean, human-readable Markdown — offline-first, deterministic, CLI-centric.**
 
-LLM conversation log parser that converts full export dumps (JSON/JSONL/NDJSON) into **thread-based Markdown documents**.
-Designed for **deterministic, local-only workflows** with minimal setup, future-proofed for multi-provider support and ChatGPT Apps SDK integration.
+`llm-logparser` parses conversation logs (JSON / JSONL / NDJSON),
+normalizes them into thread records, and exports **GitHub-Flavored Markdown** with metadata —
+built for reproducibility, audits, archiving, and migration.
 
----
-
-## Features
-
-* **CLI MVP** – Parse → Deduplicate → Split → Export Markdown
-* **Thread-based Markdown** – clean output with metadata headers
-* **Lightweight HTML Viewer** – simple index + search bar (MVP scope)
-* **Offline by default** – no telemetry, no hidden network calls
-* **Multi-provider ready** – adapters via YAML/JSON config (OpenAI now, Claude/Gemini/etc. planned)
-* **i18n/L10n support** – CLI messages, errors, and metadata
-* **Structured error contract** – JSON error payloads with stable codes
-* **Future-proof** – designed for Apps SDK, GUI, and extensions
+No cloud. No telemetry. Your data stays local.
 
 ---
 
-## Quickstart
+## ✨ What it does
+
+* **Parse → Normalize → Export (Markdown)**
+* **Thread-based layout** with YAML front-matter
+* **Automatic splitting** (size / count / auto)
+* **Localized timestamps** (locale + timezone support)
+* **Chain mode**: parse & export in one command
+* **Deterministic, offline workflows**
+* **Future-proof architecture** (multi-provider adapters)
+
+> MVP currently focuses on **OpenAI logs**.
+> Providers like Claude / Gemini are planned.
+
+---
+
+## 🚀 Quick Start
+
+Install (local dev):
 
 ```bash
-# 1) Install (local dev)
 pip install -e .
+```
 
-# 2) Parse raw export → Markdown
+Parse an export:
+
+```bash
 llm-logparser parse \
   --provider openai \
   --input examples/messages.jsonl \
-  --outdir artifacts/
-
-# 3) Open minimal HTML Viewer
-# artifacts/index.html can be opened in your browser
+  --outdir artifacts
 ```
-### Common pitfall: `--outdir`
-Pass the **root** directory only (e.g., `--outdir artifacts`).  
-Do **not** include the `output/` segment yourself.  
-The tool will create `output/<provider>/...` under the root automatically.
 
-**Correct**
+Export a parsed thread to Markdown:
+
 ```bash
-llm-logparser export --input artifacts/messages-00001.jsonl --outdir artifacts
+llm-logparser export \
+  --input artifacts/output/openai/thread-abc123/parsed.jsonl \
+  --timezone Asia/Tokyo \
+  --formatting light
 ```
 
-Example output (Markdown):
+End-to-end (parse → export everything):
+
+```bash
+llm-logparser chain \
+  --provider openai \
+  --input examples/messages.jsonl \
+  --outdir artifacts \
+  --timezone Asia/Tokyo
+```
+
+---
+
+## 📁 Directory Layout
+
+```
+artifacts/
+  output/
+    openai/
+      thread-<conversation_id>/
+        parsed.jsonl
+        thread-<conversation_id>__*.md
+        meta.json (optional)
+```
+
+> Pass **only the root** via `--outdir`.
+> The tool creates `output/<provider>/...` automatically.
+
+---
+
+## 📝 Markdown Format (Overview)
+
+Each file begins with YAML front-matter:
+
+```yaml
+---
+thread: "abc123"
+provider: "openai"
+messages: 42
+range: 2025-10-01 〜 2025-10-18
+locale: "ja-JP"
+timezone: "Asia/Tokyo"
+updated: "2025-10-18T10:15:00Z"
+checksum: "<sha1>"
+---
+```
+
+Messages follow in timestamp order:
 
 ```markdown
----
-thread: abc123
-provider: openai
-messages: 152
-range: 2025-09-01 → 2025-09-07
----
+## [User] 2025-10-18 10:00
+Good morning!
 
-## [2025-09-03 12:00] user
-Hi there!
-
-## [2025-09-03 12:01] assistant
-Hello, world!
+## [Assistant] 2025-10-18 10:01
+Good morning — how can I help today?
 ```
 
----
+Markdown is **GFM-compatible** and preserves:
 
-## CLI Options (MVP)
-
-* `--input <path>` : input file(s) (`json`, `jsonl`, `ndjson`)
-* `--outdir <dir>` : output directory (default `./artifacts/`)
-* `--split-by {size,count,date,none}` : splitting strategy
-* `--offline` : disable all networking (default: ON)
-* `--provider <id>` : provider ID (default: `openai`)
-* `--locale <lang-REGION>` : localization (`en-US` default)
-* `--dry-run` : statistics only, no output
+* fenced code blocks
+* links
+* tables
+* quotes
 
 ---
 
-## Security & Privacy
+## 🌍 Localization
 
-* **Offline by default** – network sockets disabled at startup
-* **Opt-in only** – external APIs enabled *only* with `--enable-network`
-* **No telemetry** – no data ever leaves your machine
-* **Reproducible builds** – pinned dependencies, SBOM & signed releases
-* **PII caution** – assume exports contain private data; test with synthetic logs
+`llm-logparser` supports localized timestamps and messages.
 
-Verification:
+You can control output formatting using:
+
+```
+--locale   en-US | ja-JP | …
+--timezone Asia/Tokyo | UTC | …
+```
+
+* Dates in Markdown are rendered using the selected **locale**
+* Internally, timestamps remain **UTC ISO-8601** for reproducibility
+* Missing or unknown locales gracefully fall back to `en-US`
+* `--locale` takes precedence when both `--locale` and `--lang` are supplied
+  *(--lang exists for compatibility)*
+
+Example:
 
 ```bash
-# macOS / Linux
-lsof -i -p <PID>   # no network sockets
-# or
-strace -f -e trace=network <cmd>
+llm-logparser export \
+  --input parsed.jsonl \
+  --locale ja-JP \
+  --timezone Asia/Tokyo
 ```
 
 ---
 
-## Roadmap
-
-* [x] CLI MVP – Markdown export, deduplication, thread splitting
-* [ ] Minimal HTML Viewer – index + search bar
-* [ ] Multi-provider adapters (Claude, Gemini, etc.)
-* [ ] Apps SDK integration (experimental branch)
-* [ ] Full GUI (desktop, later stage)
-
----
-
-## Project Layout
+## 🪓 Splitting
 
 ```
-llm-logparser/
-  src/
-    parser/           # Core: stream ingest, normalize, export
-    cli.py
-    providers/        # openai/, anthropic/, gemini/...
-    viewer/           # static HTML (MVP)
-  artifacts/          # parsed output (ignored in git)
-  docs/               # provider guide, error codes, contracts
-  tests/
-  README.md
-  LICENSE
-  pyproject.toml
+--split size=4M
+--split count=1500
+--split auto     # size=4M + count=1500
+```
+
+Extra tuning:
+
+```
+--split-soft-overflow 0.20
+--split-hard
+--tiny-tail-threshold 20
 ```
 
 ---
 
-## Contributing
+## 🔗 Chain Mode
 
-Contributions welcome!
-Ideal first PRs: provider adapters, exporters, or i18n improvements.
+Runs **parse → export** in one flow:
+
+```
+--parsed-root       reuse existing parsed threads
+--export-outdir     place Markdown elsewhere
+--dry-run           parse only (no writes)
+--fail-fast         stop on first export error
+```
+
+---
+
+## 🛠 CLI Reference (MVP)
+
+### Parse
+
+```bash
+llm-logparser parse \
+  --provider openai \
+  --input <file> \
+  --outdir artifacts \
+  [--dry-run] [--fail-fast]
+```
+
+### Export
+
+```bash
+llm-logparser export \
+  --input parsed.jsonl \
+  [--out <md>] \
+  [--split auto|size=N|count=N] \
+  [--timezone <IANA>] \
+  [--formatting none|light]
+```
+
+### Chain
+
+```bash
+llm-logparser chain \
+  --provider openai \
+  --input <raw> \
+  --outdir artifacts \
+  [other export options...]
+```
+
+---
+
+## 🔒 Security & Privacy
+
+* Offline-first
+* No telemetry
+* Sensitive logs stay local
+* Deterministic output for audits
+
+---
+
+## 🗺 Roadmap
+
+* [x] CLI MVP (parse/export/chain)
+* [ ] Minimal HTML viewer
+* [ ] Additional providers (Claude / Gemini / …)
+* [ ] Apps SDK integration (experimental)
+* [ ] GUI (later stage)
+
+---
+
+## 🤝 Contributing
+
+PRs welcome!
+Good places to start:
+
+* adapters
+* exporter improvements
+* localization
 
 Principles:
 
-* Keep **core deterministic and raw-only**
-* Put variability into **providers or plugins**
-* Preserve **offline-first trust**
+* deterministic core
+* provider-specific behavior lives in adapters
+* offline by default
 
 ---
 
-## License
+## 📄 License
 
-MIT – permissive to encourage adoption and adapters.
+MIT — simple and permissive.
 
 ---
 

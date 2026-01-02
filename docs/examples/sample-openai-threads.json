@@ -1,0 +1,31 @@
+[
+    {
+        "title": "\u30ec\u30a4\u30ca\u51fa\u6483\u6e96\u5099\u5b8c\u4e86",
+        "create_time": 1746009882.508859,
+        "update_time": 1746231571.765224,
+        "mapping": {…
+        },
+        "moderation_results": [],
+        "current_node": "37fbfd57-026b-4f35-90a0-3ca6b26d16c9",
+        "plugin_ids": null,
+        "conversation_id": "6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e",
+        "conversation_template_id": null,
+        "gizmo_id": null,
+        "gizmo_type": null,
+        "is_archived": true,
+        "is_starred": null,
+        "safe_urls": […
+        ],
+        "blocked_urls": [],
+        "default_model_slug": "gpt-4o",
+        "conversation_origin": null,
+        "voice": null,
+        "async_status": null,
+        "disabled_tool_ids": [],
+        "is_do_not_remember": null,
+        "memory_scope": "global_enabled",
+        "id": "6811ff1a-2bac-8005-a2ae-5d8e63d7ee3e"
+    },
+    {…
+	}
+]
