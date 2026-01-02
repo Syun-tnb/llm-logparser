@@ -151,7 +151,7 @@ Breaking changes (field removal / semantic change) require a **major schema vers
 
 > Goal: tools can safely process archives produced by older and newer versions of the parser without manual migration.
 
-−−−
+---
 
 ## 📄 Canonical JSONL Schema (`parsed.jsonl`)
 
@@ -247,6 +247,5 @@ Future fields may be added **without breaking compatibility** as long as these r
 
 ---
 
-*Last updated: 2025-12-29*
-*Author: Reyna (Exporter Spec Lead)*
-
+*Last updated: **2026-01-02***
+Maintainer: Exporter/Docs Team (original draft by Reyna)
