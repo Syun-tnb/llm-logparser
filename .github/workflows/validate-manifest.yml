@@ -21,7 +21,7 @@ jobs:
           import json, sys
           from jsonschema import validate, Draft202012Validator
           sch = json.load(open("src/llm_logparser/core/schemas/manifest.schema.json"))
-          man = json.load(open("artifacts/output/openai/manifest.json"))
+          man = json.load(open("test/fixtures/manifest.json"))
           Draft202012Validator.check_schema(sch)
           validate(instance=man, schema=sch)
           print("manifest.json is valid ✅")
