@@ -3,7 +3,7 @@ on:
   push:
     paths:
       - artifacts/manifest.json
-      - src/llm_logparser/schemas/manifest.schema.json
+      - src/llm_logparser/core/schemas/manifest.schema.json
       - .github/workflows/validate-manifest.yml
   workflow_dispatch:
 
@@ -20,7 +20,7 @@ jobs:
           python - <<'PY'
           import json, sys
           from jsonschema import validate, Draft202012Validator
-          sch = json.load(open("src/llm_logparser/schemas/manifest.schema.json"))
+          sch = json.load(open("src/llm_logparser/core/schemas/manifest.schema.json"))
           man = json.load(open("artifacts/output/openai/manifest.json"))
           Draft202012Validator.check_schema(sch)
           validate(instance=man, schema=sch)
