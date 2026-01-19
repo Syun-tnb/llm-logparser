@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src {{cspSource}}; script-src 'nonce-{{nonce}}';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Logparser</title>
+    <link rel="stylesheet" href="{{stylesUri}}" />
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <h1>LLM Logparser</h1>
+        <p>Drive the CLI from a focused GUI. Choose a command, pick inputs, and run parse/export pipelines.</p>
+        <div class="workspace" id="workspaceRoot">Workspace: -</div>
+      </div>
+
+      <div class="layout">
+        <div class="card">
+          <h2>Command Setup</h2>
+          <div class="field">
+            <label for="command">Command</label>
+            <select id="command">
+              <option value="parse">parse</option>
+              <option value="export">export</option>
+              <option value="chain">chain</option>
+            </select>
+          </div>
+
+          <div id="section-parse" class="section">
+            <div class="field">
+              <label for="parse-provider">Provider</label>
+              <input id="parse-provider" type="text" placeholder="openai" value="openai" />
+            </div>
+            <div class="field">
+              <label for="parse-input">Input JSON/JSONL</label>
+              <div class="row">
+                <input id="parse-input" type="text" placeholder="path/to/export.json" />
+                <button class="secondary" data-pick="file" data-target="parse-input">Browse</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="parse-outdir">Output Directory</label>
+              <div class="row">
+                <input id="parse-outdir" type="text" placeholder="artifacts" value="artifacts" />
+                <button class="secondary" data-pick="folder" data-target="parse-outdir">Browse</button>
+              </div>
+            </div>
+            <div class="inline">
+              <input id="parse-dry-run" type="checkbox" />
+              <label for="parse-dry-run">Dry Run</label>
+            </div>
+            <div class="inline">
+              <input id="parse-fail-fast" type="checkbox" />
+              <label for="parse-fail-fast">Fail Fast</label>
+            </div>
+            <div class="inline">
+              <input id="parse-validate-schema" type="checkbox" />
+              <label for="parse-validate-schema">Validate Schema</label>
+            </div>
+          </div>
+
+          <div id="section-export" class="section hidden">
+            <div class="field">
+              <label for="export-input">Input parsed.jsonl</label>
+              <div class="row">
+                <input id="export-input" type="text" placeholder="thread-*/parsed.jsonl" />
+                <button class="secondary" data-pick="file" data-target="export-input">Browse</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="export-out">Output Markdown (optional)</label>
+              <div class="row">
+                <input id="export-out" type="text" placeholder="thread-123.md" />
+                <button class="secondary" data-pick="file" data-target="export-out">Browse</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="export-timezone">Timezone</label>
+                <input id="export-timezone" type="text" value="UTC" />
+              </div>
+              <div class="field">
+                <label for="export-formatting">Formatting</label>
+                <select id="export-formatting">
+                  <option value="light">light</option>
+                  <option value="none">none</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="export-split">Split (size= / count= / auto)</label>
+              <input id="export-split" type="text" placeholder="size=4M" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="export-split-soft-overflow">Split Soft Overflow</label>
+                <input id="export-split-soft-overflow" type="number" placeholder="0.2" />
+              </div>
+              <div class="field">
+                <label for="export-tiny-tail-threshold">Tiny Tail Threshold</label>
+                <input id="export-tiny-tail-threshold" type="number" placeholder="20" />
+              </div>
+            </div>
+            <div class="inline">
+              <input id="export-split-hard" type="checkbox" />
+              <label for="export-split-hard">Split Hard</label>
+            </div>
+            <div class="inline">
+              <input id="export-split-preview" type="checkbox" />
+              <label for="export-split-preview">Split Preview</label>
+            </div>
+          </div>
+
+          <div id="section-chain" class="section hidden">
+            <div class="field">
+              <label for="chain-provider">Provider</label>
+              <input id="chain-provider" type="text" placeholder="openai" value="openai" />
+            </div>
+            <div class="field">
+              <label for="chain-input">Input JSON/JSONL</label>
+              <div class="row">
+                <input id="chain-input" type="text" placeholder="path/to/export.json" />
+                <button class="secondary" data-pick="file" data-target="chain-input">Browse</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="chain-outdir">Output Directory</label>
+              <div class="row">
+                <input id="chain-outdir" type="text" placeholder="artifacts" value="artifacts" />
+                <button class="secondary" data-pick="folder" data-target="chain-outdir">Browse</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="chain-timezone">Timezone</label>
+                <input id="chain-timezone" type="text" value="UTC" />
+              </div>
+              <div class="field">
+                <label for="chain-formatting">Formatting</label>
+                <select id="chain-formatting">
+                  <option value="light">light</option>
+                  <option value="none">none</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="chain-split">Split (size= / count= / auto)</label>
+              <input id="chain-split" type="text" placeholder="auto" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="chain-split-soft-overflow">Split Soft Overflow</label>
+                <input id="chain-split-soft-overflow" type="number" placeholder="0.2" />
+              </div>
+              <div class="field">
+                <label for="chain-tiny-tail-threshold">Tiny Tail Threshold</label>
+                <input id="chain-tiny-tail-threshold" type="number" placeholder="20" />
+              </div>
+            </div>
+            <div class="inline">
+              <input id="chain-split-hard" type="checkbox" />
+              <label for="chain-split-hard">Split Hard</label>
+            </div>
+            <div class="inline">
+              <input id="chain-split-preview" type="checkbox" />
+              <label for="chain-split-preview">Split Preview</label>
+            </div>
+            <div class="field">
+              <label for="chain-export-outdir">Export Outdir (optional)</label>
+              <div class="row">
+                <input id="chain-export-outdir" type="text" placeholder="artifacts/export" />
+                <button class="secondary" data-pick="folder" data-target="chain-export-outdir">Browse</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="chain-parsed-root">Parsed Root (optional)</label>
+              <div class="row">
+                <input id="chain-parsed-root" type="text" placeholder="artifacts/output/openai" />
+                <button class="secondary" data-pick="folder" data-target="chain-parsed-root">Browse</button>
+              </div>
+            </div>
+            <div class="inline">
+              <input id="chain-dry-run" type="checkbox" />
+              <label for="chain-dry-run">Dry Run</label>
+            </div>
+            <div class="inline">
+              <input id="chain-fail-fast" type="checkbox" />
+              <label for="chain-fail-fast">Fail Fast</label>
+            </div>
+            <div class="inline">
+              <input id="chain-validate-schema" type="checkbox" />
+              <label for="chain-validate-schema">Validate Schema</label>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="run">Run Command</button>
+            <button id="clear" class="secondary">Clear Log</button>
+          </div>
+          <p class="warning">Ensure Python dependencies are installed in this workspace before running.</p>
+        </div>
+
+        <div class="card">
+          <h2>Command Output</h2>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+    </div>
+
+    <script nonce="{{nonce}}" src="{{scriptUri}}" defer></script>
+  </body>
+</html>
