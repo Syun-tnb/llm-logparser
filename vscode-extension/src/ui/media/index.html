@@ -11,204 +11,458 @@
     <link rel="stylesheet" href="{{stylesUri}}" />
   </head>
   <body>
-    <div class="page">
+    <div class="page" data-view="parse">
       <div class="hero">
-        <h1>LLM Logparser</h1>
-        <p>Drive the CLI from a focused GUI. Choose a command, pick inputs, and run parse/export pipelines.</p>
-        <div class="workspace" id="workspaceRoot">Workspace: -</div>
+        <h1 data-i18n="app.title">LLM Logparser</h1>
+        <p data-i18n="app.subtitle">
+          Drive the CLI from a focused GUI. Choose a command, pick inputs, and run parse/export pipelines.
+        </p>
+        <div class="workspace" id="workspaceRoot" data-i18n="workspace.label">Workspace: -</div>
       </div>
 
-      <div class="layout">
-        <div class="card">
-          <h2>Command Setup</h2>
-          <div class="field">
-            <label for="command">Command</label>
-            <select id="command">
-              <option value="parse">parse</option>
-              <option value="export">export</option>
-              <option value="chain">chain</option>
-            </select>
-          </div>
-
-          <div id="section-parse" class="section">
-            <div class="field">
-              <label for="parse-provider">Provider</label>
-              <input id="parse-provider" type="text" placeholder="openai" value="openai" />
-            </div>
-            <div class="field">
-              <label for="parse-input">Input JSON/JSONL</label>
-              <div class="row">
-                <input id="parse-input" type="text" placeholder="path/to/export.json" />
-                <button class="secondary" data-pick="file" data-target="parse-input">Browse</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="parse-outdir">Output Directory</label>
-              <div class="row">
-                <input id="parse-outdir" type="text" placeholder="artifacts" value="artifacts" />
-                <button class="secondary" data-pick="folder" data-target="parse-outdir">Browse</button>
-              </div>
-            </div>
-            <div class="inline">
-              <input id="parse-dry-run" type="checkbox" />
-              <label for="parse-dry-run">Dry Run</label>
-            </div>
-            <div class="inline">
-              <input id="parse-fail-fast" type="checkbox" />
-              <label for="parse-fail-fast">Fail Fast</label>
-            </div>
-            <div class="inline">
-              <input id="parse-validate-schema" type="checkbox" />
-              <label for="parse-validate-schema">Validate Schema</label>
-            </div>
-          </div>
-
-          <div id="section-export" class="section hidden">
-            <div class="field">
-              <label for="export-input">Input parsed.jsonl</label>
-              <div class="row">
-                <input id="export-input" type="text" placeholder="thread-*/parsed.jsonl" />
-                <button class="secondary" data-pick="file" data-target="export-input">Browse</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="export-out">Output Markdown (optional)</label>
-              <div class="row">
-                <input id="export-out" type="text" placeholder="thread-123.md" />
-                <button class="secondary" data-pick="file" data-target="export-out">Browse</button>
-              </div>
-            </div>
-            <div class="row">
-              <div class="field">
-                <label for="export-timezone">Timezone</label>
-                <input id="export-timezone" type="text" value="UTC" />
-              </div>
-              <div class="field">
-                <label for="export-formatting">Formatting</label>
-                <select id="export-formatting">
-                  <option value="light">light</option>
-                  <option value="none">none</option>
-                </select>
-              </div>
-            </div>
-            <div class="field">
-              <label for="export-split">Split (size= / count= / auto)</label>
-              <input id="export-split" type="text" placeholder="size=4M" />
-            </div>
-            <div class="row">
-              <div class="field">
-                <label for="export-split-soft-overflow">Split Soft Overflow</label>
-                <input id="export-split-soft-overflow" type="number" placeholder="0.2" />
-              </div>
-              <div class="field">
-                <label for="export-tiny-tail-threshold">Tiny Tail Threshold</label>
-                <input id="export-tiny-tail-threshold" type="number" placeholder="20" />
-              </div>
-            </div>
-            <div class="inline">
-              <input id="export-split-hard" type="checkbox" />
-              <label for="export-split-hard">Split Hard</label>
-            </div>
-            <div class="inline">
-              <input id="export-split-preview" type="checkbox" />
-              <label for="export-split-preview">Split Preview</label>
-            </div>
-          </div>
-
-          <div id="section-chain" class="section hidden">
-            <div class="field">
-              <label for="chain-provider">Provider</label>
-              <input id="chain-provider" type="text" placeholder="openai" value="openai" />
-            </div>
-            <div class="field">
-              <label for="chain-input">Input JSON/JSONL</label>
-              <div class="row">
-                <input id="chain-input" type="text" placeholder="path/to/export.json" />
-                <button class="secondary" data-pick="file" data-target="chain-input">Browse</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="chain-outdir">Output Directory</label>
-              <div class="row">
-                <input id="chain-outdir" type="text" placeholder="artifacts" value="artifacts" />
-                <button class="secondary" data-pick="folder" data-target="chain-outdir">Browse</button>
-              </div>
-            </div>
-            <div class="row">
-              <div class="field">
-                <label for="chain-timezone">Timezone</label>
-                <input id="chain-timezone" type="text" value="UTC" />
-              </div>
-              <div class="field">
-                <label for="chain-formatting">Formatting</label>
-                <select id="chain-formatting">
-                  <option value="light">light</option>
-                  <option value="none">none</option>
-                </select>
-              </div>
-            </div>
-            <div class="field">
-              <label for="chain-split">Split (size= / count= / auto)</label>
-              <input id="chain-split" type="text" placeholder="auto" />
-            </div>
-            <div class="row">
-              <div class="field">
-                <label for="chain-split-soft-overflow">Split Soft Overflow</label>
-                <input id="chain-split-soft-overflow" type="number" placeholder="0.2" />
-              </div>
-              <div class="field">
-                <label for="chain-tiny-tail-threshold">Tiny Tail Threshold</label>
-                <input id="chain-tiny-tail-threshold" type="number" placeholder="20" />
-              </div>
-            </div>
-            <div class="inline">
-              <input id="chain-split-hard" type="checkbox" />
-              <label for="chain-split-hard">Split Hard</label>
-            </div>
-            <div class="inline">
-              <input id="chain-split-preview" type="checkbox" />
-              <label for="chain-split-preview">Split Preview</label>
-            </div>
-            <div class="field">
-              <label for="chain-export-outdir">Export Outdir (optional)</label>
-              <div class="row">
-                <input id="chain-export-outdir" type="text" placeholder="artifacts/export" />
-                <button class="secondary" data-pick="folder" data-target="chain-export-outdir">Browse</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="chain-parsed-root">Parsed Root (optional)</label>
-              <div class="row">
-                <input id="chain-parsed-root" type="text" placeholder="artifacts/output/openai" />
-                <button class="secondary" data-pick="folder" data-target="chain-parsed-root">Browse</button>
-              </div>
-            </div>
-            <div class="inline">
-              <input id="chain-dry-run" type="checkbox" />
-              <label for="chain-dry-run">Dry Run</label>
-            </div>
-            <div class="inline">
-              <input id="chain-fail-fast" type="checkbox" />
-              <label for="chain-fail-fast">Fail Fast</label>
-            </div>
-            <div class="inline">
-              <input id="chain-validate-schema" type="checkbox" />
-              <label for="chain-validate-schema">Validate Schema</label>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="run">Run Command</button>
-            <button id="clear" class="secondary">Clear Log</button>
-          </div>
-          <p class="warning">Ensure Python dependencies are installed in this workspace before running.</p>
-        </div>
-
-        <div class="card">
-          <h2>Command Output</h2>
-          <div class="log" id="log"></div>
-        </div>
+      <div class="mode-switch" role="tablist" aria-label="Mode">
+        <button type="button" class="mode-tab active" data-view="parse" data-i18n="nav.parse">Parse</button>
+        <button type="button" class="mode-tab" data-view="view" data-i18n="nav.view">View</button>
       </div>
+
+      <section class="screen" id="screen-parse">
+        <div class="layout">
+          <div class="card">
+            <h2 data-i18n="command.setup.title">Command Setup</h2>
+            <div class="field">
+              <label for="command" data-i18n="command.label">Command</label>
+              <select id="command">
+                <option value="parse">parse</option>
+                <option value="export">export</option>
+                <option value="chain">chain</option>
+              </select>
+            </div>
+
+            <div id="section-parse" class="section">
+              <div class="field">
+                <label for="parse-provider" data-i18n="parse.provider.label">Provider</label>
+                <input
+                  id="parse-provider"
+                  type="text"
+                  placeholder="openai"
+                  value="openai"
+                  data-i18n-placeholder="parse.provider.placeholder"
+                />
+              </div>
+              <div class="field">
+                <label for="parse-input" data-i18n="parse.input.label">Input JSON/JSONL</label>
+                <div class="row">
+                  <input
+                    id="parse-input"
+                    type="text"
+                    placeholder="path/to/export.json"
+                    data-i18n-placeholder="parse.input.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="file"
+                    data-target="parse-input"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="parse-outdir" data-i18n="parse.outdir.label">Output Directory</label>
+                <div class="row">
+                  <input
+                    id="parse-outdir"
+                    type="text"
+                    placeholder="artifacts"
+                    value="artifacts"
+                    data-i18n-placeholder="parse.outdir.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="folder"
+                    data-target="parse-outdir"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="inline">
+                <input id="parse-dry-run" type="checkbox" />
+                <label for="parse-dry-run" data-i18n="parse.dryRun">Dry Run</label>
+              </div>
+              <div class="inline">
+                <input id="parse-fail-fast" type="checkbox" />
+                <label for="parse-fail-fast" data-i18n="parse.failFast">Fail Fast</label>
+              </div>
+              <div class="inline">
+                <input id="parse-validate-schema" type="checkbox" />
+                <label for="parse-validate-schema" data-i18n="parse.validateSchema">Validate Schema</label>
+              </div>
+            </div>
+
+            <div id="section-export" class="section hidden">
+              <div class="field">
+                <label for="export-input" data-i18n="export.input.label">Input parsed.jsonl</label>
+                <div class="row">
+                  <input
+                    id="export-input"
+                    type="text"
+                    placeholder="thread-*/parsed.jsonl"
+                    data-i18n-placeholder="export.input.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="file"
+                    data-target="export-input"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="export-out" data-i18n="export.out.label">Output Markdown (optional)</label>
+                <div class="row">
+                  <input
+                    id="export-out"
+                    type="text"
+                    placeholder="thread-123.md"
+                    data-i18n-placeholder="export.out.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="file"
+                    data-target="export-out"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="field">
+                  <label for="export-timezone" data-i18n="export.timezone.label">Timezone</label>
+                  <input id="export-timezone" type="text" value="UTC" />
+                </div>
+                <div class="field">
+                  <label for="export-formatting" data-i18n="export.formatting.label">Formatting</label>
+                  <select id="export-formatting">
+                    <option value="light">light</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="export-split" data-i18n="export.split.label">Split (size= / count= / auto)</label>
+                <input
+                  id="export-split"
+                  type="text"
+                  placeholder="size=4M"
+                  data-i18n-placeholder="export.split.placeholder"
+                />
+              </div>
+              <div class="row">
+                <div class="field">
+                  <label for="export-split-soft-overflow" data-i18n="export.splitSoftOverflow.label">
+                    Split Soft Overflow
+                  </label>
+                  <input
+                    id="export-split-soft-overflow"
+                    type="number"
+                    placeholder="0.2"
+                    data-i18n-placeholder="export.splitSoftOverflow.placeholder"
+                  />
+                </div>
+                <div class="field">
+                  <label for="export-tiny-tail-threshold" data-i18n="export.tinyTailThreshold.label">
+                    Tiny Tail Threshold
+                  </label>
+                  <input
+                    id="export-tiny-tail-threshold"
+                    type="number"
+                    placeholder="20"
+                    data-i18n-placeholder="export.tinyTailThreshold.placeholder"
+                  />
+                </div>
+              </div>
+              <div class="inline">
+                <input id="export-split-hard" type="checkbox" />
+                <label for="export-split-hard" data-i18n="export.splitHard">Split Hard</label>
+              </div>
+              <div class="inline">
+                <input id="export-split-preview" type="checkbox" />
+                <label for="export-split-preview" data-i18n="export.splitPreview">Split Preview</label>
+              </div>
+            </div>
+
+            <div id="section-chain" class="section hidden">
+              <div class="field">
+                <label for="chain-provider" data-i18n="chain.provider.label">Provider</label>
+                <input
+                  id="chain-provider"
+                  type="text"
+                  placeholder="openai"
+                  value="openai"
+                  data-i18n-placeholder="chain.provider.placeholder"
+                />
+              </div>
+              <div class="field">
+                <label for="chain-input" data-i18n="chain.input.label">Input JSON/JSONL</label>
+                <div class="row">
+                  <input
+                    id="chain-input"
+                    type="text"
+                    placeholder="path/to/export.json"
+                    data-i18n-placeholder="chain.input.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="file"
+                    data-target="chain-input"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="chain-outdir" data-i18n="chain.outdir.label">Output Directory</label>
+                <div class="row">
+                  <input
+                    id="chain-outdir"
+                    type="text"
+                    placeholder="artifacts"
+                    value="artifacts"
+                    data-i18n-placeholder="chain.outdir.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="folder"
+                    data-target="chain-outdir"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="field">
+                  <label for="chain-timezone" data-i18n="chain.timezone.label">Timezone</label>
+                  <input id="chain-timezone" type="text" value="UTC" />
+                </div>
+                <div class="field">
+                  <label for="chain-formatting" data-i18n="chain.formatting.label">Formatting</label>
+                  <select id="chain-formatting">
+                    <option value="light">light</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="chain-split" data-i18n="chain.split.label">Split (size= / count= / auto)</label>
+                <input
+                  id="chain-split"
+                  type="text"
+                  placeholder="auto"
+                  data-i18n-placeholder="chain.split.placeholder"
+                />
+              </div>
+              <div class="row">
+                <div class="field">
+                  <label for="chain-split-soft-overflow" data-i18n="chain.splitSoftOverflow.label">
+                    Split Soft Overflow
+                  </label>
+                  <input
+                    id="chain-split-soft-overflow"
+                    type="number"
+                    placeholder="0.2"
+                    data-i18n-placeholder="chain.splitSoftOverflow.placeholder"
+                  />
+                </div>
+                <div class="field">
+                  <label for="chain-tiny-tail-threshold" data-i18n="chain.tinyTailThreshold.label">
+                    Tiny Tail Threshold
+                  </label>
+                  <input
+                    id="chain-tiny-tail-threshold"
+                    type="number"
+                    placeholder="20"
+                    data-i18n-placeholder="chain.tinyTailThreshold.placeholder"
+                  />
+                </div>
+              </div>
+              <div class="inline">
+                <input id="chain-split-hard" type="checkbox" />
+                <label for="chain-split-hard" data-i18n="chain.splitHard">Split Hard</label>
+              </div>
+              <div class="inline">
+                <input id="chain-split-preview" type="checkbox" />
+                <label for="chain-split-preview" data-i18n="chain.splitPreview">Split Preview</label>
+              </div>
+              <div class="field">
+                <label for="chain-export-outdir" data-i18n="chain.exportOutdir.label">Export Outdir (optional)</label>
+                <div class="row">
+                  <input
+                    id="chain-export-outdir"
+                    type="text"
+                    placeholder="artifacts/export"
+                    data-i18n-placeholder="chain.exportOutdir.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="folder"
+                    data-target="chain-export-outdir"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="chain-parsed-root" data-i18n="chain.parsedRoot.label">Parsed Root (optional)</label>
+                <div class="row">
+                  <input
+                    id="chain-parsed-root"
+                    type="text"
+                    placeholder="artifacts/output/openai"
+                    data-i18n-placeholder="chain.parsedRoot.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="folder"
+                    data-target="chain-parsed-root"
+                    data-i18n="button.browse"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+              <div class="inline">
+                <input id="chain-dry-run" type="checkbox" />
+                <label for="chain-dry-run" data-i18n="chain.dryRun">Dry Run</label>
+              </div>
+              <div class="inline">
+                <input id="chain-fail-fast" type="checkbox" />
+                <label for="chain-fail-fast" data-i18n="chain.failFast">Fail Fast</label>
+              </div>
+              <div class="inline">
+                <input id="chain-validate-schema" type="checkbox" />
+                <label for="chain-validate-schema" data-i18n="chain.validateSchema">Validate Schema</label>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="run" data-i18n="button.run">Run Command</button>
+              <button id="clear" class="secondary" data-i18n="button.clear">Clear Log</button>
+            </div>
+            <p class="warning" data-i18n="warning.dependencies">
+              Ensure Python dependencies are installed in this workspace before running.
+            </p>
+          </div>
+
+          <div class="card">
+            <h2 data-i18n="command.output.title">Command Output</h2>
+            <div class="log" id="log"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen hidden" id="screen-view">
+        <div class="viewer-layout">
+          <div class="card">
+            <div class="viewer-header">
+              <h2 data-i18n="viewer.files.title">Parsed Files</h2>
+              <button
+                id="viewer-refresh"
+                class="secondary"
+                type="button"
+                data-i18n="viewer.files.refresh"
+              >
+                Refresh
+              </button>
+            </div>
+            <div class="field">
+              <label for="viewer-root" data-i18n="viewer.files.root.label">Root Directory</label>
+              <div class="row">
+                <input
+                  id="viewer-root"
+                  type="text"
+                  placeholder="Select a folder"
+                  data-i18n-placeholder="viewer.files.root.placeholder"
+                />
+                <button
+                  class="secondary"
+                  type="button"
+                  data-pick="folder"
+                  data-target="viewer-root"
+                  data-i18n="button.browse"
+                >
+                  Browse
+                </button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="viewer-filter" data-i18n="viewer.files.filter.label">Filter</label>
+              <input
+                id="viewer-filter"
+                type="search"
+                placeholder="thread- / provider / date"
+                data-i18n-placeholder="viewer.files.filter.placeholder"
+              />
+            </div>
+            <ul class="file-list" id="viewer-file-list"></ul>
+            <p class="hint" data-i18n="viewer.files.hint">
+              Run Parse or Chain to generate parsed threads.
+            </p>
+          </div>
+
+          <div class="card viewer-content">
+            <div class="viewer-toolbar">
+              <div class="field">
+                <label for="viewer-search" data-i18n="viewer.toolbar.search.label">Search in thread</label>
+                <input
+                  id="viewer-search"
+                  type="search"
+                  placeholder="keyword / role / time"
+                  data-i18n-placeholder="viewer.toolbar.search.placeholder"
+                  disabled
+                />
+              </div>
+              <div class="field">
+                <label for="viewer-summary" data-i18n="viewer.toolbar.summary.label">Summary</label>
+                <textarea
+                  id="viewer-summary"
+                  rows="3"
+                  placeholder="Summary will appear here"
+                  data-i18n-placeholder="viewer.toolbar.summary.placeholder"
+                  disabled
+                ></textarea>
+              </div>
+              <div class="actions">
+                <button type="button" disabled data-i18n="viewer.toolbar.summarize">Summarize (coming soon)</button>
+                <button type="button" class="secondary" disabled data-i18n="viewer.toolbar.sendAi">
+                  Send to AI (coming soon)
+                </button>
+              </div>
+            </div>
+
+            <div class="thread-meta" id="viewer-thread-meta" data-i18n="viewer.meta.empty">
+              Select a parsed.jsonl to view messages.
+            </div>
+            <div class="thread-messages" id="viewer-messages"></div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <script nonce="{{nonce}}" src="{{scriptUri}}" defer></script>

@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import * as readline from "readline";
 import { runCli, type CliCommand, type RunCliRequest } from "../backend/python";
 
 type RunPayload = {
@@ -13,12 +14,59 @@ type PickPayload = {
   kind: "file" | "folder";
 };
 
+type ViewerListEntry = {
+  path: string;
+  name: string;
+  display: string;
+};
+
+type ViewerListPayload = {
+  root?: string;
+};
+
+type ViewerOpenPayload = {
+  path: string;
+};
+
+type ViewerMessage = {
+  role: string;
+  ts?: number;
+  text: string;
+};
+
+type ViewerFilePayload = {
+  path: string;
+  meta?: {
+    provider_id?: string;
+    conversation_id?: string;
+    message_count?: number;
+  };
+  messages: ViewerMessage[];
+};
+
+type ViewerConfig = {
+  language: "en" | "ja";
+  timezone: "local" | "utc";
+  timestampFormat: "relative" | "absolute";
+  wrap: boolean;
+  showSystem: boolean;
+  showToolCalls: boolean;
+  compactMode: boolean;
+  codeTheme: "auto" | "light" | "dark";
+  maxMessagesPerThread: number;
+  search: {
+    caseSensitive: boolean;
+    useRegex: boolean;
+  };
+};
+
 export class LogParserPanel {
   public static currentPanel: LogParserPanel | undefined;
 
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private disposables: vscode.Disposable[] = [];
+  private viewerRoot?: string;
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel = panel;
@@ -29,6 +77,13 @@ export class LogParserPanel {
       (message) => this.handleMessage(message),
       null,
       this.disposables
+    );
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("llmLogparser.viewer")) {
+          void this.postConfig("config-changed");
+        }
+      })
     );
 
     this.panel.webview.html = this.getHtmlForWebview();
@@ -79,6 +134,7 @@ export class LogParserPanel {
       type: "init",
       workspaceRoot,
     });
+    void this.postConfig("config");
   }
 
   private async handleMessage(message: { type: string; payload?: unknown }) {
@@ -88,6 +144,12 @@ export class LogParserPanel {
         return;
       case "run":
         await this.handleRun(message.payload as RunPayload);
+        return;
+      case "viewer-list":
+        await this.handleViewerList(message.payload as ViewerListPayload);
+        return;
+      case "viewer-open":
+        await this.handleViewerOpen(message.payload as ViewerOpenPayload);
         return;
       case "clear-log":
         this.panel.webview.postMessage({ type: "clear-log" });
@@ -128,7 +190,7 @@ export class LogParserPanel {
     if (missing.length > 0) {
       this.panel.webview.postMessage({
         type: "run-error",
-        message: `Missing required fields: ${missing.join(", ")}`,
+        fields: missing,
       });
       return;
     }
@@ -159,19 +221,118 @@ export class LogParserPanel {
       });
 
       this.panel.webview.postMessage({
-        type: "log",
-        value: `\nProcess finished with exit code ${exitCode}.\n`,
+        type: "run-finished",
+        exitCode,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error occurred.";
       this.panel.webview.postMessage({
-        type: "log",
-        value: `\nFailed to run command: ${message}\n`,
+        type: "run-failed",
+        message: error instanceof Error ? error.message : undefined,
       });
     } finally {
       this.panel.webview.postMessage({ type: "busy", value: false });
     }
+  }
+
+  private async handleViewerList(payload?: ViewerListPayload): Promise<void> {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const requestedRoot = valueAsString(payload?.root);
+    const root = requestedRoot ?? workspaceRoot;
+
+    if (!root) {
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "workspaceRequired",
+      });
+      return;
+    }
+
+    const resolvedRoot = path.resolve(root);
+    const validRoot = await isDirectory(resolvedRoot);
+    if (!validRoot) {
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "rootInvalid",
+      });
+      return;
+    }
+
+    this.viewerRoot = resolvedRoot;
+
+    try {
+      const files = await collectParsedJsonlFiles(resolvedRoot);
+      const entries: ViewerListEntry[] = files.map((filePath) => {
+        const display = path.relative(resolvedRoot, filePath) || filePath;
+        return {
+          path: filePath,
+          name: path.basename(path.dirname(filePath)),
+          display,
+        };
+      });
+      this.panel.webview.postMessage({ type: "viewer-files", files: entries });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : undefined;
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "listFailed",
+        detail,
+      });
+    }
+  }
+
+  private async handleViewerOpen(payload: ViewerOpenPayload): Promise<void> {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const root = this.viewerRoot ?? workspaceRoot;
+    if (!root) {
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "workspaceRequired",
+      });
+      return;
+    }
+
+    if (!payload?.path) {
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "noFile",
+      });
+      return;
+    }
+
+    const resolved = path.resolve(payload.path);
+    if (!isWithinRoot(root, resolved)) {
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "outsideWorkspace",
+      });
+      return;
+    }
+
+    try {
+      const payloadData = await readParsedJsonl(resolved);
+      this.panel.webview.postMessage({
+        type: "viewer-file",
+        display: path.relative(root, resolved) || resolved,
+        ...payloadData,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : undefined;
+      this.panel.webview.postMessage({
+        type: "viewer-error",
+        code: "readFailed",
+        detail,
+      });
+    }
+  }
+
+  private async postConfig(type: "config" | "config-changed"): Promise<void> {
+    const config = resolveViewerConfig();
+    const i18n = loadTranslations(this.extensionUri.fsPath, config.language);
+    this.panel.webview.postMessage({
+      type,
+      config,
+      i18n,
+    });
   }
 
   private getHtmlForWebview(): string {
@@ -303,4 +464,192 @@ const getNonce = (): string => {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+};
+
+const IGNORED_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".venv",
+  "__pycache__",
+  "dist",
+  "out",
+]);
+
+const isWithinRoot = (root: string, target: string): boolean => {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  return (
+    resolvedTarget === resolvedRoot ||
+    resolvedTarget.startsWith(`${resolvedRoot}${path.sep}`)
+  );
+};
+
+const isDirectory = async (target: string): Promise<boolean> => {
+  try {
+    const stats = await fs.promises.stat(target);
+    return stats.isDirectory();
+  } catch (error) {
+    return false;
+  }
+};
+
+const resolveViewerConfig = (): ViewerConfig => {
+  const config = vscode.workspace.getConfiguration("llmLogparser");
+  const languageSetting = config.get<string>("viewer.language") ?? "auto";
+  const language = resolveLanguage(languageSetting);
+
+  const timezone = resolveEnum(config.get<string>("viewer.timezone"), ["local", "utc"], "local");
+  const timestampFormat = resolveEnum(
+    config.get<string>("viewer.timestampFormat"),
+    ["relative", "absolute"],
+    "absolute"
+  );
+  const wrap = (config.get<string>("viewer.wrap") ?? "on") === "on";
+  const showSystem = (config.get<string>("viewer.showSystem") ?? "on") === "on";
+  const showToolCalls = (config.get<string>("viewer.showToolCalls") ?? "on") === "on";
+  const compactMode = (config.get<string>("viewer.compactMode") ?? "off") === "on";
+  const codeTheme = resolveEnum(
+    config.get<string>("viewer.codeTheme"),
+    ["auto", "light", "dark"],
+    "auto"
+  );
+  const maxMessagesRaw = config.get<number>("viewer.maxMessagesPerThread");
+  const maxMessages =
+    typeof maxMessagesRaw === "number" && Number.isFinite(maxMessagesRaw)
+      ? Math.max(0, Math.floor(maxMessagesRaw))
+      : 2000;
+
+  const caseSensitive = Boolean(config.get<boolean>("viewer.search.caseSensitive"));
+  const useRegex = Boolean(config.get<boolean>("viewer.search.useRegex"));
+
+  return {
+    language,
+    timezone,
+    timestampFormat,
+    wrap,
+    showSystem,
+    showToolCalls,
+    compactMode,
+    codeTheme,
+    maxMessagesPerThread: maxMessages,
+    search: {
+      caseSensitive,
+      useRegex,
+    },
+  };
+};
+
+const resolveLanguage = (setting: string): "en" | "ja" => {
+  if (setting === "en" || setting === "ja") {
+    return setting;
+  }
+  const envLanguage = vscode.env.language.toLowerCase();
+  return envLanguage.startsWith("ja") ? "ja" : "en";
+};
+
+const resolveEnum = <T extends string>(
+  value: string | undefined,
+  allowed: readonly T[],
+  fallback: T
+): T => {
+  if (!value) {
+    return fallback;
+  }
+  return allowed.includes(value as T) ? (value as T) : fallback;
+};
+
+const loadTranslations = (root: string, language: string): Record<string, string> => {
+  const basePath = path.join(root, "src", "ui", "media", "i18n");
+  const primary = path.join(basePath, `${language}.json`);
+  try {
+    const raw = fs.readFileSync(primary, "utf8");
+    return JSON.parse(raw) as Record<string, string>;
+  } catch (error) {
+    if (language !== "en") {
+      const fallback = path.join(basePath, "en.json");
+      try {
+        const raw = fs.readFileSync(fallback, "utf8");
+        return JSON.parse(raw) as Record<string, string>;
+      } catch (fallbackError) {
+        return {};
+      }
+    }
+    return {};
+  }
+};
+
+const collectParsedJsonlFiles = async (root: string): Promise<string[]> => {
+  const results: string[] = [];
+  const stack: string[] = [root];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch (error) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) {
+          stack.push(fullPath);
+        }
+        continue;
+      }
+      if (entry.isFile() && entry.name === "parsed.jsonl") {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  return results.sort();
+};
+
+const readParsedJsonl = async (filePath: string): Promise<ViewerFilePayload> => {
+  const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+  let meta: ViewerFilePayload["meta"] | undefined;
+  const messages: ViewerMessage[] = [];
+
+  for await (const line of rl) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    let row: Record<string, unknown> | undefined;
+    try {
+      row = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch (error) {
+      continue;
+    }
+
+    const recordType = row.record_type;
+    if (recordType === "thread" && !meta) {
+      meta = {
+        provider_id: typeof row.provider_id === "string" ? row.provider_id : undefined,
+        conversation_id:
+          typeof row.conversation_id === "string" ? row.conversation_id : undefined,
+        message_count:
+          typeof row.message_count === "number" ? row.message_count : undefined,
+      };
+      continue;
+    }
+    if (recordType === "message") {
+      messages.push({
+        role: typeof row.role === "string" ? row.role : "",
+        ts: typeof row.ts === "number" ? row.ts : undefined,
+        text: typeof row.text === "string" ? row.text : "",
+      });
+    }
+  }
+
+  return { path: filePath, meta, messages };
 };

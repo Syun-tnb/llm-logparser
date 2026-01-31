@@ -33,6 +33,69 @@
           "type": "string",
           "default": "",
           "description": "Optional CLI executable to run instead of python -m llm_logparser.cli."
+        },
+        "llmLogparser.viewer.language": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "en", "ja"],
+          "description": "Viewer language. auto follows VS Code UI language."
+        },
+        "llmLogparser.viewer.timezone": {
+          "type": "string",
+          "default": "local",
+          "enum": ["local", "utc"],
+          "description": "Timezone used when rendering timestamps."
+        },
+        "llmLogparser.viewer.timestampFormat": {
+          "type": "string",
+          "default": "absolute",
+          "enum": ["relative", "absolute"],
+          "description": "Timestamp rendering style."
+        },
+        "llmLogparser.viewer.wrap": {
+          "type": "string",
+          "default": "on",
+          "enum": ["on", "off"],
+          "description": "Wrap long message text in the viewer."
+        },
+        "llmLogparser.viewer.showSystem": {
+          "type": "string",
+          "default": "on",
+          "enum": ["on", "off"],
+          "description": "Show system messages in the viewer."
+        },
+        "llmLogparser.viewer.showToolCalls": {
+          "type": "string",
+          "default": "on",
+          "enum": ["on", "off"],
+          "description": "Show tool-call messages in the viewer."
+        },
+        "llmLogparser.viewer.compactMode": {
+          "type": "string",
+          "default": "off",
+          "enum": ["on", "off"],
+          "description": "Reduce spacing in the viewer layout."
+        },
+        "llmLogparser.viewer.codeTheme": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "light", "dark"],
+          "description": "Code block theme in the viewer."
+        },
+        "llmLogparser.viewer.maxMessagesPerThread": {
+          "type": "number",
+          "default": 2000,
+          "description": "Maximum messages to render per thread for performance."
+        },
+        "llmLogparser.viewer.search.caseSensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Search matches are case-sensitive."
+        },
+        "llmLogparser.viewer.search.useRegex": {
+          "type": "boolean",
+          "default": false,
+          "description": "Search uses regular expressions."
         }
       }
     }
