@@ -16,6 +16,7 @@ def get_manifest() -> dict:
     return {
         "schema_version": "1.2",
         "provider": "openai",
+        "family": "chatgpt",
         "input_format": "chatgpt_export_v2+",
         "description": "Improved adapter with structural correction and linearization.",
         "expected_top_keys": ["mapping", "id", "create_time", "update_time"],
