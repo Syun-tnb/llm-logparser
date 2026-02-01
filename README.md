@@ -1,5 +1,7 @@
 # llm-logparser
 
+[![Sponsor](https://img.shields.io/github/sponsors/Syun-tnb)](https://github.com/sponsors/Syun-tnb)
+
 **Convert full LLM export dumps into clean, human-readable Markdown — offline-first, deterministic, CLI-centric.**
 
 `llm-logparser` parses conversation logs (JSON / JSONL / NDJSON),
