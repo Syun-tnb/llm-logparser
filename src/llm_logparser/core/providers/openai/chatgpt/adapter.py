@@ -1,4 +1,4 @@
-# src/llm_logparser/providers/openai/adapter.py
+# src/llm_logparser/providers/openai/chatgpt/adapter.py
 from __future__ import annotations
 import typing as t
 from collections import defaultdict, deque

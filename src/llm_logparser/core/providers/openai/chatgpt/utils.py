@@ -1,4 +1,4 @@
-# src/llm_logparser/providers/openai/utils.py
+# src/llm_logparser/providers/openai/chatgpt/utils.py
 from __future__ import annotations
 import re
 import json
