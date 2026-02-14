@@ -1,4 +1,4 @@
-# src/llm_logparser/parser.py
+# src/llm_logparser/core/parser.py
 from __future__ import annotations
 import json
 import importlib
@@ -47,6 +47,15 @@ def load_adapter(provider: str):
     manifest = getattr(mod, "get_manifest", lambda: {})()
     policy = getattr(mod, "get_policy", lambda: {})()
     return get_adapter(), manifest, policy
+
+
+def load_extractor(provider: str):
+    """動的に provider extractor をロードする。"""
+    mod = importlib.import_module(f"llm_logparser.core.providers.{provider}.extractor")
+    get_extractor = getattr(mod, "get_extractor", None)
+    if not get_extractor:
+        raise LLPAdapterError(f"extractor missing for provider={provider}")
+    return get_extractor()
 
 
 # ============================================================
@@ -361,6 +370,34 @@ def parse_to_jsonl(
         f"SUMMARY: threads={stats['threads']} messages={stats['messages']} errors={errors} skipped={skipped}"
     )
     return {**stats, "errors": errors, "skipped": skipped, "samples": sample_errors}
+
+
+def extract_to_json(
+    provider: str,
+    input_path: Path,
+    outdir: Path,
+    conversation_id: str,
+    *,
+    dry_run: bool = False,
+    logger: Optional[logging.Logger] = None,
+) -> Dict[str, Any]:
+    """指定 conversation_id の生会話を抽出し、Gemini-compat JSON を出力する。"""
+    log = logger or logging.getLogger("llm_logparser.parser")
+    log.info(
+        f"Starting extract for provider={provider}, conversation_id={conversation_id} (dry-run={dry_run})"
+    )
+    extractor = load_extractor(provider)
+    result = extractor(
+        input_path=input_path,
+        outdir=outdir,
+        provider=provider,
+        conversation_id=conversation_id,
+        dry_run=dry_run,
+        logger=log,
+    )
+    if not isinstance(result, dict):
+        raise LLPAdapterError("extractor returned invalid result")
+    return result
 
 
 # ============================================================

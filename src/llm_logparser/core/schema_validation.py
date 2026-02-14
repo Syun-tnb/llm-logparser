@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Literal, Mapping, Optional, Sequence, TYPE_CHECKING
+from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence, TYPE_CHECKING
 
 import json
 
