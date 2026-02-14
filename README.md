@@ -95,7 +95,7 @@ range: 2025-10-01 〜 2025-10-18
 locale: "ja-JP"
 timezone: "Asia/Tokyo"
 updated: "2025-10-18T10:15:00Z"
-checksum: "<sha1>"
+# checksum: "<sha1>"  ← planned for future release
 ---
 ```
 
@@ -186,7 +186,8 @@ llm-logparser parse \
   --provider openai \
   --input <file> \
   --outdir artifacts \
-  [--dry-run] [--fail-fast]
+  [--dry-run] [--fail-fast] \
+  [--validate-schema]
 ```
 
 ### Export
@@ -200,6 +201,19 @@ llm-logparser export \
   [--formatting none|light]
 ```
 
+### Extract
+
+Extract a single conversation as Gemini-compatible JSON (with PII masking):
+
+```bash
+llm-logparser extract \
+  --provider openai \
+  --input <file> \
+  --conversation-id <id> \
+  --outdir artifacts \
+  [--dry-run]
+```
+
 ### Chain
 
 ```bash
@@ -207,6 +221,7 @@ llm-logparser chain \
   --provider openai \
   --input <raw> \
   --outdir artifacts \
+  [--validate-schema] \
   [other export options...]
 ```
 
@@ -218,14 +233,19 @@ llm-logparser chain \
 * No telemetry
 * Sensitive logs stay local
 * Deterministic output for audits
+* **PII masking** in `extract` mode: emails, phone numbers, and sensitive keys
+  (`SECRET`, `TOKEN`, `API_KEY`, `AUTHORIZATION`, `COOKIE`, `PASSWORD`) are automatically redacted
 
 ---
 
 ## 🗺 Roadmap
 
-* [x] CLI MVP (parse/export/chain)
+* [x] CLI MVP (parse/export/extract/chain)
+* [x] Markdown exporter with thread splitting
+* [x] JSON Schema validation (`--validate-schema`)
 * [ ] Minimal HTML viewer
 * [ ] Additional providers (Claude / Gemini / …)
+* [ ] Config file loading
 * [ ] Apps SDK integration (experimental)
 * [ ] GUI (later stage)
 
