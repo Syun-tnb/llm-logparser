@@ -2,22 +2,44 @@
 
 ## OpenAI (ChatGPT export)
 
-- Input: JSON array or JSONL with objects containing `conversation_id`, `message_id`, `author`, `create_time`, `content`.
-- Map to unified schema:
-  - `conversation_id` → `conversation_id`
-  - `message_id`     → `message_id`
-  - `create_time`    → `ts` (epoch ms)
-  - `author.role`    → `author_role`
-  - `author.name?`   → `author_name`
-  - `metadata.model?`→ `model`
-  - `content`        → `content` (verbatim)
+- Input: ChatGPT full export JSON containing `mapping` with nested message nodes.
+  Also supports JSON array or JSONL with individual conversation objects.
+- The adapter (`providers/openai/chatgpt/adapter.py`) processes conversation trees:
+  1. Extracts nodes from the `mapping` field
+  2. Builds a parent–child graph
+  3. Linearizes via BFS (timestamp-ordered)
+  4. Outputs normalized message records
 
-> **Note:** In the current MVP, normalization is handled internally.  
-> The file `mapping.yaml` is provided only as a **sample** for future external mapping support.  
+### Normalized output fields
+
+| Raw field | Normalized field | Notes |
+|-----------|-----------------|-------|
+| `conversation_id` / `id` / `uuid` | `conversation_id` | Falls back to SHA1 hash if missing |
+| `message.id` / node key | `message_id` | — |
+| `parent` (node) | `parent_id` | `null` if no parent |
+| `message.author.role` | `role` | Falls back to `"unknown"` |
+| `message.create_time` | `ts` | Epoch milliseconds |
+| `message.content` | `content` | `{ "content_type": "…", "parts": [...] }` |
+| *(derived from parts)* | `text` | `"\n".join(content.parts)` |
+
+> **Note:** In the current MVP, normalization is handled internally by Python code.
+> The file `mapping.sample.yaml` in `docs/examples/` is provided only as a **sample** for future external mapping support.
 > It is **not yet used** by the CLI or parser.
+
+### Extractor
+
+The `extract` subcommand uses a dedicated extractor (`providers/openai/extractor.py`) that:
+
+- Locates a specific conversation by `conversation_id`
+- Applies automatic sanitization (email / phone masking, sensitive key redaction)
+- Outputs Gemini-compatible JSON
 
 ## Adding a Provider
 
-1. Create adapter under `providers/<id>/adapter.py`.
-2. Provide YAML mapping (`providers/<id>/mapping.yaml`) with field rules & fallbacks.
-3. Ensure golden tests for sample → expected Markdown.
+1. Create a package under `src/llm_logparser/core/providers/<id>/`.
+2. Implement `adapter.py` with a function `adapter(conversation: dict) -> list[dict]` and `get_adapter() -> Callable`.
+3. Optionally implement `extractor.py` with `get_extractor()`.
+4. Ensure golden tests for sample → expected Markdown.
+
+> **Current provider stubs:** `anthropic/claude/` and `xai/grok/` exist as empty stubs for future implementation.
+

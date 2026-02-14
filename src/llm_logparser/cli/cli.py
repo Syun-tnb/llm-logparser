@@ -150,6 +150,30 @@ def main():
     export_cmd.add_argument("--tiny-tail-threshold", dest="tiny_tail_threshold", type=int, default=20, help="Threshold for tail merge (message count)")
 
     # ------------------------------------------------------------
+    # extract サブコマンド
+    # ------------------------------------------------------------
+    extract_cmd = subparsers.add_parser(
+        "extract",
+        help="Extract one conversation as Gemini-compatible JSON",
+    )
+    extract_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
+    extract_cmd.add_argument("--input", required=True, type=Path, help="Input JSON/JSONL path")
+    extract_cmd.add_argument("--conversation-id", required=True, help="Conversation ID to extract")
+    extract_cmd.add_argument(
+        "--outdir",
+        required=False,
+        type=Path,
+        default=Path("artifacts"),
+        help="Output root directory",
+    )
+    extract_cmd.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help=_("cli.parse.opt.dry_run.help"),
+    )
+
+    # ------------------------------------------------------------
     # chain サブコマンド（parse → export を一気通し）
     # ------------------------------------------------------------
     chain_cmd = subparsers.add_parser(
@@ -291,6 +315,34 @@ def main():
                     logger.info("✅ Exported 1 Markdown")
                 else:
                     logger.info(f"✅ Exported {len(paths)} Markdown")
+
+        # --------------------------------------------------------
+        # extract
+        # --------------------------------------------------------
+        elif args.command == "extract":
+            from llm_logparser.core.parser import extract_to_json
+
+            input_path = validate_path(args.input, expect_file=True)
+            args.outdir.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Provider: {args.provider}")
+            logger.info(f"Input file: {input_path}")
+            logger.info(f"Conversation ID: {args.conversation_id}")
+            logger.info(f"Output root: {args.outdir}")
+            logger.info(f"Dry run: {args.dry_run}")
+
+            result = extract_to_json(
+                args.provider,
+                input_path,
+                args.outdir,
+                args.conversation_id,
+                dry_run=args.dry_run,
+                logger=logger,
+            )
+            if result.get("written"):
+                logger.info(f"✅ Extracted to {result.get('path')}")
+            else:
+                logger.info(f"✅ Dry-run complete (planned output: {result.get('path')})")
 
         # --------------------------------------------------------
         # chain: parse → export (全thread対象)

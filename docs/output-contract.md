@@ -35,11 +35,15 @@ Exporter output MUST lint cleanly under `markdownlint-cli2` using the shared
 
 ---
 
-## 🧩 Meta JSON
+## 🧩 Meta JSON (Planned — Not Yet Implemented)
+
+> [!NOTE]
+> `meta.json` generation and the `--with-meta` flag are **planned for a future release**.
+> The specification below describes the intended design.
 
 `meta.json` is optional but recommended for the Viewer and SDK integration.
 
-It is generated when `--with-meta` is set.
+It will be generated when `--with-meta` is set.
 
 ```json
 {
@@ -67,7 +71,8 @@ It is generated when `--with-meta` is set.
 ## 🌐 i18n and Locale Behavior
 
 * Controlled via CLI: `--locale <lang-REGION>` and `--timezone <IANA zone>`
-* Translations are resolved through `src/llm_logparser/core/i18n/{locale}.yaml`
+* Translations are currently resolved through an **in-code dictionary** in `src/llm_logparser/core/i18n.py`
+  (future: external `{locale}.yaml` files)
 * Dates are rendered using locale-aware formats (UTC internally)
 * Missing keys fall back to English (`en-US`) — warnings may be logged in some cases
 
@@ -113,9 +118,9 @@ The Exporter follows Parser cache guidance (`§8.1` of requirements):
 | --------------------- | -------- | -------- | --------------------------------- |
 | `parsed.jsonl`        | JSONL    | ✔        | Parser output (thread + messages) |
 | `thread-*.md`         | Markdown | ✔        | Human-readable log, GFM format    |
-| `meta.json`           | JSON     | optional | Viewer metadata                   |
+| `meta.json`           | JSON     | planned  | Viewer metadata (not yet implemented) |
 | `locale` / `timezone` | string   | optional | For localized rendering           |
-| `checksum`            | string   | optional | SHA1 for diff detection           |
+| `checksum`            | string   | planned  | SHA1 for diff detection (not yet implemented) |
 
 Exporter output must remain **deterministic** under identical inputs and locale settings.
 

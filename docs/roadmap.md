@@ -17,19 +17,19 @@ The roadmap is intentionally incremental: stabilize the pipeline first, then ite
 | Priority | Item                | Status         | Notes                                              |
 | -------: | ------------------- | -------------- | -------------------------------------------------- |
 |      ⭐⭐⭐ | Harden Parser       | 🔧 In progress | Streaming, error isolation, fail-fast behavior     |
-|       ⭐⭐ | Exporter (Markdown) | 🕓 Pending     | Front-matter, formatting hints, consistency checks |
+|       ⭐⭐ | Exporter (Markdown) | ✅ Done         | Front-matter, formatting, GFM output, thread splitting |
 |       ⭐⭐ | CLI chain execution | ✅ Done         | Reliable `parse → export` end-to-end               |
-|        ⭐ | Split policies      | 🕓 Pending     | Support size / count, preview before split         |
+|        ⭐ | Split policies      | ✅ Done         | size / count / auto, soft-overflow, hard, tail-merge |
 
 ---
 
 ### ⚙️ Phase 2: Operation & Resilience
 
-| Priority | Item                                | Status         | Notes                                     |
-| -------: | ----------------------------------- | -------------- | ----------------------------------------- |
-|      ⭐⭐⭐ | Differential cache by `update_time` | 🕓 Planned     | Re-process only changed threads           |
-|       ⭐⭐ | Unified error handling              | 🔧 In progress | Log levels, structured exit codes         |
-|        ⭐ | Locale / timezone sanitation        | 🕓 Planned     | Safe file names, robust ZoneInfo handling |
+| Priority | Item                                | Status             | Notes                                     |
+| -------: | ----------------------------------- | ------------------ | ----------------------------------------- |
+|      ⭐⭐⭐ | Differential cache by `update_time` | 🔧 Partial          | `load_manifest_if_exists` / `should_skip_thread` implemented |
+|       ⭐⭐ | Unified error handling              | 🔧 In progress      | Log levels implemented; structured JSON error output not yet |
+|        ⭐ | Locale / timezone sanitation        | 🕓 Planned          | Safe file names, robust ZoneInfo handling |
 
 ---
 

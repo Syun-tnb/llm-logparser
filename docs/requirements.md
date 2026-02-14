@@ -107,25 +107,36 @@ Date-based splitting is **not part of the MVP**, because conversations commonly 
 
 ## 6. CLI Commands (MVP)
 
-During development the CLI is invoked via the Python module:
+The CLI is invoked via the installed console script:
 
 ```bash
-PYTHONPATH=src python3 -m llm_logparser.cli ...
+llm-logparser <command> [options]
 ```
 
-A dedicated `llm-logparser` console script may be added in a later release.
+Alternatively, during development it can be invoked via the Python module:
+
+```bash
+PYTHONPATH=src python3 -m llm_logparser.cli <command> [options]
+```
 
 The CLI provides the following subcommands:
 
 * `parse`
   Normalize raw provider log exports and write normalized JSONL files.
+  Supports `--validate-schema` to validate normalized messages against `message.schema.json`.
 
 * `export`
   Generate Markdown (GFM) from a normalized thread JSONL file.
 
+* `extract`
+  Extract a single conversation by `--conversation-id` and output it as Gemini-compatible JSON.
+  Applies automatic PII sanitization: email addresses, phone numbers, and sensitive keys
+  (`SECRET`, `TOKEN`, `API_KEY`, `AUTHORIZATION`, `COOKIE`, `PASSWORD`) are redacted.
+
 * `chain`
   Convenience command that runs **parse → export** for all threads in one shot.
   This is implemented as a separate subcommand, not as a `--chain` option.
+  Supports `--validate-schema` to validate during the parse phase.
 
 Two additional subcommands are reserved for future work:
 
