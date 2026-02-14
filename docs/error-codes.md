@@ -1,8 +1,14 @@
 # Error Codes & JSON Error Contract
 
-The CLI returns structured JSON on errors, with stable codes.
+The CLI uses stable error codes for classification. Currently, errors are output via
+the logging system (plain text). A **structured JSON error payload** (described below)
+is planned for a future release.
 
-## Payload
+## JSON Payload (Future Design)
+
+> [!NOTE]
+> The structured JSON error payload below is a **design specification** for future implementation.
+> The current CLI outputs errors as plain text via `logger.error()`.
 
 ```json
 {
@@ -23,15 +29,21 @@ The CLI returns structured JSON on errors, with stable codes.
 
 ## Ranges
 
-- **LP1xxx**: Startup/Environment (args, I/O permissions)
-- **LP2xxx**: Input format (JSON broken, encoding)
-- **LP3xxx**: Provider config/mapping
-- **LP4xxx**: Normalization/schema
-- **LP5xxx**: Output/splitting
-- **LP6xxx**: i18n/locale
-- **LP9xxx**: Unexpected internal
+| Range | Category | Status |
+|-------|----------|--------|
+| **LP2xxx** | Input format (JSON broken, encoding) | **Implemented** — `LP2000` (base), `LP2100` (input), `LP2200` (adapter), `LP2300` (write) |
+| LP1xxx | Startup/Environment (args, I/O permissions) | Planned |
+| LP3xxx | Provider config/mapping | Planned |
+| LP4xxx | Normalization/schema | Planned |
+| LP5xxx | Output/splitting | Planned |
+| LP6xxx | i18n/locale | Planned |
+| LP9xxx | Unexpected internal | Planned |
 
 ## Exit Codes
 
 - `0`: success (WARN/ERROR aggregated in summary)
-- `1/2/3/4/5/9`: fatal per range
+- `2`: path / input error
+- `3`: permission error
+- `4`: chain-mode directory error
+- `99`: unexpected error
+

@@ -2,8 +2,12 @@
 
 ## Golden Tests
 
-* Provider YAML + synthetic samples → expected Markdown snapshots.
+* Provider adapter samples → expected normalized JSONL output.
 * Snapshots are diff-friendly; any schema/formatting change must be reviewed.
+
+> [!NOTE]
+> Full Markdown snapshot tests are **planned**. Current tests are primarily unit tests
+> validating adapter output, exporter formatting, and schema validation.
 
 ## Robustness
 
@@ -21,9 +25,14 @@
 * Load/merge, schema mismatch, locking/atomic writes, backup/restore.
 * Priority order is respected: CLI > environment > profile > defaults.
 
+> [!NOTE]
+> Config file loading is **not yet implemented**. These tests are planned for when
+> the configuration layer is built.
+
 ## Network Prohibition
 
-* Startup socket patch enabled in tests; assert no network syscalls.
+* Startup socket patch is a **recommended practice** (see `docs/security.md`).
+* When implemented, tests should assert no network syscalls.
 * GUI / Apps SDK features remain isolated from the parser core.
 
 ## Determinism

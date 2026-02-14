@@ -2,8 +2,39 @@
 
 ## Offline-by-Default
 
-- Network sockets are disabled at startup (monkey-patch).
-- No telemetry or hidden calls.
+- No telemetry or hidden network calls.
+- Sensitive logs stay local.
+- Deterministic output supports reproducible audits.
+
+---
+
+## PII Sanitization (Implemented)
+
+The `extract` subcommand automatically applies the following sanitization:
+
+### Sensitive key redaction
+Keys containing any of these keywords are replaced with `REDACTED`:
+- `SECRET`
+- `TOKEN`
+- `API_KEY`
+- `AUTHORIZATION`
+- `COOKIE`
+- `PASSWORD`
+
+### Text content masking
+Within message `content.parts`:
+- **Email addresses** → `[REDACTED_EMAIL]`
+- **Phone numbers** → `[REDACTED_PHONE]`
+
+These protections are applied by `providers/openai/extractor.py` before writing `extract.json`.
+
+---
+
+## Network Prohibition (Recommended Practice)
+
+> [!NOTE]
+> The socket guard below is a **recommended practice** for deployment environments.
+> It is not currently wired into the CLI startup automatically.
 
 ### Example Guard (Python)
 
@@ -16,6 +47,8 @@ class _NoNet(socket.socket):
 socket.socket = _NoNet
 ```
 
+---
+
 ## Reproducible Builds
 
 - Pin dependencies with hashes.
@@ -26,3 +59,4 @@ socket.socket = _NoNet
 - `lsof -i -p <PID>` → no sockets
 - `strace -f -e trace=network <cmd>` → no network syscalls
 - GUI and Apps SDK are **opt-in** and separated from parser core.
+

@@ -1,18 +1,26 @@
 # MVP Definition
 
 ## Scope (2025-10)
-- Input: ChatGPT export logs (JSON array format)
-- Output: JSONL shards + manifest.json
+- Input: ChatGPT export logs (JSON array / JSONL / NDJSON)
+- Output: JSONL shards + Markdown (GFM) export
 - Supported policies:
   - id_policy: composite (conv_id + msg_id)
   - text_policy: strip_control_chars, keep emoji
 
-## Out of Scope
-- JSONL input
-- Other LLM providers (Claude, Gemini, etc.)
-- Large scale (GB+) streaming parse
+## Implemented (since initial MVP)
+- [x] JSONL / NDJSON input support
+- [x] Provider adapter architecture (OpenAI/ChatGPT implemented)
+- [x] Streaming parser (via `ijson` when available)
+- [x] Markdown exporter with thread splitting (size / count / auto)
+- [x] `extract` subcommand (Gemini-compatible JSON output)
+- [x] JSON Schema validation (`--validate-schema`)
+
+## Out of Scope (for now)
+- Other LLM providers (Claude, Gemini, xAI) — adapter stubs exist but are not yet implemented
+- Full GUI
+- Cloud sync / network APIs
 
 ## Roadmap
-- [ ] Add JSONL input support
-- [ ] Provider adapters
-- [ ] Streaming parser
+- [ ] Multi-provider adapters (Claude, Gemini, xAI)
+- [ ] Minimal HTML Viewer
+- [ ] Config file loading from `config.yaml`

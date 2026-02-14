@@ -2,14 +2,13 @@
 
 Define field mappings, fallbacks, split policies, and runtime defaults without code changes.
 
+> [!IMPORTANT]
+> **Implementation status:** The config file loading mechanism described in this guide is
+> **not yet implemented** in the CLI. Currently, all settings must be passed via CLI arguments
+> or environment variables. The `config.yaml` file at the repository root serves as a
+> **design reference** for the intended configuration structure.
+
 ---
-
-## What this guide is (and when to use it)
-
-`llm-logparser` can be customized **without modifying source code**.  
-This guide explains the *configuration layer* — how YAML / JSON files change behavior at runtime.
-
-Use this when you want to:
 
 * remap fields from provider exports
 * define fallback values or normalization rules
