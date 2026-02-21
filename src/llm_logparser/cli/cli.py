@@ -58,6 +58,48 @@ def validate_split_option(raw: str | None) -> str | None:
     raise SystemExit(f"invalid --split: {raw}")
 
 
+def _load_config_yaml(config_path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+    except ImportError as e:
+        raise SystemExit(
+            "PyYAML is required for --config. Install dependency 'PyYAML'."
+        ) from e
+
+    target = config_path.expanduser()
+    if not target.exists():
+        raise SystemExit(f"--config file not found: {target}")
+    if target.is_dir():
+        raise SystemExit(f"--config must be a file path: {target}")
+
+    try:
+        loaded = yaml.safe_load(target.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise SystemExit(f"Failed to load --config YAML: {e}") from e
+
+    if not isinstance(loaded, dict):
+        raise SystemExit("--config YAML must be a mapping at top level")
+    return loaded
+
+
+def _resolve_profile(config: dict[str, Any], profile_name: str | None) -> dict[str, Any] | None:
+    selected = profile_name or config.get("active_profile")
+    if not selected:
+        return None
+
+    profiles = config.get("profiles")
+    if not isinstance(profiles, dict):
+        raise SystemExit("Invalid config: 'profiles' must be a mapping")
+
+    profile = profiles.get(selected)
+    if profile is None:
+        raise SystemExit(f"Profile not found in config: {selected}")
+    if not isinstance(profile, dict):
+        raise SystemExit(f"Invalid profile '{selected}': profile must be a mapping")
+
+    return profile
+
+
 def main():
     set_locale()
 
@@ -78,6 +120,8 @@ def main():
         default=None,
         help=_("cli.option.log_level.help"),
     )
+    parser.add_argument("--config", type=Path, help="Path to config.yaml")
+    parser.add_argument("--profile", help="Profile name to use")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -221,6 +265,28 @@ def main():
 
     args = parser.parse_args()
 
+    profile: dict[str, Any] | None = None
+    if args.config is not None:
+        config = _load_config_yaml(args.config)
+        profile = _resolve_profile(config, args.profile)
+
+    if profile is not None:
+        if args.locale is None:
+            prof_locale = profile.get("locale")
+            if isinstance(prof_locale, str) and prof_locale.strip():
+                args.locale = prof_locale
+
+        if args.log_level is None:
+            logging_cfg = profile.get("logging")
+            prof_level = logging_cfg.get("level") if isinstance(logging_cfg, dict) else None
+            if isinstance(prof_level, str) and prof_level.strip():
+                args.log_level = prof_level
+
+        if args.command in ("export", "chain") and args.timezone == "UTC":
+            prof_tz = profile.get("timezone")
+            if isinstance(prof_tz, str) and prof_tz.strip():
+                args.timezone = prof_tz
+
     set_locale(args.locale)
     logger = setup_logger(args.log_level)
 
@@ -298,7 +364,6 @@ def main():
             logger.info(f"Formatting : {args.formatting}")
 
             opts = {
-                "split": split_option,
                 "split": split_option,
                 "split_soft_overflow": args.split_soft_overflow,
                 "split_hard": args.split_hard,
