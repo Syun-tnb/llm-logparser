@@ -11,6 +11,19 @@ from datetime import timezone as _dt_timezone
 
 from zoneinfo import ZoneInfo
 
+from llm_logparser.cli.config_apply import (
+    apply_profile_defaults,
+    missing_required_fields,
+    parse_explicit_flags,
+    resolve_profile,
+)
+from llm_logparser.cli.config_loader import load_config_with_discovery
+from llm_logparser.cli.prompts import (
+    interactive_enabled,
+    prompt_choice,
+    prompt_existing_file,
+    prompt_text,
+)
 from llm_logparser.core.i18n import _, set_locale
 
 def setup_logger(level: str | None = None) -> logging.Logger:
@@ -58,46 +71,16 @@ def validate_split_option(raw: str | None) -> str | None:
     raise SystemExit(f"invalid --split: {raw}")
 
 
-def _load_config_yaml(config_path: Path) -> dict[str, Any]:
-    try:
-        import yaml
-    except ImportError as e:
-        raise SystemExit(
-            "PyYAML is required for --config. Install dependency 'PyYAML'."
-        ) from e
-
-    target = config_path.expanduser()
-    if not target.exists():
-        raise SystemExit(f"--config file not found: {target}")
-    if target.is_dir():
-        raise SystemExit(f"--config must be a file path: {target}")
-
-    try:
-        loaded = yaml.safe_load(target.read_text(encoding="utf-8"))
-    except Exception as e:
-        raise SystemExit(f"Failed to load --config YAML: {e}") from e
-
-    if not isinstance(loaded, dict):
-        raise SystemExit("--config YAML must be a mapping at top level")
-    return loaded
-
-
-def _resolve_profile(config: dict[str, Any], profile_name: str | None) -> dict[str, Any] | None:
-    selected = profile_name or config.get("active_profile")
-    if not selected:
-        return None
-
-    profiles = config.get("profiles")
-    if not isinstance(profiles, dict):
-        raise SystemExit("Invalid config: 'profiles' must be a mapping")
-
-    profile = profiles.get(selected)
-    if profile is None:
-        raise SystemExit(f"Profile not found in config: {selected}")
-    if not isinstance(profile, dict):
-        raise SystemExit(f"Invalid profile '{selected}': profile must be a mapping")
-
-    return profile
+def _missing_arg_message(command: str, missing: list[str]) -> str:
+    key_hint = {
+        "provider": "--provider / config: provider",
+        "input": "--input / config: input.path, input.paths, input.parsed(export)",
+        "conversation_id": "--conversation-id / config: conversation_id",
+    }
+    lines = [f"Missing required options for '{command}':"]
+    for name in missing:
+        lines.append(f"  - {name}: {key_hint.get(name, 'CLI option or config value')}")
+    return "\n".join(lines)
 
 
 def main():
@@ -122,6 +105,11 @@ def main():
     )
     parser.add_argument("--config", type=Path, help="Path to config.yaml")
     parser.add_argument("--profile", help="Profile name to use")
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Disable interactive prompts and fail when required values are missing",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -134,12 +122,12 @@ def main():
     )
     parse_cmd.add_argument(
         "--provider",
-        required=True,
+        required=False,
         help=_("cli.parse.opt.provider.help"),
     )
     parse_cmd.add_argument(
         "--input",
-        required=True,
+        required=False,
         type=Path,
         help=_("cli.parse.opt.input.help"),
     )
@@ -176,7 +164,7 @@ def main():
         "export",
         help="Export a normalized thread JSONL into a single Markdown file",
     )
-    export_cmd.add_argument("--input", required=True, type=Path, help="Path to thread parsed.jsonl")
+    export_cmd.add_argument("--input", required=False, type=Path, help="Path to thread parsed.jsonl")
     export_cmd.add_argument("--out", required=False, type=Path, help="Output Markdown path")
     export_cmd.add_argument(
         "--timezone",
@@ -200,9 +188,9 @@ def main():
         "extract",
         help="Extract one conversation as Gemini-compatible JSON",
     )
-    extract_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
-    extract_cmd.add_argument("--input", required=True, type=Path, help="Input JSON/JSONL path")
-    extract_cmd.add_argument("--conversation-id", required=True, help="Conversation ID to extract")
+    extract_cmd.add_argument("--provider", required=False, help="Provider ID (e.g., openai)")
+    extract_cmd.add_argument("--input", required=False, type=Path, help="Input JSON/JSONL path")
+    extract_cmd.add_argument("--conversation-id", required=False, help="Conversation ID to extract")
     extract_cmd.add_argument(
         "--outdir",
         required=False,
@@ -224,14 +212,14 @@ def main():
         "chain",
         help="Parse raw export and export all threads to Markdown in one shot",
     )
-    chain_cmd.add_argument("--provider", required=True, help="Provider ID (e.g., openai)")
+    chain_cmd.add_argument("--provider", required=False, help="Provider ID (e.g., openai)")
     chain_cmd.add_argument(
         "--dry-run",
         dest="dry_run",
         action="store_true",
         help=_("cli.parse.opt.dry_run.help"),
     )
-    chain_cmd.add_argument("--input", required=True, type=Path, help="Input JSON/JSONL path")
+    chain_cmd.add_argument("--input", required=False, type=Path, help="Input JSON/JSONL path")
     chain_cmd.add_argument("--outdir", required=False, type=Path, default=Path("artifacts"), help="Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...")
     chain_cmd.add_argument(
         "--timezone",
@@ -264,31 +252,69 @@ def main():
     subparsers.add_parser("config", help="(placeholder) Config command (not implemented yet)")
 
     args = parser.parse_args()
+    explicit_flags = parse_explicit_flags(sys.argv[1:])
+    non_interactive = args.non_interactive or os.getenv("LLM_LOGPARSER_NON_INTERACTIVE") == "1"
+    can_prompt = interactive_enabled(non_interactive=non_interactive)
 
+    config, _config_path = load_config_with_discovery(args.config)
     profile: dict[str, Any] | None = None
-    if args.config is not None:
-        config = _load_config_yaml(args.config)
-        profile = _resolve_profile(config, args.profile)
+    profiles: dict[str, Any] = {}
+    if config is not None:
+        profile, profiles = resolve_profile(config, args.profile)
+        if profile is None and can_prompt and len(profiles) > 1:
+            selected = prompt_choice("Select profile:", list(profiles.keys()), allow_skip=True)
+            if selected is not None:
+                candidate = profiles.get(selected)
+                if isinstance(candidate, dict):
+                    profile = candidate
 
+    extra_info: dict[str, Any] = {}
     if profile is not None:
-        if args.locale is None:
-            prof_locale = profile.get("locale")
-            if isinstance(prof_locale, str) and prof_locale.strip():
-                args.locale = prof_locale
+        extra_info = apply_profile_defaults(args, profile, explicit_flags)
 
-        if args.log_level is None:
-            logging_cfg = profile.get("logging")
-            prof_level = logging_cfg.get("level") if isinstance(logging_cfg, dict) else None
-            if isinstance(prof_level, str) and prof_level.strip():
-                args.log_level = prof_level
-
-        if args.command in ("export", "chain") and args.timezone == "UTC":
-            prof_tz = profile.get("timezone")
-            if isinstance(prof_tz, str) and prof_tz.strip():
-                args.timezone = prof_tz
+    input_candidates = extra_info.get("input_candidates")
+    if (
+        args.command in ("parse", "export", "chain", "extract")
+        and args.input is None
+        and isinstance(input_candidates, list)
+        and input_candidates
+    ):
+        if can_prompt:
+            selected_input = prompt_choice("Select input file:", [str(p) for p in input_candidates])
+            if selected_input:
+                args.input = Path(selected_input)
+        else:
+            raise SystemExit(
+                "Multiple input paths found in config. Resolve ambiguity with --input "
+                "or keep a single input.path/input.paths entry."
+            )
 
     set_locale(args.locale)
     logger = setup_logger(args.log_level)
+
+    missing = missing_required_fields(args)
+    if missing:
+        if can_prompt:
+            if "provider" in missing:
+                provider_default = profile.get("provider") if isinstance(profile, dict) else None
+                args.provider = prompt_text("Provider (e.g., openai):", default=provider_default)
+            if "input" in missing:
+                default_input = None
+                if isinstance(profile, dict):
+                    input_cfg = profile.get("input")
+                    if isinstance(input_cfg, dict):
+                        v = input_cfg.get("path") or input_cfg.get("parsed")
+                        if isinstance(v, str) and v.strip():
+                            default_input = v
+                args.input = prompt_existing_file("Input file path:", default=default_input)
+            if "conversation_id" in missing:
+                conv_default = profile.get("conversation_id") if isinstance(profile, dict) else None
+                args.conversation_id = prompt_text(
+                    "Conversation ID:", default=conv_default if isinstance(conv_default, str) else None
+                )
+        else:
+            logger.error(_missing_arg_message(args.command, missing))
+            sys.exit(2)
 
     try:
         # --------------------------------------------------------
