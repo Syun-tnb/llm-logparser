@@ -227,6 +227,103 @@ llm-logparser chain \
 
 ---
 
+## ⚙️ Configuration (`config.yaml`)
+
+`llm-logparser` supports optional configuration via `config.yaml`.
+CLI flags always take precedence. Configuration is used only to fill in missing options.
+
+### 🔎 Config Discovery Order
+
+When no `--config` flag is provided, the tool searches in the following order:
+
+1. Explicit `--config <path>`
+2. Environment variable: `LLM_LOGPARSER_CONFIG=<path>`
+3. `config.yaml` in the current directory
+4. The nearest parent directory containing `config.yaml`
+5. `~/.config/llm-logparser/config.yaml` (if applicable)
+
+If no configuration file is found, the CLI behaves normally.
+
+---
+
+### 👤 Profiles
+
+You can define multiple profiles and select one using:
+
+```yaml
+active_profile: default
+
+profiles:
+  default:
+    provider: openai
+
+    input:
+      path: exports/messages.jsonl
+      # or:
+      # paths: [exports/a.jsonl, exports/b.jsonl]
+
+    output:
+      path: artifacts/thread.md
+      formatting: light
+      split: auto
+
+    parse:
+      outdir: artifacts
+      validate_schema: true
+```
+
+Profile resolution priority:
+
+```
+CLI flags > interactive input > profile config > argparse defaults
+```
+
+If multiple `input.paths` are defined and no explicit `--input` is provided:
+
+* In interactive mode, you will be prompted.
+* In non-interactive mode, the program exits with code `2`.
+
+---
+
+### 📂 Relative Path Resolution
+
+Relative paths defined in `config.yaml` are resolved against
+the directory where the discovered `config.yaml` resides.
+
+This ensures stable behavior when using:
+
+```bash
+LLM_LOGPARSER_CONFIG=/etc/llm/config.yaml
+```
+
+and avoids unintended CWD-dependent path resolution.
+
+---
+
+### 🛑 Non-Interactive Mode
+
+You can disable prompts using:
+
+```bash
+--non-interactive
+```
+
+or:
+
+```bash
+LLM_LOGPARSER_NON_INTERACTIVE=1
+```
+
+In non-interactive mode, the program exits with code `2` if:
+
+* Required options are missing
+* Multiple input candidates are ambiguous
+* A profile cannot be resolved automatically
+
+This makes the CLI safe for CI and automation workflows.
+
+---
+
 ## 🔒 Security & Privacy
 
 * Offline-first
