@@ -90,7 +90,19 @@ def _to_bool(value: Any) -> bool | None:
     return None
 
 
-def _input_candidates(profile: dict[str, Any], command: str) -> list[str]:
+def _resolve_path(value: Any, base_dir: Path | None) -> Path | None:
+    if isinstance(value, Path):
+        p = value
+    elif isinstance(value, str) and value.strip():
+        p = Path(value)
+    else:
+        return None
+    if p.is_absolute() or base_dir is None:
+        return p
+    return (base_dir / p).resolve()
+
+
+def _input_candidates(profile: dict[str, Any], command: str, base_dir: Path | None) -> list[str]:
     input_cfg = profile.get("input")
     if not isinstance(input_cfg, dict):
         return []
@@ -98,18 +110,22 @@ def _input_candidates(profile: dict[str, Any], command: str) -> list[str]:
     if command == "export":
         parsed = input_cfg.get("parsed")
         if isinstance(parsed, str) and parsed.strip():
-            return [parsed]
+            resolved = _resolve_path(parsed, base_dir)
+            return [str(resolved)] if resolved is not None else []
 
     path = input_cfg.get("path")
     if isinstance(path, str) and path.strip():
-        return [path]
+        resolved = _resolve_path(path, base_dir)
+        return [str(resolved)] if resolved is not None else []
 
     paths = input_cfg.get("paths")
     if isinstance(paths, list):
         out: list[str] = []
         for item in paths:
             if isinstance(item, str) and item.strip():
-                out.append(item)
+                resolved = _resolve_path(item, base_dir)
+                if resolved is not None:
+                    out.append(str(resolved))
         return out
 
     return []
@@ -135,6 +151,8 @@ def apply_profile_defaults(
     args: Namespace,
     profile: dict[str, Any],
     explicit_flags: set[str],
+    *,
+    base_dir: Path | None = None,
 ) -> dict[str, Any]:
     info: dict[str, Any] = {}
 
@@ -156,14 +174,21 @@ def apply_profile_defaults(
         _set_if_not_cli(args, explicit_flags, "provider", ("--provider",), profile.get("provider"))
 
     if args.command in ("parse", "export", "chain", "extract") and not cli_provided(explicit_flags, "--input"):
-        candidates = _input_candidates(profile, args.command)
+        candidates = _input_candidates(profile, args.command, base_dir)
         if len(candidates) == 1:
             args.input = Path(candidates[0])
         elif len(candidates) > 1:
             info["input_candidates"] = candidates
 
     if args.command == "parse":
-        _set_if_not_cli(args, explicit_flags, "outdir", ("--outdir",), command_cfg.get("outdir", profile.get("outdir")), transform=Path)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "outdir",
+            ("--outdir",),
+            command_cfg.get("outdir", profile.get("outdir")),
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
 
         for attr, flag in (("dry_run", "--dry-run"), ("fail_fast", "--fail-fast"), ("validate_schema", "--validate-schema")):
             value = _to_bool(command_cfg.get(attr, profile.get(attr)))
@@ -171,7 +196,14 @@ def apply_profile_defaults(
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
 
     elif args.command == "export":
-        _set_if_not_cli(args, explicit_flags, "out", ("--out",), output_cfg.get("path"), transform=Path)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "out",
+            ("--out",),
+            output_cfg.get("path"),
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
         _set_if_not_cli(args, explicit_flags, "formatting", ("--formatting",), output_cfg.get("formatting"))
         _set_if_not_cli(args, explicit_flags, "split", ("--split",), output_cfg.get("split"))
 
@@ -186,9 +218,30 @@ def apply_profile_defaults(
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
 
     elif args.command == "chain":
-        _set_if_not_cli(args, explicit_flags, "outdir", ("--outdir",), command_cfg.get("outdir", profile.get("outdir")), transform=Path)
-        _set_if_not_cli(args, explicit_flags, "export_outdir", ("--export-outdir",), command_cfg.get("export_outdir", profile.get("export_outdir")), transform=Path)
-        _set_if_not_cli(args, explicit_flags, "parsed_root", ("--parsed-root",), command_cfg.get("parsed_root", profile.get("parsed_root")), transform=Path)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "outdir",
+            ("--outdir",),
+            command_cfg.get("outdir", profile.get("outdir")),
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "export_outdir",
+            ("--export-outdir",),
+            command_cfg.get("export_outdir", profile.get("export_outdir")),
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "parsed_root",
+            ("--parsed-root",),
+            command_cfg.get("parsed_root", profile.get("parsed_root")),
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
 
         _set_if_not_cli(args, explicit_flags, "formatting", ("--formatting",), output_cfg.get("formatting"))
         _set_if_not_cli(args, explicit_flags, "split", ("--split",), output_cfg.get("split"))
@@ -204,7 +257,14 @@ def apply_profile_defaults(
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
 
     elif args.command == "extract":
-        _set_if_not_cli(args, explicit_flags, "outdir", ("--outdir",), command_cfg.get("outdir", profile.get("outdir")), transform=Path)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "outdir",
+            ("--outdir",),
+            command_cfg.get("outdir", profile.get("outdir")),
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
         _set_if_not_cli(args, explicit_flags, "conversation_id", ("--conversation-id",), command_cfg.get("conversation_id", profile.get("conversation_id")))
 
         dry = _to_bool(command_cfg.get("dry_run", profile.get("dry_run")))

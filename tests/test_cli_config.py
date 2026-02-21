@@ -125,7 +125,7 @@ def test_explicit_cli_overrides_config_timezone(tmp_path, monkeypatch):
     assert "2024-10-27 03:33" in md
 
 
-def test_non_interactive_missing_required_exits_2(tmp_path, monkeypatch, capsys):
+def test_non_interactive_missing_required_exits_2(tmp_path, monkeypatch, caplog):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         sys,
@@ -137,10 +137,9 @@ def test_non_interactive_missing_required_exits_2(tmp_path, monkeypatch, capsys)
         main()
     assert exc.value.code == 2
 
-    output = capsys.readouterr().out
-    assert "Missing required options for 'parse'" in output
-    assert "provider" in output
-    assert "input" in output
+    assert "Missing required options for 'parse'" in caplog.text
+    assert "provider" in caplog.text
+    assert "input" in caplog.text
 
 
 def test_interactive_prompt_fills_missing_input(tmp_path, monkeypatch):
@@ -204,3 +203,32 @@ def test_env_config_path_has_priority_over_cwd(tmp_path, monkeypatch):
     out = tmp_path / f"{tmp_path.name}.md"
     md = out.read_text(encoding="utf-8")
     assert "2024-10-27 12:33" in md
+
+
+def test_non_interactive_multiple_input_paths_exits_2(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.yaml"
+    (tmp_path / "a.jsonl").write_text("{}", encoding="utf-8")
+    (tmp_path / "b.jsonl").write_text("{}", encoding="utf-8")
+    config.write_text(
+        "\n".join(
+            [
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    input:",
+                "      paths: [a.jsonl, b.jsonl]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["llm-logparser", "--non-interactive", "export"],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2

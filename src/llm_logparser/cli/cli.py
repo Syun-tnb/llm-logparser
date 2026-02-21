@@ -256,7 +256,7 @@ def main():
     non_interactive = args.non_interactive or os.getenv("LLM_LOGPARSER_NON_INTERACTIVE") == "1"
     can_prompt = interactive_enabled(non_interactive=non_interactive)
 
-    config, _config_path = load_config_with_discovery(args.config)
+    config, config_path = load_config_with_discovery(args.config)
     profile: dict[str, Any] | None = None
     profiles: dict[str, Any] = {}
     if config is not None:
@@ -270,7 +270,12 @@ def main():
 
     extra_info: dict[str, Any] = {}
     if profile is not None:
-        extra_info = apply_profile_defaults(args, profile, explicit_flags)
+        extra_info = apply_profile_defaults(
+            args,
+            profile,
+            explicit_flags,
+            base_dir=config_path.parent if config_path is not None else None,
+        )
 
     input_candidates = extra_info.get("input_candidates")
     if (
@@ -284,10 +289,12 @@ def main():
             if selected_input:
                 args.input = Path(selected_input)
         else:
-            raise SystemExit(
+            print(
                 "Multiple input paths found in config. Resolve ambiguity with --input "
-                "or keep a single input.path/input.paths entry."
+                "or keep a single input.path/input.paths entry.",
+                file=sys.stderr,
             )
+            sys.exit(2)
 
     set_locale(args.locale)
     logger = setup_logger(args.log_level)
