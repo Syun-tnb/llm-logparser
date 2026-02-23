@@ -4,6 +4,7 @@ from pathlib import Path
 
 from llm_logparser.core.exporter import export_thread_md
 from llm_logparser.core.parser import parse_to_jsonl
+from llm_logparser.core.utils import shorten_id
 
 
 def test_e2e_openai_to_md(tmp_path):
@@ -17,7 +18,8 @@ def test_e2e_openai_to_md(tmp_path):
     )
     assert stats["threads"] == 1
 
-    conv_id = "68b3eea1-1fc4-832c-878a-23896288675a"
+    raw_conv_id = "68b3eea1-1fc4-832c-878a-23896288675a"
+    conv_id = shorten_id(raw_conv_id)
     parsed_path = tmp_path / "openai" / f"thread-{conv_id}" / "parsed.jsonl"
     md_path = tmp_path / "conv-1.md"
     export_thread_md(parsed_path, md_path)

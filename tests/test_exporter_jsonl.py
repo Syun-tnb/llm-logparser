@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from llm_logparser.core.parser import parse_to_jsonl
+from llm_logparser.core.utils import shorten_id
 
 
 def test_parsed_jsonl_structure(tmp_path):
@@ -15,7 +16,8 @@ def test_parsed_jsonl_structure(tmp_path):
     )
     assert stats["threads"] == 1
 
-    conv_id = "68b3eea1-1fc4-832c-878a-23896288675a"
+    raw_conv_id = "68b3eea1-1fc4-832c-878a-23896288675a"
+    conv_id = shorten_id(raw_conv_id)
     parsed = tmp_path / "openai" / f"thread-{conv_id}" / "parsed.jsonl"
     lines = parsed.read_text(encoding="utf-8").splitlines()
     assert len(lines) >= 2

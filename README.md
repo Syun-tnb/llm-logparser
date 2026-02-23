@@ -342,7 +342,7 @@ This makes the CLI safe for CI and automation workflows.
 * [x] JSON Schema validation (`--validate-schema`)
 * [ ] Minimal HTML viewer
 * [ ] Additional providers (Claude / Gemini / …)
-* [ ] Config file loading
+* [x] Config file loading (auto-discovery + profiles)
 * [ ] Apps SDK integration (experimental)
 * [ ] GUI (later stage)
 

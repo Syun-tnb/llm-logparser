@@ -1,6 +1,7 @@
-# src/llm_logparser/utils.py
+# src/llm_logparser/core/utils.py
 from __future__ import annotations
 import re
+import hashlib
 
 _IEC = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}
 _SI  = {"KB": 1000, "MB": 1000**2, "GB": 1000**3}
@@ -49,3 +50,14 @@ def sanitize_filename(name: str, max_len: int = 120) -> str:
             root, ext = name.rsplit(".", 1); ext = "." + ext
         name = root[: max_len - len(ext) - 3] + "..." + ext
     return name
+
+def shorten_id(original_id: str | None, length: int = 12) -> str:
+    """
+    Hash an identifier with SHA-256 and truncate it to a fixed length.
+
+    The default 12 hex characters provide a compact, deterministic ID that is
+    suitable for reducing JSONL size while preserving linkage consistency.
+    """
+    if not original_id:
+        return ""
+    return hashlib.sha256(original_id.encode()).hexdigest()[:length]
