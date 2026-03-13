@@ -1,0 +1,119 @@
+[
+  {
+    "uuid": "16b9da4c-4b08-4bf4-85a8-911b04434241",
+    "name": "Exporting Claude conversation logs",
+    "summary": "",
+    "created_at": "2025-11-03T06:35:18.207511Z",
+    "updated_at": "2025-11-03T06:35:31.673673Z",
+    "account": {
+      "uuid": "1a0f2586-002f-46df-ab0a-4ad44d7c73a0"
+    },
+    "chat_messages": [
+      {
+        "uuid": "173e90df-bb2b-4da6-beb0-680876391ae4",
+        "text": "Claudeは会話ログを出力する方法ある？",
+        "content": [
+          {
+            "start_timestamp": "2025-11-03T06:35:19.502799Z",
+            "stop_timestamp": "2025-11-03T06:35:19.502799Z",
+            "flags": null,
+            "type": "text",
+            "text": "Claudeは会話ログを出力する方法ある？",
+            "citations": []
+          }
+        ],
+        "sender": "human",
+        "created_at": "2025-11-03T06:35:19.537017Z",
+        "updated_at": "2025-11-03T06:35:19.537017Z",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "082eb243-6c02-4c23-b807-c553c74039e5",
+        "text": "はい、Claude.aiのウェブインターフェースでは会話ログを出力する方法があります。",
+        "content": [
+          {
+            "start_timestamp": "2025-11-03T06:35:21.526297Z",
+            "stop_timestamp": "2025-11-03T06:35:28.843855Z",
+            "flags": null,
+            "type": "text",
+            "text": "はい、Claude.aiのウェブインターフェースでは会話ログを出力する方法があります。",
+            "citations": []
+          },
+          {
+            "start_timestamp": "2025-11-03T06:35:28.844000Z",
+            "stop_timestamp": "2025-11-03T06:35:29.100000Z",
+            "flags": null,
+            "type": "tool_use",
+            "id": null,
+            "name": "web_search",
+            "input": {
+              "query": "Claude export history"
+            },
+            "message": "Searching the web"
+          },
+          {
+            "start_timestamp": null,
+            "stop_timestamp": null,
+            "flags": null,
+            "type": "tool_result",
+            "tool_use_id": null,
+            "name": "web_search",
+            "content": [
+              {
+                "type": "knowledge",
+                "title": "How can I export my Claude data?",
+                "text": "Export steps"
+              },
+              {
+                "type": "text",
+                "text": "<system>You only have 2 searches left this turn</system>\n"
+              }
+            ],
+            "is_error": false
+          },
+          {
+            "start_timestamp": null,
+            "stop_timestamp": null,
+            "flags": null,
+            "type": "token_budget"
+          }
+        ],
+        "sender": "assistant",
+        "created_at": "2025-11-03T06:35:29.647763Z",
+        "updated_at": "2025-11-03T06:35:29.647763Z",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "78906b6a-73ec-4488-b783-3f79e2908011",
+        "text": "Searching the web",
+        "content": [
+          {
+            "start_timestamp": "2025-11-03T06:35:30.000000Z",
+            "stop_timestamp": "2025-11-03T06:35:30.100000Z",
+            "flags": null,
+            "type": "tool_use",
+            "id": null,
+            "name": "web_search",
+            "input": {
+              "query": "Claude export tool use"
+            },
+            "message": "Searching the web"
+          },
+          {
+            "start_timestamp": null,
+            "stop_timestamp": null,
+            "flags": null,
+            "type": "token_budget"
+          }
+        ],
+        "sender": "assistant",
+        "created_at": "2025-11-03T06:35:30.200000Z",
+        "updated_at": "2025-11-03T06:35:30.200000Z",
+        "attachments": [],
+        "files": []
+      }
+    ]
+  }
+]

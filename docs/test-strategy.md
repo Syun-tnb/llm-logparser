@@ -1,5 +1,12 @@
 # Test Strategy
 
+Local test execution assumes a synced `uv` environment:
+
+```bash
+uv sync --extra dev
+uv run pytest
+```
+
 ## Golden Tests
 
 * Provider adapter samples → expected normalized JSONL output.

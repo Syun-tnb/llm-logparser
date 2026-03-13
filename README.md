@@ -14,11 +14,12 @@ No cloud. No telemetry. Your data stays local.
 
 ## ✨ What it does
 
-* **Parse → Normalize → Export (Markdown)**
+* **Parse → Normalize → JSONL → Export (Markdown)**
 * **Thread-based layout** with YAML front-matter
 * **Automatic splitting** (size / count / auto)
 * **Localized timestamps** (locale + timezone support)
 * **Chain mode**: parse & export in one command
+* **Analyze stats**: deterministic conversation counts from canonical parsed JSONL
 * **Deterministic, offline workflows**
 * **Future-proof architecture** (multi-provider adapters)
 
@@ -27,18 +28,37 @@ No cloud. No telemetry. Your data stays local.
 
 ---
 
+## 🧱 Canonical Data Model
+
+The parser normalizes provider-specific exports into a stable JSONL schema.
+
+That JSONL is the canonical intermediate format for the project.
+
+Downstream features consume that format:
+
+- Markdown export
+- HTML / GUI viewers
+- analyzers
+- future applications
+
+Parser responsibilities end at deterministic JSONL generation.
+Presentation, export formatting, and analysis are downstream concerns handled separately.
+
+---
+
 ## 🚀 Quick Start
 
-Install (local dev):
+Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and sync the project environment:
 
 ```bash
-pip install -e .
+uv sync
+uv sync --extra dev
 ```
 
 Parse an export:
 
 ```bash
-llm-logparser parse \
+uv run llm-logparser parse \
   --provider openai \
   --input examples/messages.jsonl \
   --outdir artifacts
@@ -47,7 +67,7 @@ llm-logparser parse \
 Export a parsed thread to Markdown:
 
 ```bash
-llm-logparser export \
+uv run llm-logparser export \
   --input artifacts/output/openai/thread-abc123/parsed.jsonl \
   --timezone Asia/Tokyo \
   --formatting light
@@ -56,11 +76,18 @@ llm-logparser export \
 End-to-end (parse → export everything):
 
 ```bash
-llm-logparser chain \
+uv run llm-logparser chain \
   --provider openai \
   --input examples/messages.jsonl \
   --outdir artifacts \
   --timezone Asia/Tokyo
+```
+
+Analyze canonical parsed threads:
+
+```bash
+uv run llm-logparser analyze stats \
+  --input artifacts/output/openai
 ```
 
 ---
@@ -138,7 +165,7 @@ You can control output formatting using:
 Example:
 
 ```bash
-llm-logparser export \
+uv run llm-logparser export \
   --input parsed.jsonl \
   --locale ja-JP \
   --timezone Asia/Tokyo
@@ -182,7 +209,7 @@ Runs **parse → export** in one flow:
 ### Parse
 
 ```bash
-llm-logparser parse \
+uv run llm-logparser parse \
   --provider openai \
   --input <file> \
   --outdir artifacts \
@@ -193,7 +220,7 @@ llm-logparser parse \
 ### Export
 
 ```bash
-llm-logparser export \
+uv run llm-logparser export \
   --input parsed.jsonl \
   [--out <md>] \
   [--split auto|size=N|count=N] \
@@ -206,7 +233,7 @@ llm-logparser export \
 Extract a single conversation as Gemini-compatible JSON (with PII masking):
 
 ```bash
-llm-logparser extract \
+uv run llm-logparser extract \
   --provider openai \
   --input <file> \
   --conversation-id <id> \
@@ -217,13 +244,137 @@ llm-logparser extract \
 ### Chain
 
 ```bash
-llm-logparser chain \
+uv run llm-logparser chain \
   --provider openai \
   --input <raw> \
   --outdir artifacts \
   [--validate-schema] \
   [other export options...]
 ```
+
+### Analyze Stats
+
+Compute deterministic thread/message statistics from canonical `parsed.jsonl` files:
+
+```bash
+uv run llm-logparser analyze stats \
+  --input <parsed.jsonl-or-directory> \
+  [--per-thread] \
+  [--top <N>] \
+  [--sort messages|chars|span|conversation_id] \
+  [--include-role-breakdown] \
+  [--json] \
+  [--out <path>]
+```
+
+### Analyze Timeline
+
+Aggregate timestamped message activity from canonical `parsed.jsonl` files:
+
+```bash
+uv run llm-logparser analyze timeline \
+  --input artifacts/output/openai \
+  --bucket day \
+  [--json] \
+  [--out <path>]
+```
+
+---
+
+## ⚙️ Configuration (`config.yaml`)
+
+`llm-logparser` supports optional configuration via `config.yaml`.
+CLI flags always take precedence. Configuration is used only to fill in missing options.
+
+### 🔎 Config Discovery Order
+
+When no `--config` flag is provided, the tool searches in the following order:
+
+1. Explicit `--config <path>`
+2. Environment variable: `LLM_LOGPARSER_CONFIG=<path>`
+3. `config.yaml` in the current directory
+4. The nearest parent directory containing `config.yaml`
+5. `~/.config/llm-logparser/config.yaml` (if applicable)
+
+If no configuration file is found, the CLI behaves normally.
+
+---
+
+### 👤 Profiles
+
+You can define multiple profiles and select one using:
+
+```yaml
+active_profile: default
+
+profiles:
+  default:
+    provider: openai
+
+    input:
+      path: exports/messages.jsonl
+      # or:
+      # paths: [exports/a.jsonl, exports/b.jsonl]
+
+    output:
+      path: artifacts/thread.md
+      formatting: light
+      split: auto
+
+    parse:
+      outdir: artifacts
+      validate_schema: true
+```
+
+Profile resolution priority:
+
+```
+CLI flags > interactive input > profile config > argparse defaults
+```
+
+If multiple `input.paths` are defined and no explicit `--input` is provided:
+
+* In interactive mode, you will be prompted.
+* In non-interactive mode, the program exits with code `2`.
+
+---
+
+### 📂 Relative Path Resolution
+
+Relative paths defined in `config.yaml` are resolved against
+the directory where the discovered `config.yaml` resides.
+
+This ensures stable behavior when using:
+
+```bash
+LLM_LOGPARSER_CONFIG=/etc/llm/config.yaml
+```
+
+and avoids unintended CWD-dependent path resolution.
+
+---
+
+### 🛑 Non-Interactive Mode
+
+You can disable prompts using:
+
+```bash
+--non-interactive
+```
+
+or:
+
+```bash
+LLM_LOGPARSER_NON_INTERACTIVE=1
+```
+
+In non-interactive mode, the program exits with code `2` if:
+
+* Required options are missing
+* Multiple input candidates are ambiguous
+* A profile cannot be resolved automatically
+
+This makes the CLI safe for CI and automation workflows.
 
 ---
 
@@ -240,14 +391,20 @@ llm-logparser chain \
 
 ## 🗺 Roadmap
 
-* [x] CLI MVP (parse/export/extract/chain)
-* [x] Markdown exporter with thread splitting
-* [x] JSON Schema validation (`--validate-schema`)
-* [ ] Minimal HTML viewer
-* [ ] Additional providers (Claude / Gemini / …)
-* [ ] Config file loading
-* [ ] Apps SDK integration (experimental)
-* [ ] GUI (later stage)
+- [x] CLI MVP (parse / export / extract / chain / analyze stats)
+- [x] Markdown exporter with thread splitting
+- [x] JSON Schema validation
+- [x] Config file loading (auto-discovery + profiles)
+
+Near term:
+- [ ] Anthropic / Claude support
+- [ ] xAI / Grok support
+- [ ] Analyzer subcommand
+- [ ] VS Code Extension for browsing normalized logs
+
+Later / exploratory:
+- [ ] Gemini support (format under evaluation)
+- [ ] GUI applications
 
 ---
 
@@ -265,6 +422,12 @@ Principles:
 * deterministic core
 * provider-specific behavior lives in adapters
 * offline by default
+
+Run the test suite locally with:
+
+```bash
+uv run pytest
+```
 
 ---
 

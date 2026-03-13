@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from hashlib import sha1
 from pathlib import Path
 
+from ....utils import shorten_id
 from .utils import json_safe
 
 
@@ -173,8 +174,45 @@ def _to_epoch_ms(value: t.Any) -> int | None:
         return None
 
 
+def _first_not_none(*values: t.Any) -> t.Any:
+    """Return the first value that is not None."""
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_finish_reason(msg: dict) -> str | None:
+    """Extract a normalized finish reason from common ChatGPT export shapes."""
+    for key in ("finish_reason", "stop_reason"):
+        value = msg.get(key)
+        if isinstance(value, str) and value:
+            return value
+
+    metadata = msg.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+
+    for key in ("finish_reason", "stop_reason"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            return value
+
+    finish_details = metadata.get("finish_details")
+    if isinstance(finish_details, dict):
+        for key in ("type", "finish_reason", "reason"):
+            value = finish_details.get(key)
+            if isinstance(value, str) and value:
+                return value
+
+    return None
+
+
 def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
     conv_id = _derive_conversation_id(conversation, source=source)
+    short_conv_id = shorten_id(conv_id)
+    thread_title = conversation.get("title") if isinstance(conversation.get("title"), str) else None
+    root_created_at = conversation.get("create_time")
 
     mapping = conversation.get("mapping")
     if not isinstance(mapping, dict):
@@ -218,22 +256,32 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
         else:
             parts = []
 
-        ts = _to_epoch_ms(msg.get("create_time") or node.get("create_time"))
+        created_at = _first_not_none(msg.get("create_time"), node.get("create_time"), root_created_at)
+        ts = _to_epoch_ms(created_at)
         if ts is None:
             # create_time is required for stable ordering in normalized schema
             continue
 
         text = "\n".join(parts)
+        raw_message_id = msg.get("id") or node_id
+        raw_parent_id = node.get("parent") if isinstance(node.get("parent"), str) else None
+        finish_reason = _extract_finish_reason(msg)
 
         entry = {
-            "conversation_id": conv_id,
-            "message_id": msg.get("id") or node_id,
-            "parent_id": node.get("parent") if isinstance(node.get("parent"), str) else None,
+            "conversation_id": short_conv_id,
+            "conv_id": short_conv_id,
+            "message_id": shorten_id(raw_message_id),
+            "id": shorten_id(raw_message_id),
+            "parent_id": shorten_id(raw_parent_id) if raw_parent_id else None,
             "role": role,
             "ts": ts,  # epoch milliseconds
+            "created_at": created_at,
+            "thread_title": thread_title,
             "content": {"content_type": content_type, "parts": parts},
             "text": text,
         }
+        if finish_reason:
+            entry["finish_reason"] = finish_reason
 
         out.append(json_safe(entry))
 
