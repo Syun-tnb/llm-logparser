@@ -29,16 +29,17 @@ No cloud. No telemetry. Your data stays local.
 
 ## 🚀 Quick Start
 
-Install (local dev):
+Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and sync the project environment:
 
 ```bash
-pip install -e .
+uv sync
+uv sync --extra dev
 ```
 
 Parse an export:
 
 ```bash
-llm-logparser parse \
+uv run llm-logparser parse \
   --provider openai \
   --input examples/messages.jsonl \
   --outdir artifacts
@@ -47,7 +48,7 @@ llm-logparser parse \
 Export a parsed thread to Markdown:
 
 ```bash
-llm-logparser export \
+uv run llm-logparser export \
   --input artifacts/output/openai/thread-abc123/parsed.jsonl \
   --timezone Asia/Tokyo \
   --formatting light
@@ -56,7 +57,7 @@ llm-logparser export \
 End-to-end (parse → export everything):
 
 ```bash
-llm-logparser chain \
+uv run llm-logparser chain \
   --provider openai \
   --input examples/messages.jsonl \
   --outdir artifacts \
@@ -138,7 +139,7 @@ You can control output formatting using:
 Example:
 
 ```bash
-llm-logparser export \
+uv run llm-logparser export \
   --input parsed.jsonl \
   --locale ja-JP \
   --timezone Asia/Tokyo
@@ -182,7 +183,7 @@ Runs **parse → export** in one flow:
 ### Parse
 
 ```bash
-llm-logparser parse \
+uv run llm-logparser parse \
   --provider openai \
   --input <file> \
   --outdir artifacts \
@@ -193,7 +194,7 @@ llm-logparser parse \
 ### Export
 
 ```bash
-llm-logparser export \
+uv run llm-logparser export \
   --input parsed.jsonl \
   [--out <md>] \
   [--split auto|size=N|count=N] \
@@ -206,7 +207,7 @@ llm-logparser export \
 Extract a single conversation as Gemini-compatible JSON (with PII masking):
 
 ```bash
-llm-logparser extract \
+uv run llm-logparser extract \
   --provider openai \
   --input <file> \
   --conversation-id <id> \
@@ -217,7 +218,7 @@ llm-logparser extract \
 ### Chain
 
 ```bash
-llm-logparser chain \
+uv run llm-logparser chain \
   --provider openai \
   --input <raw> \
   --outdir artifacts \
@@ -362,6 +363,12 @@ Principles:
 * deterministic core
 * provider-specific behavior lives in adapters
 * offline by default
+
+Run the test suite locally with:
+
+```bash
+uv run pytest
+```
 
 ---
 

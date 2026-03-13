@@ -9,10 +9,12 @@ Thanks for considering a contribution!
 
 ## Getting Started
 1. Fork and create a feature branch.
-2. Add tests (golden snapshots for providers).
-3. Run lint & audit: `ruff`, `bandit`, `pip-audit`.
-4. Ensure network-prohibition tests pass.
-5. Submit a PR with scope & rationale.
+2. Sync the project environment: `uv sync --extra dev`.
+3. Add tests (golden snapshots for providers).
+4. Run tests locally: `uv run pytest`.
+5. Run lint & audit as needed: `uv run ruff`, `uv run bandit`, `uv run pip-audit`.
+6. Ensure network-prohibition tests pass.
+7. Submit a PR with scope & rationale.
 
 ## Coding style — comments & i18n
 * Source code comments should be written in **English**.
