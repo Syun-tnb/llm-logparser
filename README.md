@@ -267,6 +267,18 @@ uv run llm-logparser analyze stats \
   [--out <path>]
 ```
 
+### Analyze Timeline
+
+Aggregate timestamped message activity from canonical `parsed.jsonl` files:
+
+```bash
+uv run llm-logparser analyze timeline \
+  --input artifacts/output/openai \
+  --bucket day \
+  [--json] \
+  [--out <path>]
+```
+
 ---
 
 ## ⚙️ Configuration (`config.yaml`)

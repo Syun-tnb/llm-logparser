@@ -262,6 +262,34 @@ def main():
         action="store_true",
         help="Include breakdown of roles other than user and assistant",
     )
+    analyze_timeline_cmd = analyze_subparsers.add_parser(
+        "timeline",
+        help="Aggregate timestamped message activity over time",
+    )
+    analyze_timeline_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+    )
+    analyze_timeline_cmd.add_argument(
+        "--bucket",
+        choices=["hour", "day", "week", "month"],
+        default="day",
+        help="Bucket size for timeline aggregation",
+    )
+    analyze_timeline_cmd.add_argument(
+        "--json",
+        dest="json",
+        action="store_true",
+        help="Emit JSON instead of human-readable text",
+    )
+    analyze_timeline_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help="Write the rendered result to a file",
+    )
 
     # ------------------------------------------------------------
     # chain サブコマンド（parse → export を一気通し）
@@ -383,7 +411,7 @@ def main():
 
     if (
         args.command == "analyze"
-        and args.analyze_command == "stats"
+        and args.analyze_command in {"stats", "timeline"}
         and args.input is None
     ):
         if can_prompt:
@@ -391,7 +419,7 @@ def main():
             args.input = Path(raw_input) if raw_input else None
         else:
             logger.error(
-                "Missing required options for 'analyze stats':\n"
+                f"Missing required options for 'analyze {args.analyze_command}':\n"
                 "  - input: --input"
             )
             sys.exit(2)
@@ -549,6 +577,30 @@ def main():
                         per_thread=args.per_thread,
                         include_role_breakdown=args.include_role_breakdown,
                     )
+                )
+
+                if args.out:
+                    if args.out.exists() and args.out.is_dir():
+                        raise IsADirectoryError(
+                            f"ファイルパスを指定してください: {args.out}"
+                        )
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(f"{rendered}\n", encoding="utf-8")
+                else:
+                    print(rendered)
+            elif args.analyze_command == "timeline":
+                from llm_logparser.core.analyzer_timeline import (
+                    analyze_timeline,
+                    render_timeline_json,
+                    render_timeline_text,
+                )
+
+                input_path = validate_path(args.input)
+                timeline_data = analyze_timeline(input_path, bucket=args.bucket)
+                rendered = (
+                    render_timeline_json(timeline_data)
+                    if args.json
+                    else render_timeline_text(timeline_data)
                 )
 
                 if args.out:
