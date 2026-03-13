@@ -40,6 +40,7 @@ class _ThreadStats:
     other_roles: int = 0
     characters_user: int = 0
     characters_assistant: int = 0
+    other_role_breakdown: dict[str, int] | None = None
     first_ts: float | None = None
     last_ts: float | None = None
 
@@ -59,6 +60,12 @@ class _ThreadStats:
             self.characters_assistant += char_count
         else:
             self.other_roles += 1
+            role_key = role if isinstance(role, str) and role else "unknown"
+            if self.other_role_breakdown is None:
+                self.other_role_breakdown = {}
+            self.other_role_breakdown[role_key] = (
+                self.other_role_breakdown.get(role_key, 0) + 1
+            )
 
         ts = _ts_to_seconds(row.get("ts"))
         if ts is None:
@@ -74,7 +81,83 @@ class _ThreadStats:
             "first_timestamp": _to_iso_utc(self.first_ts),
             "last_timestamp": _to_iso_utc(self.last_ts),
             "conversation_span_seconds": _span_seconds(self.first_ts, self.last_ts),
+            "user_messages": self.user_messages,
+            "assistant_messages": self.assistant_messages,
+            "other_roles": self.other_roles,
+            "characters_user": self.characters_user,
+            "characters_assistant": self.characters_assistant,
         }
+
+
+def sort_threads_detail(
+    threads_detail: list[dict[str, Any]],
+    sort_field: str,
+) -> list[dict[str, Any]]:
+    """Return deterministically sorted thread rows."""
+    if sort_field == "conversation_id":
+        return sorted(
+            threads_detail,
+            key=lambda row: str(row.get("conversation_id") or ""),
+        )
+
+    if sort_field == "messages":
+        return sorted(
+            threads_detail,
+            key=lambda row: (
+                -int(row.get("message_count") or 0),
+                str(row.get("conversation_id") or ""),
+            ),
+        )
+
+    if sort_field == "chars":
+        return sorted(
+            threads_detail,
+            key=lambda row: (
+                -int(row.get("character_count") or 0),
+                str(row.get("conversation_id") or ""),
+            ),
+        )
+
+    if sort_field == "span":
+        return sorted(
+            threads_detail,
+            key=lambda row: (
+                row.get("conversation_span_seconds") is None,
+                -int(row["conversation_span_seconds"])
+                if row.get("conversation_span_seconds") is not None
+                else 0,
+                str(row.get("conversation_id") or ""),
+            ),
+        )
+
+    raise ValueError(f"unsupported sort field: {sort_field}")
+
+
+def select_threads_detail(
+    stats: dict[str, Any],
+    *,
+    sort_field: str | None = None,
+    top: int | None = None,
+) -> list[dict[str, Any]]:
+    """Apply deterministic sort and optional top-N limiting to thread rows."""
+    rows = list(stats.get("threads_detail", []))
+    if sort_field:
+        rows = sort_threads_detail(rows, sort_field)
+    if top is not None:
+        rows = rows[:top]
+    return rows
+
+
+def build_stats_output(
+    stats: dict[str, Any],
+    *,
+    sort_field: str | None = None,
+    top: int | None = None,
+) -> dict[str, Any]:
+    """Return a stats payload with presentation-level thread detail selection."""
+    out = dict(stats)
+    out["threads_detail"] = select_threads_detail(stats, sort_field=sort_field, top=top)
+    return out
 
 
 def discover_parsed_jsonl(input_path: Path) -> list[Path]:
@@ -145,6 +228,7 @@ def analyze_stats(input_path: Path) -> dict[str, Any]:
     total_characters = 0
     total_user_characters = 0
     total_assistant_characters = 0
+    other_role_breakdown: dict[str, int] = {}
     global_first_ts: float | None = None
     global_last_ts: float | None = None
     message_counts: list[int] = []
@@ -160,6 +244,8 @@ def analyze_stats(input_path: Path) -> dict[str, Any]:
         total_characters += thread_stats.character_count
         total_user_characters += thread_stats.characters_user
         total_assistant_characters += thread_stats.characters_assistant
+        for role, count in (thread_stats.other_role_breakdown or {}).items():
+            other_role_breakdown[role] = other_role_breakdown.get(role, 0) + count
         message_counts.append(thread_stats.message_count)
 
         if thread_stats.first_ts is not None:
@@ -189,6 +275,7 @@ def analyze_stats(input_path: Path) -> dict[str, Any]:
         "user_messages": total_user_messages,
         "assistant_messages": total_assistant_messages,
         "other_roles": total_other_roles,
+        "other_role_breakdown": dict(sorted(other_role_breakdown.items())),
         "characters_total": total_characters,
         "characters_user": total_user_characters,
         "characters_assistant": total_assistant_characters,
@@ -203,7 +290,12 @@ def analyze_stats(input_path: Path) -> dict[str, Any]:
     }
 
 
-def render_stats_text(stats: dict[str, Any]) -> str:
+def render_stats_text(
+    stats: dict[str, Any],
+    *,
+    per_thread: bool = False,
+    include_role_breakdown: bool = False,
+) -> str:
     """Render analyzer stats in a compact human-readable format."""
     first_timestamp = stats.get("first_timestamp") or "N/A"
     last_timestamp = stats.get("last_timestamp") or "N/A"
@@ -235,6 +327,25 @@ def render_stats_text(stats: dict[str, Any]) -> str:
         f"  max: {stats['messages_per_thread_max']}",
         f"  avg: {stats['messages_per_thread_avg']:.2f}",
     ]
+
+    other_role_breakdown = stats.get("other_role_breakdown") or {}
+    if include_role_breakdown and other_role_breakdown:
+        lines.extend(["", "Other role breakdown:"])
+        for role, count in other_role_breakdown.items():
+            lines.append(f"  {role}: {count}")
+
+    if per_thread:
+        lines.extend(["", "Per-thread:"])
+        for row in stats.get("threads_detail", []):
+            span = row.get("conversation_span_seconds")
+            span_display = str(span) if span is not None else "N/A"
+            lines.append(
+                "  "
+                f"{row.get('conversation_id', 'unknown')}  "
+                f"messages={row.get('message_count', 0)}  "
+                f"chars={row.get('character_count', 0)}  "
+                f"span={span_display}"
+            )
     return "\n".join(lines)
 
 

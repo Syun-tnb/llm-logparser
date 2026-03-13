@@ -238,6 +238,30 @@ def main():
         type=Path,
         help="Write the rendered result to a file",
     )
+    analyze_stats_cmd.add_argument(
+        "--per-thread",
+        dest="per_thread",
+        action="store_true",
+        help="Include per-thread rows in human-readable output",
+    )
+    analyze_stats_cmd.add_argument(
+        "--top",
+        required=False,
+        type=int,
+        help="Limit the number of per-thread rows after sorting",
+    )
+    analyze_stats_cmd.add_argument(
+        "--sort",
+        choices=["messages", "chars", "span", "conversation_id"],
+        default=None,
+        help="Sort field for per-thread rows",
+    )
+    analyze_stats_cmd.add_argument(
+        "--include-role-breakdown",
+        dest="include_role_breakdown",
+        action="store_true",
+        help="Include breakdown of roles other than user and assistant",
+    )
 
     # ------------------------------------------------------------
     # chain サブコマンド（parse → export を一気通し）
@@ -498,16 +522,33 @@ def main():
             if args.analyze_command == "stats":
                 from llm_logparser.core.analyzer_stats import (
                     analyze_stats,
+                    build_stats_output,
                     render_stats_json,
                     render_stats_text,
                 )
 
                 input_path = validate_path(args.input)
+                if args.top is not None and args.top < 0:
+                    raise SystemExit("--top must be >= 0")
+
                 stats = analyze_stats(input_path)
+                effective_sort = args.sort
+                if effective_sort is None and (args.per_thread or args.top is not None):
+                    effective_sort = "messages"
+
+                output_stats = build_stats_output(
+                    stats,
+                    sort_field=effective_sort,
+                    top=args.top,
+                )
                 rendered = (
-                    render_stats_json(stats)
+                    render_stats_json(output_stats)
                     if args.json
-                    else render_stats_text(stats)
+                    else render_stats_text(
+                        output_stats,
+                        per_thread=args.per_thread,
+                        include_role_breakdown=args.include_role_breakdown,
+                    )
                 )
 
                 if args.out:

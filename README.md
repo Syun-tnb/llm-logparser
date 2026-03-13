@@ -259,6 +259,10 @@ Compute deterministic thread/message statistics from canonical `parsed.jsonl` fi
 ```bash
 uv run llm-logparser analyze stats \
   --input <parsed.jsonl-or-directory> \
+  [--per-thread] \
+  [--top <N>] \
+  [--sort messages|chars|span|conversation_id] \
+  [--include-role-breakdown] \
   [--json] \
   [--out <path>]
 ```

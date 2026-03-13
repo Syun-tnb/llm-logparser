@@ -59,7 +59,8 @@ These analyses are fast, reproducible, and safe to run in any environment.
 
 The first concrete Layer 1 implementation is now `analyze stats`, which
 reads canonical `parsed.jsonl` files and reports basic conversation
-counts, character totals, role distribution, and timestamp spans.
+counts, character totals, role distribution, timestamp spans, per-thread
+detail, and deterministic breakdowns for non-user / non-assistant roles.
 
 Typical metrics include:
 
