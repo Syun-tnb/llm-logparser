@@ -14,7 +14,7 @@ No cloud. No telemetry. Your data stays local.
 
 ## ✨ What it does
 
-* **Parse → Normalize → Export (Markdown)**
+* **Parse → Normalize → JSONL → Export (Markdown)**
 * **Thread-based layout** with YAML front-matter
 * **Automatic splitting** (size / count / auto)
 * **Localized timestamps** (locale + timezone support)
@@ -24,6 +24,24 @@ No cloud. No telemetry. Your data stays local.
 
 > MVP currently focuses on **OpenAI logs**.
 > Providers like Claude / Gemini are planned.
+
+---
+
+## 🧱 Canonical Data Model
+
+The parser normalizes provider-specific exports into a stable JSONL schema.
+
+That JSONL is the canonical intermediate format for the project.
+
+Downstream features consume that format:
+
+- Markdown export
+- HTML / GUI viewers
+- analyzers
+- future applications
+
+Parser responsibilities end at deterministic JSONL generation.
+Presentation, export formatting, and analysis are downstream concerns handled separately.
 
 ---
 
