@@ -57,6 +57,10 @@ No databases, no AI models.
 
 These analyses are fast, reproducible, and safe to run in any environment.
 
+The first concrete Layer 1 implementation is now `analyze stats`, which
+reads canonical `parsed.jsonl` files and reports basic conversation
+counts, character totals, role distribution, and timestamp spans.
+
 Typical metrics include:
 
 - message counts

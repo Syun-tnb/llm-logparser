@@ -19,6 +19,7 @@ No cloud. No telemetry. Your data stays local.
 * **Automatic splitting** (size / count / auto)
 * **Localized timestamps** (locale + timezone support)
 * **Chain mode**: parse & export in one command
+* **Analyze stats**: deterministic conversation counts from canonical parsed JSONL
 * **Deterministic, offline workflows**
 * **Future-proof architecture** (multi-provider adapters)
 
@@ -80,6 +81,13 @@ uv run llm-logparser chain \
   --input examples/messages.jsonl \
   --outdir artifacts \
   --timezone Asia/Tokyo
+```
+
+Analyze canonical parsed threads:
+
+```bash
+uv run llm-logparser analyze stats \
+  --input artifacts/output/openai
 ```
 
 ---
@@ -244,6 +252,17 @@ uv run llm-logparser chain \
   [other export options...]
 ```
 
+### Analyze Stats
+
+Compute deterministic thread/message statistics from canonical `parsed.jsonl` files:
+
+```bash
+uv run llm-logparser analyze stats \
+  --input <parsed.jsonl-or-directory> \
+  [--json] \
+  [--out <path>]
+```
+
 ---
 
 ## ⚙️ Configuration (`config.yaml`)
@@ -356,7 +375,7 @@ This makes the CLI safe for CI and automation workflows.
 
 ## 🗺 Roadmap
 
-- [x] CLI MVP (parse / export / extract / chain)
+- [x] CLI MVP (parse / export / extract / chain / analyze stats)
 - [x] Markdown exporter with thread splitting
 - [x] JSON Schema validation
 - [x] Config file loading (auto-discovery + profiles)

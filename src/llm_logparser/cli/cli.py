@@ -206,6 +206,40 @@ def main():
     )
 
     # ------------------------------------------------------------
+    # analyze サブコマンド
+    # ------------------------------------------------------------
+    analyze_cmd = subparsers.add_parser(
+        "analyze",
+        help="Analyze canonical parsed JSONL threads",
+    )
+    analyze_subparsers = analyze_cmd.add_subparsers(
+        dest="analyze_command",
+        required=True,
+    )
+    analyze_stats_cmd = analyze_subparsers.add_parser(
+        "stats",
+        help="Compute deterministic conversation statistics from parsed JSONL",
+    )
+    analyze_stats_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+    )
+    analyze_stats_cmd.add_argument(
+        "--json",
+        dest="json",
+        action="store_true",
+        help="Emit JSON instead of human-readable text",
+    )
+    analyze_stats_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help="Write the rendered result to a file",
+    )
+
+    # ------------------------------------------------------------
     # chain サブコマンド（parse → export を一気通し）
     # ------------------------------------------------------------
     chain_cmd = subparsers.add_parser(
@@ -321,6 +355,21 @@ def main():
                 )
         else:
             logger.error(_missing_arg_message(args.command, missing))
+            sys.exit(2)
+
+    if (
+        args.command == "analyze"
+        and args.analyze_command == "stats"
+        and args.input is None
+    ):
+        if can_prompt:
+            raw_input = prompt_text("Input parsed.jsonl or directory path:")
+            args.input = Path(raw_input) if raw_input else None
+        else:
+            logger.error(
+                "Missing required options for 'analyze stats':\n"
+                "  - input: --input"
+            )
             sys.exit(2)
 
     try:
@@ -441,6 +490,35 @@ def main():
                 logger.info(f"✅ Extracted to {result.get('path')}")
             else:
                 logger.info(f"✅ Dry-run complete (planned output: {result.get('path')})")
+
+        # --------------------------------------------------------
+        # analyze
+        # --------------------------------------------------------
+        elif args.command == "analyze":
+            if args.analyze_command == "stats":
+                from llm_logparser.core.analyzer_stats import (
+                    analyze_stats,
+                    render_stats_json,
+                    render_stats_text,
+                )
+
+                input_path = validate_path(args.input)
+                stats = analyze_stats(input_path)
+                rendered = (
+                    render_stats_json(stats)
+                    if args.json
+                    else render_stats_text(stats)
+                )
+
+                if args.out:
+                    if args.out.exists() and args.out.is_dir():
+                        raise IsADirectoryError(
+                            f"ファイルパスを指定してください: {args.out}"
+                        )
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(f"{rendered}\n", encoding="utf-8")
+                else:
+                    print(rendered)
 
         # --------------------------------------------------------
         # chain: parse → export (全thread対象)
