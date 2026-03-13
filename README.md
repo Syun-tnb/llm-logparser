@@ -356,14 +356,20 @@ This makes the CLI safe for CI and automation workflows.
 
 ## 🗺 Roadmap
 
-* [x] CLI MVP (parse/export/extract/chain)
-* [x] Markdown exporter with thread splitting
-* [x] JSON Schema validation (`--validate-schema`)
-* [ ] Minimal HTML viewer
-* [ ] Additional providers (Claude / Gemini / …)
-* [x] Config file loading (auto-discovery + profiles)
-* [ ] Apps SDK integration (experimental)
-* [ ] GUI (later stage)
+- [x] CLI MVP (parse / export / extract / chain)
+- [x] Markdown exporter with thread splitting
+- [x] JSON Schema validation
+- [x] Config file loading (auto-discovery + profiles)
+
+Near term:
+- [ ] Anthropic / Claude support
+- [ ] xAI / Grok support
+- [ ] Analyzer subcommand
+- [ ] VS Code Extension for browsing normalized logs
+
+Later / exploratory:
+- [ ] Gemini support (format under evaluation)
+- [ ] GUI applications
 
 ---
 
