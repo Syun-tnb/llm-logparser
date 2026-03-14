@@ -13,6 +13,8 @@ try:
 except Exception:  # pragma: no cover
     ijson = None
 
+from .l1_derivation import ThreadMetrics, build_thread_stats_artifact
+
 # ============================================================
 # 1. Error Classes
 # ============================================================
@@ -204,6 +206,26 @@ def should_skip_thread(conv_id: str, msgs: list, manifest_old: dict) -> bool:
     return False
 
 
+def write_thread_stats_artifact(
+    outdir_thread: Path,
+    *,
+    provider: str,
+    metrics: ThreadMetrics,
+) -> None:
+    """Persist cheap thread-local stats derived during the parse write loop."""
+    artifact_path = outdir_thread / "thread_stats.json"
+    tmp = artifact_path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(
+            build_thread_stats_artifact(metrics, provider_id=provider),
+            ensure_ascii=True,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    tmp.replace(artifact_path)
+
+
 # ============================================================
 # 5. Main Parser
 # ============================================================
@@ -292,6 +314,7 @@ def parse_to_jsonl(
 
             if not dry_run:
                 tmp = outpath.with_suffix(".tmp")
+                thread_metrics = ThreadMetrics(conversation_id=cid)
                 try:
                     with tmp.open("w", encoding="utf-8") as f:
                         thread_meta = {
@@ -321,13 +344,25 @@ def parse_to_jsonl(
                             if not validate_message(m, fail_fast=fail_fast):
                                 skipped += 1
                                 continue
+                            canonical_row = {
+                                "record_type": "message",
+                                "provider_id": provider,
+                                **m,
+                            }
+                            # Keep parse-time derivation tied to the canonical rows we write.
+                            thread_metrics.add_message(canonical_row)
                             f.write(
                                 json.dumps(
-                                    {"record_type": "message", "provider_id": provider, **m},
+                                    canonical_row,
                                     ensure_ascii=True,
                                 )
                                 + "\n"
                             )
+                    write_thread_stats_artifact(
+                        outdir_thread,
+                        provider=provider,
+                        metrics=thread_metrics,
+                    )
                 except Exception as e:
                     raise LLPWriteError(f"write error: {e}")
                 tmp.replace(outpath)

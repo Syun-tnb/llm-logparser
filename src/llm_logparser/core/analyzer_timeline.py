@@ -5,7 +5,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .analyzer_stats import _ts_to_seconds, discover_parsed_jsonl
+from .l1_derivation import (
+    discover_parsed_jsonl,
+    iter_message_records,
+    message_character_count,
+    message_role,
+    ts_to_seconds,
+)
 
 
 def _bucket_start(ts_seconds: float, bucket: str) -> datetime:
@@ -34,54 +40,36 @@ def analyze_timeline(input_path: Path, bucket: str = "day") -> dict[str, Any]:
     timeline_by_bucket: dict[str, dict[str, Any]] = {}
 
     for parsed_path in parsed_files:
-        with parsed_path.open("r", encoding="utf-8") as handle:
-            for line_no, raw_line in enumerate(handle, start=1):
-                line = raw_line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(
-                        f"invalid JSON in {parsed_path}:{line_no}: {exc.msg}"
-                    ) from exc
+        for row in iter_message_records(parsed_path):
+            ts_seconds = ts_to_seconds(row.get("ts"))
+            if ts_seconds is None:
+                continue
 
-                if row.get("record_type") != "message":
-                    continue
+            bucket_start = (
+                _bucket_start(ts_seconds, bucket).isoformat().replace("+00:00", "Z")
+            )
+            item = timeline_by_bucket.setdefault(
+                bucket_start,
+                {
+                    "bucket_start": bucket_start,
+                    "message_count": 0,
+                    "user_messages": 0,
+                    "assistant_messages": 0,
+                    "other_roles": 0,
+                    "characters_total": 0,
+                },
+            )
 
-                ts_seconds = _ts_to_seconds(row.get("ts"))
-                if ts_seconds is None:
-                    continue
+            item["message_count"] += 1
+            item["characters_total"] += message_character_count(row)
 
-                bucket_start = (
-                    _bucket_start(ts_seconds, bucket)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                )
-                item = timeline_by_bucket.setdefault(
-                    bucket_start,
-                    {
-                        "bucket_start": bucket_start,
-                        "message_count": 0,
-                        "user_messages": 0,
-                        "assistant_messages": 0,
-                        "other_roles": 0,
-                        "characters_total": 0,
-                    },
-                )
-
-                item["message_count"] += 1
-
-                text = row.get("text") if isinstance(row.get("text"), str) else ""
-                item["characters_total"] += len(text)
-
-                role = row.get("role")
-                if role == "user":
-                    item["user_messages"] += 1
-                elif role == "assistant":
-                    item["assistant_messages"] += 1
-                else:
-                    item["other_roles"] += 1
+            role = message_role(row)
+            if role == "user":
+                item["user_messages"] += 1
+            elif role == "assistant":
+                item["assistant_messages"] += 1
+            else:
+                item["other_roles"] += 1
 
     return {
         "bucket": bucket,
