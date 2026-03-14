@@ -283,7 +283,27 @@ message sequence and role-aware heuristics.
 
 ---
 
-# 5. Global Accumulator (Parse-Time)
+# 5. Optional SQLite Accelerator
+
+An optional per-provider SQLite database may be built later as a query
+accelerator:
+
+```text
+<outdir>/<provider>/analysis.db
+```
+
+This database is **not canonical state**. It must be fully rebuildable from
+existing canonical or canonical-derived artifacts such as:
+
+- `thread_stats.json`
+- `parsed.jsonl`
+- `message_windows.jsonl`
+
+The SQLite build step must not mutate those artifacts.
+
+---
+
+# 6. Global Accumulator (Parse-Time)
 
 Parse may maintain a **lightweight global accumulator**.
 

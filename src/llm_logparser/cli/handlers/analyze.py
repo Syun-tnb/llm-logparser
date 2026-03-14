@@ -56,3 +56,21 @@ def run_analyze_timeline(args, logger: logging.Logger) -> None:
         else render_timeline_text(timeline_data)
     )
     write_or_print(rendered, args.out)
+
+
+def run_analyze_sqlite_build(args, logger: logging.Logger) -> None:
+    from llm_logparser.l2_sqlite import build_analysis_db
+
+    input_root = validate_path(args.input, expect_dir=True)
+    result = build_analysis_db(
+        input_root,
+        args.provider,
+        overwrite=args.overwrite,
+    )
+    logger.info(
+        "analysis.db built: %s (threads=%s messages=%s windows=%s)",
+        result["db_path"],
+        result["threads"],
+        result["messages"],
+        result["message_windows"],
+    )

@@ -201,6 +201,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the rendered result to a file",
     )
 
+    analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
+        "sqlite-build",
+        help="Build an optional SQLite accelerator from canonical thread artifacts",
+    )
+    analyze_sqlite_build_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help="Root directory containing per-provider artifact directories",
+    )
+    analyze_sqlite_build_cmd.add_argument(
+        "--provider",
+        required=False,
+        help="Provider ID to index (for example: openai)",
+    )
+    analyze_sqlite_build_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help="Delete an existing analysis.db before rebuilding",
+    )
+
     chain_cmd = subparsers.add_parser(
         "chain",
         help="Parse raw export and export all threads to Markdown in one shot",

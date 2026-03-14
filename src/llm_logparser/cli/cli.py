@@ -19,6 +19,7 @@ from llm_logparser.cli.config_apply import (
 )
 from llm_logparser.cli.config_loader import load_config_with_discovery
 from llm_logparser.cli.handlers import (
+    run_analyze_sqlite_build,
     run_analyze_stats,
     run_analyze_timeline,
     run_chain,
@@ -135,18 +136,33 @@ def _prompt_missing_required(args, profile: dict[str, Any] | None, *, can_prompt
 
     if (
         args.command == "analyze"
-        and args.analyze_command in {"stats", "timeline"}
-        and args.input is None
+        and args.analyze_command in {"stats", "timeline", "sqlite-build"}
     ):
-        if can_prompt:
-            raw_input = prompt_text("Input parsed.jsonl or directory path:")
-            args.input = Path(raw_input) if raw_input else None
-        else:
-            logger.error(
-                f"Missing required options for 'analyze {args.analyze_command}':\n"
-                "  - input: --input"
-            )
-            sys.exit(2)
+        if args.input is None:
+            if can_prompt:
+                prompt_label = (
+                    "Input provider-root directory path:"
+                    if args.analyze_command == "sqlite-build"
+                    else "Input parsed.jsonl or directory path:"
+                )
+                raw_input = prompt_text(prompt_label)
+                args.input = Path(raw_input) if raw_input else None
+            else:
+                logger.error(
+                    f"Missing required options for 'analyze {args.analyze_command}':\n"
+                    "  - input: --input"
+                )
+                sys.exit(2)
+
+        if args.analyze_command == "sqlite-build" and not args.provider:
+            if can_prompt:
+                args.provider = prompt_text("Provider ID (for example: openai):")
+            else:
+                logger.error(
+                    "Missing required options for 'analyze sqlite-build':\n"
+                    "  - provider: --provider"
+                )
+                sys.exit(2)
 
 
 def _dispatch(args, logger) -> None:
@@ -161,6 +177,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_stats(args, logger)
         elif args.analyze_command == "timeline":
             run_analyze_timeline(args, logger)
+        elif args.analyze_command == "sqlite-build":
+            run_analyze_sqlite_build(args, logger)
     elif args.command == "chain":
         run_chain(args, logger)
     elif args.command == "viewer":
