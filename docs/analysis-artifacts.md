@@ -340,7 +340,7 @@ If it is missing, the system must still be able to recompute results from `parse
 
 ---
 
-# 6. Analyze Stage (L2)
+# 7. Analyze Stage (L2)
 
 The analyze stage performs **cross-thread computation** and **presentation-level processing**.
 
@@ -370,7 +370,7 @@ These commands may perform full dataset scans if needed.
 
 ---
 
-# 7. L3 / Downstream Processing
+# 8. L3 / Downstream Processing
 
 L3 refers to systems outside the core parser.
 
@@ -405,7 +405,7 @@ This separation ensures that:
 
 ---
 
-# 8. Artifact Design Principles
+# 9. Artifact Design Principles
 
 Artifacts produced by `llm-logparser` must follow these rules.
 
@@ -430,7 +430,7 @@ Artifacts should support incremental updates without full recomputation when pos
 
 ---
 
-# 9. Architectural Summary
+# 10. Architectural Summary
 
 | Stage | Allowed Work |
 |------|------|
@@ -451,7 +451,7 @@ L3      = perform semantic or AI processing
 
 ---
 
-# 10. Rationale
+# 11. Rationale
 
 This architecture ensures:
 
@@ -464,7 +464,7 @@ This architecture ensures:
 
 ---
 
-# 11. Future Extensions
+# 12. Future Extensions
 
 Possible future additions include:
 
