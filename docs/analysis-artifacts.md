@@ -245,6 +245,36 @@ Forbidden examples:
 These tasks belong to **analyze or downstream processing**.
 
 
+### Canonical-Based Chunking
+
+All chunking and message window artifacts must be derived from
+the canonical normalized dataset (`parsed.jsonl`).
+
+Chunking must never operate directly on raw provider exports.
+
+Reasons:
+
+provider logs may contain irregular role sequences  
+(e.g. tool calls, system inserts, retries)
+
+different providers expose different role vocabularies
+
+raw exports may include partial or provider-specific structures
+
+By deriving chunks from canonical messages:
+
+role normalization is already complete
+
+timestamps are normalized
+
+message ordering is deterministic
+
+Chunking logic must not assume a strict
+user → assistant → user → assistant pattern.
+
+Instead, chunk boundaries should be determined using
+message sequence and role-aware heuristics.
+
 ---
 
 # 5. Global Accumulator (Parse-Time)
