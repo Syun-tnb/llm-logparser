@@ -70,7 +70,7 @@ Key properties:
 
 ---
 
-## 3. Current Artifact Layout
+# 3. Current Artifact Layout
 
 The current parser produces the following directory structure.
 
