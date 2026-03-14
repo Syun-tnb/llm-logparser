@@ -70,7 +70,7 @@ Key properties:
 
 ---
 
-## 3. Current Artifact Layout
+# 3. Current Artifact Layout
 
 The current parser produces the following directory structure.
 
@@ -80,6 +80,7 @@ The current parser produces the following directory structure.
     manifest.json
     thread-<conversation_id>/
         parsed.jsonl
+        thread_stats.json
 ```
 
 Each thread is stored in an isolated directory.
@@ -89,7 +90,13 @@ Thread artifact:
 ```text
 thread-<conversation_id>/
     parsed.jsonl
+    thread_stats.json
 ```
+
+`thread_stats.json` is a cheap deterministic thread-local artifact generated
+during parse from the same canonical message rows written to `parsed.jsonl`.
+It provides lightweight counts and timestamp-derived metadata for downstream
+L3/local-LLM pipelines without requiring a later thread rescan.
 
 The `parsed.jsonl` file contains:
 
@@ -133,6 +140,23 @@ The manifest enables:
 - incremental parsing (skip unchanged threads)
 
 without scanning all thread files.
+
+
+### Shared Deterministic Derivation Layer
+
+L1 deterministic analysis should be implemented as reusable helpers over canonical
+`parsed.jsonl` records, not embedded directly in CLI handlers.
+
+Current shared responsibilities include:
+
+- discovering `parsed.jsonl` files from a file or directory input
+- iterating canonical message records
+- extracting timestamps in a normalized way
+- computing cheap thread-local metrics such as message counts, character counts,
+  role counts, and first/last timestamps
+
+These helpers are intended to be reusable both from `analyze` subcommands and
+from future parse-time thread-local artifact generation.
 
 
 ---
