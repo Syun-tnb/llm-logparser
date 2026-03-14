@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover
     ijson = None
 
 from .l1_derivation import ThreadMetrics, build_thread_stats_artifact
+from .message_windows import render_message_windows_jsonl
 
 # ============================================================
 # 1. Error Classes
@@ -226,6 +227,21 @@ def write_thread_stats_artifact(
     tmp.replace(artifact_path)
 
 
+def write_message_windows_artifact(
+    outdir_thread: Path,
+    *,
+    canonical_rows: list[dict[str, Any]],
+) -> None:
+    """Persist deterministic message windows from canonical message rows."""
+    artifact_path = outdir_thread / "message_windows.jsonl"
+    tmp = artifact_path.with_suffix(".tmp")
+    tmp.write_text(
+        render_message_windows_jsonl(canonical_rows),
+        encoding="utf-8",
+    )
+    tmp.replace(artifact_path)
+
+
 # ============================================================
 # 5. Main Parser
 # ============================================================
@@ -315,6 +331,7 @@ def parse_to_jsonl(
             if not dry_run:
                 tmp = outpath.with_suffix(".tmp")
                 thread_metrics = ThreadMetrics(conversation_id=cid)
+                canonical_rows: list[dict[str, Any]] = []
                 try:
                     with tmp.open("w", encoding="utf-8") as f:
                         thread_meta = {
@@ -349,7 +366,8 @@ def parse_to_jsonl(
                                 "provider_id": provider,
                                 **m,
                             }
-                            # Keep parse-time derivation tied to the canonical rows we write.
+                            # Keep derived artifacts tied to the exact canonical rows we write.
+                            canonical_rows.append(canonical_row)
                             thread_metrics.add_message(canonical_row)
                             f.write(
                                 json.dumps(
@@ -362,6 +380,10 @@ def parse_to_jsonl(
                         outdir_thread,
                         provider=provider,
                         metrics=thread_metrics,
+                    )
+                    write_message_windows_artifact(
+                        outdir_thread,
+                        canonical_rows=canonical_rows,
                     )
                 except Exception as e:
                     raise LLPWriteError(f"write error: {e}")

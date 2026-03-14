@@ -81,6 +81,7 @@ The current parser produces the following directory structure.
     thread-<conversation_id>/
         parsed.jsonl
         thread_stats.json
+        message_windows.jsonl
 ```
 
 Each thread is stored in an isolated directory.
@@ -91,12 +92,17 @@ Thread artifact:
 thread-<conversation_id>/
     parsed.jsonl
     thread_stats.json
+    message_windows.jsonl
 ```
 
 `thread_stats.json` is a cheap deterministic thread-local artifact generated
 during parse from the same canonical message rows written to `parsed.jsonl`.
 It provides lightweight counts and timestamp-derived metadata for downstream
 L3/local-LLM pipelines without requiring a later thread rescan.
+
+`message_windows.jsonl` is a deterministic thread-local text artifact derived
+only from canonical message rows. The first version uses simple fixed-size
+contiguous message windows with preserved role sequence and message traceability.
 
 The `parsed.jsonl` file contains:
 
