@@ -25,6 +25,8 @@
 > **Note:** In the current MVP, normalization is handled internally by Python code.
 > The file `mapping.sample.yaml` in `docs/examples/` is provided only as a **sample** for future external mapping support.
 > It is **not yet used** by the CLI or parser.
+> The current runtime path is adapter-based: the parser imports `src/llm_logparser/core/providers/<provider>/adapter.py`
+> and normalizes provider exports there.
 
 ### Extractor
 
@@ -41,5 +43,15 @@ The `extract` subcommand uses a dedicated extractor (`providers/openai/extractor
 3. Optionally implement `extractor.py` with `get_extractor()`.
 4. Ensure golden tests for sample → expected Markdown.
 
-> **Current provider stubs:** `anthropic/claude/` and `xai/grok/` exist as empty stubs for future implementation.
+## Example Mapping Specs
 
+- [`docs/examples/providers/openai/chatgpt.yaml`](/Users/tanabeshunji/Documents/llm-logparser/docs/examples/providers/openai/chatgpt.yaml)
+- [`docs/examples/providers/anthropic/claude.yaml`](/Users/tanabeshunji/Documents/llm-logparser/docs/examples/providers/anthropic/claude.yaml)
+- [`docs/examples/providers/xai/grok.yaml`](/Users/tanabeshunji/Documents/llm-logparser/docs/examples/providers/xai/grok.yaml)
+
+These files are documentation/examples only today.
+They are not active runtime config until external provider mapping support is implemented.
+
+- `openai/chatgpt.yaml`: example/spec for current ChatGPT normalization shape
+- `anthropic/claude.yaml`: example/spec aligned with the current Claude adapter
+- `xai/grok.yaml`: documentation/example only until a Grok runtime adapter exists

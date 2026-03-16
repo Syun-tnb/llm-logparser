@@ -1,17 +1,15 @@
 # Config Guide (YAML/JSON)
 
-Define field mappings, fallbacks, split policies, and runtime defaults without code changes.
+Define runtime defaults for the CLI without code changes.
 
 > [!IMPORTANT]
-> **Implementation status:** The config file loading mechanism described in this guide is
-> **not yet implemented** in the CLI. Currently, all settings must be passed via CLI arguments
-> or environment variables. The `config.yaml` file at the repository root serves as a
-> **design reference** for the intended configuration structure.
+> **Current status:** `config.yaml` loading is implemented for CLI/profile defaults.
+> External provider mapping YAML is **not** loaded at runtime yet.
+> Provider normalization still happens in Python adapters under `src/llm_logparser/core/providers/`.
 
 ---
 
-* remap fields from provider exports
-* define fallback values or normalization rules
+* define profile defaults for CLI options
 * tune export splitting behavior
 * set default locale / timezone preferences
 * keep environment-specific settings out of git
@@ -19,7 +17,7 @@ Define field mappings, fallbacks, split policies, and runtime defaults without c
 This guide does **not** replace the CLI reference.  
 Think of it as:
 
-> “How to teach the tool about your data and preferences.”
+> “How to set default CLI behavior for your environment.”
 
 ---
 
@@ -48,33 +46,33 @@ Supported configuration files:
 
 JSON equivalents are also supported.
 
-> The tool automatically loads both (user → project), then applies CLI overrides.
+> The CLI discovers one config file (`--config`, env var, local, parent, then home) and
+> applies profile values only when the corresponding CLI flags are missing.
 
 ---
 
 ## Minimal Example (YAML)
 
 ```yaml
-schema_version: 1
+active_profile: default
 
-provider: openai
+profiles:
+  default:
+    provider: openai
+    timezone: Asia/Tokyo
+    locale: en-US
 
-mapping:
-  conversation_id: $.conversation_id
-  message_id: $.message_id
-  ts: $.create_time | epoch_ms
-  author_role: $.author.role
-  author_name: $.author.name | null
-  model: $.metadata.model | null
-  content: $.content
+    input:
+      path: exports/messages.json
 
-split:
-  by: size
-  size_mb: 20
+    parse:
+      outdir: artifacts
+      validate_schema: true
 
-locale:
-  lang: en-US
-  timezone: Asia/Tokyo
+    output:
+      path: artifacts/thread.md
+      formatting: light
+      split: auto
 ```
 
 The final value for each setting is resolved as:
@@ -87,57 +85,42 @@ CLI args > environment variables > user profile > defaults
 
 ## Sections explained
 
-### `mapping`
+### Provider mapping YAML
 
-Defines how raw provider data becomes normalized fields.
+External provider field-mapping YAML is not active runtime config yet.
 
-You can:
+Files such as:
 
-* pull values using JSON paths
-* convert timestamps
-* insert `null` fallbacks
-* normalize optional fields
+* `docs/examples/providers/openai/chatgpt.yaml`
+* `docs/examples/providers/anthropic/claude.yaml`
+* `docs/examples/providers/xai/grok.yaml`
 
-Example:
-
-```yaml
-mapping:
-  ts: $.create_time | epoch_ms
-  author_name: $.author.name | null
-```
+are documentation/examples for a future external mapping system.
+Today, the parser ignores those files and uses provider adapters instead.
 
 ---
 
-### `split`
+### `output`
 
-Controls how large threads are split during export.
+Controls export defaults such as output path, formatting, and split mode.
 
 Examples:
 
 ```yaml
-split:
-  by: size
-  size_mb: 20
-```
-
-or by count:
-
-```yaml
-split:
-  by: count
-  count: 1500
+output:
+  formatting: light
+  split: auto
 ```
 
 ---
 
-### `locale`
+### `locale` / `timezone`
 
 Controls how dates and messages are formatted:
 
 ```yaml
-locale:
-  lang: ja-JP
-  timezone: Asia/Tokyo
+locale: ja-JP
+timezone: Asia/Tokyo
 ```
 
 Missing translations automatically fall back to `en-US`.
@@ -147,8 +130,9 @@ Missing translations automatically fall back to `en-US`.
 ## Troubleshooting tips
 
 * A config value not applying? → check **priority order**  
-* Unexpected timestamps? → verify `timezone`  
-* Output too fragmented? → increase `split.size_mb` or switch to `count`
+* Unexpected timestamps? → verify `timezone`
+* A provider mapping YAML not taking effect? → that is expected today; runtime parsing is adapter-based
+* Output too fragmented? → adjust `output.split` or pass `--split` explicitly
 
 ---
 
@@ -156,10 +140,11 @@ Missing translations automatically fall back to `en-US`.
 
 Configuration lets you adapt `llm-logparser` to:
 
-* different providers  
-* personal workflows  
-* corporate environments  
+* personal workflows
+* corporate environments
+* different default CLI profiles
 
 — **without touching the code.**
 
-If your setup grows complex, prefer documenting it in `config.yaml` instead of stacking CLI flags.
+For provider-specific field remapping, treat the YAML files under `docs/examples/providers/`
+as documentation/examples only until runtime wiring is implemented.

@@ -1,0 +1,110 @@
+# Provider Config — Grok (xAI)
+# 目的: Grok エクスポートの“生データ”を共通スキーマへ正規化するためのマッピング定義。
+# この設定はコード改変なしで調整可能。必要に応じて書式・フィールド名を合わせてください。
+
+id: grok
+version: 1
+export_formats: [json] # TODO: JSONL / NDJSON エクスポートの有無を確認
+
+# 受け入れ判定（任意情報）：ファイル先頭のヒューリスティクスに使う
+detection:
+  probable_keys: ["conversations", "conversation", "responses", "message"]
+
+# ===== フィールドマッピング =====
+# 例: エクスポート1件のJSONが以下のような形を想定（実データに合わせて調整）
+# このマッピングは `conversations[] -> responses[] -> response` を
+# 1件ずつ展開して評価する前提のサンプルです。
+# {
+#   "conversation": {
+#     "id": "conv_sample_001",
+#     "title": "AI-Forest-Protocol 提案",
+#     "create_time": "2026-02-18T05:33:25Z"
+#   },
+#   "response": {
+#     "_id": "res_sample_001",
+#     "conversation_id": "conv_sample_001",
+#     "message": "ちょっとした提案です。OSSアプリ開発の草案を共有します。",
+#     "sender": "human",
+#     "create_time": { "$date": { "$numberLong": "1747186506260" } },
+#     "model": "grok-3"
+#   }
+# }
+
+fields:
+  conversation_id:
+    path: "$.response.conversation_id"
+
+  message_id:
+    path: "$.response._id"
+
+  timestamp:
+    path: "$.response.create_time.$date.$numberLong"
+    type: "epoch_ms"          # iso | epoch | epoch_ms
+    timezone_hint: "UTC"      # 解析時のヒント（未使用可）
+
+  role:
+    path: "$.response.sender"
+
+  author_name:
+    # 現行サンプルには名前表示フィールドが見当たらない
+    path: null
+    default: null
+
+  model:
+    path: "$.response.model"
+    map:
+      "grok-2": "grok-2"
+      "grok-3": "grok-3"
+
+  content:
+    # 現行サンプルでは本文は単一文字列。
+    # TODO: confirm 実エクスポートで structured content / parts があるか
+    path: "$.response.message"
+    joiner: "\n"              # パーツの連結文字
+    fallback_path: "$.response.content.parts"
+
+  attachments:
+    # TODO: confirm actual export structure
+    # conversation.asset_ids は会話単位の可能性があるため任意フィールド扱いに留める
+    path: "$.conversation.asset_ids"
+
+# ===== 正規化ルール =====
+role_map:
+  human: user
+  user: user
+  assistant: assistant
+  system: system
+  tool: tool
+
+missing_field_policy: "warn"   # skip | warn | fill_default
+
+# ===== 既定値のフォールバック =====
+fallbacks:
+  author_name: null
+  model: null
+
+# ===== 文字エンコーディング・制御文字 =====
+text:
+  normalize_newlines: true      # \r\n → \n
+  strip_control_chars: true     # 制御文字を可及的に除去/置換
+  max_message_bytes: 10485760   # 10MB超はWARNして通す（切り捨てはしない）
+
+# ===== タイムスタンプ補正 =====
+timestamp_correction:
+  monotonic_if_missing: true    # 欠落時は読み込み順で単調増加付与
+
+# ===== バリデーション =====
+validation:
+  required_fields:
+    - conversation_id
+    - message_id
+    - role
+    - content
+  warn_if_missing:
+    - model
+    - author_name
+
+# ===== 出力メタ（Markdownヘッダに反映） =====
+output_meta:
+  provider_label_i18n_key: "provider.name.grok" # i18nで「Grok」を解決
+  model_label_i18n_key: "output.header.models"

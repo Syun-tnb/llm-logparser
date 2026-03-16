@@ -1,0 +1,63 @@
+{
+  "conversations": [
+    {
+      "conversation": {
+        "id": "conv_sample_001",
+        "user_id": "u_12345",
+        "anon_user_id": null,
+        "create_time": "2026-02-18T05:33:25Z",
+        "modify_time": "2026-02-18T05:34:14Z",
+        "system_prompt_id": null,
+        "temporary": false,
+        "leaf_response_id": "res_sample_002",
+        "title": "AI-Forest-Protocol 提案",
+        "summary": "分散型LFMのP2P共鳴に関する草案",
+        "asset_ids": [],
+        "root_asset_id": null,
+        "x_user_id": "x_98765",
+        "starred": false,
+        "system_prompt_name": "normal",
+        "media_types": [],
+        "controller": null,
+        "task_result_id": null,
+        "team_id": null,
+        "shared_with_team": null,
+        "shared_with_user_ids": []
+      },
+      "responses": [
+        {
+          "response": {
+            "_id": "res_sample_001",
+            "conversation_id": "conv_sample_001",
+            "message": "ちょっとした提案です。OSSアプリ開発の草案を共有します。",
+            "sender": "human",
+            "create_time": {
+              "$date": {
+                "$numberLong": "1747186506260"
+              }
+            },
+            "xai_user_id": "u_12345",
+            "metadata": {
+              "cited_web_search_results": [
+                {
+                  "title": "Sample Result",
+                  "url": "https://example.com"
+                }
+              ],
+              "image_gen_metadata": null,
+              "is_original_response": true,
+              "finish_reason": "stop",
+              "usage": {
+                "prompt_tokens": 1024,
+                "completion_tokens": 512,
+                "total_tokens": 1536
+              }
+            },
+            "model": "grok-3"
+          },
+          "share_link": null
+        }
+      ]
+    }
+  ]
+}

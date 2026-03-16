@@ -286,6 +286,9 @@ uv run llm-logparser analyze timeline \
 `llm-logparser` supports optional configuration via `config.yaml`.
 CLI flags always take precedence. Configuration is used only to fill in missing options.
 
+External provider mapping YAML is not used at runtime yet.
+Current normalization is adapter-based under `src/llm_logparser/core/providers/`.
+
 ### 🔎 Config Discovery Order
 
 When no `--config` flag is provided, the tool searches in the following order:

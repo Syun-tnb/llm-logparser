@@ -3,6 +3,11 @@
 # - macOS/Linux: ~/.config/llm-logparser/config.yaml
 # - Windows:     %APPDATA%/llm-logparser/config.yaml
 # - Local opt:   ./.llp/config.yaml
+#
+# NOTE:
+# - 現在のランタイムが読むのは CLI の既定値に対応するキーの一部のみ。
+# - provider_config_path を含む provider mapping 系の項目は将来向けのドキュメント参照であり、
+#   parser/CLI は現状これらの外部YAMLをロードしない。
 
 schema_version: 1
 active_profile: default
@@ -14,8 +19,11 @@ profiles:
     timezone: Asia/Tokyo # デフォルトTZ（CLI引数で上書き可）
 
     # ===== Provider =====
-    provider: chatgpt
-    provider_config_path: providers/chatgpt.yaml
+    provider: openai
+    # NOTE: provider_config_path は現状ランタイム未使用。
+    # parser はこのYAMLを読まず、provider ID から adapter モジュールを動的importする。
+    # ここでは将来の外部マッピング仕様サンプルへの参照だけを残す。
+    provider_config_path: docs/examples/providers/openai/chatgpt.yaml
 
     # ===== Input =====
     input:
@@ -62,8 +70,9 @@ profiles:
   work:
     locale: en-US
     timezone: Asia/Tokyo
-    provider: chatgpt
-    provider_config_path: providers/chatgpt.yaml
+    provider: openai
+    # NOTE: provider_config_path は現状ランタイム未使用。
+    provider_config_path: docs/examples/providers/openai/chatgpt.yaml
     input:
       paths:
         - artifacts/messages-latest.jsonl
