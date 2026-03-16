@@ -1,0 +1,151 @@
+{
+  "conversations": [
+    {
+      "conversation": {
+        "id": "826b2d30-4a1d-4cad-8267-638de72e975e",
+        "user_id": "e567b889-8b05-4f3b-85d7-9c2ac0275df8",
+        "anon_user_id": null,
+        "create_time": "2026-02-18T05:33:25.171307Z",
+        "modify_time": "2026-02-18T05:34:14.309030Z",
+        "system_prompt_id": null,
+        "temporary": false,
+        "leaf_response_id": null,
+        "title": "AI-Forest-Protocol: 分散LFM P2P共鳴提案",
+        "summary": "",
+        "asset_ids": [],
+        "root_asset_id": null,
+        "x_user_id": "1317690462937886722",
+        "starred": false,
+        "system_prompt_name": "",
+        "media_types": [],
+        "controller": null,
+        "task_result_id": null,
+        "team_id": null,
+        "shared_with_team": null,
+        "shared_with_user_ids": []
+      },
+      "responses": [
+        {
+          "response": {
+            "_id": "b7068bc6-2393-4766-82f2-36bab6bb576d",
+            "conversation_id": "826b2d30-4a1d-4cad-8267-638de72e975e",
+            "message": "ちょっとした提案です。OSSアプリ開発の草案を共有します。ご意見ください。",
+            "sender": "human",
+            "create_time": {
+              "$date": {
+                "$numberLong": "1771392805185"
+              }
+            },
+            "metadata": {},
+            "model": "grok-4-auto"
+          },
+          "share_link": null
+        },
+        {
+          "response": {
+            "_id": "2130f537-c8bc-432e-8c7b-fda36f49d970",
+            "conversation_id": "826b2d30-4a1d-4cad-8267-638de72e975e",
+            "parent_response_id": "b7068bc6-2393-4766-82f2-36bab6bb576d",
+            "message": "プロジェクト案への意見です。検索結果を踏まえた上で、差分プライバシーと検疫ゲートウェイの案は筋が良いと思います。",
+            "sender": "assistant",
+            "create_time": {
+              "$date": {
+                "$numberLong": "1771392853861"
+              }
+            },
+            "model": "grok-4",
+            "metadata": {},
+            "agent_thinking_traces": [
+              {
+                "agent_id": {
+                  "rollout_id": "0"
+                },
+                "thinking_trace": "Searching before answering"
+              }
+            ],
+            "steps": [
+              {
+                "tool_usage_results": [],
+                "web_search_results": [],
+                "x_posts_ids": []
+              }
+            ],
+            "web_search_results": [
+              {
+                "title": "Liquid Foundation Models",
+                "url": "https://www.liquid.ai/models"
+              }
+            ]
+          },
+          "share_link": null
+        }
+      ]
+    },
+    {
+      "conversation": {
+        "id": "b3e22762-44c3-4fc4-bb8c-b5036bc7dbf5",
+        "user_id": "e567b889-8b05-4f3b-85d7-9c2ac0275df8",
+        "anon_user_id": null,
+        "create_time": "2026-02-19T07:06:00.000000Z",
+        "modify_time": "2026-02-19T07:07:00.000000Z",
+        "system_prompt_id": null,
+        "temporary": false,
+        "leaf_response_id": null,
+        "title": "Kansai-Vectorized: Sarcastic AI Vector Protocol",
+        "summary": "",
+        "asset_ids": [],
+        "root_asset_id": null,
+        "x_user_id": "1317690462937886722",
+        "starred": false,
+        "system_prompt_name": "",
+        "media_types": [],
+        "controller": null,
+        "task_result_id": null,
+        "team_id": null,
+        "shared_with_team": null,
+        "shared_with_user_ids": []
+      },
+      "responses": [
+        {
+          "response": {
+            "_id": "c1743bb2-f29c-4812-b024-b76f0b6d66e4",
+            "conversation_id": "b3e22762-44c3-4fc4-bb8c-b5036bc7dbf5",
+            "parent_response_id": "0f8db0db-cf5a-4793-b8d8-7ff111111111",
+            "message": "了解です。皮肉っぽい関西弁のトーンに寄せた案を返します。",
+            "sender": "ASSISTANT",
+            "create_time": {
+              "$date": {
+                "$numberLong": "1771484805000"
+              }
+            },
+            "model": "grok-3",
+            "file_attachments": [
+              "c6ad929b-2aac-41e5-a0c2-52a82ae0ceac"
+            ],
+            "metadata": {}
+          },
+          "share_link": null
+        },
+        {
+          "response": {
+            "_id": "0f8db0db-cf5a-4793-b8d8-7ff111111111",
+            "conversation_id": "b3e22762-44c3-4fc4-bb8c-b5036bc7dbf5",
+            "message": "関西弁で皮肉っぽい自己紹介を考えてください。",
+            "sender": "human",
+            "create_time": {
+              "$date": {
+                "$numberLong": "1771484761000"
+              }
+            },
+            "model": "grok-4-auto",
+            "metadata": {}
+          },
+          "share_link": null
+        }
+      ]
+    }
+  ],
+  "projects": [],
+  "tasks": [],
+  "media_posts": []
+}

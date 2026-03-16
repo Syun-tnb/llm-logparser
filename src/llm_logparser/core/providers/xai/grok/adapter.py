@@ -146,12 +146,6 @@ def _unwrap_conversation(raw: dict) -> dict | None:
     if isinstance(raw.get("conversation"), dict) and isinstance(raw.get("responses"), list):
         return raw
 
-    conversations = raw.get("conversations")
-    if isinstance(conversations, list) and len(conversations) == 1:
-        only = conversations[0]
-        if isinstance(only, dict):
-            return only
-
     return None
 
 
@@ -307,5 +301,24 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
     return [item[3] for item in out]
 
 
+def expand_input_records(raw: dict) -> list[dict]:
+    if not isinstance(raw, dict):
+        return []
+
+    bundle = _unwrap_conversation(raw)
+    if bundle is not None:
+        return [bundle]
+
+    conversations = raw.get("conversations")
+    if isinstance(conversations, list):
+        return [item for item in conversations if isinstance(item, dict)]
+
+    return []
+
+
 def get_adapter():
     return adapter
+
+
+def get_record_expander():
+    return expand_input_records
