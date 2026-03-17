@@ -349,6 +349,12 @@ Value precedence for supported config-backed options:
 CLI flags > selected profile values > built-in CLI defaults
 ```
 
+The section-based shape is canonical. Older profile-level compatibility keys such as
+`outdir`, `dry_run`, `fail_fast`, `validate_schema`, `export_outdir`, `parsed_root`,
+and `conversation_id` are still accepted for `schema_version: 1`, but the loader now
+warns and points to the section-based replacement keys. That compatibility is intended
+for removal in a future schema-version-2 cleanup.
+
 If multiple `input.paths` are defined and no explicit `--input` is provided:
 
 * In interactive mode, you will be prompted.

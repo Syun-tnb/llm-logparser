@@ -158,6 +158,20 @@ For backward compatibility, older profile-level keys such as `outdir`, `dry_run`
 `fail_fast`, and `validate_schema` are still accepted and normalized into these sections.
 New configs should prefer the command-specific shape.
 
+Legacy profile-level keys currently accepted for `schema_version: 1` compatibility:
+
+* `outdir` → `parse.outdir`, `chain.outdir`, `extract.outdir`
+* `dry_run` → `parse.dry_run`, `chain.dry_run`, `extract.dry_run`
+* `fail_fast` → `parse.fail_fast`, `chain.fail_fast`
+* `validate_schema` → `parse.validate_schema`, `chain.validate_schema`
+* `export_outdir` → `chain.export_outdir`
+* `parsed_root` → `chain.parsed_root`
+* `conversation_id` → `extract.conversation_id`
+
+The loader emits deprecation warnings when these legacy keys are used. They remain
+supported for schema-version-1 compatibility only and are intended for removal in a
+future schema-version-2 cleanup.
+
 ### `sanitize`
 
 `sanitize` controls `extract` redaction behavior:

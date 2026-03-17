@@ -272,6 +272,74 @@ def test_load_config_file_returns_typed_config_and_normalizes_legacy_keys(tmp_pa
     assert profile.extract.conversation_id == "conv-42"
 
 
+def test_legacy_profile_level_keys_emit_deprecation_warnings(tmp_path, caplog):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    outdir: artifacts",
+                "    dry_run: true",
+                "    export_outdir: exported",
+                "    parsed_root: parsed",
+                "    conversation_id: conv-42",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+
+    profile = config.profiles["default"]
+    assert profile.parse.outdir == "artifacts"
+    assert profile.chain.outdir == "artifacts"
+    assert profile.extract.outdir == "artifacts"
+    assert profile.parse.dry_run is True
+    assert profile.chain.export_outdir == "exported"
+    assert profile.chain.parsed_root == "parsed"
+    assert profile.extract.conversation_id == "conv-42"
+    assert "Deprecated config key profiles.default.outdir" in caplog.text
+    assert "use parse.outdir, chain.outdir, extract.outdir instead" in caplog.text
+    assert "schema_version 1" in caplog.text
+    assert "schema_version 2 cleanup" in caplog.text
+    assert "Deprecated config key profiles.default.export_outdir" in caplog.text
+    assert "use chain.export_outdir instead" in caplog.text
+
+
+def test_canonical_section_keys_do_not_emit_deprecation_warnings(tmp_path, caplog):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    parse:",
+                "      outdir: artifacts",
+                "      dry_run: true",
+                "    chain:",
+                "      export_outdir: exported",
+                "      parsed_root: parsed",
+                "    extract:",
+                "      conversation_id: conv-42",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+
+    profile = config.profiles["default"]
+    assert profile.parse.outdir == "artifacts"
+    assert profile.parse.dry_run is True
+    assert profile.chain.export_outdir == "exported"
+    assert profile.chain.parsed_root == "parsed"
+    assert profile.extract.conversation_id == "conv-42"
+    assert "Deprecated config key" not in caplog.text
+
+
 def test_unsupported_config_schema_version_exits(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

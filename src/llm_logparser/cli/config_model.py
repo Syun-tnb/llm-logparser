@@ -10,6 +10,18 @@ SUPPORTED_CONFIG_SCHEMA_MAJOR = 1
 SUPPORTED_CONFIG_SCHEMA_VERSION = "1"
 _CONFIG_LOG = logging.getLogger("llm_logparser.config")
 
+# These legacy profile-level keys remain accepted for schema_version 1
+# compatibility only. A future schema_version 2 cleanup is expected to remove them.
+LEGACY_PROFILE_KEY_REPLACEMENTS: dict[str, str] = {
+    "outdir": "parse.outdir, chain.outdir, extract.outdir",
+    "dry_run": "parse.dry_run, chain.dry_run, extract.dry_run",
+    "fail_fast": "parse.fail_fast, chain.fail_fast",
+    "validate_schema": "parse.validate_schema, chain.validate_schema",
+    "export_outdir": "chain.export_outdir",
+    "parsed_root": "chain.parsed_root",
+    "conversation_id": "extract.conversation_id",
+}
+
 
 def _raise_config_error(message: str) -> None:
     raise SystemExit(f"Invalid config: {message}")
@@ -112,6 +124,19 @@ def _compact_dict(data: dict[str, Any]) -> dict[str, Any]:
         for key, value in data.items()
         if value is not None and value != {} and value != []
     }
+
+
+def _warn_deprecated_profile_keys(profile_name: str, data: dict[str, Any]) -> None:
+    for legacy_key, replacement in LEGACY_PROFILE_KEY_REPLACEMENTS.items():
+        if legacy_key not in data:
+            continue
+        _CONFIG_LOG.warning(
+            "Deprecated config key profiles.%s.%s is still supported for schema_version 1; "
+            "use %s instead. Removal is planned for a future schema_version 2 cleanup.",
+            profile_name,
+            legacy_key,
+            replacement,
+        )
 
 
 def normalize_schema_version(raw_version: Any) -> str | None:
@@ -423,6 +448,7 @@ class ConfigProfile:
     @classmethod
     def from_raw(cls, name: str, raw: Any) -> ConfigProfile:
         data = _ensure_mapping(raw, f"profiles.{name}")
+        _warn_deprecated_profile_keys(name, data)
         parse = ParseConfig.from_raw(data.get("parse"), context=f"profiles.{name}.parse")
         chain = ChainConfig.from_raw(data.get("chain"), context=f"profiles.{name}.chain")
         extract = ExtractConfig.from_raw(
