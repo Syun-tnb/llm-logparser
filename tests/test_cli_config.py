@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from llm_logparser.cli.cli import main
+from llm_logparser.cli.config_loader import load_config_file
+from llm_logparser.cli.config_model import AppConfig
 
 
 def _write_minimal_parsed_jsonl(path: Path) -> None:
@@ -232,3 +234,174 @@ def test_non_interactive_multiple_input_paths_exits_2(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 2
+
+
+def test_load_config_file_returns_typed_config_and_normalizes_legacy_keys(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1.0",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    provider: openai",
+                "    input:",
+                "      path: export.json",
+                "    outdir: artifacts",
+                "    dry_run: true",
+                "    parse:",
+                "      validate_schema: true",
+                "    extract:",
+                "      conversation_id: conv-42",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+
+    assert isinstance(config, AppConfig)
+    assert config.schema_version == "1"
+    profile = config.profiles["default"]
+    assert profile.parse.outdir == "artifacts"
+    assert profile.chain.outdir == "artifacts"
+    assert profile.extract.outdir == "artifacts"
+    assert profile.parse.dry_run is True
+    assert profile.parse.validate_schema is True
+    assert profile.extract.conversation_id == "conv-42"
+
+
+def test_unsupported_config_schema_version_exits(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 2",
+                "profiles:",
+                "  default:",
+                "    provider: openai",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="Unsupported config schema_version '2'"):
+        load_config_file(config_path)
+
+
+def test_export_uses_canonical_output_path_from_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    parsed = tmp_path / "parsed.jsonl"
+    out = tmp_path / "nested" / "thread.md"
+    _write_minimal_parsed_jsonl(parsed)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    timezone: Asia/Tokyo",
+                "    input:",
+                "      parsed: parsed.jsonl",
+                "    output:",
+                "      path: nested/thread.md",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    main(["export"])
+
+    assert out.exists()
+    md = out.read_text(encoding="utf-8")
+    assert "2024-10-27 12:33" in md
+
+
+def test_config_path_subcommand_prints_resolved_path(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text("profiles: {}\n", encoding="utf-8")
+
+    main(["config", "path"])
+
+    captured = capsys.readouterr()
+    assert captured.out.strip() == str(config)
+
+
+def test_config_validate_subcommand_reports_valid(tmp_path, monkeypatch, caplog):
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    provider: openai",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    main(["config", "validate"])
+
+    assert "Config structure is valid:" in caplog.text
+    assert str(config) in caplog.text
+    assert "(profile: default)" in caplog.text
+
+
+def test_config_show_subcommand_prints_selected_profile(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    provider: openai",
+                "    input:",
+                "      path: exports/messages.json",
+                "    output:",
+                "      path: artifacts/thread.md",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    main(["config", "show"])
+
+    captured = capsys.readouterr()
+    assert "selected_profile: default" in captured.out
+    assert "provider: openai" in captured.out
+    assert "path: exports/messages.json" in captured.out
+    assert "path: artifacts/thread.md" in captured.out
+
+
+def test_config_show_preserves_unicode_yaml_output(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    locale: ja-JP",
+                "    input:",
+                "      path: 日本語/messages.json",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    main(["config", "show"])
+
+    captured = capsys.readouterr()
+    assert "日本語/messages.json" in captured.out

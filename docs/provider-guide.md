@@ -33,8 +33,26 @@
 The `extract` subcommand uses a dedicated extractor (`providers/openai/extractor.py`) that:
 
 - Locates a specific conversation by `conversation_id`
-- Applies automatic sanitization (email / phone masking, sensitive key redaction)
-- Outputs Gemini-compatible JSON
+- Applies config-driven sanitization
+- Writes `extract.json` plus `extract.meta.json`
+
+Default sanitize behavior stays enabled for compatibility. The canonical profile
+shape is:
+
+```yaml
+sanitize:
+  enabled: true
+  replacement: REDACTED
+  scope: content_parts
+  extra_keywords: [credential]
+  mask_patterns:
+    - acct-\d+
+```
+
+Supported scopes:
+
+- `content_parts`
+- `all_strings`
 
 ## Adding a Provider
 

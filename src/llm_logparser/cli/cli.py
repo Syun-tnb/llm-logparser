@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 from llm_logparser.cli.common import (
     setup_logger,
@@ -16,6 +15,7 @@ from llm_logparser.cli.config_apply import (
     missing_required_fields,
     parse_explicit_flags,
     resolve_profile,
+    resolve_sanitize_policy,
 )
 from llm_logparser.cli.config_loader import load_config_with_discovery
 from llm_logparser.cli.handlers import (
@@ -23,10 +23,12 @@ from llm_logparser.cli.handlers import (
     run_analyze_stats,
     run_analyze_timeline,
     run_chain,
+    run_config_command,
     run_export,
     run_extract,
     run_parse,
 )
+from llm_logparser.cli.config_model import AppConfig, ConfigProfile
 from llm_logparser.cli.parser_builder import build_parser
 from llm_logparser.cli.prompts import (
     interactive_enabled,
@@ -41,7 +43,7 @@ def _missing_arg_message(command: str, missing: list[str]) -> str:
     key_hint = {
         "provider": "--provider / config: provider",
         "input": "--input / config: input.path, input.paths, input.parsed(export)",
-        "conversation_id": "--conversation-id / config: conversation_id",
+        "conversation_id": "--conversation-id / config: extract.conversation_id",
     }
     lines = [f"Missing required options for '{command}':"]
     for name in missing:
@@ -53,24 +55,24 @@ def _resolve_profile(
     args,
     *,
     can_prompt: bool,
-) -> tuple[dict[str, Any] | None, dict[str, Any], Any, Any]:
+) -> tuple[ConfigProfile | None, dict[str, ConfigProfile], AppConfig | None, Path | None]:
     config, config_path = load_config_with_discovery(args.config)
-    profile: dict[str, Any] | None = None
-    profiles: dict[str, Any] = {}
+    profile: ConfigProfile | None = None
+    profiles: dict[str, ConfigProfile] = {}
     if config is not None:
         profile, profiles = resolve_profile(config, args.profile)
         if profile is None and can_prompt and len(profiles) > 1:
             selected = prompt_choice("Select profile:", list(profiles.keys()), allow_skip=True)
             if selected is not None:
                 candidate = profiles.get(selected)
-                if isinstance(candidate, dict):
+                if candidate is not None:
                     profile = candidate
     return profile, profiles, config, config_path
 
 
 def _apply_profile_input_defaults(
     args,
-    profile: dict[str, Any] | None,
+    profile: ConfigProfile | None,
     *,
     explicit_flags: set[str],
     config_path,
@@ -109,26 +111,29 @@ def _apply_profile_input_defaults(
             sys.exit(2)
 
 
-def _prompt_missing_required(args, profile: dict[str, Any] | None, *, can_prompt: bool, logger) -> None:
+def _prompt_missing_required(
+    args,
+    profile: ConfigProfile | None,
+    *,
+    can_prompt: bool,
+    logger,
+) -> None:
     missing = missing_required_fields(args)
     if missing:
         if can_prompt:
             if "provider" in missing:
-                provider_default = profile.get("provider") if isinstance(profile, dict) else None
+                provider_default = profile.provider if profile is not None else None
                 args.provider = prompt_text("Provider (e.g., openai):", default=provider_default)
             if "input" in missing:
                 default_input = None
-                if isinstance(profile, dict):
-                    input_cfg = profile.get("input")
-                    if isinstance(input_cfg, dict):
-                        value = input_cfg.get("path") or input_cfg.get("parsed")
-                        if isinstance(value, str) and value.strip():
-                            default_input = value
+                if profile is not None:
+                    default_input = profile.input.path or profile.input.parsed
                 args.input = prompt_existing_file("Input file path:", default=default_input)
             if "conversation_id" in missing:
-                conv_default = profile.get("conversation_id") if isinstance(profile, dict) else None
+                conv_default = profile.extract.conversation_id if profile is not None else None
                 args.conversation_id = prompt_text(
-                    "Conversation ID:", default=conv_default if isinstance(conv_default, str) else None
+                    "Conversation ID:",
+                    default=conv_default,
                 )
         else:
             logger.error(_missing_arg_message(args.command, missing))
@@ -184,24 +189,39 @@ def _dispatch(args, logger) -> None:
     elif args.command == "viewer":
         logger.warning("[TODO] Viewer not implemented yet.")
     elif args.command == "config":
-        logger.warning("[TODO] Config command not implemented yet.")
+        run_config_command(args, logger)
 
 
-def main():
+def main(argv: list[str] | None = None):
     set_locale()
     parser = build_parser()
-    args = parser.parse_args()
-    explicit_flags = parse_explicit_flags(sys.argv[1:])
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
+    explicit_flags = parse_explicit_flags(raw_argv)
     non_interactive = args.non_interactive or os.getenv("LLM_LOGPARSER_NON_INTERACTIVE") == "1"
     can_prompt = interactive_enabled(non_interactive=non_interactive)
 
-    profile, _profiles, _config, config_path = _resolve_profile(args, can_prompt=can_prompt)
-    _apply_profile_input_defaults(
-        args,
-        profile,
-        explicit_flags=explicit_flags,
-        config_path=config_path,
-    )
+    if args.command == "config":
+        set_locale(args.locale)
+        logger = setup_logger(args.log_level)
+        _dispatch(args, logger)
+        return
+
+    profile: ConfigProfile | None = None
+    config_path: Path | None = None
+    if args.command in {"parse", "export", "chain", "extract"}:
+        profile, _profiles, _config, config_path = _resolve_profile(
+            args,
+            can_prompt=can_prompt,
+        )
+        _apply_profile_input_defaults(
+            args,
+            profile,
+            explicit_flags=explicit_flags,
+            config_path=config_path,
+        )
+        if args.command == "extract":
+            args.sanitize_policy = resolve_sanitize_policy(profile)
 
     set_locale(args.locale)
     logger = setup_logger(args.log_level)

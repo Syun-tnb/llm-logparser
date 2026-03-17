@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+
+from llm_logparser.cli.config_model import AppConfig
 
 CONFIG_ENV_VAR = "LLM_LOGPARSER_CONFIG"
 
 
-def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+def _load_yaml_mapping(path: Path) -> dict[str, object]:
     try:
         import yaml
     except ImportError as e:
@@ -25,14 +26,19 @@ def _load_yaml_mapping(path: Path) -> dict[str, Any]:
     return loaded
 
 
-def load_config_file(path: Path, *, missing_hint: str = "") -> dict[str, Any]:
+def resolve_explicit_config_path(path: Path, *, missing_hint: str = "") -> Path:
     target = path.expanduser()
     if not target.exists():
         hint = f" ({missing_hint})" if missing_hint else ""
         raise SystemExit(f"Config file not found: {target}{hint}")
     if target.is_dir():
         raise SystemExit(f"Config path must be a file: {target}")
-    return _load_yaml_mapping(target)
+    return target
+
+
+def load_config_file(path: Path, *, missing_hint: str = "") -> AppConfig:
+    target = resolve_explicit_config_path(path, missing_hint=missing_hint)
+    return AppConfig.from_mapping(_load_yaml_mapping(target))
 
 
 def discover_config_path(cwd: Path | None = None) -> Path | None:
@@ -74,10 +80,10 @@ def load_config_with_discovery(
     explicit_path: Path | None,
     *,
     cwd: Path | None = None,
-) -> tuple[dict[str, Any] | None, Path | None]:
+) -> tuple[AppConfig | None, Path | None]:
     if explicit_path is not None:
-        path = explicit_path.expanduser()
-        return load_config_file(path, missing_hint="passed via --config"), path
+        path = resolve_explicit_config_path(explicit_path, missing_hint="passed via --config")
+        return load_config_file(path), path
 
     discovered = discover_config_path(cwd=cwd)
     if discovered is None:

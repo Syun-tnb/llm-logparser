@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     export_cmd = subparsers.add_parser(
         "export",
-        help="Export a normalized thread JSONL into a single Markdown file",
+        help="Export a normalized thread JSONL into Markdown",
     )
     export_cmd.add_argument("--input", required=False, type=Path, help="Path to thread parsed.jsonl")
     export_cmd.add_argument("--out", required=False, type=Path, help="Output Markdown path")
@@ -261,6 +261,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("viewer", help="(placeholder) Viewer command (not implemented yet)")
-    subparsers.add_parser("config", help="(placeholder) Config command (not implemented yet)")
+
+    config_cmd = subparsers.add_parser(
+        "config",
+        help="Inspect and validate runtime configuration",
+    )
+    config_subparsers = config_cmd.add_subparsers(
+        dest="config_command",
+        required=True,
+    )
+    config_subparsers.add_parser("path", help="Show the resolved config file path")
+    config_subparsers.add_parser("show", help="Print the normalized config or selected profile")
+    config_subparsers.add_parser("validate", help="Validate the current config and exit")
 
     return parser

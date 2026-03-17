@@ -466,6 +466,7 @@ def extract_to_json(
     conversation_id: str,
     *,
     dry_run: bool = False,
+    sanitize_policy: Any | None = None,
     logger: Optional[logging.Logger] = None,
 ) -> Dict[str, Any]:
     """指定 conversation_id の生会話を抽出し、Gemini-compat JSON を出力する。"""
@@ -474,14 +475,22 @@ def extract_to_json(
         f"Starting extract for provider={provider}, conversation_id={conversation_id} (dry-run={dry_run})"
     )
     extractor = load_extractor(provider)
-    result = extractor(
-        input_path=input_path,
-        outdir=outdir,
-        provider=provider,
-        conversation_id=conversation_id,
-        dry_run=dry_run,
-        logger=log,
-    )
+    extractor_kwargs: dict[str, Any] = {
+        "input_path": input_path,
+        "outdir": outdir,
+        "provider": provider,
+        "conversation_id": conversation_id,
+        "dry_run": dry_run,
+        "logger": log,
+    }
+    if "sanitize_policy" in signature(extractor).parameters:
+        extractor_kwargs["sanitize_policy"] = sanitize_policy
+    elif sanitize_policy is not None:
+        log.debug(
+            "Extractor for provider=%s does not accept sanitize_policy; using extractor defaults",
+            provider,
+        )
+    result = extractor(**extractor_kwargs)
     if not isinstance(result, dict):
         raise LLPAdapterError("extractor returned invalid result")
     return result

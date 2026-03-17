@@ -29,12 +29,10 @@ uv run pytest
 
 ## Config
 
-* Load/merge, schema mismatch, locking/atomic writes, backup/restore.
-* Priority order is respected: CLI > environment > profile > defaults.
-
-> [!NOTE]
-> Config file loading is **not yet implemented**. These tests are planned for when
-> the configuration layer is built.
+* Typed config loading, schema mismatch, profile resolution, and CLI override precedence.
+* Priority order is respected for config-backed options: CLI > selected profile > defaults.
+* `config path`, `config show`, and `config validate` get smoke coverage.
+* Config write-back, locking/atomic writes, and backup/restore remain future work.
 
 ## Network Prohibition
 

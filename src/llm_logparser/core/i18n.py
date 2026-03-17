@@ -15,9 +15,9 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "cli.option.lang.help": "UI language/locale for CLI output (use --locale, alias --lang; e.g. en, ja)",
         "cli.option.log_level.help": "Log level override (DEBUG|INFO|WARNING|ERROR|CRITICAL); overrides environment variable",
         "cli.parse.help": "Parse provider export JSON into normalized JSONL threads",
-        "cli.export.help": "(placeholder) Export parsed logs to Markdown/HTML",
+        "cli.export.help": "Export parsed logs to Markdown",
         "cli.viewer.help": "(placeholder) Run lightweight HTML viewer",
-        "cli.config.help": "(placeholder) Manage runtime configuration",
+        "cli.config.help": "Inspect and validate runtime configuration",
 
         "cli.parse.opt.provider.help": "Provider ID (e.g., openai)",
         "cli.parse.opt.input.help": "Input JSON/JSONL path",
@@ -41,9 +41,9 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "cli.option.lang.help": "CLI 表示の言語/ロケール (--locale、旧 --lang。例: en, ja)",
         "cli.option.log_level.help": "ログレベルを指定 (DEBUG|INFO|WARNING|ERROR|CRITICAL)。環境変数 LLM_LOGPARSER_LOGLEVEL を上書き",
         "cli.parse.help": "プロバイダのエクスポートJSONを正規化JSONLスレッドに変換する",
-        "cli.export.help": "（プレースホルダ）parsedログをMarkdown/HTMLに出力する",
+        "cli.export.help": "parsedログをMarkdownに出力する",
         "cli.viewer.help": "（プレースホルダ）簡易HTMLビューアを起動する",
-        "cli.config.help": "（プレースホルダ）ランタイム設定を管理する",
+        "cli.config.help": "ランタイム設定を確認・検証する",
 
         "cli.parse.provider": "プロバイダ: {provider}",
         "cli.parse.input": "入力ファイル: {path}",

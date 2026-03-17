@@ -987,7 +987,7 @@ CLIは `llm-logparser` エントリポイントを基点とし、
 | オプション | 概要 | 対応フェーズ |
 |-------------|------|----------------|
 | `--provider <id>` | 対象プロバイダ指定（例：openai, claude, gemini） | 全体 |
-| `--config <path>` | 外部設定ファイルを指定（YAML/JSON） | 全体 |
+| `--config <path>` | 外部設定ファイルを指定（YAML） | 全体 |
 | `--input <path...>` | 入力ファイルパス（複数可） | parse |
 | `--outdir <dir>` | 出力ルート（デフォルト：`artifacts/output`） | 全体 |
 | `--export-format {jsonl,md,html}` | 出力フォーマット選択（複数可） | export |
@@ -1743,7 +1743,7 @@ Viewerは以下の動作を通じて設定を同期する：
 
 | 操作     | Viewer側動作                                         |
 | ------ | ------------------------------------------------- |
-| 設定読み込み | `~/.config/llm-logparser/config.yaml` をJSONとしてロード |
+| 設定読み込み | `~/.config/llm-logparser/config.yaml` をYAMLとしてロード |
 | 設定変更   | フォーム入力 → `config.yaml`書き換え → CLI通知                |
 | CLI起動  | 変更検知で再ロード（ホットリロード対応）                              |
 | 競合     | CLIが実行中の場合は一時保存→再試行（排他ロック解放後）                     |

@@ -130,23 +130,24 @@ The CLI provides the following subcommands:
 
 * `extract`
   Extract a single conversation by `--conversation-id` and output it as Gemini-compatible JSON.
-  Applies automatic PII sanitization: email addresses, phone numbers, and sensitive keys
-  (`SECRET`, `TOKEN`, `API_KEY`, `AUTHORIZATION`, `COOKIE`, `PASSWORD`) are redacted.
+  Applies config-driven sanitization, enabled by default for compatibility.
+  The sanitize policy controls replacement text, scope, custom field-name keywords,
+  and regex-based masking.
 
 * `chain`
   Convenience command that runs **parse → export** for all threads in one shot.
   This is implemented as a separate subcommand, not as a `--chain` option.
   Supports `--validate-schema` to validate during the parse phase.
 
-Two additional subcommands are reserved for future work:
+One additional subcommand is reserved for future work:
 
 * `viewer` (placeholder)
   Reserved for a future lightweight HTML/Markdown viewer.
   The current implementation only logs a TODO warning.
 
-* `config` (placeholder)
-  Reserved for runtime configuration helpers.
-  The current implementation only logs a TODO warning.
+* `config`
+  Lightweight runtime configuration helpers.
+  Supports `config path`, `config show`, and `config validate`.
 
 Global options:
 

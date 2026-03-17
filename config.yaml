@@ -1,98 +1,81 @@
-# LLM Log Parser — Runtime Config
-# 保存場所（推奨）:
-# - macOS/Linux: ~/.config/llm-logparser/config.yaml
-# - Windows:     %APPDATA%/llm-logparser/config.yaml
-# - Local opt:   ./.llp/config.yaml
+# LLM Log Parser runtime config
 #
-# NOTE:
-# - 現在のランタイムが読むのは CLI の既定値に対応するキーの一部のみ。
-# - provider_config_path を含む provider mapping 系の項目は将来向けのドキュメント参照であり、
-#   parser/CLI は現状これらの外部YAMLをロードしない。
+# Discovery order:
+# 1. --config <path>
+# 2. LLM_LOGPARSER_CONFIG=<path>
+# 3. ./config.yaml
+# 4. nearest parent ./config.yaml
+# 5. ~/.config/llm-logparser/config.yaml
+#
+# This file is YAML-only. External provider mapping YAML files are still
+# documentation/examples and are not loaded by the parser at runtime.
 
 schema_version: 1
 active_profile: default
 
 profiles:
   default:
-    # ===== General =====
-    locale: ja-JP        # CLI/ログ/Markdown固定文言の表示言語
-    timezone: Asia/Tokyo # デフォルトTZ（CLI引数で上書き可）
-
-    # ===== Provider =====
+    locale: ja-JP
+    timezone: Asia/Tokyo
     provider: openai
-    # NOTE: provider_config_path は現状ランタイム未使用。
-    # parser はこのYAMLを読まず、provider ID から adapter モジュールを動的importする。
-    # ここでは将来の外部マッピング仕様サンプルへの参照だけを残す。
-    provider_config_path: docs/examples/providers/openai/chatgpt.yaml
 
-    # ===== Input =====
+    # parse / chain / extract read input.path or input.paths
+    # export reads input.parsed
     input:
-      paths:
-        - artifacts/messages-00001.jsonl
-      encoding: utf-8
+      path: artifacts/messages-latest.json
+      parsed: artifacts/output/openai/thread-example/parsed.jsonl
 
-    # ===== Output =====
-    output:
-      dir: artifacts/output
-      # 分割ポリシー
-      split_by: size           # size|count|date|none（複合は将来検討）
-      split_size_mb: 20
-      max_msgs_per_file: 8000
-      split_by_date: none      # none|day|week|month
-      ascii_filenames: true
-
-    # ===== Cache / Dedupe =====
-    cache:
-      enabled: true
-      path: artifacts/cache/state.json
-      # 既存 + 今回の最終決定値で自動マージされる想定
-
-    # ===== Logging =====
     logging:
-      level: info              # debug|info|warn|error
-      json_events: true        # Viewer取り込み用のNDJSONイベント
-      log_file: null           # 任意: logs/llp.log
+      level: info
 
-    # ===== i18n =====
-    i18n:
-      fallback_locale: en-US   # 未訳フォールバック
-      resources_dir: i18n      # en-US.yaml / ja-JP.yaml など
+    sanitize:
+      enabled: true
+      replacement: REDACTED
+      scope: content_parts
+      extra_keywords:
+        - credential
 
-    # ===== Config Save Policy =====
-    autosave: true             # 実行後に最終決定値を保存
-    backup_generations: 3      # config.yaml.bak の世代保持
+    parse:
+      outdir: artifacts
+      validate_schema: true
 
-    # ===== Advanced (通常は変更不要) =====
-    dry_run: false
-    fail_fast: false           # 将来: 最初のERRORで停止
-    # GUI 連携は同ファイルを直接参照・編集（排他ロックは実装側要件）
+    output:
+      # Export output file path. This is a file, not a directory.
+      path: artifacts/thread.md
+      formatting: light
+      split: auto
+      split_soft_overflow: 0.2
+      tiny_tail_threshold: 20
+
+    chain:
+      outdir: artifacts
+      export_outdir: artifacts/markdown
+      fail_fast: false
+      validate_schema: true
+
+    extract:
+      outdir: artifacts
+      conversation_id: example-conversation-id
 
   work:
     locale: en-US
-    timezone: Asia/Tokyo
+    timezone: UTC
     provider: openai
-    # NOTE: provider_config_path は現状ランタイム未使用。
-    provider_config_path: docs/examples/providers/openai/chatgpt.yaml
     input:
-      paths:
-        - artifacts/messages-latest.jsonl
-      encoding: utf-8
-    output:
-      dir: artifacts/output
-      split_by: count
-      split_size_mb: 20
-      max_msgs_per_file: 5000
-      split_by_date: month
-      ascii_filenames: true
-    cache:
+      path: exports/workspace.json
+      parsed: exports/workspace-parsed.jsonl
+    sanitize:
       enabled: true
-      path: artifacts/cache/state.json
-    logging:
-      level: info
-      json_events: true
-      log_file: null
-    i18n:
-      fallback_locale: en-US
-      resources_dir: i18n
-    autosave: true
-    backup_generations: 3
+      replacement: "***"
+      scope: all_strings
+      mask_patterns:
+        - acct-\d+
+    parse:
+      outdir: build/artifacts
+    output:
+      formatting: light
+      split: size=4M
+    chain:
+      outdir: build/artifacts
+    extract:
+      outdir: build/artifacts

@@ -10,10 +10,12 @@
 
 ## PII Sanitization (Implemented)
 
-The `extract` subcommand automatically applies the following sanitization:
+The `extract` subcommand applies config-driven sanitization. If the `sanitize`
+section is omitted, the default remains enabled for compatibility.
 
 ### Sensitive key redaction
-Keys containing any of these keywords are replaced with `REDACTED`:
+When sanitization is enabled, keys containing any of these built-in keywords are
+redacted by default:
 - `SECRET`
 - `TOKEN`
 - `API_KEY`
@@ -22,11 +24,30 @@ Keys containing any of these keywords are replaced with `REDACTED`:
 - `PASSWORD`
 
 ### Text content masking
-Within message `content.parts`:
-- **Email addresses** → `[REDACTED_EMAIL]`
-- **Phone numbers** → `[REDACTED_PHONE]`
+By default, message `content.parts` are scanned with built-in email and phone
+patterns and matches are replaced with the configured replacement token
+(`REDACTED` unless overridden).
 
-These protections are applied by `providers/openai/extractor.py` before writing `extract.json`.
+Supported scopes:
+
+- `content_parts`: sanitize only extracted text fields such as `content.parts`
+- `all_strings`: sanitize every traversed string value in the extracted payload
+
+Custom behavior is controlled from `config.yaml`:
+
+```yaml
+sanitize:
+  enabled: true
+  replacement: REDACTED
+  scope: content_parts
+  extra_keywords: [credential]
+  mask_patterns:
+    - acct-\d+
+```
+
+Each successful extract also writes `extract.meta.json` with a safe summary of the
+applied sanitize policy. It records whether sanitization ran, which scope was used,
+which replacement token was used, and whether custom keywords or patterns were supplied.
 
 ---
 
@@ -59,4 +80,3 @@ socket.socket = _NoNet
 - `lsof -i -p <PID>` → no sockets
 - `strace -f -e trace=network <cmd>` → no network syscalls
 - GUI and Apps SDK are **opt-in** and separated from parser core.
-

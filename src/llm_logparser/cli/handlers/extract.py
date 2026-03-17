@@ -23,6 +23,7 @@ def run_extract(args, logger: logging.Logger) -> None:
         args.outdir,
         args.conversation_id,
         dry_run=args.dry_run,
+        sanitize_policy=getattr(args, "sanitize_policy", None),
         logger=logger,
     )
     if result.get("written"):

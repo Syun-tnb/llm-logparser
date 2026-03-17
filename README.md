@@ -283,8 +283,8 @@ uv run llm-logparser analyze timeline \
 
 ## ⚙️ Configuration (`config.yaml`)
 
-`llm-logparser` supports optional configuration via `config.yaml`.
-CLI flags always take precedence. Configuration is used only to fill in missing options.
+`llm-logparser` supports optional runtime defaults via YAML `config.yaml`.
+CLI flags always take precedence. Profile values are only used to fill in missing options.
 
 External provider mapping YAML is not used at runtime yet.
 Current normalization is adapter-based under `src/llm_logparser/core/providers/`.
@@ -305,9 +305,10 @@ If no configuration file is found, the CLI behaves normally.
 
 ### 👤 Profiles
 
-You can define multiple profiles and select one using:
+You can define multiple profiles and select one using `--profile <name>`:
 
 ```yaml
+schema_version: 1
 active_profile: default
 
 profiles:
@@ -318,6 +319,13 @@ profiles:
       path: exports/messages.jsonl
       # or:
       # paths: [exports/a.jsonl, exports/b.jsonl]
+      # export uses:
+      # parsed: artifacts/output/openai/thread-123/parsed.jsonl
+
+    sanitize:
+      enabled: true
+      replacement: REDACTED
+      scope: content_parts
 
     output:
       path: artifacts/thread.md
@@ -329,16 +337,27 @@ profiles:
       validate_schema: true
 ```
 
-Profile resolution priority:
+Profile selection priority:
 
 ```
-CLI flags > interactive input > profile config > argparse defaults
+--profile > active_profile > the only defined profile
+```
+
+Value precedence for supported config-backed options:
+
+```
+CLI flags > selected profile values > built-in CLI defaults
 ```
 
 If multiple `input.paths` are defined and no explicit `--input` is provided:
 
 * In interactive mode, you will be prompted.
 * In non-interactive mode, the program exits with code `2`.
+
+If multiple profiles exist and neither `--profile` nor `active_profile` selects one:
+
+* In interactive mode, you will be prompted to choose a profile.
+* In non-interactive mode, no profile defaults are applied.
 
 ---
 
@@ -354,6 +373,37 @@ LLM_LOGPARSER_CONFIG=/etc/llm/config.yaml
 ```
 
 and avoids unintended CWD-dependent path resolution.
+
+---
+
+### 🔧 Config Subcommands
+
+Use the lightweight inspection helpers to debug config resolution:
+
+```bash
+uv run llm-logparser config path
+uv run llm-logparser config show [--profile work]
+uv run llm-logparser config validate
+```
+
+`config show` prints the normalized selected profile when one is resolved.
+Otherwise it prints the normalized full config structure.
+
+For `extract`, the canonical sanitize section is:
+
+```yaml
+sanitize:
+  enabled: true
+  replacement: REDACTED
+  scope: content_parts   # or: all_strings
+  extra_keywords: [credential]
+  mask_patterns:
+    - acct-\d+
+```
+
+If `sanitize` is omitted, `extract` keeps the current safe default behavior:
+sanitization stays enabled, sensitive field names are redacted, and the built-in
+email/phone patterns are applied to `content.parts`.
 
 ---
 
@@ -375,7 +425,6 @@ In non-interactive mode, the program exits with code `2` if:
 
 * Required options are missing
 * Multiple input candidates are ambiguous
-* A profile cannot be resolved automatically
 
 This makes the CLI safe for CI and automation workflows.
 
@@ -387,8 +436,9 @@ This makes the CLI safe for CI and automation workflows.
 * No telemetry
 * Sensitive logs stay local
 * Deterministic output for audits
-* **PII masking** in `extract` mode: emails, phone numbers, and sensitive keys
-  (`SECRET`, `TOKEN`, `API_KEY`, `AUTHORIZATION`, `COOKIE`, `PASSWORD`) are automatically redacted
+* `extract` sanitization is config-driven and enabled by default for compatibility
+* `extract.meta.json` records whether sanitization was enabled, which scope ran,
+  which replacement token was used, and whether custom keywords/patterns were supplied
 
 ---
 
