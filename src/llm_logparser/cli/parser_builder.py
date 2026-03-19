@@ -201,6 +201,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the rendered result to a file",
     )
 
+    analyze_tokens_cmd = analyze_subparsers.add_parser(
+        "tokens",
+        help="Build deterministic token_stats.json sidecars from canonical parsed JSONL",
+    )
+    analyze_tokens_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+    )
+    analyze_tokens_cmd.add_argument(
+        "--model",
+        required=False,
+        help="Optional model name for tokenizer resolution (primarily for OpenAI)",
+    )
+    analyze_tokens_cmd.add_argument(
+        "--encoding",
+        required=False,
+        help="Explicit tiktoken encoding name that overrides provider/model resolution",
+    )
+
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
         help="Build an optional SQLite accelerator from canonical thread artifacts",

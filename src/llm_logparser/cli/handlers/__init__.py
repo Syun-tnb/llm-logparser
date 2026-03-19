@@ -1,6 +1,7 @@
 from .analyze import (
     run_analyze_sqlite_build,
     run_analyze_stats,
+    run_analyze_tokens,
     run_analyze_timeline,
 )
 from .chain import run_chain
@@ -11,6 +12,7 @@ from .parse import run_parse
 
 __all__ = [
     "run_analyze_stats",
+    "run_analyze_tokens",
     "run_analyze_timeline",
     "run_analyze_sqlite_build",
     "run_chain",
