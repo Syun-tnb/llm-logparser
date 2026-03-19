@@ -19,6 +19,7 @@ from llm_logparser.cli.config_apply import (
 )
 from llm_logparser.cli.config_loader import load_config_with_discovery
 from llm_logparser.cli.handlers import (
+    run_analyze_metrics,
     run_analyze_sqlite_build,
     run_analyze_stats,
     run_analyze_tokens,
@@ -142,7 +143,7 @@ def _prompt_missing_required(
 
     if (
         args.command == "analyze"
-        and args.analyze_command in {"stats", "timeline", "tokens", "sqlite-build"}
+        and args.analyze_command in {"stats", "timeline", "tokens", "metrics", "sqlite-build"}
     ):
         if args.input is None:
             if can_prompt:
@@ -181,6 +182,8 @@ def _dispatch(args, logger) -> None:
     elif args.command == "analyze":
         if args.analyze_command == "stats":
             run_analyze_stats(args, logger)
+        elif args.analyze_command == "metrics":
+            run_analyze_metrics(args, logger)
         elif args.analyze_command == "tokens":
             run_analyze_tokens(args, logger)
         elif args.analyze_command == "timeline":

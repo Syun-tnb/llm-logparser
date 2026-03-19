@@ -222,6 +222,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicit tiktoken encoding name that overrides provider/model resolution",
     )
 
+    analyze_metrics_cmd = analyze_subparsers.add_parser(
+        "metrics",
+        help="Build deterministic metrics.json sidecars from parsed.jsonl plus token_stats.json",
+    )
+    analyze_metrics_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+    )
+
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
         help="Build an optional SQLite accelerator from canonical thread artifacts",

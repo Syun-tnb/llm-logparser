@@ -5,6 +5,17 @@ import logging
 from llm_logparser.cli.common import validate_path, write_or_print
 
 
+def run_analyze_metrics(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_metrics import analyze_metrics
+
+    input_path = validate_path(args.input)
+    result = analyze_metrics(input_path)
+    logger.info(
+        "metrics.json written for %s thread(s)",
+        result["threads"],
+    )
+
+
 def run_analyze_tokens(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_tokens import analyze_tokens
 
