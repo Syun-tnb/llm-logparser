@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +73,22 @@ def safe_average(total: int | float, count: int | float) -> float:
     if not count:
         return 0.0
     return round(float(total) / float(count), 2)
+
+
+def normalize_analysis_text(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def has_min_normalized_length(text: str, minimum: int) -> bool:
+    return len(normalize_analysis_text(text)) >= minimum
+
+
+def normalized_similarity(left: str, right: str) -> float:
+    left_normalized = normalize_analysis_text(left)
+    right_normalized = normalize_analysis_text(right)
+    if not left_normalized or not right_normalized:
+        return 0.0
+    return SequenceMatcher(None, left_normalized, right_normalized).ratio()
 
 
 def render_artifact_json(artifact: dict[str, Any]) -> str:

@@ -192,6 +192,7 @@ def test_analyze_metrics_handles_zero_division_consistently(tmp_path, monkeypatc
     assert metrics["ratios"]["prompt_response_ratio_chars"] == 0.0
     assert metrics["ratios"]["assistant_to_user_ratio"] == 0.0
     assert metrics["safety"]["refusal_rate"] == 0.0
+    assert metrics["interaction"]["revision_rate"] == 0.0
 
 
 def test_analyze_metrics_computes_diversity_from_tokenizer_units(tmp_path, monkeypatch):
@@ -367,6 +368,165 @@ def test_analyze_metrics_uses_en_us_indicator_fallback_for_missing_locale(
 
     assert metrics["safety"]["refusal_count"] == 1
     assert metrics["safety"]["refusal_rate"] == 1.0
+
+
+def test_analyze_metrics_detects_similarity_revision_across_assistant_gap(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-similarity" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-similarity",
+        [
+            {
+                "message_id": "m1",
+                "role": "user",
+                "text": "Please summarize this article about climate policy in simple bullet points.",
+            },
+            {"message_id": "m2", "role": "assistant", "text": "Sure, here is a summary."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "Please summarize this article about climate policy in simple bullet point format.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["revision_rate"] == 0.5
+
+
+def test_analyze_metrics_does_not_count_unrelated_user_topic_change(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-unrelated" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-unrelated",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain how DNS works."},
+            {"message_id": "m2", "role": "assistant", "text": "Here is a DNS overview."},
+            {"message_id": "m3", "role": "user", "text": "Now recommend a coffee grinder."},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 0
+    assert metrics["interaction"]["revision_rate"] == 0.0
+
+
+def test_analyze_metrics_does_not_count_very_short_user_messages_as_revisions(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-short" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-short",
+        [
+            {"message_id": "m1", "role": "user", "text": "draft"},
+            {"message_id": "m2", "role": "assistant", "text": "What do you want revised?"},
+            {"message_id": "m3", "role": "user", "text": "again"},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 0
+    assert metrics["interaction"]["revision_rate"] == 0.0
+
+
+def test_analyze_metrics_counts_cue_based_revision_from_locale_resource(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-cue" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-cue",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain sorting algorithms."},
+            {"message_id": "m2", "role": "assistant", "text": "Here is a short overview."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "No, that's not what I meant. Compare merge sort and quicksort instead.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["revision_rate"] == 0.5
+
+
+def test_analyze_metrics_does_not_count_revision_cue_in_assistant_text(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-assistant-cue" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-assistant-cue",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain recursion."},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "In other words, recursion is a function calling itself.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 0
+    assert metrics["interaction"]["revision_rate"] == 0.0
+
+
+def test_analyze_metrics_revision_rate_is_zero_with_zero_or_one_user_message(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-minimal" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-minimal",
+        [{"message_id": "m1", "role": "assistant", "text": "hello"}],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 0
+    assert metrics["interaction"]["revision_rate"] == 0.0
+
+
+def test_analyze_metrics_uses_en_us_revision_cue_fallback_for_missing_locale(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-revision-locale-fallback" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-revision-locale-fallback",
+        [
+            {"message_id": "m1", "role": "user", "text": "Describe HTTP caching."},
+            {"message_id": "m2", "role": "assistant", "text": "Here is a caching summary."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "Let me rephrase: describe HTTP caching headers only.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(
+        parsed,
+        monkeypatch,
+        metrics_args=["--locale", "fr-FR"],
+    )
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["revision_rate"] == 0.5
 
 
 def test_analyze_metrics_fails_when_token_stats_is_missing(

@@ -4,3 +4,13 @@ analysis:
       - "I can't help with that"
       - "I cannot provide"
       - "against policy"
+  revision:
+    cues:
+      - "no, that's not what I meant"
+      - "that’s not what I meant"
+      - "that's not what I meant"
+      - "in other words"
+      - "what I mean is"
+      - "let me rephrase"
+      - "to clarify"
+      - "I mean"

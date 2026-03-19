@@ -6,6 +6,9 @@ from typing import Any
 
 from .analyzer_common import (
     detect_header_metadata,
+    has_min_normalized_length,
+    normalize_analysis_text,
+    normalized_similarity,
     normalize_role,
     render_artifact_json,
     resolve_canonical_text,
@@ -16,6 +19,9 @@ from .analyzer_common import (
 )
 from .i18n import get_resource_list
 from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
+
+REVISION_MIN_LENGTH = 8
+REVISION_SIMILARITY_THRESHOLD = 0.78
 
 
 def _load_token_stats(parsed_path: Path) -> dict[str, Any]:
@@ -86,32 +92,68 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
     return len(unique_tokens), total_tokens
 
 
-def _load_refusal_indicators() -> list[str]:
-    indicators = get_resource_list("analysis.refusal.indicators")
+def _load_normalized_phrases(key: str) -> list[str]:
+    phrases = get_resource_list(key)
     normalized = []
-    for indicator in indicators:
-        folded = " ".join(indicator.casefold().split())
+    for phrase in phrases:
+        folded = normalize_analysis_text(phrase)
         if folded:
             normalized.append(folded)
     return normalized
 
 
-def _matches_refusal(text: str, indicators: list[str]) -> bool:
-    if not text or not indicators:
+def _load_refusal_indicators() -> list[str]:
+    return _load_normalized_phrases("analysis.refusal.indicators")
+
+
+def _load_revision_cues() -> list[str]:
+    return _load_normalized_phrases("analysis.revision.cues")
+
+
+def _matches_phrase(text: str, phrases: list[str]) -> bool:
+    if not text or not phrases:
         return False
-    normalized = " ".join(text.casefold().split())
-    return any(indicator in normalized for indicator in indicators)
+    normalized = normalize_analysis_text(text)
+    return any(phrase in normalized for phrase in phrases)
+
+
+def _count_revisions(user_texts: list[str], revision_cues: list[str]) -> int:
+    if len(user_texts) < 2:
+        return 0
+
+    revision_count = 0
+    previous_text = user_texts[0]
+    for current_text in user_texts[1:]:
+        if not has_min_normalized_length(current_text, REVISION_MIN_LENGTH):
+            previous_text = current_text
+            continue
+
+        cue_match = _matches_phrase(current_text, revision_cues)
+        similarity_match = (
+            has_min_normalized_length(previous_text, REVISION_MIN_LENGTH)
+            and normalized_similarity(previous_text, current_text)
+            >= REVISION_SIMILARITY_THRESHOLD
+        )
+
+        if cue_match or similarity_match:
+            revision_count += 1
+
+        previous_text = current_text
+
+    return revision_count
 
 
 def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     token_stats = _load_token_stats(parsed_path)
     provider_id, conversation_id = detect_header_metadata(parsed_path)
     refusal_indicators = _load_refusal_indicators()
+    revision_cues = _load_revision_cues()
 
     char_count_total = 0
     char_count_user = 0
     char_count_assistant = 0
     texts: list[str] = []
+    user_texts: list[str] = []
     message_count_user = 0
     message_count_assistant = 0
     refusal_count = 0
@@ -134,10 +176,11 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         if role == "user":
             message_count_user += 1
             char_count_user += char_count
+            user_texts.append(text)
         elif role == "assistant":
             message_count_assistant += 1
             char_count_assistant += char_count
-            if _matches_refusal(text, refusal_indicators):
+            if _matches_phrase(text, refusal_indicators):
                 refusal_count += 1
 
     if conversation_id is None:
@@ -152,6 +195,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     avg_tokens_per_turn = _require_number(token_stats, "summary.avg_tokens_per_turn")
 
     unique_token_count, diversity_token_total = _load_diversity_units(token_stats, texts)
+    revision_count = _count_revisions(user_texts, revision_cues)
 
     artifact = {
         "artifact_type": "metrics",
@@ -197,6 +241,10 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         "safety": {
             "refusal_count": refusal_count,
             "refusal_rate": safe_ratio(refusal_count, message_count_assistant),
+        },
+        "interaction": {
+            "revision_count": revision_count,
+            "revision_rate": safe_ratio(revision_count, message_count_user),
         },
     }
     return artifact
