@@ -5,7 +5,9 @@ Thanks for considering a contribution!
 ## Principles
 - Keep core deterministic & raw-only.
 - Prefer thin provider adapters; avoid mixing UI with parsing.
-- Uphold offline-first: no telemetry, no implicit network.
+- Uphold offline-first: no telemetry, and no avoidable network use.
+  Current caveat: tokenizer-based analysis may trigger a one-time `tiktoken`
+  encoding download on first use, then relies on the local cache.
 
 ## Getting Started
 1. Fork and create a feature branch.

@@ -221,12 +221,27 @@ timezone: Asia/Tokyo
 
 Missing translations automatically fall back to `en-US`.
 
+Analyzer phrase heuristics are not configured through `config.yaml` yet.
+To tune refusal or revision phrase matching, edit the locale resource files directly:
+
+* `src/llm_logparser/i18n/en-US.yaml`
+* `src/llm_logparser/i18n/ja-JP.yaml`
+
+Relevant keys:
+
+* `analysis.refusal.indicators`
+* `analysis.revision.cues`
+
+This is the intended customization path for dialect-specific, informal, or
+domain-specific wording.
+
 ---
 
 ## Troubleshooting tips
 
 * A config value not applying? → check CLI flags first, then the selected profile
 * Unexpected timestamps? → verify `timezone`
+* Refusal or revision phrase matching feels off? → tune `src/llm_logparser/i18n/{locale}.yaml`
 * A provider mapping YAML not taking effect? → that is expected today; runtime parsing is adapter-based
 * Output too fragmented? → adjust `output.split` or pass `--split` explicitly
 * Want to inspect what the CLI sees? → use `llm-logparser config path|show|validate`

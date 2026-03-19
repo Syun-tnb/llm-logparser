@@ -71,8 +71,8 @@ It will be generated when `--with-meta` is set.
 ## 🌐 i18n and Locale Behavior
 
 * Controlled via CLI: `--locale <lang-REGION>` and `--timezone <IANA zone>`
-* Translations are currently resolved through an **in-code dictionary** in `src/llm_logparser/core/i18n.py`
-  (future: external `{locale}.yaml` files)
+* Locale resolution lives in `src/llm_logparser/core/i18n.py`
+* Current resources include built-in translation dictionaries and external YAML locale resources under `src/llm_logparser/i18n/`
 * Dates are rendered using locale-aware formats (UTC internally)
 * Missing keys fall back to English (`en-US`) — warnings may be logged in some cases
 

@@ -95,6 +95,15 @@ thread-<conversation_id>/
     message_windows.jsonl
 ```
 
+The analyzer currently adds deterministic sidecars in the same thread directory:
+
+```text
+thread-<conversation_id>/
+    parsed.jsonl
+    token_stats.json
+    metrics.json
+```
+
 `thread_stats.json` is a cheap deterministic thread-local artifact generated
 during parse from the same canonical message rows written to `parsed.jsonl`.
 It provides lightweight counts and timestamp-derived metadata for downstream
@@ -160,6 +169,9 @@ Current shared responsibilities include:
 - extracting timestamps in a normalized way
 - computing cheap thread-local metrics such as message counts, character counts,
   role counts, and first/last timestamps
+- detecting canonical header metadata
+- resolving canonical message text from `text` with `content.parts` fallback
+- normalizing roles and small deterministic numeric helpers
 
 These helpers are intended to be reusable both from `analyze` subcommands and
 from future parse-time thread-local artifact generation.
@@ -257,6 +269,50 @@ All chunking and message window artifacts must be derived from
 the canonical normalized dataset (`parsed.jsonl`).
 
 Chunking must never operate directly on raw provider exports.
+
+---
+
+# 5. Analyze Stage (L2)
+
+The `analyze` stage reads canonical `parsed.jsonl` and produces optional
+deterministic sidecars without changing parse-time behavior.
+
+Current thread-local analyzer artifacts:
+
+### `token_stats.json`
+
+Derived from canonical message text only.
+
+Includes:
+
+- tokenizer metadata
+- thread-level token totals
+- per-role token counts
+- per-message token counts
+
+Current backend:
+
+- `tiktoken`
+
+Runtime caveat:
+
+- `tiktoken` may perform a one-time network fetch on first use to download
+  encoding assets
+- later runs use the local cache
+
+### `metrics.json`
+
+Derived from `parsed.jsonl` plus `token_stats.json`.
+
+Includes:
+
+- deterministic ratio / token / character / distribution / diversity metrics
+- heuristic `safety.refusal`
+- heuristic `interaction.revision`
+
+The refusal and revision phrase lists are locale-backed resources under
+`src/llm_logparser/i18n/` and fall back to `en-US` when a selected locale
+does not define the relevant key.
 
 Reasons:
 

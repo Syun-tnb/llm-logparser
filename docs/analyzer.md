@@ -7,7 +7,7 @@ Its purpose is **not** to replace the parser or exporter, but to build
 additional insight layers on top of the normalized conversation data.
 
 The design follows a **layered analysis model**, where each layer adds
-capability while preserving deterministic and offline-first behavior
+capability while preserving deterministic and local-first behavior
 whenever possible.
 
 ---
@@ -27,7 +27,7 @@ The analyzer is designed around three core principles:
 
 This allows users to run the analyzer in environments ranging from:
 
-- fully offline
+- fully local after dependencies/resources are available
 - local-LLM only
 - hybrid (local + API)
 - API-driven workflows
@@ -57,21 +57,37 @@ No databases, no AI models.
 
 These analyses are fast, reproducible, and safe to run in any environment.
 
-The first concrete Layer 1 implementation is now `analyze stats`, which
-reads canonical `parsed.jsonl` files and reports basic conversation
-counts, character totals, role distribution, timestamp spans, per-thread
-detail, and deterministic breakdowns for non-user / non-assistant roles.
+Current Layer 1 implementations include:
+
+- `analyze stats`
+- `analyze timeline`
+- `analyze tokens`
+- `analyze metrics`
+
+`analyze tokens` writes deterministic `token_stats.json` sidecars from canonical
+`parsed.jsonl` using `tiktoken`.
+
+`analyze metrics` writes deterministic `metrics.json` sidecars from
+`parsed.jsonl` plus `token_stats.json`, including:
+
+- ratio / token / character / distribution / diversity metrics
+- heuristic `safety.refusal`
+- heuristic `interaction.revision`
+
+The refusal and revision phrase lists are locale-backed and loaded from
+`src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
 
 Typical metrics include:
 
 - message counts
 - character counts
+- token counts
 - role distribution
 - thread length
 - conversation duration
 - inter-message timing
-- provider statistics
-- schema validation
+- refusal heuristics
+- revision heuristics
 
 Example outputs:
 
@@ -88,6 +104,12 @@ This layer should remain:
 - deterministic
 - fast
 - dependency-light
+
+Tokenizer caveat:
+
+- `tiktoken` may perform a one-time network fetch on first use to download
+  encoding assets
+- later runs use the local cache
 
 ---
 
@@ -197,7 +219,10 @@ Example conceptual structure:
 
 ```
 llm-logparser analyze stats ...
-llm-logparser analyze index ...
+llm-logparser analyze timeline ...
+llm-logparser analyze tokens ...
+llm-logparser analyze metrics ...
+llm-logparser analyze sqlite-build ...
 llm-logparser analyze local ...
 llm-logparser analyze llm ...
 ```
@@ -207,7 +232,10 @@ Possible modes:
 | Mode | Layer |
 |-----|------|
 | stats | L1 |
-| index | L2 |
+| timeline | L1 |
+| tokens | L1 |
+| metrics | L1 |
+| sqlite-build | L2 |
 | local | L3 |
 | llm | L4 |
 
@@ -243,7 +271,7 @@ This separation keeps responsibilities clean:
 
 Potential future expansions include:
 
-- token statistics and cost estimation
+- cost estimation
 - conversation similarity search
 - semantic indexing
 - embeddings-based analysis

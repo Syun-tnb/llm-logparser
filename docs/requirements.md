@@ -139,6 +139,12 @@ The CLI provides the following subcommands:
   This is implemented as a separate subcommand, not as a `--chain` option.
   Supports `--validate-schema` to validate during the parse phase.
 
+* `analyze`
+  Deterministic analysis on canonical thread artifacts.
+  Current modes include `stats`, `timeline`, `tokens`, `metrics`, and `sqlite-build`.
+  `tokens` writes `token_stats.json`.
+  `metrics` writes `metrics.json` and includes heuristic refusal / revision sections.
+
 One additional subcommand is reserved for future work:
 
 * `viewer` (placeholder)
@@ -183,14 +189,18 @@ CLI user-facing messages and Markdown headers are localized via a dedicated i18n
 - `--locale` and `--timezone` are applied consistently across CLI and exporters.
 - If both `--locale` and `--lang` are supplied, `--locale` takes precedence
   (`--lang` exists for compatibility and may be removed in future versions).
+- Locale-backed YAML resources may also be used by analyzer heuristics such as
+  refusal indicators and revision cues.
 
 ---
 
 ## 9. Security & Privacy
 
-MVP runs **fully offline**:
+MVP is **offline-first**, with one current caveat:
 
-* no network access unless explicitly enabled
+* parse/export and most analysis flows run locally
+* `analyze tokens` / `analyze metrics` rely on `tiktoken`, which may fetch
+  encoding assets on first use and then use a local cache afterward
 * logs stay local
 * optional masking rules for sensitive text
 
@@ -245,4 +255,4 @@ MVP = **reliable CLI pipeline**:
 
 > Export JSON → Normalize JSONL → Export Markdown
 
-Stable schema, offline-first, and clear separation of responsibilities make the tool easy to extend without rewriting core logic.
+Stable schema, local-first analysis, and clear separation of responsibilities make the tool easy to extend without rewriting core logic.

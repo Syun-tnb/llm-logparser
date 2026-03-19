@@ -10,6 +10,10 @@ built for reproducibility, audits, archiving, and migration.
 
 No cloud. No telemetry. Your data stays local.
 
+When you use tokenizer-based analysis, note one runtime caveat:
+`tiktoken` may fetch encoding assets on first use, then caches them locally for later runs.
+Token counting is otherwise local and deterministic.
+
 ---
 
 ## ✨ What it does
@@ -19,8 +23,11 @@ No cloud. No telemetry. Your data stays local.
 * **Automatic splitting** (size / count / auto)
 * **Localized timestamps** (locale + timezone support)
 * **Chain mode**: parse & export in one command
-* **Analyze stats**: deterministic conversation counts from canonical parsed JSONL
-* **Deterministic, offline workflows**
+* **Analyze stats / timeline** from canonical `parsed.jsonl`
+* **Analyze tokens**: deterministic per-thread `token_stats.json`
+* **Analyze metrics**: deterministic `metrics.json` with refusal/revision heuristics
+* **Locale-tunable heuristic phrases** via YAML resources
+* **Deterministic, local-first workflows**
 * **Future-proof architecture** (multi-provider adapters)
 
 > MVP currently focuses on **OpenAI logs**.
@@ -90,6 +97,20 @@ uv run llm-logparser analyze stats \
   --input artifacts/output/openai
 ```
 
+Build per-thread token sidecars:
+
+```bash
+uv run llm-logparser analyze tokens \
+  --input artifacts/output/openai
+```
+
+Build per-thread metrics sidecars:
+
+```bash
+uv run llm-logparser analyze metrics \
+  --input artifacts/output/openai
+```
+
 ---
 
 ## 📁 Directory Layout
@@ -98,8 +119,13 @@ uv run llm-logparser analyze stats \
 artifacts/
   output/
     openai/
+      manifest.json
       thread-<conversation_id>/
         parsed.jsonl
+        thread_stats.json
+        message_windows.jsonl
+        token_stats.json
+        metrics.json
         thread-<conversation_id>__*.md
         meta.json (optional)
 ```
@@ -161,6 +187,18 @@ You can control output formatting using:
 * Missing or unknown locales gracefully fall back to `en-US`
 * `--locale` takes precedence when both `--locale` and `--lang` are supplied
   *(--lang exists for compatibility)*
+
+Analyzer heuristics also use locale-backed YAML resources under:
+
+* `src/llm_logparser/i18n/en-US.yaml`
+* `src/llm_logparser/i18n/ja-JP.yaml`
+
+Current locale-tunable keys include:
+
+* `analysis.refusal.indicators`
+* `analysis.revision.cues`
+
+If a selected locale does not provide one of these keys, the analyzer falls back to `en-US`.
 
 Example:
 
@@ -278,6 +316,92 @@ uv run llm-logparser analyze timeline \
   [--json] \
   [--out <path>]
 ```
+
+### Analyze Tokens
+
+Build deterministic per-thread `token_stats.json` sidecars from canonical `parsed.jsonl`:
+
+```bash
+uv run llm-logparser analyze tokens \
+  --input <parsed.jsonl-or-directory> \
+  [--model <model>] \
+  [--encoding <tiktoken-encoding>]
+```
+
+Current tokenizer backend:
+
+* `tiktoken`
+* provider defaults for `openai`, `anthropic`, and `xai`
+* `--encoding` overrides provider/model resolution
+
+Runtime caveat:
+
+* `tiktoken` may perform a one-time network fetch on first use to download encoding data
+* downloaded encoding data is cached locally afterward
+* subsequent token analysis runs use the local cache
+
+### Analyze Metrics
+
+Build deterministic per-thread `metrics.json` sidecars from `parsed.jsonl` plus `token_stats.json`:
+
+```bash
+uv run llm-logparser analyze metrics \
+  --input <parsed.jsonl-or-directory>
+```
+
+Current metrics include:
+
+* ratio / token / character / distribution / diversity metrics
+* `safety.refusal`
+* `interaction.revision`
+
+`metrics.json` requires `token_stats.json` to exist next to each `parsed.jsonl`.
+
+---
+
+## 📊 Analyzer Outputs
+
+Current analyze-layer sidecars:
+
+* `token_stats.json`
+  Deterministic per-thread token counts derived from canonical message text.
+  Includes tokenizer metadata, per-role token totals, and per-message token counts.
+
+* `metrics.json`
+  Deterministic per-thread research-oriented metrics derived from `parsed.jsonl`
+  plus `token_stats.json`. Includes ratio/token/character/distribution/diversity
+  metrics together with heuristic `safety.refusal` and `interaction.revision`.
+
+Both artifacts are rebuildable from canonical data and contain no runtime timestamps.
+
+---
+
+## 🧩 YAML Customization
+
+Phrase tuning for refusal and revision heuristics is data-driven.
+Adjust the locale YAML resources instead of editing Python code.
+
+Files:
+
+* `src/llm_logparser/i18n/en-US.yaml`
+* `src/llm_logparser/i18n/ja-JP.yaml`
+
+Keys:
+
+* `analysis.refusal.indicators`
+  Phrase list used by `metrics.json` refusal detection for assistant messages.
+
+* `analysis.revision.cues`
+  Phrase list used by `metrics.json` revision detection for user messages.
+
+Guidance:
+
+* add domain-specific phrases, dialects, or informal wording directly in YAML
+* prefer small, conservative phrase lists to avoid obvious false positives
+* if your logs use organization-specific language, tune the YAML first before changing code
+* locale-specific behavior falls back to `en-US` when a key is missing
+
+This is the intended customization path for phrase-based heuristic tuning.
 
 ---
 
@@ -438,27 +562,41 @@ This makes the CLI safe for CI and automation workflows.
 
 ## 🔒 Security & Privacy
 
-* Offline-first
+* Offline-first for parse/export and most analyzer workflows
 * No telemetry
 * Sensitive logs stay local
 * Deterministic output for audits
 * `extract` sanitization is config-driven and enabled by default for compatibility
 * `extract.meta.json` records whether sanitization was enabled, which scope ran,
   which replacement token was used, and whether custom keywords/patterns were supplied
+* `analyze tokens` / `analyze metrics` are generally local, but `tiktoken` may fetch
+  encoding data once on first use and then use the local cache afterward
+
+---
+
+## 📦 Dependencies & Credits
+
+Current analyze/tokenizer work relies mainly on:
+
+* Python standard library utilities for deterministic analysis and heuristics
+* [`tiktoken`](https://github.com/openai/tiktoken) for tokenizer-based analysis
+
+Phrase resources for refusal/revision heuristics live in project YAML files under
+`src/llm_logparser/i18n/` and are intended to be user-tunable.
 
 ---
 
 ## 🗺 Roadmap
 
-- [x] CLI MVP (parse / export / extract / chain / analyze stats)
+- [x] CLI MVP (parse / export / extract / chain / analyze)
 - [x] Markdown exporter with thread splitting
 - [x] JSON Schema validation
 - [x] Config file loading (auto-discovery + profiles)
+- [x] Analyzer stats / timeline / tokens / metrics
 
 Near term:
 - [ ] Anthropic / Claude support
 - [ ] xAI / Grok support
-- [ ] Analyzer subcommand
 - [ ] VS Code Extension for browsing normalized logs
 
 Later / exploratory:

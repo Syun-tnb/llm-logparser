@@ -963,9 +963,9 @@ Exporterが生成するMarkdownは、GitHub Flavored Markdown (GFM) に準拠す
 ### 7.1 概要
 
 CLIは `llm-logparser` エントリポイントを基点とし、  
-**Parser（parse）**, **Exporter（export）**, **Viewer（viewer）**, **Config（config）** の  
-4系統サブコマンドを持つ。  
-目的は、スクリプト単体で「入力→正規化→出力→閲覧」まで完結できること。
+**Parser（parse）**, **Exporter（export）**, **Analyzer（analyze）**, **Viewer（viewer）**, **Config（config）** の  
+複数サブコマンドを持つ。  
+目的は、スクリプト単体で「入力→正規化→出力→解析→閲覧」まで完結できること。
 
 ---
 
@@ -975,6 +975,7 @@ CLIは `llm-logparser` エントリポイントを基点とし、
 |-----------|------|------|
 | `parse` | パース処理 | 各ProviderのエクスポートJSONを解析・正規化し、スレッド単位の `parsed.jsonl` を出力する。 |
 | `export` | 出力処理 | `parsed.jsonl` をMarkdown／HTMLに変換して成果物を生成する。 |
+| `analyze` | 解析処理 | canonical `parsed.jsonl` に対して `stats` / `timeline` / `tokens` / `metrics` / `sqlite-build` を実行し、`token_stats.json` や `metrics.json` を生成する。 |
 | `viewer` | 簡易ビューア | 生成済み成果物をローカルHTMLサーバーで閲覧する（MVPでは予約）。 |
 | `config` | 設定操作 | 設定ファイルの生成・編集・リセットを行う。 |
 
@@ -1004,8 +1005,8 @@ CLIは `llm-logparser` エントリポイントを基点とし、
 | `--json-errors` | エラーをJSON構造で出力 | 全体 |
 | `--list-threads` | キャッシュまたはparsed.jsonlの一覧を表示 | parse |
 | `--chain` | parse→exportを連続実行 | CLI統合 |
-| `--offline` | 外部通信禁止（既定ON） | 全体 |
-| `--enable-network` | ネットワーク通信を明示的に許可 | 全体 |
+| `--offline` | 旧設計メモ。現行実装の一般CLIフラグでは未提供 | 全体 |
+| `--enable-network` | 旧設計メモ。現行実装の一般CLIフラグでは未提供 | 全体 |
 
 ---
 
@@ -1339,6 +1340,7 @@ CLIのエラーメッセージ・警告・進行ログを外部辞書で管理�
 * 翻訳リソースは `src/llm_logparser/i18n/{locale}.yaml` に定義し、`parser/exporter/error` キー体系を共通化。
 * ロード時にロケールを自動検出（`--locale` > `LLP_LOCALE` > `config.yaml` > `en-US`）。
 * 未訳キーは `en-US` にフォールバックし、警告を `[WARN][i18n] Missing key ...` として出力。
+* Analyzerのヒューリスティック句（例：`analysis.refusal.indicators`, `analysis.revision.cues`）も同じYAMLリソースから解決する。
 * CLI側の例外処理・エラーハンドラは `message_key` と `params` を受け取り、
   ロケール辞書から解決した文字列を出力する。
 * 翻訳対象範囲には以下を含む：
@@ -1365,7 +1367,7 @@ src/llm_logparser/i18n/
 * 各ファイルは `_schema.yaml` を基準にキー整合をLintで検査。
 * 未訳キーは自動的に英語フォールバック。
 
-> **補足:** CLI層（argparse / logging出力）のi18n適用は本設計に含まれるが、MVP段階では未実装。今後、例外処理層に`i18n.get_text()`を導入してメッセージを外部辞書化する予定。
+> **補足:** 現在の実装では、CLI／Analyzerの一部は `src/llm_logparser/core/i18n.py` を通じてロケールを解決し、Analyzer用の句リストは `src/llm_logparser/i18n/{locale}.yaml` から読み込む。
 
 ---
 
@@ -1785,8 +1787,12 @@ GUIから保存してもCLI起動と矛盾しない。
 ### 12.1 目的と適用範囲
 
 本章は、`llm-logparser` の利用時における情報保護・安全設計を定義する。  
-MVP段階では **完全ローカル実行・外部通信なし** を基本方針とし、  
-ユーザーデータ（発話ログ・キャッシュ・設定ファイル）の漏洩防止を保証する。  
+MVP段階では **ローカル実行を基本方針** とし、  
+ユーザーデータ（発話ログ・キャッシュ・設定ファイル）の漏洩防止を重視する。  
+
+> 実装注記: `analyze tokens` / `analyze metrics` は通常ローカル動作だが、
+> `tiktoken` が初回利用時にエンコーディング資産を取得するための
+> 一度限りのネットワークアクセスを行う場合がある。取得後はローカルキャッシュを使用する。
 
 Apps SDK / HTTP連携は**非対応（将来定義のみ残置）**とする。  
 
@@ -1795,12 +1801,12 @@ Apps SDK / HTTP連携は**非対応（将来定義のみ残置）**とする。
 ### 12.2 基本設計方針
 
 1. **オフライン・ファースト設計**  
-   - デフォルトでネットワーク通信を完全に遮断。  
-   - 依存ライブラリによる自動更新・外部リクエストを禁止。  
+   - parse / export / 多くの analyze 処理はローカル実行を前提とする。  
+   - 依存ライブラリによる不要な外部通信は避ける。  
 
 2. **明示的許可制**  
-   - `--enable-network` オプションを指定した場合のみ通信許可。  
-   - その際は **全送信ログを artifacts/logs/network.log に記録**。  
+   - 将来ネットワーク制御フラグを導入する場合は明示的許可制とする。  
+   - 現行実装では一般向け `--enable-network` フラグは未提供。  
 
 3. **データ最小化の原則**  
    - パーサーは入力ファイルを読み込むが、  
@@ -1869,7 +1875,7 @@ Apps SDK / HTTP連携は**非対応（将来定義のみ残置）**とする。
 | **パス検証**    | `../` などのディレクトリトラバーサルを禁止       |
 | **書込検証**    | 出力先のディスク容量を事前チェック              |
 | **サニタイズ**   | ファイル名をASCII限定に変換し、制御文字除外       |
-| **セーフモード**  | `--offline` を強制ON（MVP既定）       |
+| **セーフモード**  | 旧設計メモ。現行実装では一般向け `--offline` フラグは未提供 |
 
 ---
 
