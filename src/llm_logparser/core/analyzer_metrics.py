@@ -4,25 +4,18 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .analyzer_tokens import (
-    _detect_header_metadata,
-    _normalize_role,
-    _resolve_text,
-    _string_or_none,
+from .analyzer_common import (
+    detect_header_metadata,
+    normalize_role,
+    render_artifact_json,
+    resolve_canonical_text,
+    safe_average,
+    safe_ratio,
+    string_or_none,
+    write_json_artifact,
 )
+from .i18n import get_resource_list
 from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
-
-
-def _safe_ratio(numerator: int | float, denominator: int | float) -> float:
-    if not denominator:
-        return 0.0
-    return round(float(numerator) / float(denominator), 4)
-
-
-def _safe_average(total: int | float, count: int | float) -> float:
-    if not count:
-        return 0.0
-    return round(float(total) / float(count), 2)
 
 
 def _load_token_stats(parsed_path: Path) -> dict[str, Any]:
@@ -71,7 +64,7 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
     tokenizer_meta = token_stats.get("tokenizer")
     if isinstance(tokenizer_meta, dict):
         if tokenizer_meta.get("library") == "tiktoken":
-            resolved_encoding = _string_or_none(tokenizer_meta.get("resolved_encoding"))
+            resolved_encoding = string_or_none(tokenizer_meta.get("resolved_encoding"))
             if resolved_encoding:
                 import tiktoken
 
@@ -93,9 +86,27 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
     return len(unique_tokens), total_tokens
 
 
+def _load_refusal_indicators() -> list[str]:
+    indicators = get_resource_list("analysis.refusal.indicators")
+    normalized = []
+    for indicator in indicators:
+        folded = " ".join(indicator.casefold().split())
+        if folded:
+            normalized.append(folded)
+    return normalized
+
+
+def _matches_refusal(text: str, indicators: list[str]) -> bool:
+    if not text or not indicators:
+        return False
+    normalized = " ".join(text.casefold().split())
+    return any(indicator in normalized for indicator in indicators)
+
+
 def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     token_stats = _load_token_stats(parsed_path)
-    provider_id, conversation_id = _detect_header_metadata(parsed_path)
+    provider_id, conversation_id = detect_header_metadata(parsed_path)
+    refusal_indicators = _load_refusal_indicators()
 
     char_count_total = 0
     char_count_user = 0
@@ -103,28 +114,31 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     texts: list[str] = []
     message_count_user = 0
     message_count_assistant = 0
+    refusal_count = 0
 
     for row in iter_parsed_records(parsed_path):
         if row.get("record_type") != "message":
             continue
 
         if provider_id is None:
-            provider_id = _string_or_none(row.get("provider_id"))
+            provider_id = string_or_none(row.get("provider_id"))
         if conversation_id is None:
-            conversation_id = _string_or_none(row.get("conversation_id"))
+            conversation_id = string_or_none(row.get("conversation_id"))
 
-        text, _text_source = _resolve_text(row)
+        text, _text_source = resolve_canonical_text(row)
         texts.append(text)
         char_count = len(text)
         char_count_total += char_count
 
-        role = _normalize_role(row.get("role"))
+        role = normalize_role(row.get("role"))
         if role == "user":
             message_count_user += 1
             char_count_user += char_count
         elif role == "assistant":
             message_count_assistant += 1
             char_count_assistant += char_count
+            if _matches_refusal(text, refusal_indicators):
+                refusal_count += 1
 
     if conversation_id is None:
         raise ValueError(f"parsed thread has no conversation_id: {parsed_path}")
@@ -142,18 +156,18 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     artifact = {
         "artifact_type": "metrics",
         "schema_version": "1.0",
-        "provider_id": provider_id or _string_or_none(token_stats.get("provider_id")) or "unknown",
+        "provider_id": provider_id or string_or_none(token_stats.get("provider_id")) or "unknown",
         "conversation_id": conversation_id,
         "ratios": {
-            "prompt_response_ratio_tokens": _safe_ratio(
+            "prompt_response_ratio_tokens": safe_ratio(
                 token_count_user,
                 token_count_assistant,
             ),
-            "prompt_response_ratio_chars": _safe_ratio(
+            "prompt_response_ratio_chars": safe_ratio(
                 char_count_user,
                 char_count_assistant,
             ),
-            "assistant_to_user_ratio": _safe_ratio(
+            "assistant_to_user_ratio": safe_ratio(
                 message_count_assistant,
                 message_count_user,
             ),
@@ -167,33 +181,34 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
             "total": char_count_total,
             "user": char_count_user,
             "assistant": char_count_assistant,
-            "avg_per_message": _safe_average(char_count_total, message_count_total),
-            "avg_per_turn": _safe_average(char_count_total, turn_count),
+            "avg_per_message": safe_average(char_count_total, message_count_total),
+            "avg_per_turn": safe_average(char_count_total, turn_count),
         },
         "distribution": {
             "message_total": message_count_total,
             "message_user": message_count_user,
             "message_assistant": message_count_assistant,
-            "messages_per_turn": _safe_average(message_count_total, turn_count),
+            "messages_per_turn": safe_average(message_count_total, turn_count),
         },
         "diversity": {
-            "type_token_ratio": _safe_ratio(unique_token_count, diversity_token_total),
-            "unique_token_ratio": _safe_ratio(unique_token_count, diversity_token_total),
+            "type_token_ratio": safe_ratio(unique_token_count, diversity_token_total),
+            "unique_token_ratio": safe_ratio(unique_token_count, diversity_token_total),
+        },
+        "safety": {
+            "refusal_count": refusal_count,
+            "refusal_rate": safe_ratio(refusal_count, message_count_assistant),
         },
     }
     return artifact
 
 
 def render_metrics_json(artifact: dict[str, Any]) -> str:
-    return json.dumps(artifact, ensure_ascii=False, indent=2)
+    return render_artifact_json(artifact)
 
 
 def write_metrics_artifact(parsed_path: Path, artifact: dict[str, Any]) -> Path:
     artifact_path = parsed_path.with_name("metrics.json")
-    tmp = artifact_path.with_suffix(".tmp")
-    tmp.write_text(render_metrics_json(artifact), encoding="utf-8")
-    tmp.replace(artifact_path)
-    return artifact_path
+    return write_json_artifact(artifact_path, artifact)
 
 
 def analyze_metrics(input_path: Path) -> dict[str, Any]:

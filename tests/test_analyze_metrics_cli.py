@@ -63,7 +63,12 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _build_metrics_fixture(parsed: Path, monkeypatch) -> tuple[dict, dict]:
+def _build_metrics_fixture(
+    parsed: Path,
+    monkeypatch,
+    *,
+    metrics_args: list[str] | None = None,
+) -> tuple[dict, dict]:
     _run_cli(
         monkeypatch,
         [
@@ -80,6 +85,7 @@ def _build_metrics_fixture(parsed: Path, monkeypatch) -> tuple[dict, dict]:
         monkeypatch,
         [
             "llm-logparser",
+            *(metrics_args or []),
             "analyze",
             "metrics",
             "--input",
@@ -99,7 +105,11 @@ def test_analyze_metrics_writes_deterministic_artifact(tmp_path, monkeypatch):
         "conv-1",
         [
             {"message_id": "m1", "role": "user", "text": "hello world"},
-            {"message_id": "m2", "role": "assistant", "text": "hi there"},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "I can't help with that request.",
+            },
         ],
     )
 
@@ -181,6 +191,7 @@ def test_analyze_metrics_handles_zero_division_consistently(tmp_path, monkeypatc
     assert metrics["ratios"]["prompt_response_ratio_tokens"] == 0.0
     assert metrics["ratios"]["prompt_response_ratio_chars"] == 0.0
     assert metrics["ratios"]["assistant_to_user_ratio"] == 0.0
+    assert metrics["safety"]["refusal_rate"] == 0.0
 
 
 def test_analyze_metrics_computes_diversity_from_tokenizer_units(tmp_path, monkeypatch):
@@ -250,6 +261,114 @@ def test_analyze_metrics_supports_directory_input(tmp_path, monkeypatch):
     assert _load_json(parsed_b.with_name("metrics.json"))["conversation_id"] == "conv-b"
 
 
+def test_analyze_metrics_detects_refusal_in_assistant_message(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-refusal" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-refusal",
+        [
+            {"message_id": "m1", "role": "user", "text": "please do the thing"},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "I can't help with that request.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 1
+    assert metrics["safety"]["refusal_rate"] == 1.0
+
+
+def test_analyze_metrics_refusal_count_stays_zero_without_match(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-no-refusal" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-no-refusal",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "Here is the answer."},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 0
+    assert metrics["safety"]["refusal_rate"] == 0.0
+
+
+def test_analyze_metrics_does_not_count_user_refusal_like_text(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-user-refusal" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-refusal",
+        [
+            {
+                "message_id": "m1",
+                "role": "user",
+                "text": "I can't help with that request.",
+            },
+            {"message_id": "m2", "role": "assistant", "text": "Sure, here you go."},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 0
+    assert metrics["safety"]["refusal_rate"] == 0.0
+
+
+def test_analyze_metrics_computes_partial_refusal_rate(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-partial-refusal" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-partial-refusal",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "I cannot provide that information.",
+            },
+            {"message_id": "m3", "role": "assistant", "text": "But I can explain the safe version."},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 1
+    assert metrics["safety"]["refusal_rate"] == 0.5
+
+
+def test_analyze_metrics_uses_en_us_indicator_fallback_for_missing_locale(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-locale-fallback" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-locale-fallback",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "I can't help with that request.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(
+        parsed,
+        monkeypatch,
+        metrics_args=["--locale", "fr-FR"],
+    )
+
+    assert metrics["safety"]["refusal_count"] == 1
+    assert metrics["safety"]["refusal_rate"] == 1.0
+
+
 def test_analyze_metrics_fails_when_token_stats_is_missing(
     tmp_path, monkeypatch, caplog
 ):
@@ -271,4 +390,3 @@ def test_analyze_metrics_fails_when_token_stats_is_missing(
 
     assert exc.value.code == 2
     assert "required token_stats.json not found" in caplog.text
-

@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-import json
 from collections import OrderedDict
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+from .analyzer_common import (
+    ROLE_ORDER,
+    UNKNOWN_ROLE,
+    detect_header_metadata,
+    normalize_role,
+    render_artifact_json,
+    resolve_canonical_text,
+    string_or_none,
+    write_json_artifact,
+)
 from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
-
-ROLE_ORDER = ("user", "assistant", "system", "tool")
-UNKNOWN_ROLE = "unknown"
 
 
 @dataclass(frozen=True)
@@ -52,66 +58,15 @@ class TiktokenTokenizer:
             "special_token_policy": self.spec.special_token_policy,
         }
 
-
-def _detect_header_metadata(parsed_path: Path) -> tuple[str | None, str | None]:
-    provider_id: str | None = None
-    conversation_id: str | None = None
-
-    for row in iter_parsed_records(parsed_path):
-        if row.get("record_type") == "thread":
-            provider_id = provider_id or _string_or_none(row.get("provider_id"))
-            conversation_id = conversation_id or _string_or_none(row.get("conversation_id"))
-            if provider_id and conversation_id:
-                break
-            continue
-
-        if row.get("record_type") != "message":
-            continue
-
-        provider_id = provider_id or _string_or_none(row.get("provider_id"))
-        conversation_id = conversation_id or _string_or_none(row.get("conversation_id"))
-        break
-
-    return provider_id, conversation_id
-
-
 def _detect_thread_model(parsed_path: Path) -> str | None:
     for row in iter_parsed_records(parsed_path):
         meta = row.get("meta")
         if not isinstance(meta, dict):
             continue
-        model = _string_or_none(meta.get("model"))
+        model = string_or_none(meta.get("model"))
         if model:
             return model
     return None
-
-
-def _string_or_none(value: Any) -> str | None:
-    return value if isinstance(value, str) and value else None
-
-
-def _normalize_role(value: Any) -> str:
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in ROLE_ORDER:
-            return normalized
-    return UNKNOWN_ROLE
-
-
-def _resolve_text(row: dict[str, Any]) -> tuple[str, str]:
-    text = row.get("text")
-    if isinstance(text, str):
-        return text, "text"
-
-    content = row.get("content")
-    if isinstance(content, dict):
-        parts = content.get("parts")
-        if isinstance(parts, list):
-            string_parts = [part for part in parts if isinstance(part, str)]
-            if string_parts:
-                return "\n".join(string_parts), "content.parts"
-
-    return "", "empty"
 
 
 def resolve_analyze_tokenizer(
@@ -201,7 +156,7 @@ def build_token_stats_artifact(
     model_override: str | None = None,
     encoding_override: str | None = None,
 ) -> dict[str, Any]:
-    provider_id, conversation_id = _detect_header_metadata(parsed_path)
+    provider_id, conversation_id = detect_header_metadata(parsed_path)
     thread_model = _detect_thread_model(parsed_path)
     tokenizer = resolve_analyze_tokenizer(
         provider_id=provider_id,
@@ -229,12 +184,12 @@ def build_token_stats_artifact(
             continue
 
         if provider_id is None:
-            provider_id = _string_or_none(row.get("provider_id"))
+            provider_id = string_or_none(row.get("provider_id"))
         if conversation_id is None:
-            conversation_id = _string_or_none(row.get("conversation_id"))
+            conversation_id = string_or_none(row.get("conversation_id"))
 
-        role = _normalize_role(row.get("role"))
-        text, text_source = _resolve_text(row)
+        role = normalize_role(row.get("role"))
+        text, text_source = resolve_canonical_text(row)
         if text_source == "content.parts":
             fallback_text_from_parts += 1
         elif text_source == "empty":
@@ -255,7 +210,7 @@ def build_token_stats_artifact(
 
         messages.append(
             {
-                "message_id": _string_or_none(row.get("message_id")) or "",
+                "message_id": string_or_none(row.get("message_id")) or "",
                 "role": role,
                 "token_count": token_count,
                 "text_source": text_source,
@@ -297,15 +252,12 @@ def build_token_stats_artifact(
 
 
 def render_token_stats_json(artifact: dict[str, Any]) -> str:
-    return json.dumps(artifact, ensure_ascii=False, indent=2)
+    return render_artifact_json(artifact)
 
 
 def write_token_stats_artifact(parsed_path: Path, artifact: dict[str, Any]) -> Path:
     artifact_path = parsed_path.with_name("token_stats.json")
-    tmp = artifact_path.with_suffix(".tmp")
-    tmp.write_text(render_token_stats_json(artifact), encoding="utf-8")
-    tmp.replace(artifact_path)
-    return artifact_path
+    return write_json_artifact(artifact_path, artifact)
 
 
 def analyze_tokens(
