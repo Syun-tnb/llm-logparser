@@ -52,6 +52,16 @@ def _run_cli(monkeypatch, capsys, argv: list[str]) -> str:
     return capsys.readouterr().out
 
 
+def _iter_keys(value):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            yield key
+            yield from _iter_keys(nested)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_keys(item)
+
+
 def _build_threads_fixture(root: Path) -> None:
     _write_parsed_jsonl(
         root / "a" / "thread-conv-a" / "parsed.jsonl",
@@ -444,3 +454,37 @@ def test_analyze_stats_json_out_writes_json_file(tmp_path, monkeypatch, capsys):
     assert payload["threads_detail"][0]["conversation_id"] == "conv-1"
     assert payload["threads_detail"][0]["first_timestamp"] == "2024-01-01T00:00:00Z"
     assert payload["threads_detail"][0]["last_timestamp"] == "2024-01-01T00:00:30Z"
+
+
+def test_analyze_stats_json_output_is_deterministic(tmp_path, monkeypatch, capsys):
+    parsed = tmp_path / "thread-conv-deterministic" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-deterministic",
+        [
+            {"message_id": "m1", "role": "user", "ts": 1704067200000, "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "ts": 1704067260000, "text": "world"},
+            {"message_id": "m3", "role": "tool", "ts": 1704067290000, "text": ""},
+        ],
+    )
+
+    argv = [
+        "llm-logparser",
+        "analyze",
+        "stats",
+        "--input",
+        str(parsed),
+        "--json",
+        "--sort",
+        "conversation_id",
+    ]
+    first = json.loads(_run_cli(monkeypatch, capsys, argv))
+    second = json.loads(_run_cli(monkeypatch, capsys, argv))
+
+    assert first == second
+
+    keys = set(_iter_keys(first))
+    assert "generated_at" not in keys
+    assert "exported_at" not in keys
+    assert "random" not in keys
+    assert "seed" not in keys

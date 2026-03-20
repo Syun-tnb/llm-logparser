@@ -302,6 +302,69 @@ def test_analyze_tokens_allows_encoding_override_for_unsupported_provider(
     assert artifact["tokenizer"]["resolution_source"] == "explicit_encoding"
 
 
+def test_analyze_tokens_auto_detects_model_from_message_metadata(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-model-auto" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-model-auto",
+        [
+            {
+                "message_id": "m1",
+                "role": "user",
+                "text": "hello",
+                "meta": {"model": "gpt-4o-mini"},
+            },
+            {"message_id": "m2", "role": "assistant", "text": "world"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+        ],
+    )
+
+    artifact = _load_artifact(parsed)
+    assert artifact["tokenizer"]["resolved_model"] == "gpt-4o-mini"
+    assert artifact["tokenizer"]["resolution_source"] == "model"
+    assert artifact["tokenizer"]["resolved_encoding"] == "o200k_base"
+
+
+def test_analyze_tokens_without_model_metadata_uses_provider_default_resolution(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-provider-default" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-provider-default",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "world"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+        ],
+    )
+
+    artifact = _load_artifact(parsed)
+    assert artifact["tokenizer"]["resolved_model"] is None
+    assert artifact["tokenizer"]["resolution_source"] == "provider_default"
+    assert artifact["tokenizer"]["resolved_encoding"] == "o200k_base"
+
+
 def test_analyze_tokens_skip_existing_keeps_single_artifact_unchanged(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-skip" / "parsed.jsonl"
     _write_parsed_jsonl(

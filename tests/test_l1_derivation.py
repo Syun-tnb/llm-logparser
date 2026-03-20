@@ -5,8 +5,14 @@ import pytest
 
 from llm_logparser.core.l1_derivation import (
     derive_thread_metrics,
+    derive_thread_metrics_from_rows,
     discover_parsed_jsonl,
     iter_input_message_records,
+    message_character_count,
+    message_role,
+    message_text,
+    to_iso_utc,
+    ts_to_seconds,
 )
 
 
@@ -111,3 +117,63 @@ def test_derive_thread_metrics_invalid_json_includes_path_and_line(tmp_path):
 
     with pytest.raises(ValueError, match=r"invalid JSON .*parsed\.jsonl:1"):
         derive_thread_metrics(parsed)
+
+
+def test_message_helpers_handle_partial_rows_without_exceptions():
+    assert message_text({}) == ""
+    assert message_text({"text": None}) == ""
+    assert message_text({"text": "hello"}) == "hello"
+    assert message_character_count({}) == 0
+    assert message_character_count({"text": None}) == 0
+    assert message_character_count({"text": "hello"}) == 5
+    assert message_role({}) is None
+    assert message_role({"role": ""}) is None
+    assert message_role({"role": "User"}) == "User"
+
+
+def test_ts_conversion_utilities_handle_seconds_milliseconds_and_invalid_values():
+    assert ts_to_seconds(1_704_067_200_000) == 1_704_067_200.0
+    assert ts_to_seconds(1_704_067_200) == 1_704_067_200.0
+    assert ts_to_seconds("1704067200") is None
+    assert to_iso_utc(1_704_067_200.0) == "2024-01-01T00:00:00Z"
+    assert to_iso_utc(None) is None
+
+
+def test_derive_thread_metrics_from_rows_treats_mixed_case_and_missing_roles_as_other():
+    metrics = derive_thread_metrics_from_rows(
+        [
+            {
+                "record_type": "thread",
+                "conversation_id": "conv-mixed",
+            },
+            {
+                "record_type": "message",
+                "conversation_id": "conv-mixed",
+                "role": "User",
+                "text": "hello",
+                "ts": 1704067200000,
+            },
+            {
+                "record_type": "message",
+                "conversation_id": "conv-mixed",
+                "text": None,
+            },
+            {
+                "record_type": "message",
+                "conversation_id": "conv-mixed",
+                "role": "assistant",
+                "text": "ok",
+                "ts": 1704067210000,
+            },
+        ]
+    )
+
+    assert metrics.conversation_id == "conv-mixed"
+    assert metrics.message_count == 3
+    assert metrics.user_messages == 0
+    assert metrics.assistant_messages == 1
+    assert metrics.other_roles == 2
+    assert metrics.character_count == 7
+    assert metrics.other_role_breakdown == {"User": 1, "unknown": 1}
+    assert metrics.first_ts == 1704067200.0
+    assert metrics.last_ts == 1704067210.0

@@ -123,7 +123,7 @@ def resolve_analyze_tokenizer(
             resolution_source = "provider_default"
             resolved_encoding = "o200k_base"
         else:
-            resolution_source = "meta.model"
+            resolution_source = "model"
             resolved_encoding = encoder.name
 
         spec = TokenizerSpec(
