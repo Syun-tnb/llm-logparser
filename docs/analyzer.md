@@ -88,6 +88,13 @@ Incremental sidecar policy:
 The refusal and revision phrase lists are locale-backed and loaded from
 `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
 
+The metrics heuristics are deterministic and local:
+
+- refusal detection: normalized substring match on assistant messages only
+- revision detection: normalized cue match or similarity match between consecutive user messages
+- short user messages are ignored for revision counting to reduce false positives
+- phrase lists come from locale YAML resources and remain auditable/editable on disk
+
 Analyzer i18n is intentionally narrow:
 
 - locale-backed YAML resources only affect heuristic inputs such as refusal and revision cues

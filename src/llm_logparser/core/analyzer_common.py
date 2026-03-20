@@ -12,6 +12,10 @@ from .l1_derivation import (
     normalize_role_value,
 )
 
+RATIO_DECIMAL_PLACES = 4
+AVERAGE_DECIMAL_PLACES = 2
+ZERO_DIVISION_FALLBACK = 0.0
+
 
 def string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
@@ -62,18 +66,34 @@ def detect_header_metadata(parsed_path: Path) -> tuple[str | None, str | None]:
 
 
 def safe_ratio(numerator: int | float, denominator: int | float) -> float:
+    """Return a deterministic ratio for artifact fields.
+
+    Analyzer metrics treat division-by-zero as a non-fatal, deterministic edge
+    case and emit `0.0` instead of raising or leaking NaN/Infinity into JSON.
+    Ratios are rounded to a fixed artifact-friendly precision.
+    """
     if not denominator:
-        return 0.0
-    return round(float(numerator) / float(denominator), 4)
+        return ZERO_DIVISION_FALLBACK
+    return round(float(numerator) / float(denominator), RATIO_DECIMAL_PLACES)
 
 
 def safe_average(total: int | float, count: int | float) -> float:
+    """Return a deterministic average for artifact fields.
+
+    As with `safe_ratio`, empty populations intentionally collapse to `0.0` so
+    analyzer artifacts stay machine-readable and deterministic.
+    """
     if not count:
-        return 0.0
-    return round(float(total) / float(count), 2)
+        return ZERO_DIVISION_FALLBACK
+    return round(float(total) / float(count), AVERAGE_DECIMAL_PLACES)
 
 
 def normalize_analysis_text(text: str) -> str:
+    """Normalize free text for heuristic matching.
+
+    Phrase-based analyzer heuristics use casefolding plus whitespace collapsing
+    so YAML cue lists and message text can be compared with stable local rules.
+    """
     return " ".join(text.casefold().split())
 
 

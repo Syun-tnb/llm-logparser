@@ -20,7 +20,20 @@ from .analyzer_common import (
 from .i18n import _, get_resource_list
 from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
 
-REVISION_MIN_LENGTH = 8
+# Refusal detection is a normalized substring match against locale-backed cue
+# lists in `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US`
+# handled by `get_resource_list()`.
+REFUSAL_INDICATORS_RESOURCE_KEY = "analysis.refusal.indicators"
+REVISION_CUES_RESOURCE_KEY = "analysis.revision.cues"
+CORRECTION_CUES_RESOURCE_KEY = "analysis.correction.cues"
+CLARIFICATION_CUES_RESOURCE_KEY = "analysis.clarification.cues"
+
+# Revision heuristics are intentionally simple and local:
+# - very short user messages are ignored to reduce false positives from replies
+#   like "again" or "no"
+# - otherwise a revision triggers if the message contains a revision cue or is
+#   sufficiently similar to the previous user message after normalization
+REVISION_MIN_NORMALIZED_LENGTH = 8
 REVISION_SIMILARITY_THRESHOLD = 0.78
 
 
@@ -85,6 +98,9 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
                 total_tokens = 0
                 unique_tokens: set[int] = set()
                 for text in texts:
+                    # Diversity metrics prefer the same tokenizer units as
+                    # token_stats.json when available. If that metadata is not
+                    # usable, the fallback below degrades to whitespace pieces.
                     encoded = encoder.encode_ordinary(text)
                     total_tokens += len(encoded)
                     unique_tokens.update(encoded)
@@ -101,7 +117,9 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
 
 def _load_normalized_phrases(key: str) -> list[str]:
     # Heuristic cue lists are locale-backed, but metrics.json remains a stable
-    # machine-readable artifact with English schema keys by design.
+    # machine-readable artifact with English schema keys by design. The i18n
+    # layer already applies locale fallback to en-US, so the resulting phrase
+    # list is deterministic for a selected locale.
     phrases = get_resource_list(key)
     normalized = []
     for phrase in phrases:
@@ -112,26 +130,32 @@ def _load_normalized_phrases(key: str) -> list[str]:
 
 
 def _load_refusal_indicators() -> list[str]:
-    return _load_normalized_phrases("analysis.refusal.indicators")
+    return _load_normalized_phrases(REFUSAL_INDICATORS_RESOURCE_KEY)
 
 
 def _load_revision_cues() -> list[str]:
-    return _load_normalized_phrases("analysis.revision.cues")
+    return _load_normalized_phrases(REVISION_CUES_RESOURCE_KEY)
 
 
 def _load_correction_cues() -> list[str]:
-    return _load_normalized_phrases("analysis.correction.cues")
+    return _load_normalized_phrases(CORRECTION_CUES_RESOURCE_KEY)
 
 
 def _load_clarification_cues() -> list[str]:
-    return _load_normalized_phrases("analysis.clarification.cues")
+    return _load_normalized_phrases(CLARIFICATION_CUES_RESOURCE_KEY)
 
 
 def _matches_phrase(text: str, phrases: list[str]) -> bool:
+    """Return True when any normalized cue appears as a substring.
+
+    This is a deliberately transparent heuristic, not an NLP classifier:
+    message text and YAML phrases are both normalized with
+    `normalize_analysis_text()`, then checked via substring inclusion.
+    """
     if not text or not phrases:
         return False
-    normalized = normalize_analysis_text(text)
-    return any(phrase in normalized for phrase in phrases)
+    normalized_text = normalize_analysis_text(text)
+    return any(phrase in normalized_text for phrase in phrases)
 
 
 def _classify_revisions(
@@ -151,19 +175,23 @@ def _classify_revisions(
 
     previous_text = user_texts[0]
     for current_text in user_texts[1:]:
-        if not has_min_normalized_length(current_text, REVISION_MIN_LENGTH):
+        # Ignore very short candidate revisions to avoid over-counting terse
+        # follow-ups that are not meaningful rewrites of the prior request.
+        if not has_min_normalized_length(current_text, REVISION_MIN_NORMALIZED_LENGTH):
             previous_text = current_text
             continue
 
-        cue_match = _matches_phrase(current_text, revision_cues)
-        similarity_match = (
-            has_min_normalized_length(previous_text, REVISION_MIN_LENGTH)
+        cue_triggered_revision = _matches_phrase(current_text, revision_cues)
+        similarity_triggered_revision = (
+            has_min_normalized_length(previous_text, REVISION_MIN_NORMALIZED_LENGTH)
             and normalized_similarity(previous_text, current_text)
             >= REVISION_SIMILARITY_THRESHOLD
         )
 
-        if cue_match or similarity_match:
+        if cue_triggered_revision or similarity_triggered_revision:
             counts["revision_count"] += 1
+            # Subtype precedence is intentional: explicit correction beats
+            # clarification, and anything else falls back to a generic retry.
             if _matches_phrase(current_text, correction_cues):
                 counts["correction_count"] += 1
             elif _matches_phrase(current_text, clarification_cues):
@@ -215,6 +243,8 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         elif role == "assistant":
             message_count_assistant += 1
             char_count_assistant += char_count
+            # Refusal is only counted on assistant turns. User text that echoes
+            # a refusal phrase is intentionally ignored.
             if _matches_phrase(text, refusal_indicators):
                 refusal_count += 1
 
@@ -244,6 +274,8 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         "provider_id": provider_id or string_or_none(token_stats.get("provider_id")) or "unknown",
         "conversation_id": conversation_id,
         "ratios": {
+            # Ratios use deterministic zero-division handling from
+            # `safe_ratio()`, so empty assistant/user counts emit 0.0.
             "prompt_response_ratio_tokens": safe_ratio(
                 token_count_user,
                 token_count_assistant,
