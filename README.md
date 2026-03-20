@@ -99,6 +99,8 @@ uv run llm-logparser analyze stats \
   --input artifacts/output/openai
 ```
 
+These subcommands intentionally produce different output classes: `stats` / `timeline` render results, `tokens` / `metrics` write per-thread JSON sidecars, and `sqlite-build` writes a single SQLite database artifact.
+
 Recommended sidecar workflow after parse: run `analyze tokens` first, then `analyze metrics`.
 
 Build per-thread token sidecars first:

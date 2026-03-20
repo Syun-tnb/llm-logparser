@@ -110,6 +110,28 @@ during parse from the same canonical message rows written to `parsed.jsonl`.
 It provides lightweight counts and timestamp-derived metadata for downstream
 L3/local-LLM pipelines without requiring a later thread rescan.
 
+Contract:
+
+- purpose: stable parse-time thread-local summary for one canonical thread
+- required top-level fields emitted today:
+  - `artifact_type`: always `thread_stats`
+  - `provider_id`: provider identifier for the thread
+  - `conversation_id`: canonical thread/conversation identifier
+  - `message_count`: total message records in the thread
+  - `character_count`: total characters across canonical message `text`
+  - `first_timestamp`: earliest message timestamp as UTC ISO 8601, or `null`
+  - `last_timestamp`: latest message timestamp as UTC ISO 8601, or `null`
+  - `conversation_span_seconds`: integer span between first/last timestamps, or `null`
+  - `user_messages`: count of messages whose raw role is `user`
+  - `assistant_messages`: count of messages whose raw role is `assistant`
+  - `other_roles`: count of all other or missing roles
+  - `characters_user`: characters from messages whose raw role is `user`
+  - `characters_assistant`: characters from messages whose raw role is `assistant`
+  - `other_role_breakdown`: sorted mapping of each non-`user`/`assistant` raw role label to its count, using `unknown` for missing roles
+- notes:
+  - `thread_stats.json` is parse-time metadata, not an analyzer-generated sidecar
+  - it does not currently emit `schema_version`
+
 `message_windows.jsonl` is a deterministic thread-local text artifact derived
 only from canonical message rows. The first version uses simple fixed-size
 contiguous message windows with preserved role sequence and message traceability.
@@ -176,6 +198,17 @@ Current shared responsibilities include:
 
 These helpers are intended to be reusable both from `analyze` subcommands and
 from future parse-time thread-local artifact generation.
+
+For analyzer-generated sidecars, canonical text resolution is:
+
+1. use top-level `text` when it is a string
+2. otherwise, if `content.parts` is a list, join its string elements with `"\n"`
+3. otherwise use `""`
+
+`token_stats.json` exposes this per message as `text_source` with values
+`text`, `content.parts`, or `empty`. `metrics.json` uses the same canonical
+text fallback chain internally for character/diversity/heuristic inputs, but
+does not emit per-message `text_source`.
 
 
 ---
@@ -291,6 +324,13 @@ Separately implemented:
 
 Current thread-local analyzer artifacts:
 
+Analyzer sidecar schema-version policy:
+
+- `token_stats.json` and `metrics.json` currently emit `schema_version: "1.0"`
+- within major version `1`, additive fields are intended to remain backward-compatible
+- removing fields, changing field meaning, or otherwise breaking existing consumers requires a new major schema version
+- consumers should ignore unknown additive fields when reading analyzer sidecars
+
 ### `token_stats.json`
 
 Derived from canonical message text only.
@@ -324,10 +364,6 @@ Contract:
   - `summary`: message, turn, and token totals plus average and text-fallback counters
   - `by_role`: per-role `messages` / `tokens` counters
   - `messages`: per-message `message_id`, normalized `role`, `token_count`, and `text_source`
-- schema version behavior:
-  - current version is `1.0`
-  - additive fields are allowed
-  - removing fields or changing semantics requires a schema version change
 - incremental behavior:
   - default CLI behavior rebuilds and overwrites an existing `token_stats.json`
   - `analyze tokens --skip-existing` leaves an existing `token_stats.json` untouched
@@ -366,19 +402,10 @@ Contract:
   - `ratios`, `tokens`, `characters`, `distribution`, `diversity`: deterministic numeric summaries
   - `safety`: refusal counters and refusal rate derived from locale-backed refusal indicators
   - `interaction`: revision, correction, clarification, and retry counters/rates derived from locale-backed cues
-- schema version behavior:
-  - current version is `1.0`
-  - additive fields are allowed
-  - removing fields or changing semantics requires a schema version change
 - incremental behavior:
   - default CLI behavior rebuilds and overwrites an existing `metrics.json`
   - `analyze metrics --skip-existing` leaves an existing `metrics.json` untouched
   - when `metrics.json` is missing, `token_stats.json` must already exist from `analyze tokens`
-
-Compatibility rule for analyzer sidecars:
-
-- unknown/additive fields must be ignored by consumers
-- breaking contract changes require a `schema_version` bump
 
 Reasons:
 

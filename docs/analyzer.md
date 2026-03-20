@@ -83,6 +83,12 @@ Recommended workflow:
 
 `analyze stats` and `analyze timeline` can be run directly on `parsed.jsonl`.
 
+CLI consistency note:
+
+- `analyze stats` and `analyze timeline` are presentation commands: they render terminal output, support `--json`, and can write the rendered result via `--out`
+- `analyze tokens` and `analyze metrics` are sidecar builders: they write per-thread JSON artifacts next to each `parsed.jsonl` and use `--skip-existing` instead of presentation flags
+- `analyze sqlite-build` writes a single `analysis.db` index artifact and uses `--overwrite` for rebuild control
+
 Incremental sidecar policy:
 
 - default behavior: existing `token_stats.json` and `metrics.json` sidecars are rebuilt and overwritten
