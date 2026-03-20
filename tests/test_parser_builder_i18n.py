@@ -1,0 +1,43 @@
+import pytest
+
+from llm_logparser.cli.parser_builder import build_parser
+from llm_logparser.core.i18n import _, set_locale
+
+
+def test_top_level_parser_help_uses_i18n_strings():
+    set_locale("ja-JP")
+
+    help_text = build_parser().format_help()
+
+    assert _("cli.description") in help_text
+    assert _("cli.option.config.help") in help_text
+    assert _("cli.option.profile.help") in help_text
+    assert _("cli.option.non_interactive.help") in help_text
+    assert _("cli.export.help") in help_text
+    assert _("cli.chain.help") in help_text
+
+
+def test_parse_help_uses_i18n_strings(capsys):
+    set_locale("ja-JP")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["parse", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert _("cli.parse.opt.input.help") in help_text
+    assert _("cli.parse.opt.validate_schema.help") in help_text
+
+
+def test_unknown_locale_falls_back_to_english_for_parser_help():
+    set_locale("fr-FR")
+
+    help_text = build_parser().format_help()
+
+    assert _("cli.description") == "CLI interface for LLM Log Parser (MVP)"
+    assert _("cli.option.config.help") == "Path to config.yaml"
+    assert _("cli.analyze.help") == "Analyze canonical parsed JSONL threads"
+    assert "CLI interface for LLM Log Parser (MVP)" in help_text
+    assert "Path to config.yaml" in help_text
+    assert "Analyze canonical parsed JSONL threads" in help_text

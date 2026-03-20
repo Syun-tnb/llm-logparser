@@ -24,12 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=_("cli.option.log_level.help"),
     )
-    parser.add_argument("--config", type=Path, help="Path to config.yaml")
-    parser.add_argument("--profile", help="Profile name to use")
+    parser.add_argument("--config", type=Path, help=_("cli.option.config.help"))
+    parser.add_argument("--profile", help=_("cli.option.profile.help"))
     parser.add_argument(
         "--non-interactive",
         action="store_true",
-        help="Disable interactive prompts and fail when required values are missing",
+        help=_("cli.option.non_interactive.help"),
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -72,43 +72,77 @@ def build_parser() -> argparse.ArgumentParser:
         "--validate-schema",
         dest="validate_schema",
         action="store_true",
-        help="Validate normalized messages against message.schema.json",
+        help=_("cli.parse.opt.validate_schema.help"),
     )
 
     export_cmd = subparsers.add_parser(
         "export",
-        help="Export a normalized thread JSONL into Markdown",
+        help=_("cli.export.help"),
     )
-    export_cmd.add_argument("--input", required=False, type=Path, help="Path to thread parsed.jsonl")
-    export_cmd.add_argument("--out", required=False, type=Path, help="Output Markdown path")
+    export_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.export.opt.input.help"),
+    )
+    export_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.export.opt.out.help"),
+    )
     export_cmd.add_argument(
         "--timezone",
         "--tz",
         dest="timezone",
         required=False,
         default="UTC",
-        help="IANA timezone (e.g., Asia/Tokyo)",
+        help=_("cli.option.timezone.help"),
     )
-    export_cmd.add_argument("--formatting", choices=["none", "light"], default="light", help="Apply minimal Markdown formatting (none|light).")
-    export_cmd.add_argument("--split", dest="split", help="size=<4M|512KiB|...> or count=<N> or auto (auto = size=4M & count=1500)")
+    export_cmd.add_argument(
+        "--formatting",
+        choices=["none", "light"],
+        default="light",
+        help=_("cli.option.formatting.help"),
+    )
+    export_cmd.add_argument("--split", dest="split", help=_("cli.option.split.help"))
     export_cmd.add_argument("--split-soft-overflow", dest="split_soft_overflow", type=float, default=0.20)
     export_cmd.add_argument("--split-hard", dest="split_hard", action="store_true")
     export_cmd.add_argument("--split-preview", dest="split_preview", action="store_true")
-    export_cmd.add_argument("--tiny-tail-threshold", dest="tiny_tail_threshold", type=int, default=20, help="Threshold for tail merge (message count)")
+    export_cmd.add_argument(
+        "--tiny-tail-threshold",
+        dest="tiny_tail_threshold",
+        type=int,
+        default=20,
+        help=_("cli.option.tiny_tail_threshold.help"),
+    )
 
     extract_cmd = subparsers.add_parser(
         "extract",
-        help="Extract one conversation as Gemini-compatible JSON",
+        help=_("cli.extract.help"),
     )
-    extract_cmd.add_argument("--provider", required=False, help="Provider ID (e.g., openai)")
-    extract_cmd.add_argument("--input", required=False, type=Path, help="Input JSON/JSONL path")
-    extract_cmd.add_argument("--conversation-id", required=False, help="Conversation ID to extract")
+    extract_cmd.add_argument(
+        "--provider",
+        required=False,
+        help=_("cli.parse.opt.provider.help"),
+    )
+    extract_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.parse.opt.input.help"),
+    )
+    extract_cmd.add_argument(
+        "--conversation-id",
+        required=False,
+        help=_("cli.extract.opt.conversation_id.help"),
+    )
     extract_cmd.add_argument(
         "--outdir",
         required=False,
         type=Path,
         default=Path("artifacts"),
-        help="Output root directory",
+        help=_("cli.extract.opt.outdir.help"),
     )
     extract_cmd.add_argument(
         "--dry-run",
@@ -119,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     analyze_cmd = subparsers.add_parser(
         "analyze",
-        help="Analyze canonical parsed JSONL threads",
+        help=_("cli.analyze.help"),
     )
     analyze_subparsers = analyze_cmd.add_subparsers(
         dest="analyze_command",
@@ -127,183 +161,224 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze_stats_cmd = analyze_subparsers.add_parser(
         "stats",
-        help="Compute deterministic conversation statistics from parsed JSONL",
+        help=_("cli.analyze.stats.help"),
     )
     analyze_stats_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
-        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+        help=_("cli.analyze.opt.input.help"),
     )
     analyze_stats_cmd.add_argument(
         "--json",
         dest="json",
         action="store_true",
-        help="Emit JSON instead of human-readable text",
+        help=_("cli.analyze.opt.json.help"),
     )
     analyze_stats_cmd.add_argument(
         "--out",
         required=False,
         type=Path,
-        help="Write the rendered result to a file",
+        help=_("cli.analyze.opt.out.help"),
     )
     analyze_stats_cmd.add_argument(
         "--per-thread",
         dest="per_thread",
         action="store_true",
-        help="Include per-thread rows in human-readable output",
+        help=_("cli.analyze.stats.opt.per_thread.help"),
     )
     analyze_stats_cmd.add_argument(
         "--top",
         required=False,
         type=int,
-        help="Limit the number of per-thread rows after sorting",
+        help=_("cli.analyze.stats.opt.top.help"),
     )
     analyze_stats_cmd.add_argument(
         "--sort",
         choices=["messages", "chars", "span", "conversation_id"],
         default=None,
-        help="Sort field for per-thread rows",
+        help=_("cli.analyze.stats.opt.sort.help"),
     )
     analyze_stats_cmd.add_argument(
         "--include-role-breakdown",
         dest="include_role_breakdown",
         action="store_true",
-        help="Include breakdown of roles other than user and assistant",
+        help=_("cli.analyze.stats.opt.include_role_breakdown.help"),
     )
 
     analyze_timeline_cmd = analyze_subparsers.add_parser(
         "timeline",
-        help="Aggregate timestamped message activity over time",
+        help=_("cli.analyze.timeline.help"),
     )
     analyze_timeline_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
-        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+        help=_("cli.analyze.opt.input.help"),
     )
     analyze_timeline_cmd.add_argument(
         "--bucket",
         choices=["hour", "day", "week", "month"],
         default="day",
-        help="Bucket size for timeline aggregation",
+        help=_("cli.analyze.timeline.opt.bucket.help"),
     )
     analyze_timeline_cmd.add_argument(
         "--json",
         dest="json",
         action="store_true",
-        help="Emit JSON instead of human-readable text",
+        help=_("cli.analyze.opt.json.help"),
     )
     analyze_timeline_cmd.add_argument(
         "--out",
         required=False,
         type=Path,
-        help="Write the rendered result to a file",
+        help=_("cli.analyze.opt.out.help"),
     )
 
     analyze_tokens_cmd = analyze_subparsers.add_parser(
         "tokens",
-        help="Build deterministic token_stats.json sidecars from canonical parsed JSONL",
+        help=_("cli.analyze.tokens.help"),
     )
     analyze_tokens_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
-        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+        help=_("cli.analyze.opt.input.help"),
     )
     analyze_tokens_cmd.add_argument(
         "--model",
         required=False,
-        help="Optional model name for tokenizer resolution (primarily for OpenAI)",
+        help=_("cli.analyze.tokens.opt.model.help"),
     )
     analyze_tokens_cmd.add_argument(
         "--encoding",
         required=False,
-        help="Explicit tiktoken encoding name that overrides provider/model resolution",
+        help=_("cli.analyze.tokens.opt.encoding.help"),
     )
 
     analyze_metrics_cmd = analyze_subparsers.add_parser(
         "metrics",
-        help="Build deterministic metrics.json sidecars from parsed.jsonl plus token_stats.json",
+        help=_("cli.analyze.metrics.help"),
     )
     analyze_metrics_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
-        help="Path to a parsed.jsonl file or a directory containing parsed.jsonl files",
+        help=_("cli.analyze.opt.input.help"),
     )
 
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
-        help="Build an optional SQLite accelerator from canonical thread artifacts",
+        help=_("cli.analyze.sqlite_build.help"),
     )
     analyze_sqlite_build_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
-        help="Root directory containing per-provider artifact directories",
+        help=_("cli.analyze.sqlite_build.opt.input.help"),
     )
     analyze_sqlite_build_cmd.add_argument(
         "--provider",
         required=False,
-        help="Provider ID to index (for example: openai)",
+        help=_("cli.analyze.sqlite_build.opt.provider.help"),
     )
     analyze_sqlite_build_cmd.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",
-        help="Delete an existing analysis.db before rebuilding",
+        help=_("cli.analyze.sqlite_build.opt.overwrite.help"),
     )
 
     chain_cmd = subparsers.add_parser(
         "chain",
-        help="Parse raw export and export all threads to Markdown in one shot",
+        help=_("cli.chain.help"),
     )
-    chain_cmd.add_argument("--provider", required=False, help="Provider ID (e.g., openai)")
+    chain_cmd.add_argument(
+        "--provider",
+        required=False,
+        help=_("cli.parse.opt.provider.help"),
+    )
     chain_cmd.add_argument(
         "--dry-run",
         dest="dry_run",
         action="store_true",
         help=_("cli.parse.opt.dry_run.help"),
     )
-    chain_cmd.add_argument("--input", required=False, type=Path, help="Input JSON/JSONL path")
-    chain_cmd.add_argument("--outdir", required=False, type=Path, default=Path("artifacts"), help="Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...")
+    chain_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.parse.opt.input.help"),
+    )
+    chain_cmd.add_argument(
+        "--outdir",
+        required=False,
+        type=Path,
+        default=Path("artifacts"),
+        help=_("cli.chain.opt.outdir.help"),
+    )
     chain_cmd.add_argument(
         "--timezone",
         "--tz",
         dest="timezone",
         required=False,
         default="UTC",
-        help="IANA timezone (e.g., Asia/Tokyo)",
+        help=_("cli.option.timezone.help"),
     )
-    chain_cmd.add_argument("--formatting", choices=["none", "light"], default="light", help="Apply minimal Markdown formatting (none|light).")
-    chain_cmd.add_argument("--split", dest="split", help="size=<4M|512KiB|...> or count=<N> or auto (auto = size=4M & count=1500)")
+    chain_cmd.add_argument(
+        "--formatting",
+        choices=["none", "light"],
+        default="light",
+        help=_("cli.option.formatting.help"),
+    )
+    chain_cmd.add_argument("--split", dest="split", help=_("cli.option.split.help"))
     chain_cmd.add_argument("--split-soft-overflow", dest="split_soft_overflow", type=float, default=0.20)
     chain_cmd.add_argument("--split-hard", dest="split_hard", action="store_true")
     chain_cmd.add_argument("--split-preview", dest="split_preview", action="store_true")
-    chain_cmd.add_argument("--tiny-tail-threshold", dest="tiny_tail_threshold", type=int, default=20, help="Threshold for tail merge (message count)")
-    chain_cmd.add_argument("--export-outdir", dest="export_outdir", type=Path,help="Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.")
-    chain_cmd.add_argument("--parsed-root", dest="parsed_root", type=Path, help="Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.")
-    chain_cmd.add_argument("--fail-fast", dest="fail_fast", action="store_true", help="Stop chain processing on first export error. Default is to continue.")
+    chain_cmd.add_argument(
+        "--tiny-tail-threshold",
+        dest="tiny_tail_threshold",
+        type=int,
+        default=20,
+        help=_("cli.option.tiny_tail_threshold.help"),
+    )
+    chain_cmd.add_argument(
+        "--export-outdir",
+        dest="export_outdir",
+        type=Path,
+        help=_("cli.chain.opt.export_outdir.help"),
+    )
+    chain_cmd.add_argument(
+        "--parsed-root",
+        dest="parsed_root",
+        type=Path,
+        help=_("cli.chain.opt.parsed_root.help"),
+    )
+    chain_cmd.add_argument(
+        "--fail-fast",
+        dest="fail_fast",
+        action="store_true",
+        help=_("cli.chain.opt.fail_fast.help"),
+    )
     chain_cmd.add_argument(
         "--validate-schema",
         dest="validate_schema",
         action="store_true",
-        help="Validate normalized messages during the parse phase",
+        help=_("cli.chain.opt.validate_schema.help"),
     )
 
-    subparsers.add_parser("viewer", help="(placeholder) Viewer command (not implemented yet)")
+    subparsers.add_parser("viewer", help=_("cli.viewer.help"))
 
     config_cmd = subparsers.add_parser(
         "config",
-        help="Inspect and validate runtime configuration",
+        help=_("cli.config.help"),
     )
     config_subparsers = config_cmd.add_subparsers(
         dest="config_command",
         required=True,
     )
-    config_subparsers.add_parser("path", help="Show the resolved config file path")
-    config_subparsers.add_parser("show", help="Print the normalized config or selected profile")
-    config_subparsers.add_parser("validate", help="Validate the current config and exit")
+    config_subparsers.add_parser("path", help=_("cli.config.path.help"))
+    config_subparsers.add_parser("show", help=_("cli.config.show.help"))
+    config_subparsers.add_parser("validate", help=_("cli.config.validate.help"))
 
     return parser
