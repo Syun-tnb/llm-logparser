@@ -124,6 +124,24 @@ This layer should remain:
 - fast
 - dependency-light
 
+### Heuristics Overview
+
+The `analyze metrics` command includes several deterministic heuristics
+implemented as local phrase-based and structural rules.
+
+* refusal detection: phrase-based (locale YAML)
+* revision detection: phrase-based with subtype precedence
+* ratios: `safe_ratio` (zero-safe, deterministic rounding)
+* averages: `safe_average` (zero-safe)
+* text normalization: `normalize_analysis_text` (stable comparison)
+
+All heuristics are:
+
+* deterministic
+* local (no external calls)
+* reproducible across runs
+* partially configurable via locale YAML resources (phrase lists only)
+
 Tokenizer caveat:
 
 - `tiktoken` may perform a one-time network fetch on first use to download
