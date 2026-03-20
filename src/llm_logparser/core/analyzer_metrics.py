@@ -110,6 +110,14 @@ def _load_revision_cues() -> list[str]:
     return _load_normalized_phrases("analysis.revision.cues")
 
 
+def _load_correction_cues() -> list[str]:
+    return _load_normalized_phrases("analysis.correction.cues")
+
+
+def _load_clarification_cues() -> list[str]:
+    return _load_normalized_phrases("analysis.clarification.cues")
+
+
 def _matches_phrase(text: str, phrases: list[str]) -> bool:
     if not text or not phrases:
         return False
@@ -117,11 +125,21 @@ def _matches_phrase(text: str, phrases: list[str]) -> bool:
     return any(phrase in normalized for phrase in phrases)
 
 
-def _count_revisions(user_texts: list[str], revision_cues: list[str]) -> int:
+def _classify_revisions(
+    user_texts: list[str],
+    revision_cues: list[str],
+    correction_cues: list[str],
+    clarification_cues: list[str],
+) -> dict[str, int]:
+    counts = {
+        "revision_count": 0,
+        "correction_count": 0,
+        "clarification_count": 0,
+        "retry_count": 0,
+    }
     if len(user_texts) < 2:
-        return 0
+        return counts
 
-    revision_count = 0
     previous_text = user_texts[0]
     for current_text in user_texts[1:]:
         if not has_min_normalized_length(current_text, REVISION_MIN_LENGTH):
@@ -136,11 +154,17 @@ def _count_revisions(user_texts: list[str], revision_cues: list[str]) -> int:
         )
 
         if cue_match or similarity_match:
-            revision_count += 1
+            counts["revision_count"] += 1
+            if _matches_phrase(current_text, correction_cues):
+                counts["correction_count"] += 1
+            elif _matches_phrase(current_text, clarification_cues):
+                counts["clarification_count"] += 1
+            else:
+                counts["retry_count"] += 1
 
         previous_text = current_text
 
-    return revision_count
+    return counts
 
 
 def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
@@ -148,6 +172,8 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     provider_id, conversation_id = detect_header_metadata(parsed_path)
     refusal_indicators = _load_refusal_indicators()
     revision_cues = _load_revision_cues()
+    correction_cues = _load_correction_cues()
+    clarification_cues = _load_clarification_cues()
 
     char_count_total = 0
     char_count_user = 0
@@ -195,7 +221,13 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     avg_tokens_per_turn = _require_number(token_stats, "summary.avg_tokens_per_turn")
 
     unique_token_count, diversity_token_total = _load_diversity_units(token_stats, texts)
-    revision_count = _count_revisions(user_texts, revision_cues)
+    interaction_counts = _classify_revisions(
+        user_texts,
+        revision_cues,
+        correction_cues,
+        clarification_cues,
+    )
+    revision_count = interaction_counts["revision_count"]
 
     artifact = {
         "artifact_type": "metrics",
@@ -245,6 +277,21 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         "interaction": {
             "revision_count": revision_count,
             "revision_rate": safe_ratio(revision_count, message_count_user),
+            "correction_count": interaction_counts["correction_count"],
+            "correction_rate": safe_ratio(
+                interaction_counts["correction_count"],
+                message_count_user,
+            ),
+            "clarification_count": interaction_counts["clarification_count"],
+            "clarification_rate": safe_ratio(
+                interaction_counts["clarification_count"],
+                message_count_user,
+            ),
+            "retry_count": interaction_counts["retry_count"],
+            "retry_rate": safe_ratio(
+                interaction_counts["retry_count"],
+                message_count_user,
+            ),
         },
     }
     return artifact

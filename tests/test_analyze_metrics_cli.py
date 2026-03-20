@@ -396,6 +396,9 @@ def test_analyze_metrics_detects_similarity_revision_across_assistant_gap(
 
     assert metrics["interaction"]["revision_count"] == 1
     assert metrics["interaction"]["revision_rate"] == 0.5
+    assert metrics["interaction"]["retry_count"] == 1
+    assert metrics["interaction"]["correction_count"] == 0
+    assert metrics["interaction"]["clarification_count"] == 0
 
 
 def test_analyze_metrics_does_not_count_unrelated_user_topic_change(
@@ -416,6 +419,7 @@ def test_analyze_metrics_does_not_count_unrelated_user_topic_change(
 
     assert metrics["interaction"]["revision_count"] == 0
     assert metrics["interaction"]["revision_rate"] == 0.0
+    assert metrics["interaction"]["retry_count"] == 0
 
 
 def test_analyze_metrics_does_not_count_very_short_user_messages_as_revisions(
@@ -436,15 +440,18 @@ def test_analyze_metrics_does_not_count_very_short_user_messages_as_revisions(
 
     assert metrics["interaction"]["revision_count"] == 0
     assert metrics["interaction"]["revision_rate"] == 0.0
+    assert metrics["interaction"]["correction_count"] == 0
+    assert metrics["interaction"]["clarification_count"] == 0
+    assert metrics["interaction"]["retry_count"] == 0
 
 
-def test_analyze_metrics_counts_cue_based_revision_from_locale_resource(
+def test_analyze_metrics_detects_correction_via_locale_cues(
     tmp_path, monkeypatch
 ):
-    parsed = tmp_path / "thread-conv-revision-cue" / "parsed.jsonl"
+    parsed = tmp_path / "thread-conv-correction-cue" / "parsed.jsonl"
     _write_parsed_jsonl(
         parsed,
-        "conv-revision-cue",
+        "conv-correction-cue",
         [
             {"message_id": "m1", "role": "user", "text": "Explain sorting algorithms."},
             {"message_id": "m2", "role": "assistant", "text": "Here is a short overview."},
@@ -460,6 +467,37 @@ def test_analyze_metrics_counts_cue_based_revision_from_locale_resource(
 
     assert metrics["interaction"]["revision_count"] == 1
     assert metrics["interaction"]["revision_rate"] == 0.5
+    assert metrics["interaction"]["correction_count"] == 1
+    assert metrics["interaction"]["clarification_count"] == 0
+    assert metrics["interaction"]["retry_count"] == 0
+    assert metrics["interaction"]["correction_rate"] == 0.5
+
+
+def test_analyze_metrics_detects_clarification_via_locale_cues(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-clarification-cue" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-clarification-cue",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain recursion."},
+            {"message_id": "m2", "role": "assistant", "text": "Here is the overview."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "In other words, explain recursion using a simple factorial example.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["correction_count"] == 0
+    assert metrics["interaction"]["clarification_count"] == 1
+    assert metrics["interaction"]["retry_count"] == 0
+    assert metrics["interaction"]["clarification_rate"] == 0.5
 
 
 def test_analyze_metrics_does_not_count_revision_cue_in_assistant_text(
@@ -483,6 +521,9 @@ def test_analyze_metrics_does_not_count_revision_cue_in_assistant_text(
 
     assert metrics["interaction"]["revision_count"] == 0
     assert metrics["interaction"]["revision_rate"] == 0.0
+    assert metrics["interaction"]["correction_count"] == 0
+    assert metrics["interaction"]["clarification_count"] == 0
+    assert metrics["interaction"]["retry_count"] == 0
 
 
 def test_analyze_metrics_revision_rate_is_zero_with_zero_or_one_user_message(
@@ -499,6 +540,9 @@ def test_analyze_metrics_revision_rate_is_zero_with_zero_or_one_user_message(
 
     assert metrics["interaction"]["revision_count"] == 0
     assert metrics["interaction"]["revision_rate"] == 0.0
+    assert metrics["interaction"]["correction_count"] == 0
+    assert metrics["interaction"]["clarification_count"] == 0
+    assert metrics["interaction"]["retry_count"] == 0
 
 
 def test_analyze_metrics_uses_en_us_revision_cue_fallback_for_missing_locale(
@@ -527,6 +571,142 @@ def test_analyze_metrics_uses_en_us_revision_cue_fallback_for_missing_locale(
 
     assert metrics["interaction"]["revision_count"] == 1
     assert metrics["interaction"]["revision_rate"] == 0.5
+    assert metrics["interaction"]["clarification_count"] == 1
+    assert metrics["interaction"]["retry_count"] == 0
+
+
+def test_analyze_metrics_detects_retry_when_revision_has_no_subtype_cues(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-retry" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-retry",
+        [
+            {
+                "message_id": "m1",
+                "role": "user",
+                "text": "Please summarize this article about astronomy in five bullet points.",
+            },
+            {"message_id": "m2", "role": "assistant", "text": "Here is a summary."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "Please summarize this astronomy article in five concise bullet points.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["correction_count"] == 0
+    assert metrics["interaction"]["clarification_count"] == 0
+    assert metrics["interaction"]["retry_count"] == 1
+    assert metrics["interaction"]["retry_rate"] == 0.5
+
+
+def test_analyze_metrics_prioritizes_correction_when_similarity_and_cue_both_match(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-correction-priority" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-correction-priority",
+        [
+            {
+                "message_id": "m1",
+                "role": "user",
+                "text": "Please explain OAuth scopes for a small internal dashboard.",
+            },
+            {"message_id": "m2", "role": "assistant", "text": "Here is a brief answer."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "No, that's not what I meant. Please explain OAuth scopes for a small internal dashboard app.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["correction_count"] == 1
+    assert metrics["interaction"]["clarification_count"] == 0
+    assert metrics["interaction"]["retry_count"] == 0
+
+
+def test_analyze_metrics_uses_en_us_correction_and_clarification_fallback(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-subtype-locale-fallback" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-subtype-locale-fallback",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain HTTP cookies."},
+            {"message_id": "m2", "role": "assistant", "text": "Here is the overview."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "To clarify, focus only on secure and httpOnly cookies.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(
+        parsed,
+        monkeypatch,
+        metrics_args=["--locale", "fr-FR"],
+    )
+
+    assert metrics["interaction"]["revision_count"] == 1
+    assert metrics["interaction"]["clarification_count"] == 1
+
+
+def test_analyze_metrics_interaction_subtype_counts_sum_to_revision_count(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-subtype-sum" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-subtype-sum",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain TLS handshakes."},
+            {"message_id": "m2", "role": "assistant", "text": "Here is the first pass."},
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "No, that's not what I meant. Focus on the browser side only.",
+            },
+            {"message_id": "m4", "role": "assistant", "text": "Understood."},
+            {
+                "message_id": "m5",
+                "role": "user",
+                "text": "In other words, explain only the certificate validation part in a short list.",
+            },
+            {"message_id": "m6", "role": "assistant", "text": "Sure."},
+            {
+                "message_id": "m7",
+                "role": "user",
+                "text": "Explain only the certificate validation part in a short list.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+    interaction = metrics["interaction"]
+
+    assert interaction["revision_count"] == 3
+    assert interaction["correction_count"] == 1
+    assert interaction["clarification_count"] == 1
+    assert interaction["retry_count"] == 1
+    assert (
+        interaction["correction_count"]
+        + interaction["clarification_count"]
+        + interaction["retry_count"]
+        == interaction["revision_count"]
+    )
 
 
 def test_analyze_metrics_fails_when_token_stats_is_missing(
