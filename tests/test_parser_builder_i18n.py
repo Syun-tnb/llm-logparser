@@ -52,8 +52,9 @@ def test_analyze_metrics_help_mentions_token_stats_dependency(capsys):
 
     assert exc.value.code == 0
     help_text = capsys.readouterr().out
+    assert "metrics.json" in help_text
     assert "token_stats.json" in help_text
-    assert "analyze tokens" in help_text
+    assert "Run `analyze tokens` first." in help_text
     assert "--skip-existing" in help_text
     assert "rebuilt and overwritten" in help_text
 

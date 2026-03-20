@@ -47,7 +47,7 @@ messages:
   cli.analyze.tokens.help: 正規化済み parsed JSONL から決定的な token_stats.json を生成する。既存サイドカーは既定で再生成して上書きする。
   cli.analyze.tokens.opt.model.help: トークナイザ解決用の任意モデル名 (主に OpenAI 向け)
   cli.analyze.tokens.opt.encoding.help: provider/model 解決より優先される明示的な tiktoken エンコーディング名
-  cli.analyze.metrics.help: analyze tokens が生成した token_stats.json を使って parsed.jsonl から決定的な metrics.json を生成する。既存サイドカーは既定で再生成して上書きする。
+  cli.analyze.metrics.help: parsed.jsonl と token_stats.json から決定的な metrics.json を生成する。先に `analyze tokens` を実行する。既存サイドカーは既定で再生成して上書きする。
   cli.analyze.sqlite_build.help: 正規化済みスレッド成果物から任意の SQLite アクセラレータを構築する
   cli.analyze.sqlite_build.opt.input.help: provider ごとの成果物ディレクトリを含むルートディレクトリ
   cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"

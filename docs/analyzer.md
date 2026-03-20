@@ -75,10 +75,13 @@ Current Layer 1 implementations include:
 - heuristic `safety.refusal`
 - heuristic `interaction.revision`
 
-Dependency order:
+Recommended workflow:
 
-- `analyze tokens` -> writes `token_stats.json`
-- `analyze metrics` -> reads `token_stats.json` and writes `metrics.json`
+1. parse the provider export into canonical `parsed.jsonl`
+2. run `analyze tokens` to write `token_stats.json`
+3. run `analyze metrics` to write `metrics.json`
+
+`analyze stats` and `analyze timeline` can be run directly on `parsed.jsonl`.
 
 Incremental sidecar policy:
 

@@ -99,14 +99,16 @@ uv run llm-logparser analyze stats \
   --input artifacts/output/openai
 ```
 
-Build per-thread token sidecars:
+Recommended sidecar workflow after parse: run `analyze tokens` first, then `analyze metrics`.
+
+Build per-thread token sidecars first:
 
 ```bash
 uv run llm-logparser analyze tokens \
   --input artifacts/output/openai
 ```
 
-Build per-thread metrics sidecars:
+Then build per-thread metrics sidecars from `parsed.jsonl` plus `token_stats.json`:
 
 ```bash
 uv run llm-logparser analyze metrics \
@@ -388,6 +390,8 @@ uv run llm-logparser analyze metrics \
   --input <parsed.jsonl-or-directory> \
   [--skip-existing]
 ```
+
+Run `analyze tokens` first so each thread already has a sibling `token_stats.json`.
 
 Current metrics include:
 
