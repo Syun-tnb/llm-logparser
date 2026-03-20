@@ -203,8 +203,12 @@ Locale precedence is:
 
 1. CLI `--locale` / `--lang`
 2. environment variable `LLP_LOCALE`
-3. selected profile locale `profiles.<name>.locale`
+3. selected profile locale `profiles.<name>.locale` (when applicable)
 4. `en-US`
+
+Note:
+
+not all commands fully honor profile-level locale yet; CLI and environment settings take precedence.
 
 Behavior notes:
 
