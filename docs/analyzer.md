@@ -83,6 +83,13 @@ Recommended workflow:
 
 `analyze stats` and `analyze timeline` can be run directly on `parsed.jsonl`.
 
+Data source policy:
+
+- `analyze stats` currently computes its results from canonical `parsed.jsonl`
+- `thread_stats.json` is not used as an input today
+- a future implementation may use `thread_stats.json` as a cache or optimization
+- canonical correctness for stats must still come from `parsed.jsonl`
+
 CLI consistency note:
 
 - `analyze stats` and `analyze timeline` are presentation commands: they render terminal output, support `--json`, and can write the rendered result via `--out`

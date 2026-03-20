@@ -131,6 +131,8 @@ Contract:
 - notes:
   - `thread_stats.json` is parse-time metadata, not an analyzer-generated sidecar
   - it does not currently emit `schema_version`
+  - analyzers may consume it as a lightweight summary in the future, but it is not the canonical source for analysis
+  - analyzer correctness must still come from `parsed.jsonl`, even if `thread_stats.json` is missing or stale
 
 `message_windows.jsonl` is a deterministic thread-local text artifact derived
 only from canonical message rows. The first version uses simple fixed-size
