@@ -1,0 +1,65 @@
+{
+  "artifact_type": "token_stats",
+  "by_role": {
+    "assistant": {
+      "messages": 2,
+      "tokens": 5
+    },
+    "system": {
+      "messages": 0,
+      "tokens": 0
+    },
+    "tool": {
+      "messages": 0,
+      "tokens": 0
+    },
+    "user": {
+      "messages": 1,
+      "tokens": 2
+    }
+  },
+  "conversation_id": "conv-token-contract",
+  "messages": [
+    {
+      "message_id": "m1",
+      "role": "user",
+      "text_source": "text",
+      "token_count": 2
+    },
+    {
+      "message_id": "m2",
+      "role": "assistant",
+      "text_source": "content.parts",
+      "token_count": 5
+    },
+    {
+      "message_id": "m3",
+      "role": "assistant",
+      "text_source": "empty",
+      "token_count": 0
+    }
+  ],
+  "provider_id": "openai",
+  "schema_version": "1.0",
+  "summary": {
+    "avg_tokens_per_message": 2.33,
+    "avg_tokens_per_turn": 7.0,
+    "empty_text_messages": 1,
+    "fallback_text_from_parts": 1,
+    "message_count": 3,
+    "tokens_assistant": 5,
+    "tokens_total": 7,
+    "tokens_user": 2,
+    "turn_count": 1
+  },
+  "tokenizer": {
+    "family": "gpt_bpe",
+    "library": "tiktoken",
+    "library_version": "<tiktoken-version>",
+    "resolution_source": "explicit_encoding",
+    "resolved_encoding": "o200k_base",
+    "resolved_model": null,
+    "special_token_policy": "ordinary_text",
+    "text_policy": "canonical_text_only"
+  }
+}

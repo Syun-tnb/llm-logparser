@@ -67,6 +67,8 @@ def _default_schemas_root() -> Path:
 SCHEMAS_ROOT: Path = _default_schemas_root()
 MESSAGE_SCHEMA_NAME = "message.schema.json"
 MANIFEST_SCHEMA_NAME = "manifest.schema.json"
+TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
+METRICS_SCHEMA_NAME = "metrics.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +178,28 @@ def load_manifest_validator(
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / MANIFEST_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_token_stats_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    token_stats.schema.json 用の validator を返す。
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / TOKEN_STATS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_metrics_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    metrics.schema.json 用の validator を返す。
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / METRICS_SCHEMA_NAME
     return _make_validator(schema_path)
 
 

@@ -15,7 +15,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-llm_logparser = ["i18n/*.yaml"]
+llm_logparser = ["i18n/*.yaml", "core/schemas/*.json"]
 
 [project.scripts]
 llm-logparser = "llm_logparser.cli.cli:main"  # 例：CLIがあるなら

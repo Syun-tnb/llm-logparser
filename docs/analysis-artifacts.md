@@ -300,6 +300,23 @@ Runtime caveat:
   encoding assets
 - later runs use the local cache
 
+Contract:
+
+- schema: `src/llm_logparser/core/schemas/token_stats.schema.json`
+- purpose: stable machine-readable token accounting sidecar for one thread
+- generation source: `analyze tokens` over canonical `parsed.jsonl`
+- required top-level fields: `artifact_type`, `schema_version`, `provider_id`,
+  `conversation_id`, `tokenizer`, `summary`, `by_role`, `messages`
+- important nested structures:
+  - `tokenizer`: tokenizer family/library metadata plus the resolved model or encoding
+  - `summary`: message, turn, and token totals plus average and text-fallback counters
+  - `by_role`: per-role `messages` / `tokens` counters
+  - `messages`: per-message `message_id`, normalized `role`, `token_count`, and `text_source`
+- schema version behavior:
+  - current version is `1.0`
+  - additive fields are allowed
+  - removing fields or changing semantics requires a schema version change
+
 ### `metrics.json`
 
 Derived from `parsed.jsonl` plus `token_stats.json`.
@@ -313,6 +330,29 @@ Includes:
 The refusal and revision phrase lists are locale-backed resources under
 `src/llm_logparser/i18n/` and fall back to `en-US` when a selected locale
 does not define the relevant key.
+
+Contract:
+
+- schema: `src/llm_logparser/core/schemas/metrics.schema.json`
+- purpose: stable machine-readable derived metrics sidecar for one thread
+- generation source: `analyze metrics` over canonical `parsed.jsonl` plus sibling `token_stats.json`
+- dependency: `token_stats.json` must already exist from `analyze tokens`
+- required top-level fields: `artifact_type`, `schema_version`, `provider_id`,
+  `conversation_id`, `ratios`, `tokens`, `characters`, `distribution`,
+  `diversity`, `safety`, `interaction`
+- important nested structures:
+  - `ratios`, `tokens`, `characters`, `distribution`, `diversity`: deterministic numeric summaries
+  - `safety`: refusal counters and refusal rate derived from locale-backed refusal indicators
+  - `interaction`: revision, correction, clarification, and retry counters/rates derived from locale-backed cues
+- schema version behavior:
+  - current version is `1.0`
+  - additive fields are allowed
+  - removing fields or changing semantics requires a schema version change
+
+Compatibility rule for analyzer sidecars:
+
+- unknown/additive fields must be ignored by consumers
+- breaking contract changes require a `schema_version` bump
 
 Reasons:
 

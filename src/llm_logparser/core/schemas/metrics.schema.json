@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/metrics.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "ratios",
+    "tokens",
+    "characters",
+    "distribution",
+    "diversity",
+    "safety",
+    "interaction"
+  ],
+  "properties": {
+    "artifact_type": { "const": "metrics" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "ratios": {
+      "type": "object",
+      "required": [
+        "prompt_response_ratio_tokens",
+        "prompt_response_ratio_chars",
+        "assistant_to_user_ratio"
+      ],
+      "properties": {
+        "prompt_response_ratio_tokens": { "$ref": "#/$defs/nonNegativeNumber" },
+        "prompt_response_ratio_chars": { "$ref": "#/$defs/nonNegativeNumber" },
+        "assistant_to_user_ratio": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    },
+    "tokens": {
+      "type": "object",
+      "required": ["total", "avg_per_message", "avg_per_turn"],
+      "properties": {
+        "total": { "$ref": "#/$defs/nonNegativeInteger" },
+        "avg_per_message": { "$ref": "#/$defs/nonNegativeNumber" },
+        "avg_per_turn": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    },
+    "characters": {
+      "type": "object",
+      "required": ["total", "user", "assistant", "avg_per_message", "avg_per_turn"],
+      "properties": {
+        "total": { "$ref": "#/$defs/nonNegativeInteger" },
+        "user": { "$ref": "#/$defs/nonNegativeInteger" },
+        "assistant": { "$ref": "#/$defs/nonNegativeInteger" },
+        "avg_per_message": { "$ref": "#/$defs/nonNegativeNumber" },
+        "avg_per_turn": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    },
+    "distribution": {
+      "type": "object",
+      "required": [
+        "message_total",
+        "message_user",
+        "message_assistant",
+        "messages_per_turn"
+      ],
+      "properties": {
+        "message_total": { "$ref": "#/$defs/nonNegativeInteger" },
+        "message_user": { "$ref": "#/$defs/nonNegativeInteger" },
+        "message_assistant": { "$ref": "#/$defs/nonNegativeInteger" },
+        "messages_per_turn": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    },
+    "diversity": {
+      "type": "object",
+      "required": ["type_token_ratio", "unique_token_ratio"],
+      "properties": {
+        "type_token_ratio": { "$ref": "#/$defs/nonNegativeNumber" },
+        "unique_token_ratio": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    },
+    "safety": {
+      "type": "object",
+      "required": ["refusal_count", "refusal_rate"],
+      "properties": {
+        "refusal_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "refusal_rate": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    },
+    "interaction": {
+      "type": "object",
+      "required": [
+        "revision_count",
+        "revision_rate",
+        "correction_count",
+        "correction_rate",
+        "clarification_count",
+        "clarification_rate",
+        "retry_count",
+        "retry_rate"
+      ],
+      "properties": {
+        "revision_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "revision_rate": { "$ref": "#/$defs/nonNegativeNumber" },
+        "correction_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "correction_rate": { "$ref": "#/$defs/nonNegativeNumber" },
+        "clarification_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "clarification_rate": { "$ref": "#/$defs/nonNegativeNumber" },
+        "retry_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "retry_rate": { "$ref": "#/$defs/nonNegativeNumber" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": true
+}
