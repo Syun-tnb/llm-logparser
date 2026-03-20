@@ -40,6 +40,17 @@ _EN_MESSAGES = {
     "cli.error.path": "Path error: {detail}",
     "cli.error.permission": "Permission error: {detail}",
     "cli.error.unexpected": "Unexpected error: {detail}",
+    "error.path": "Path error: {detail}",
+    "error.permission": "Permission error: {detail}",
+    "error.unexpected": "Unexpected error: {detail}",
+    "error.path_not_found": "Path does not exist: {path}",
+    "error.path_expected_file": "File path expected: {path}",
+    "error.path_expected_dir": "Directory path expected: {path}",
+    "error.missing_required": "Missing required options for '{command}':",
+    "error.missing_required_hint.provider": "--provider / config: provider",
+    "error.missing_required_hint.input": "--input / config: input.path, input.paths, input.parsed(export)",
+    "error.missing_required_hint.conversation_id": "--conversation-id / config: extract.conversation_id",
+    "error.missing_required_hint.generic": "CLI option or config value",
 }
 
 _JA_MESSAGES = {
@@ -59,6 +70,17 @@ _JA_MESSAGES = {
     "cli.error.path": "パスエラー: {detail}",
     "cli.error.permission": "アクセス権限エラー: {detail}",
     "cli.error.unexpected": "予期しないエラー: {detail}",
+    "error.path": "パスエラー: {detail}",
+    "error.permission": "アクセス権限エラー: {detail}",
+    "error.unexpected": "予期しないエラー: {detail}",
+    "error.path_not_found": "指定されたパスが存在しません: {path}",
+    "error.path_expected_file": "ファイルパスを指定してください: {path}",
+    "error.path_expected_dir": "ディレクトリパスを指定してください: {path}",
+    "error.missing_required": "'{command}' に必要なオプションが不足しています:",
+    "error.missing_required_hint.provider": "--provider / config: provider",
+    "error.missing_required_hint.input": "--input / config: input.path, input.paths, input.parsed(export)",
+    "error.missing_required_hint.conversation_id": "--conversation-id / config: extract.conversation_id",
+    "error.missing_required_hint.generic": "CLI オプションまたは設定値",
 }
 
 _MESSAGES: Dict[str, Dict[str, str]] = {

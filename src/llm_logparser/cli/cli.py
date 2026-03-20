@@ -38,18 +38,20 @@ from llm_logparser.cli.prompts import (
     prompt_existing_file,
     prompt_text,
 )
-from llm_logparser.core.i18n import set_locale
+from llm_logparser.core.i18n import _, set_locale
 
 
 def _missing_arg_message(command: str, missing: list[str]) -> str:
     key_hint = {
-        "provider": "--provider / config: provider",
-        "input": "--input / config: input.path, input.paths, input.parsed(export)",
-        "conversation_id": "--conversation-id / config: extract.conversation_id",
+        "provider": _("error.missing_required_hint.provider"),
+        "input": _("error.missing_required_hint.input"),
+        "conversation_id": _("error.missing_required_hint.conversation_id"),
     }
-    lines = [f"Missing required options for '{command}':"]
+    lines = [_("error.missing_required", command=command)]
     for name in missing:
-        lines.append(f"  - {name}: {key_hint.get(name, 'CLI option or config value')}")
+        lines.append(
+            f"  - {name}: {key_hint.get(name, _('error.missing_required_hint.generic'))}"
+        )
     return "\n".join(lines)
 
 
@@ -236,13 +238,13 @@ def main(argv: list[str] | None = None):
     try:
         _dispatch(args, logger)
     except (FileNotFoundError, IsADirectoryError) as e:
-        logger.error(f"パスエラー: {e}")
+        logger.error(_("error.path", detail=e))
         sys.exit(2)
     except PermissionError as e:
-        logger.error(f"アクセス権限エラー: {e}")
+        logger.error(_("error.permission", detail=e))
         sys.exit(3)
     except Exception as e:
-        logger.exception(f"予期しないエラー: {e}")
+        logger.exception(_("error.unexpected", detail=e))
         sys.exit(99)
 
 
