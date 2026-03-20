@@ -335,6 +335,41 @@ def test_analyze_tokens_auto_detects_model_from_message_metadata(tmp_path, monke
     assert artifact["tokenizer"]["resolved_encoding"] == "o200k_base"
 
 
+def test_analyze_tokens_auto_detects_first_model_signal_during_main_pass(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-model-late" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-model-late",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "world",
+                "meta": {"model": "gpt-4o-mini"},
+            },
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+        ],
+    )
+
+    artifact = _load_artifact(parsed)
+    assert artifact["tokenizer"]["resolved_model"] == "gpt-4o-mini"
+    assert artifact["tokenizer"]["resolution_source"] == "model"
+    assert artifact["tokenizer"]["resolved_encoding"] == "o200k_base"
+
+
 def test_analyze_tokens_without_model_metadata_uses_provider_default_resolution(
     tmp_path, monkeypatch
 ):

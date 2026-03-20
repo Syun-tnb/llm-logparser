@@ -10,7 +10,6 @@ from .i18n import _
 from .analyzer_common import (
     ROLE_ORDER,
     UNKNOWN_ROLE,
-    detect_header_metadata,
     normalize_role,
     render_artifact_json,
     resolve_canonical_text,
@@ -58,16 +57,6 @@ class TiktokenTokenizer:
             "text_policy": self.spec.text_policy,
             "special_token_policy": self.spec.special_token_policy,
         }
-
-def _detect_thread_model(parsed_path: Path) -> str | None:
-    for row in iter_parsed_records(parsed_path):
-        meta = row.get("meta")
-        if not isinstance(meta, dict):
-            continue
-        model = string_or_none(meta.get("model"))
-        if model:
-            return model
-    return None
 
 
 def resolve_analyze_tokenizer(
@@ -160,20 +149,15 @@ def build_token_stats_artifact(
     model_override: str | None = None,
     encoding_override: str | None = None,
 ) -> dict[str, Any]:
-    provider_id, conversation_id = detect_header_metadata(parsed_path)
-    thread_model = _detect_thread_model(parsed_path)
-    tokenizer = resolve_analyze_tokenizer(
-        provider_id=provider_id,
-        thread_model=thread_model,
-        model_override=model_override,
-        encoding_override=encoding_override,
-    )
-
     by_role: OrderedDict[str, dict[str, int]] = OrderedDict(
         (role, {"messages": 0, "tokens": 0}) for role in ROLE_ORDER
     )
     by_role[UNKNOWN_ROLE] = {"messages": 0, "tokens": 0}
 
+    provider_id: str | None = None
+    conversation_id: str | None = None
+    thread_model: str | None = None
+    buffered_messages: list[dict[str, str]] = []
     messages: list[dict[str, Any]] = []
     message_count = 0
     turn_count = 0
@@ -184,16 +168,52 @@ def build_token_stats_artifact(
     empty_text_messages = 0
 
     for row in iter_parsed_records(parsed_path):
-        if row.get("record_type") != "message":
+        record_type = row.get("record_type")
+        if record_type == "thread":
+            if provider_id is None:
+                provider_id = string_or_none(row.get("provider_id"))
+            if conversation_id is None:
+                conversation_id = string_or_none(row.get("conversation_id"))
+            continue
+
+        if record_type != "message":
             continue
 
         if provider_id is None:
             provider_id = string_or_none(row.get("provider_id"))
         if conversation_id is None:
             conversation_id = string_or_none(row.get("conversation_id"))
+        if thread_model is None:
+            meta = row.get("meta")
+            if isinstance(meta, dict):
+                thread_model = string_or_none(meta.get("model"))
 
         role = normalize_role(row.get("role"))
         text, text_source = resolve_canonical_text(row)
+        buffered_messages.append(
+            {
+                "message_id": string_or_none(row.get("message_id")) or "",
+                "role": role,
+                "text": text,
+                "text_source": text_source,
+            }
+        )
+
+    if conversation_id is None:
+        raise ValueError(f"parsed thread has no conversation_id: {parsed_path}")
+
+    tokenizer = resolve_analyze_tokenizer(
+        provider_id=provider_id,
+        thread_model=thread_model,
+        model_override=model_override,
+        encoding_override=encoding_override,
+    )
+
+    for row in buffered_messages:
+        role = row["role"]
+        text = row["text"]
+        text_source = row["text_source"]
+
         if text_source == "content.parts":
             fallback_text_from_parts += 1
         elif text_source == "empty":
@@ -211,18 +231,14 @@ def build_token_stats_artifact(
 
         by_role[role]["messages"] += 1
         by_role[role]["tokens"] += token_count
-
         messages.append(
             {
-                "message_id": string_or_none(row.get("message_id")) or "",
+                "message_id": row["message_id"],
                 "role": role,
                 "token_count": token_count,
                 "text_source": text_source,
             }
         )
-
-    if conversation_id is None:
-        raise ValueError(f"parsed thread has no conversation_id: {parsed_path}")
 
     artifact = {
         "artifact_type": "token_stats",
