@@ -218,6 +218,32 @@ analyzer phrase resources:
 - Locale selection affects CLI/help/runtime text and analyzer YAML resources.
   Stable machine-readable artifacts are not localized by default.
 
+### Deferred / Non-Goals (i18n)
+
+The following items are intentionally out of scope for the current i18n design.
+They may be revisited in the future, but are not required for correctness,
+stability, or extensibility of the system.
+
+* System locale fallback (`LANG`, `LC_ALL`)
+* Development-time warnings for missing translation keys
+* Structured error code system for i18n (e.g., LP6xxx)
+* Localization of argparse built-in messages (`usage:`, parser errors, etc.)
+
+Rationale:
+
+The current i18n model prioritizes:
+
+* deterministic behavior
+* safe fallback to `en-US` or raw keys
+* minimal maintenance overhead
+* YAML-driven, community-friendly extensibility
+
+These items improve completeness or developer experience,
+but do not provide sufficient value relative to their complexity
+for the current phase.
+
+Status: deferred / non-blocking
+
 ---
 
 ## 9. Security & Privacy
