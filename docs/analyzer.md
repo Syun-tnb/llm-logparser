@@ -63,6 +63,7 @@ Current Layer 1 implementations include:
 - `analyze timeline`
 - `analyze tokens`
 - `analyze metrics`
+- human-readable stats/timeline views and machine-readable sidecars
 
 `analyze tokens` writes deterministic `token_stats.json` sidecars from canonical
 `parsed.jsonl` using `tiktoken`.
@@ -93,6 +94,7 @@ The metrics heuristics are deterministic and local:
 - refusal detection: normalized substring match on assistant messages only
 - revision detection: normalized cue match or similarity match between consecutive user messages
 - short user messages are ignored for revision counting to reduce false positives
+- revision subtypes use cue precedence: correction, then clarification, then generic retry
 - phrase lists come from locale YAML resources and remain auditable/editable on disk
 
 Analyzer i18n is intentionally narrow:
@@ -130,24 +132,6 @@ This layer should remain:
 - deterministic
 - fast
 - dependency-light
-
-### Heuristics Overview
-
-The `analyze metrics` command includes several deterministic heuristics
-implemented as local phrase-based and structural rules.
-
-* refusal detection: phrase-based (locale YAML)
-* revision detection: phrase-based with subtype precedence
-* ratios: `safe_ratio` (zero-safe, deterministic rounding)
-* averages: `safe_average` (zero-safe)
-* text normalization: `normalize_analysis_text` (stable comparison)
-
-All heuristics are:
-
-* deterministic
-* local (no external calls)
-* reproducible across runs
-* partially configurable via locale YAML resources (phrase lists only)
 
 Tokenizer caveat:
 
@@ -259,7 +243,7 @@ disabled by default in privacy-sensitive environments.
 
 The analyzer is exposed via the `analyze` command.
 
-Example conceptual structure:
+Current implemented CLI modes:
 
 ```
 llm-logparser analyze stats ...
@@ -267,6 +251,11 @@ llm-logparser analyze timeline ...
 llm-logparser analyze tokens ...
 llm-logparser analyze metrics ...
 llm-logparser analyze sqlite-build ...
+```
+
+Conceptual future modes:
+
+```
 llm-logparser analyze local ...
 llm-logparser analyze llm ...
 ```
@@ -280,8 +269,8 @@ Possible modes:
 | tokens | L1 |
 | metrics | L1 |
 | sqlite-build | L2 |
-| local | L3 |
-| llm | L4 |
+| local | L3 (conceptual / future) |
+| llm | L4 (conceptual / future) |
 
 ---
 

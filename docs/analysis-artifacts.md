@@ -1,12 +1,12 @@
 # Analysis Artifacts and Processing Stages
 
-This document defines the architectural boundaries between **parse**, **analyze (L1/L2)**, and **L3 processing** in `llm-logparser`.
+This document defines the architectural boundaries between **parse**, **deterministic analyzer sidecars/views**, the optional **SQLite analysis index (L2)**, and downstream processing in `llm-logparser`.
 
 The goal is to ensure that:
 
 - `parse` remains **lightweight and deterministic**
 - reusable artifacts are produced early enough for **local LLM pipelines**
-- heavy cross-thread computation is deferred to **analyze**
+- optional indexed or downstream computation is layered cleanly on top
 
 This document describes **what data is produced at each stage** and **why**.
 
@@ -15,20 +15,20 @@ This document describes **what data is produced at each stage** and **why**.
 
 # 1. Processing Model
 
-`llm-logparser` is structured into three logical processing levels.
+`llm-logparser` is structured into four logical stages.
 
 ```
 
 raw provider export
 │
 ▼
-parse (L1)
+parse
 │
 ▼
-analyze (L2)
+deterministic analyzer commands / sidecars
 │
 ▼
-downstream / L3
+optional SQLite index (L2) or downstream / L3
 (local LLM, search, indexing, etc.)
 
 ```
@@ -37,8 +37,9 @@ Each stage has a clearly defined responsibility.
 
 | Stage | Purpose |
 |------|------|
-| parse (L1) | canonical normalization and deterministic artifact generation |
-| analyze (L2) | cross-thread analysis and presentation |
+| parse | canonical normalization and deterministic parse-time artifact generation |
+| deterministic analyzer commands | local stats/timeline views plus `token_stats.json` and `metrics.json` sidecars |
+| optional SQLite index (L2) | query accelerator built from canonical or canonical-derived artifacts |
 | L3 | external consumers (local LLM pipelines, embeddings, search) |
 
 A core design principle is:
@@ -272,10 +273,21 @@ Chunking must never operate directly on raw provider exports.
 
 ---
 
-# 5. Analyze Stage (L2)
+# 5. Deterministic Analyzer Sidecars
 
-The `analyze` stage reads canonical `parsed.jsonl` and produces optional
-deterministic sidecars without changing parse-time behavior.
+Implemented deterministic analyzer commands read canonical `parsed.jsonl` and
+produce optional sidecars or rendered views without changing parse-time behavior.
+
+Implemented today:
+
+- `analyze stats`
+- `analyze timeline`
+- `analyze tokens`
+- `analyze metrics`
+
+Separately implemented:
+
+- `analyze sqlite-build` builds the optional SQLite index described below
 
 Current thread-local analyzer artifacts:
 
@@ -334,6 +346,13 @@ The refusal and revision phrase lists are locale-backed resources under
 `src/llm_logparser/i18n/` and fall back to `en-US` when a selected locale
 does not define the relevant key.
 
+Current heuristic behavior:
+
+- refusal detection is a normalized substring match on assistant messages only
+- revision detection compares consecutive user messages using cue matching and normalized similarity
+- very short user messages are ignored for revision counting to reduce false positives
+- correction beats clarification when both subtype cues match; otherwise the revision is counted as a retry
+
 Contract:
 
 - schema: `src/llm_logparser/core/schemas/metrics.schema.json`
@@ -386,7 +405,7 @@ message sequence and role-aware heuristics.
 
 ---
 
-# 5. Optional SQLite Accelerator
+# 6. Optional SQLite Accelerator (L2)
 
 An optional per-provider SQLite database may be built later as a query
 accelerator:
@@ -406,7 +425,7 @@ The SQLite build step must not mutate those artifacts.
 
 ---
 
-# 6. Global Accumulator (Parse-Time)
+# 7. Global Accumulator (Parse-Time)
 
 Parse may maintain a **lightweight global accumulator**.
 
@@ -443,11 +462,12 @@ If it is missing, the system must still be able to recompute results from `parse
 
 ---
 
-# 7. Analyze Stage (L2)
+# 8. Deterministic Analyzer Views
 
-The analyze stage performs **cross-thread computation** and **presentation-level processing**.
+The implemented `analyze stats` and `analyze timeline` commands perform
+deterministic dataset-level aggregation and presentation-level processing.
 
-Analyze operates on existing artifacts and **does not modify canonical parse results**.
+These commands operate on canonical input and **do not modify canonical parse results**.
 
 Typical responsibilities:
 
@@ -473,7 +493,7 @@ These commands may perform full dataset scans if needed.
 
 ---
 
-# 8. L3 / Downstream Processing
+# 9. L3 / Downstream Processing
 
 L3 refers to systems outside the core parser.
 
@@ -508,7 +528,7 @@ This separation ensures that:
 
 ---
 
-# 9. Artifact Design Principles
+# 10. Artifact Design Principles
 
 Artifacts produced by `llm-logparser` must follow these rules.
 

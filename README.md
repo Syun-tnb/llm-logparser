@@ -27,6 +27,7 @@ Token counting is otherwise local and deterministic.
 * **Analyze stats / timeline** from canonical `parsed.jsonl`
 * **Analyze tokens**: deterministic per-thread `token_stats.json`
 * **Analyze metrics**: deterministic `metrics.json` with refusal/revision heuristics
+* **Analyze sqlite-build**: optional SQLite index built from canonical artifacts
 * **Locale-tunable heuristic phrases** via YAML resources
 * **Deterministic, local-first workflows**
 * **Future-proof architecture** (multi-provider adapters)
@@ -361,7 +362,8 @@ Build deterministic per-thread `token_stats.json` sidecars from canonical `parse
 uv run llm-logparser analyze tokens \
   --input <parsed.jsonl-or-directory> \
   [--model <model>] \
-  [--encoding <tiktoken-encoding>]
+  [--encoding <tiktoken-encoding>] \
+  [--skip-existing]
 ```
 
 Current tokenizer backend:
@@ -375,6 +377,7 @@ Runtime caveat:
 * `tiktoken` may perform a one-time network fetch on first use to download encoding data
 * downloaded encoding data is cached locally afterward
 * subsequent token analysis runs use the local cache
+* existing `token_stats.json` sidecars are rebuilt by default; `--skip-existing` only fills in missing sidecars
 
 ### Analyze Metrics
 
@@ -382,16 +385,29 @@ Build deterministic per-thread `metrics.json` sidecars from `parsed.jsonl` plus 
 
 ```bash
 uv run llm-logparser analyze metrics \
-  --input <parsed.jsonl-or-directory>
+  --input <parsed.jsonl-or-directory> \
+  [--skip-existing]
 ```
 
 Current metrics include:
 
 * ratio / token / character / distribution / diversity metrics
 * `safety.refusal`
-* `interaction.revision`
+* `interaction.revision` with `correction`, `clarification`, and `retry` subtype counts
 
 `metrics.json` requires `token_stats.json` to exist next to each `parsed.jsonl`.
+Existing `metrics.json` sidecars are rebuilt by default; `--skip-existing` only fills in missing sidecars.
+
+### Analyze SQLite Build
+
+Build an optional per-provider SQLite analysis index from canonical thread artifacts:
+
+```bash
+uv run llm-logparser analyze sqlite-build \
+  --input <provider-artifact-root> \
+  --provider <provider-id> \
+  [--overwrite]
+```
 
 ---
 
@@ -429,6 +445,12 @@ Keys:
 * `analysis.revision.cues`
   Phrase list used by `metrics.json` revision detection for user messages.
 
+* `analysis.correction.cues`
+  Phrase list used by `metrics.json` correction subtyping for detected revisions.
+
+* `analysis.clarification.cues`
+  Phrase list used by `metrics.json` clarification subtyping for detected revisions.
+
 Guidance:
 
 * edit `messages:` only when you are changing user-facing CLI/help/runtime text
@@ -436,6 +458,7 @@ Guidance:
 * prefer small, conservative phrase lists to avoid obvious false positives
 * if your logs use organization-specific language, tune the YAML first before changing code
 * locale-specific behavior falls back to `en-US` when a section or key is missing
+* revision heuristics also ignore very short user messages before cue/similarity matching
 
 This is the intended customization path for phrase-based heuristic tuning.
 
