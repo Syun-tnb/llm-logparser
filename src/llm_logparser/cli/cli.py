@@ -41,6 +41,21 @@ from llm_logparser.cli.prompts import (
 from llm_logparser.core.i18n import _, set_locale
 
 
+def _bootstrap_cli_locale(raw_argv: list[str]) -> str | None:
+    for index, token in enumerate(raw_argv):
+        if token == "--":
+            break
+        if token.startswith("--locale="):
+            return token.split("=", 1)[1] or None
+        if token.startswith("--lang="):
+            return token.split("=", 1)[1] or None
+        if token in {"--locale", "--lang"}:
+            if index + 1 < len(raw_argv):
+                return raw_argv[index + 1]
+            return None
+    return None
+
+
 def _missing_arg_message(command: str, missing: list[str]) -> str:
     key_hint = {
         "provider": _("error.missing_required_hint.provider"),
@@ -207,27 +222,36 @@ def _dispatch(args, logger) -> None:
 
 
 def main(argv: list[str] | None = None):
-    set_locale()
-    parser = build_parser()
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+    set_locale(_bootstrap_cli_locale(raw_argv))
+    parser = build_parser()
     args = parser.parse_args(raw_argv)
     explicit_flags = parse_explicit_flags(raw_argv)
     non_interactive = args.non_interactive or os.getenv("LLM_LOGPARSER_NON_INTERACTIVE") == "1"
     can_prompt = interactive_enabled(non_interactive=non_interactive)
 
     if args.command == "config":
-        set_locale(args.locale)
+        config, _config_path = load_config_with_discovery(args.config)
+        config_locale = None
+        if config is not None:
+            profile, _profiles = resolve_profile(config, args.profile)
+            if profile is not None:
+                config_locale = profile.locale
+        set_locale(args.locale, config_locale=config_locale)
         logger = setup_logger(args.log_level)
         _dispatch(args, logger)
         return
 
     profile: ConfigProfile | None = None
     config_path: Path | None = None
+    config_locale: str | None = None
     if args.command in {"parse", "export", "chain", "extract"}:
         profile, _profiles, _config, config_path = _resolve_profile(
             args,
             can_prompt=can_prompt,
         )
+        if profile is not None:
+            config_locale = profile.locale
         _apply_profile_input_defaults(
             args,
             profile,
@@ -237,7 +261,7 @@ def main(argv: list[str] | None = None):
         if args.command == "extract":
             args.sanitize_policy = resolve_sanitize_policy(profile)
 
-    set_locale(args.locale)
+    set_locale(args.locale, config_locale=config_locale)
     logger = setup_logger(args.log_level)
     _prompt_missing_required(args, profile, can_prompt=can_prompt, logger=logger)
 

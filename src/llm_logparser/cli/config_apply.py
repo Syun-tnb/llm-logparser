@@ -127,8 +127,6 @@ def apply_profile_defaults(
     base_dir: Path | None = None,
 ) -> dict[str, Any]:
     info: dict[str, Any] = {}
-
-    _set_if_not_cli(args, explicit_flags, "locale", ("--locale", "--lang"), profile.locale)
     _set_if_not_cli(
         args,
         explicit_flags,

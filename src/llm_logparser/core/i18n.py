@@ -8,6 +8,7 @@ import yaml
 
 DEFAULT_LOCALE = "en-US"
 FALLBACK_LOCALE = "en-US"
+LOCALE_ENV_VAR = "LLP_LOCALE"
 LOCALE_ALIASES = {
     "en": "en-US",
     "ja": "ja-JP",
@@ -71,20 +72,8 @@ _MESSAGES.setdefault(FALLBACK_LOCALE, {})
 _TRANSLATIONS = _MESSAGES
 
 
-def resolve_locale(cli_locale: str | None = None) -> str:
-    """
-    ロケール決定ロジック（MVP版）
-
-    優先度:
-      1. CLI引数 --locale
-      2. 環境変数 LLP_LOCALE
-      3. DEFAULT_LOCALE ("en")
-    """
-    if cli_locale:
-        base = _normalize_locale(cli_locale)
-    else:
-        env = os.getenv("LLP_LOCALE")
-        base = _normalize_locale(env) if env else DEFAULT_LOCALE
+def _resolve_supported_locale(value: str | None) -> str:
+    base = _normalize_locale(value)
 
     alias = LOCALE_ALIASES.get(base)
     if alias and alias in _MESSAGES:
@@ -98,6 +87,34 @@ def resolve_locale(cli_locale: str | None = None) -> str:
         return alias
     if lang in _MESSAGES:
         return lang
+
+    return FALLBACK_LOCALE
+
+
+def resolve_locale(
+    cli_locale: str | None = None,
+    *,
+    config_locale: str | None = None,
+    env_locale: str | None = None,
+) -> str:
+    """
+    ロケール決定ロジック（MVP版）
+
+    優先度:
+      1. CLI引数 --locale
+      2. 環境変数 LLP_LOCALE
+      3. config profile locale
+      4. DEFAULT_LOCALE ("en-US")
+    """
+    if cli_locale:
+        return _resolve_supported_locale(cli_locale)
+
+    env = env_locale if env_locale is not None else os.getenv(LOCALE_ENV_VAR)
+    if env:
+        return _resolve_supported_locale(env)
+
+    if config_locale:
+        return _resolve_supported_locale(config_locale)
 
     return FALLBACK_LOCALE
 
@@ -176,9 +193,18 @@ def get_resource_list(key: str, locale: str | None = None) -> list[str]:
     return [item for item in value if isinstance(item, str) and item]
 
 
-def set_locale(cli_locale: str | None = None) -> str:
+def set_locale(
+    cli_locale: str | None = None,
+    *,
+    config_locale: str | None = None,
+    env_locale: str | None = None,
+) -> str:
     global _CURRENT_LOCALE
-    _CURRENT_LOCALE = resolve_locale(cli_locale)
+    _CURRENT_LOCALE = resolve_locale(
+        cli_locale,
+        config_locale=config_locale,
+        env_locale=env_locale,
+    )
     return _CURRENT_LOCALE
 
 
