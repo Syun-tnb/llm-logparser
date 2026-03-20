@@ -29,8 +29,15 @@ For config-backed command options, the precedence is:
 2️⃣ selected profile values  
 3️⃣ built-in CLI defaults  
 
-Environment variables still matter for config discovery (`LLM_LOGPARSER_CONFIG`) and a
-few global fallbacks such as log level and locale. They are not a general config layer.
+Environment variables still matter for config discovery (`LLM_LOGPARSER_CONFIG`) and
+locale resolution (`LLP_LOCALE`). They are not a general config layer.
+
+Locale has one extra rule beyond normal option defaults:
+
+1️⃣ CLI `--locale` / `--lang`  
+2️⃣ `LLP_LOCALE`  
+3️⃣ selected profile `locale`  
+4️⃣ `en-US`
 
 ---
 
@@ -212,14 +219,37 @@ the applied sanitize policy.
 
 ### `locale` / `timezone`
 
-Controls how dates and messages are formatted:
+`profiles.<name>.locale` is the current config-backed locale source:
 
 ```yaml
 locale: ja-JP
 timezone: Asia/Tokyo
 ```
 
-Missing translations automatically fall back to `en-US`.
+Current locale behavior:
+
+* scalar CLI/help/runtime/error messages are loaded from `messages:` in `src/llm_logparser/i18n/{locale}.yaml`
+* analyzer phrase resources are loaded from `analysis:` in the same locale files
+* missing message keys fall back to `en-US`, then to the raw key if still missing there
+* unknown locales resolve to `en-US`
+* profile locale is applied only after config/profile resolution
+* profile locale never overrides CLI `--locale` / `--lang` or `LLP_LOCALE`
+
+Current command scope:
+
+* `parse`, `export`, `chain`, and `extract` can apply `profiles.<name>.locale`
+* `config` can apply profile locale after config/profile resolution
+* `analyze` does not currently read profile locale; it uses CLI / environment locale only
+
+Current limitations:
+
+* there is no top-level config `locale` yet
+* argparse built-ins are not localized
+* there is no system-locale fallback
+
+`timezone` is a separate setting. In current config handling it is mainly useful for
+`export` and `chain`, where it controls local timestamp rendering in Markdown output.
+Those timestamps are timezone-aware, but not currently locale-formatted.
 
 Analyzer phrase heuristics are not configured through `config.yaml` yet.
 To tune refusal or revision phrase matching, edit the locale resource files directly:
@@ -229,6 +259,7 @@ To tune refusal or revision phrase matching, edit the locale resource files dire
 
 Relevant keys:
 
+* `messages.*` for CLI/help/runtime strings
 * `analysis.refusal.indicators`
 * `analysis.revision.cues`
 

@@ -24,8 +24,15 @@ uv run pytest
 
 ## i18n
 
-* Per-locale snapshots; lint for missing message keys (fallback = English with WARN).
-* Unknown locales must gracefully fall back without crashing.
+* Focused tests should cover scalar `messages:` lookup and structured `analysis:` lookup.
+* Fallback rules should be verified explicitly:
+  selected locale → `en-US` → raw key for scalar messages.
+* Analyzer resource fallback should be verified as:
+  selected locale → `en-US`.
+* Locale precedence should be covered explicitly:
+  CLI `--locale` / `--lang` → `LLP_LOCALE` → selected profile locale → `en-US`.
+* Unknown locales must gracefully resolve to `en-US` without crashing.
+* Help/bootstrap locale behavior should be tested separately from post-config runtime locale updates.
 
 ## Config
 

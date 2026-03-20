@@ -157,7 +157,7 @@ One additional subcommand is reserved for future work:
 
 Global options:
 
-* `--locale` / `--lang` to control CLI message localization.
+* `--locale` / `--lang` to control CLI/help/runtime localization.
 * `--log-level` to adjust verbosity (DEBUG / INFO / WARNING / ERROR / CRITICAL).
 
 ---
@@ -179,18 +179,31 @@ Cache is JSON, local only.
 
 ## 8. Internationalization (i18n)
 
-CLI user-facing messages and Markdown headers are localized via a dedicated i18n layer.
+Current i18n behavior is split between scalar UI/runtime messages and structured
+analyzer phrase resources:
 
-- All CLI messages MUST go through the i18n layer.
-  - No user-facing strings are hard-coded with a fixed language in source code.
-- The only required locale is `en-US`.
-  - Other locales (e.g. `ja-JP`) are best-effort and may be partially translated.
-- When a translation for the selected locale is missing, the message MUST fall back to `en-US`.
-- `--locale` and `--timezone` are applied consistently across CLI and exporters.
-- If both `--locale` and `--lang` are supplied, `--locale` takes precedence
-  (`--lang` exists for compatibility and may be removed in future versions).
-- Locale-backed YAML resources may also be used by analyzer heuristics such as
-  refusal indicators and revision cues.
+- Locale files live under `src/llm_logparser/i18n/`.
+- Scalar CLI/help/runtime/error messages are stored under `messages:`.
+- Structured analyzer resources remain under `analysis:`.
+- The canonical fallback locale is `en-US`.
+- Scalar message lookup falls back as:
+  selected locale → `en-US` → raw key.
+- Analyzer resource lookup falls back as:
+  selected locale → `en-US`.
+- Locale precedence is:
+  `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`.
+- Unknown or unsupported locales resolve to `en-US`.
+- Parser/help output can pick up CLI locale before full parser construction via
+  raw argv scanning.
+- Profile locale is applied only after config/profile resolution and must not
+  override CLI or environment locale.
+- `analyze` currently uses CLI / environment locale only; it does not resolve a
+  profile locale.
+- Argparse built-ins (`usage:`, parser-generated errors, built-in help boilerplate)
+  are not localized.
+- There is no top-level config `locale` and no system-locale fallback.
+- Locale selection affects CLI/help/runtime text and analyzer YAML resources.
+  Stable machine-readable artifacts are not localized by default.
 
 ---
 

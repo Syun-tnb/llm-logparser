@@ -9,11 +9,13 @@ and future Apps SDK. It supersedes the legacy `v1.0` draft (Oct 2025).
 
 Rules for each rendered message block:
 
-- Heading pattern: `## [<role or name>] <localized datetime>`
+- Heading pattern: `## [<role or name>] <local datetime>`
 - Supported roles: `system`, `user`, `assistant`, `tool`
 - Message content is emitted **verbatim** (code blocks, links, images preserved)
 - Line endings MUST be `\n` (LF)
 - Markdown MUST comply with **GFM (GitHub Flavored Markdown)**
+- Current datetime rendering is timezone-aware, but not locale-formatted:
+  `YYYY-MM-DD HH:MM`
 
 ---
 
@@ -70,18 +72,35 @@ It will be generated when `--with-meta` is set.
 
 ## 🌐 i18n and Locale Behavior
 
-* Controlled via CLI: `--locale <lang-REGION>` and `--timezone <IANA zone>`
+Current i18n behavior is narrower than a fully localized exporter:
+
+* `--locale` / `--lang` control CLI/help/runtime message localization and analyzer
+  locale-backed phrase resources
+* `--timezone` controls exporter timestamp conversion
 * Locale resolution lives in `src/llm_logparser/core/i18n.py`
-* Current resources include built-in translation dictionaries and external YAML locale resources under `src/llm_logparser/i18n/`
-* Dates are rendered using locale-aware formats (UTC internally)
-* Missing keys fall back to English (`en-US`) — warnings may be logged in some cases
+* Locale files live under `src/llm_logparser/i18n/`
+* Each locale file currently contains:
+  * `messages:` for scalar CLI/help/runtime/error text
+  * `analysis:` for structured analyzer phrase resources
+* Scalar message lookup falls back as:
+  selected locale → `en-US` → raw key
+* Analyzer resources fall back as:
+  selected locale → `en-US`
+* Locale precedence is:
+  `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`
+* Unknown locales resolve to `en-US`
+* Parser/help output can pick up CLI locale before parser construction via raw argv scanning
+* Config locale is applied only after config/profile resolution and does not override
+  CLI or environment locale
+* `analyze` currently uses CLI / environment locale only; it does not resolve profile locale
+* Argparse built-ins (`usage:`, parser-generated errors, built-in help boilerplate)
+  are not localized
 
-Example localized dates:
+Output-contract caution:
 
-| Locale | Example                |
-| ------ | ---------------------- |
-| ja-JP  | 2025年10月18日 10:15      |
-| en-US  | Oct 18, 2025, 10:15 AM |
+* Human-readable CLI/help/runtime text is localized
+* Human-readable Markdown timestamps are timezone-aware but not locale-formatted
+* Stable machine-readable artifacts and field names are not localized by default
 
 ---
 
@@ -119,7 +138,7 @@ The Exporter follows Parser cache guidance (`§8.1` of requirements):
 | `parsed.jsonl`        | JSONL    | ✔        | Parser output (thread + messages) |
 | `thread-*.md`         | Markdown | ✔        | Human-readable log, GFM format    |
 | `meta.json`           | JSON     | planned  | Viewer metadata (not yet implemented) |
-| `locale` / `timezone` | string   | optional | For localized rendering           |
+| `locale` / `timezone` | CLI settings | optional | Locale selects CLI/runtime text and analyzer resources; timezone affects human-readable timestamp rendering |
 | `checksum`            | string   | planned  | SHA1 for diff detection (not yet implemented) |
 
 Exporter output must remain **deterministic** under identical inputs and locale settings.

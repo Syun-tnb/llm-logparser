@@ -916,8 +916,9 @@ Exporterが生成するMarkdownは、GitHub Flavored Markdown (GFM) に準拠す
 
 ### 6.6 i18n / ロケール出力規約
 
-* CLI指定の `--locale` に従い、日付・時刻・固定文言を整形。
-* 未訳キーは英語フォールバック＆警告出力。
+* CLI指定の `--locale` に従い、CLI/help/runtime の固定文言と Analyzer 用ロケール資源を選択する。
+* 未訳キーは英語 (`en-US`) にフォールバックし、それでも無ければ生のキー文字列を返す。
+* Markdown の人間向け時刻表示はタイムゾーン変換されるが、現状はロケール依存書式ではない。
 * ファイル名はASCII固定（互換性優先）。
 * Markdown本文は原文（多言語混在可）。
 
@@ -998,8 +999,8 @@ CLIは `llm-logparser` エントリポイントを基点とし、
 | `--max-msgs-per-file <int>` | メッセージ件数上限 | export |
 | `--split-by-date {none,day,week,month}` | 日付単位分割 | export |
 | `--cache <path>` | キャッシュファイル保存先 | parse |
-| `--locale <lang-REGION>` | ロケール指定（例：ja-JP, en-US） | 全体 |
-| `--timezone <IANA>` | タイムゾーン（例：Asia/Tokyo） | 全体 |
+| `--locale <lang-REGION>` | ロケール指定（例：ja-JP, en-US） | CLI全体（Analyzer資源選択を含む） |
+| `--timezone <IANA>` | タイムゾーン（例：Asia/Tokyo） | 主に export / chain |
 | `--dry-run[=parse|export]` | 出力なしで統計表示／シミュレーション | 全体 |
 | `--fail-fast` | 例外発生時に即中断 | 全体 |
 | `--json-errors` | エラーをJSON構造で出力 | 全体 |
@@ -1051,10 +1052,12 @@ python3 -m llm_logparser parse --list-threads
 
 ### 7.5 ロケール・タイムゾーン
 
-* `--locale` はすべての出力（CLIメッセージ／Markdown／meta.json）に適用される。
-* `--timezone` は時刻表示および日付分割に影響する。
-* 未指定時は `locale=en-US`, `timezone=Asia/Tokyo` を既定値とする。
-* 翻訳キー未定義の場合は英語フォールバック＆警告出力。
+* `--locale` / `--lang` は現在、CLIヘルプ・CLI/runtimeメッセージ・Analyzer用ロケール資源の選択に使われる。
+* `--timezone` は主に `export` / `chain` の人間向け時刻表示に影響する。
+* Markdown見出し時刻はタイムゾーン変換されるが、現状はロケール依存フォーマットではなく固定の `YYYY-MM-DD HH:MM` 形式。
+* 安定的な機械向け成果物フィールドをローカライズする実装はまだない。
+* 未指定時のロケール既定値は `en-US`。システムロケールへのフォールバックは行わない。
+* 翻訳キー未定義時は `en-US` へフォールバックし、それでも無ければ生のキー文字列を返す。
 
 ---
 
@@ -1272,40 +1275,38 @@ Exporterは出力完了後、meta.json生成時にParserからの更新通知を
 
 ### 9.1 対象範囲
 
-多言語化は以下の3層で共通的に適用される：
+現在の実装でロケールが関与する層は以下のとおり：
 
 | 層 | 対象例 |
 |----|---------|
 | CLI層 | ヘルプテキスト、進行ログ、統計出力、警告・エラーメッセージ |
-| Exporter層 | Markdown冒頭メタ（Thread, Provider, Messages等）／固定見出し文言 |
+| Analyzer資源 | refusal / revision などの句リスト |
+| Exporter層 | タイムゾーン変換された人間向け時刻表示（ロケール依存書式ではない） |
 | Viewer層（将来） | UI要素（メニュー、検索バー、ボタン、フィルタラベル等） |
 
 ---
 
 ### 9.2 ロケール決定アルゴリズム
 
-優先順位：
+現在の優先順位：
 
 1. CLI引数 `--locale <lang-REGION>`  
 2. 環境変数 `LLP_LOCALE`  
-3. ユーザー設定ファイル `config.yaml`  
-4. システムロケール（`locale.getdefaultlocale()`）  
-5. 既定：`en-US`
+3. 選択されたプロファイルの `profiles.<name>.locale`  
+4. 既定：`en-US`
 
-同様にタイムゾーンも：
+補足：
 
-1. `--timezone`  
-2. `LLP_TZ`  
-3. `config.yaml`  
-4. 既定：`Asia/Tokyo`
-
-CLI起動時に決定したロケールは `context.locale` として全モジュールへ注入される。
+* 未知 / 未対応ロケールは `en-US` に解決される。
+* CLIヘルプや parser 構築前の出力では、`--locale` / `--lang` を raw argv から先に拾って適用する。
+* プロファイルロケールは config/profile 解決後にのみ適用され、CLI / 環境変数を上書きしない。
+* `analyze` は現状プロファイルロケールを読まない。CLI / 環境変数 / `en-US` のみ。
 
 ---
 
 ### 9.3 メッセージキー管理
 
-メッセージは**キー＋プレースホルダ**形式で管理する。
+メッセージは **キー＋プレースホルダ** 形式で管理される。
 
 #### 例：
 ```json
@@ -1324,90 +1325,63 @@ msg = i18n.t("parser.complete", count=128)
 # => "Parsing completed. 128 threads processed."
 ```
 
-内部的には `i18n.get_text(key, **kwargs)` により解決。
+現在の呼び出しは主に `_()` / `t()` 経由で解決される。
 
 ---
 
 ### 9.4 翻訳ファイル構成及びCLIエラーメッセージの多言語化
 
-**目的**
-CLIのエラーメッセージ・警告・進行ログを外部辞書で管理し、
-`--locale` 引数または環境設定に応じて動的に切り替えられるようにする。
+現在の実装では、翻訳リソースは `src/llm_logparser/i18n/{locale}.yaml` にあり、
+同一ファイル内で2種類のデータを扱う：
 
-**要件**
-
-* すべてのCLI出力メッセージ（例：`invalid argument`, `missing file`, `parse failed` など）を **i18n辞書キー化** する。
-* 翻訳リソースは `src/llm_logparser/i18n/{locale}.yaml` に定義し、`parser/exporter/error` キー体系を共通化。
-* ロード時にロケールを自動検出（`--locale` > `LLP_LOCALE` > `config.yaml` > `en-US`）。
-* 未訳キーは `en-US` にフォールバックし、警告を `[WARN][i18n] Missing key ...` として出力。
-* Analyzerのヒューリスティック句（例：`analysis.refusal.indicators`, `analysis.revision.cues`）も同じYAMLリソースから解決する。
-* CLI側の例外処理・エラーハンドラは `message_key` と `params` を受け取り、
-  ロケール辞書から解決した文字列を出力する。
-* 翻訳対象範囲には以下を含む：
-
-  * 引数エラー（argparse / click系メッセージ）
-  * ファイルI/Oエラー
-  * パース／エクスポート失敗時の要約
-  * 成功／統計メッセージ（「Parsed N threads」など）
+* `messages:` : scalar な CLI / help / runtime / error メッセージ
+* `analysis:` : Analyzer 用の構造化フレーズ資源
 
 ```
 src/llm_logparser/i18n/
  ├── en-US.yaml
  ├── ja-JP.yaml
- ├── fr-FR.yaml（将来）
- └── _schema.yaml（キー定義）
 ```
 
-**備考**
+現在の実装範囲:
 
-* 実装は `i18n.get_text(key, **params)` 経由で統一。
-* MVP段階では英語固定でも可、locale辞書構造だけ先行定義。
-* YAML形式（UTF-8）。
-* ルートキーはモジュール単位（parser/exporter/cli/error等）。
-* 各ファイルは `_schema.yaml` を基準にキー整合をLintで検査。
-* 未訳キーは自動的に英語フォールバック。
-
-> **補足:** 現在の実装では、CLI／Analyzerの一部は `src/llm_logparser/core/i18n.py` を通じてロケールを解決し、Analyzer用の句リストは `src/llm_logparser/i18n/{locale}.yaml` から読み込む。
+* CLIヘルプ、CLI/runtimeメッセージ、トップレベルエラーは i18n 経由
+* Analyzer の refusal / revision 句リストも同じ YAML から読む
+* argparse 組み込み文言 (`usage:` や parser 生成エラー等) は未対応
+* 新しいロケールを追加するには対応する YAML ファイルが必要
 
 ---
 
 ### 9.5 日時・数値・単位の整形規則
 
-* Python `babel` ライブラリ互換を想定。
-* 日付整形は `format_datetime(ts, locale, tzinfo)`。
-* 数値整形は `format_decimal(value, locale)`。
-* ファイル出力（meta.json / Markdown）は常にISO8601で保持し、人間可読部分のみロケール整形。
+現状の実装では、日時・数値のロケール依存整形は限定的である。
 
-| 対象 | 出力例（ja-JP）             | 出力例（en-US）             |
-| -- | ---------------------- | ---------------------- |
-| 日付 | 2025年10月18日 10:15      | Oct 18, 2025, 10:15 AM |
-| 数値 | 1,234.5 → 1,234.5      | 同左                     |
-| 単位 | MB / 件 / 日付などはロケール依存表記 | "MB" / "records"       |
+| 対象 | 現在の挙動 |
+| -- | -- |
+| Markdown見出し時刻 | 指定タイムゾーンに変換し、`YYYY-MM-DD HH:MM` 形式で表示 |
+| Front Matter の range | UTC ISO-8601 を保持 |
+| 数値整形 | ロケール依存整形なし |
+| 単位表現 | ロケール依存整形なし |
 
 ---
 
 ### 9.6 未訳キー／フォールバックポリシー
 
-| 状況         | 動作                         |
-| ---------- | -------------------------- |
-| 指定キーが存在しない | WARNを出力し、英語(en-US)へフォールバック |
-| 翻訳ファイル欠落   | 英語で継続実行、終了はしない             |
-| 文字化け検出     | ファイル再ロード試行、失敗時は英語固定        |
-
-CLI上では警告例：
-
-```
-[WARN][i18n] Missing key 'parser.summary' in ja-JP. Fallback to en-US.
-```
+| 状況 | 動作 |
+| --- | --- |
+| 指定キーが存在しない | `en-US` へフォールバック |
+| `en-US` にもキーが無い | 生のキー文字列を返す |
+| 翻訳ファイル欠落 / 不正 | 利用可能なロケールから安全に継続し、最終的に `en-US` を使う |
 
 ---
 
 ### 9.7 CLI統合仕様
 
-* `--locale`, `--timezone` は CLI全体で共有し、Parser/Exporterへ継承。
-* `--locale` 変更時は即時反映（キャッシュ不要）。
-* i18n層は Lazy Load で初回アクセス時に言語リソースをロード。
-* CLIヘルプ・出力メッセージも同一辞書で管理し、翻訳漏れを防ぐ。
+* `--locale` は CLI 全体のアクティブロケールに即時反映される。
+* config/profile 解決後に、必要なら `profiles.<name>.locale` でアクティブロケールを更新する。
+* ただし CLI / 環境変数がある場合、config はそれを上書きしない。
+* CLIヘルプ・出力メッセージは `messages:` の辞書を共通利用する。
+* `--timezone` は別系統の設定であり、主に exporter の人間向け時刻表示に使う。
 
 ---
 
@@ -1424,9 +1398,9 @@ CLI上では警告例：
 
 * すべてのメッセージはキー化・辞書管理し、文字列リテラルは直接使用しない。
 * ロケール・タイムゾーンはCLI引数を最優先し、設定ファイルで永続化。
-* 翻訳欠落時は安全側フォールバック（英語）＋警告ログ。
-* Exporter／Viewerとも同一辞書を共有（キー整合）。
-* ロケール差異をUI・出力に確実に反映し、Apps SDK統合を見据えた拡張性を保つ。
+* 翻訳欠落時は安全側フォールバック（`en-US`、最終的には生キー）を行う。
+* 現在のローカライズ対象は主に CLI/help/runtime と Analyzer資源であり、安定的な機械向け成果物は既定でローカライズしない。
+* 将来の Viewer / 追加ロケール拡張を見据えつつ、現在の実装範囲を超える振る舞いは docs で約束しない。
 
 
 ---

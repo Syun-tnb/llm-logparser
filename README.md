@@ -21,7 +21,8 @@ Token counting is otherwise local and deterministic.
 * **Parse → Normalize → JSONL → Export (Markdown)**
 * **Thread-based layout** with YAML front-matter
 * **Automatic splitting** (size / count / auto)
-* **Localized timestamps** (locale + timezone support)
+* **Localized CLI/help/runtime messages**
+* **Timezone-aware Markdown timestamps**
 * **Chain mode**: parse & export in one command
 * **Analyze stats / timeline** from canonical `parsed.jsonl`
 * **Analyze tokens**: deterministic per-thread `token_stats.json`
@@ -144,11 +145,8 @@ Each file begins with YAML front-matter:
 thread: "abc123"
 provider: "openai"
 messages: 42
-range: 2025-10-01 〜 2025-10-18
-locale: "ja-JP"
-timezone: "Asia/Tokyo"
-updated: "2025-10-18T10:15:00Z"
-# checksum: "<sha1>"  ← planned for future release
+models: ["gpt-4o"]
+range: "2025-10-01T01:00:00+00:00 〜 2025-10-18T10:15:00+00:00"
 ---
 ```
 
@@ -173,7 +171,9 @@ Markdown is **GFM-compatible** and preserves:
 
 ## 🌍 Localization
 
-`llm-logparser` supports localized timestamps and messages.
+`llm-logparser` currently localizes CLI help, CLI/runtime messages, and locale-backed
+analyzer phrase resources. Exported Markdown timestamps are timezone-aware, but they
+are not currently rendered with locale-specific date formats.
 
 You can control output formatting using:
 
@@ -182,23 +182,45 @@ You can control output formatting using:
 --timezone Asia/Tokyo | UTC | …
 ```
 
-* Dates in Markdown are rendered using the selected **locale**
-* Internally, timestamps remain **UTC ISO-8601** for reproducibility
-* Missing or unknown locales gracefully fall back to `en-US`
-* `--locale` takes precedence when both `--locale` and `--lang` are supplied
-  *(--lang exists for compatibility)*
-
-Analyzer heuristics also use locale-backed YAML resources under:
+Locale message catalogs and analyzer resources live under:
 
 * `src/llm_logparser/i18n/en-US.yaml`
 * `src/llm_logparser/i18n/ja-JP.yaml`
 
-Current locale-tunable keys include:
+Each locale file currently contains two sections:
+
+* `messages:` for scalar CLI/help/runtime/error text
+* `analysis:` for structured analyzer phrase resources
+
+Current locale precedence is:
+
+1. CLI `--locale` / `--lang`
+2. environment variable `LLP_LOCALE`
+3. selected profile locale `profiles.<name>.locale`
+4. `en-US`
+
+Additional current behavior:
+
+* parser/help output can pick up CLI locale early via raw argv scanning
+* config profile locale is applied only after config/profile resolution
+* config locale does not override CLI or environment locale
+* unknown locales resolve to `en-US`
+* missing message keys fall back to `en-US`, then to the raw key if still missing
+
+Analyzer heuristics use locale-backed YAML resources under `analysis:`.
+Current analyzer-tunable keys include:
 
 * `analysis.refusal.indicators`
 * `analysis.revision.cues`
 
 If a selected locale does not provide one of these keys, the analyzer falls back to `en-US`.
+
+Current limitations:
+
+* no top-level config `locale` yet
+* no argparse built-in localization (`usage:`, parser-generated errors, built-in help boilerplate)
+* no system-locale fallback
+* `analyze` currently uses CLI / environment locale selection only; it does not resolve profile locale
 
 Example:
 
@@ -378,8 +400,8 @@ Both artifacts are rebuildable from canonical data and contain no runtime timest
 
 ## 🧩 YAML Customization
 
-Phrase tuning for refusal and revision heuristics is data-driven.
-Adjust the locale YAML resources instead of editing Python code.
+Locale data is YAML-driven. Scalar CLI/help/runtime messages live under `messages:`,
+and analyzer phrase tuning lives under `analysis:`.
 
 Files:
 
@@ -396,6 +418,7 @@ Keys:
 
 Guidance:
 
+* edit `messages:` only when you are changing user-facing CLI/help/runtime text
 * add domain-specific phrases, dialects, or informal wording directly in YAML
 * prefer small, conservative phrase lists to avoid obvious false positives
 * if your logs use organization-specific language, tune the YAML first before changing code
