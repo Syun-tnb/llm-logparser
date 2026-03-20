@@ -78,7 +78,11 @@ def analyze_timeline(input_path: Path, bucket: str = "day") -> dict[str, Any]:
 
 
 def render_timeline_text(timeline_data: dict[str, Any]) -> str:
-    """Render timeline buckets in a compact terminal-friendly format."""
+    """Render timeline buckets in a compact terminal-friendly format.
+
+    This text view is intentionally English-only. JSON is the stable
+    machine-readable interface for analyzer consumers.
+    """
     lines = [f"Timeline (bucket: {timeline_data['bucket']})"]
     for item in timeline_data.get("timeline", []):
         lines.extend(

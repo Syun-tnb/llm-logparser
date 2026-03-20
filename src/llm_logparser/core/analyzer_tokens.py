@@ -256,6 +256,8 @@ def build_token_stats_artifact(
 
 
 def render_token_stats_json(artifact: dict[str, Any]) -> str:
+    # token_stats.json is a machine-readable sidecar, so its schema stays in
+    # stable English even though interactive runtime failures use i18n.
     return render_artifact_json(artifact)
 
 

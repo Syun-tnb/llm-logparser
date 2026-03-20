@@ -237,9 +237,14 @@ Current locale behavior:
 
 Current command scope:
 
-* `parse`, `export`, `chain`, and `extract` can apply `profiles.<name>.locale`
+* `parse`, `export`, `chain`, `extract`, and `analyze` can apply `profiles.<name>.locale`
 * `config` can apply profile locale after config/profile resolution
-* `analyze` does not currently read profile locale; it uses CLI / environment locale only
+
+Analyzer text output policy:
+
+* `analyze stats` and `analyze timeline` text summaries are intentionally English-only
+* `--json` output is the primary machine-readable analyzer interface
+* locale-backed analyzer resources under `analysis:` are for heuristic inputs, not artifact schema localization
 
 Current limitations:
 

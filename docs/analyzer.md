@@ -77,6 +77,10 @@ Current Layer 1 implementations include:
 The refusal and revision phrase lists are locale-backed and loaded from
 `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
 
+The human-readable text renderers for `analyze stats` and `analyze timeline`
+are intentionally English-only. Structured JSON output remains the primary
+interface for downstream tooling and automation.
+
 Typical metrics include:
 
 - message counts

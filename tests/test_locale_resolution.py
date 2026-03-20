@@ -177,3 +177,34 @@ def test_config_does_not_override_env_locale(tmp_path, monkeypatch, caplog):
 
     assert "EN ENV PREVIEW" in caplog.text
     assert "JA CONFIG PREVIEW" not in caplog.text
+
+
+def test_analyze_uses_profile_locale_when_cli_and_env_are_absent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LLP_LOCALE", raising=False)
+    monkeypatch.setitem(
+        i18n_module._MESSAGES["ja-JP"],
+        "runtime.analyze.top_non_negative",
+        "JA ANALYZE TOP",
+    )
+
+    parsed = tmp_path / "parsed.jsonl"
+    _write_parsed_jsonl(parsed)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    locale: ja-JP",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="JA ANALYZE TOP"):
+        main(["analyze", "stats", "--input", str(parsed), "--top", "-1"])

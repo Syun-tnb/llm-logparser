@@ -93,6 +93,8 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
 
 
 def _load_normalized_phrases(key: str) -> list[str]:
+    # Heuristic cue lists are locale-backed, but metrics.json remains a stable
+    # machine-readable artifact with English schema keys by design.
     phrases = get_resource_list(key)
     normalized = []
     for phrase in phrases:

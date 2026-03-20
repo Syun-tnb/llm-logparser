@@ -245,7 +245,11 @@ def main(argv: list[str] | None = None):
     profile: ConfigProfile | None = None
     config_path: Path | None = None
     config_locale: str | None = None
-    if args.command in {"parse", "export", "chain", "extract"}:
+    if args.command in {"parse", "export", "chain", "extract", "analyze"}:
+        # Keep analyze on the same locale resolution path as the other runtime
+        # commands. Today it only consumes profile data for locale selection,
+        # but that still needs the documented CLI -> env -> profile -> en-US
+        # precedence instead of a command-specific exception.
         profile, _profiles, _config, config_path = _resolve_profile(
             args,
             can_prompt=can_prompt,

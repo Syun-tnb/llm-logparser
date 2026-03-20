@@ -163,7 +163,12 @@ def render_stats_text(
     per_thread: bool = False,
     include_role_breakdown: bool = False,
 ) -> str:
-    """Render analyzer stats in a compact human-readable format."""
+    """Render analyzer stats in a compact human-readable format.
+
+    This summary is intentionally English-only. `analyze --json` is the
+    machine-readable interface, and best-effort i18n should not create a
+    partially localized terminal report.
+    """
     first_timestamp = stats.get("first_timestamp") or "N/A"
     last_timestamp = stats.get("last_timestamp") or "N/A"
     conversation_span_seconds = stats.get("conversation_span_seconds")
