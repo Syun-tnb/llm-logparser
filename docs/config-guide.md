@@ -226,6 +226,11 @@ locale: ja-JP
 timezone: Asia/Tokyo
 ```
 
+Project-wide i18n is best-effort and non-blocking. Locale files are optional
+extensions, missing keys are expected to fall back safely, and stable
+machine-readable artifacts remain English. See `docs/requirements.md` for the
+canonical project-wide scope and boundaries.
+
 Current locale behavior:
 
 * locale files are discovered from `src/llm_logparser/i18n/*.yaml`
@@ -250,6 +255,7 @@ Analyzer text output policy:
 * `analyze stats` and `analyze timeline` text summaries are intentionally English-only
 * `--json` output is the primary machine-readable analyzer interface
 * locale-backed analyzer resources under `analysis:` are for heuristic inputs, not artifact schema localization
+* exported Markdown remains timezone-aware but not locale-formatted
 
 Current limitations:
 

@@ -77,9 +77,13 @@ Current Layer 1 implementations include:
 The refusal and revision phrase lists are locale-backed and loaded from
 `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
 
-The human-readable text renderers for `analyze stats` and `analyze timeline`
-are intentionally English-only. Structured JSON output remains the primary
-interface for downstream tooling and automation.
+Analyzer i18n is intentionally narrow:
+
+- locale-backed YAML resources only affect heuristic inputs such as refusal and revision cues
+- the human-readable text renderers for `analyze stats` and `analyze timeline` are intentionally English-only
+- structured JSON output and schema keys remain English for tooling stability
+
+This is a best-effort design boundary, not a missing translation pass.
 
 Typical metrics include:
 

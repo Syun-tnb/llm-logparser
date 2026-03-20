@@ -182,11 +182,21 @@ Cache is JSON, local only.
 Current i18n behavior is split between scalar UI/runtime messages and structured
 analyzer phrase resources:
 
+- i18n is best-effort, not strict.
+- Translation completeness is not required.
+- Missing locale sections and keys are acceptable.
+- Fallback behavior is expected design, not an error condition.
+- Locale files are user-extensible and must not break execution when partial.
 - Locale files live under `src/llm_logparser/i18n/`.
 - Locale files are best-effort YAML mappings and may contain `messages:` and/or
   `analysis:`.
-- Scalar CLI/help/runtime/error messages are stored under `messages:`.
-- Structured analyzer resources remain under `analysis:`.
+- Localized surfaces are:
+  CLI/help/runtime/error messages from `messages:` and analyzer heuristic
+  resources from `analysis:`.
+- Not localized by design are:
+  `analyze stats` / `analyze timeline` text summaries, stable
+  machine-readable artifacts and schema keys, and argparse built-ins
+  (`usage:`, parser-generated errors, built-in help boilerplate).
 - The canonical fallback locale is `en-US`.
 - Scalar message lookup falls back as:
   selected locale → `en-US` → raw key.

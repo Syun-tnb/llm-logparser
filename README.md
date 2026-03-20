@@ -171,9 +171,9 @@ Markdown is **GFM-compatible** and preserves:
 
 ## 🌍 Localization
 
-`llm-logparser` currently localizes CLI help, CLI/runtime messages, and locale-backed
-analyzer phrase resources. Exported Markdown timestamps are timezone-aware, but they
-are not currently rendered with locale-specific date formats.
+`llm-logparser` uses a best-effort i18n model. Locale files are optional,
+user-extensible YAML resources, and missing keys are expected to fall back safely
+rather than block execution.
 
 You can control output formatting using:
 
@@ -182,30 +182,38 @@ You can control output formatting using:
 --timezone Asia/Tokyo | UTC | …
 ```
 
-Locale message catalogs and analyzer resources live under:
-
-* `src/llm_logparser/i18n/en-US.yaml`
-* `src/llm_logparser/i18n/ja-JP.yaml`
-
-Each locale file currently contains two sections:
+Locale files live under `src/llm_logparser/i18n/*.yaml` and may contain:
 
 * `messages:` for scalar CLI/help/runtime/error text
 * `analysis:` for structured analyzer phrase resources
 
-Current locale precedence is:
+Localized:
+
+* CLI/help/runtime messages from `messages:`
+* analyzer heuristic phrase resources from `analysis:`
+
+Not localized by design:
+
+* `analyze stats` and `analyze timeline` text summaries
+* JSON artifacts and stable schema keys
+* argparse built-ins such as `usage:` and parser-generated boilerplate
+* Markdown timestamp formatting beyond timezone conversion
+
+Locale precedence is:
 
 1. CLI `--locale` / `--lang`
 2. environment variable `LLP_LOCALE`
 3. selected profile locale `profiles.<name>.locale`
 4. `en-US`
 
-Additional current behavior:
+Behavior notes:
 
 * parser/help output can pick up CLI locale early via raw argv scanning
-* config profile locale is applied only after config/profile resolution
-* config locale does not override CLI or environment locale
 * unknown locales resolve to `en-US`
 * missing message keys fall back to `en-US`, then to the raw key if still missing
+* analyzer resource keys fall back to `en-US`
+* short aliases such as `en` and `ja` are auto-derived from locale filenames when the language prefix is unambiguous
+* if multiple locale files share a language prefix, use the full locale tag
 
 Analyzer heuristics use locale-backed YAML resources under `analysis:`.
 Current analyzer-tunable keys include:
@@ -220,7 +228,9 @@ Current limitations:
 * no top-level config `locale` yet
 * no argparse built-in localization (`usage:`, parser-generated errors, built-in help boilerplate)
 * no system-locale fallback
-* `analyze` currently uses CLI / environment locale selection only; it does not resolve profile locale
+
+For the project-wide i18n model and boundaries, see `docs/requirements.md`
+and `docs/config-guide.md`.
 
 Example:
 
@@ -400,13 +410,12 @@ Both artifacts are rebuildable from canonical data and contain no runtime timest
 
 ## 🧩 YAML Customization
 
-Locale data is YAML-driven. Scalar CLI/help/runtime messages live under `messages:`,
-and analyzer phrase tuning lives under `analysis:`.
+Locale data is YAML-driven. Locale files under `src/llm_logparser/i18n/` are
+best-effort extensions, not strict contracts: partial files are acceptable and
+fallback to `en-US` is normal behavior.
 
-Files:
-
-* `src/llm_logparser/i18n/en-US.yaml`
-* `src/llm_logparser/i18n/ja-JP.yaml`
+Scalar CLI/help/runtime messages live under `messages:`, and analyzer phrase
+tuning lives under `analysis:`.
 
 Keys:
 
@@ -422,7 +431,7 @@ Guidance:
 * add domain-specific phrases, dialects, or informal wording directly in YAML
 * prefer small, conservative phrase lists to avoid obvious false positives
 * if your logs use organization-specific language, tune the YAML first before changing code
-* locale-specific behavior falls back to `en-US` when a key is missing
+* locale-specific behavior falls back to `en-US` when a section or key is missing
 
 This is the intended customization path for phrase-based heuristic tuning.
 

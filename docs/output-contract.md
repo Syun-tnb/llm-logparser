@@ -74,6 +74,10 @@ It will be generated when `--with-meta` is set.
 
 Current i18n behavior is narrower than a fully localized exporter:
 
+* i18n is best-effort, non-blocking, and intentionally limited in scope
+* missing locale sections or keys are acceptable; fallback behavior is the design
+* for the canonical project-wide model, see `docs/requirements.md`
+
 * `--locale` / `--lang` control CLI/help/runtime message localization and analyzer
   locale-backed phrase resources
 * `--timezone` controls exporter timestamp conversion
@@ -101,8 +105,9 @@ Current i18n behavior is narrower than a fully localized exporter:
 Output-contract caution:
 
 * Human-readable CLI/help/runtime text is localized
+* `analyze stats` / `analyze timeline` text summaries are intentionally English-only
 * Human-readable Markdown timestamps are timezone-aware but not locale-formatted
-* Stable machine-readable artifacts and field names are not localized by default
+* Stable machine-readable artifacts and field names remain English
 
 ---
 
