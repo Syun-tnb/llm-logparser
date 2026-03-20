@@ -714,7 +714,7 @@ def test_analyze_metrics_interaction_subtype_counts_sum_to_revision_count(
     )
 
 
-def test_analyze_metrics_fails_when_token_stats_is_missing(
+def test_analyze_metrics_fails_with_actionable_message_when_token_stats_is_missing(
     tmp_path, monkeypatch, caplog
 ):
     parsed = tmp_path / "thread-conv-missing" / "parsed.jsonl"
@@ -734,4 +734,5 @@ def test_analyze_metrics_fails_when_token_stats_is_missing(
         main()
 
     assert exc.value.code == 2
-    assert "required token_stats.json not found" in caplog.text
+    assert "token_stats.json not found" in caplog.text
+    assert "analyze tokens" in caplog.text

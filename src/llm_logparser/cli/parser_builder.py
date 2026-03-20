@@ -259,6 +259,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_metrics_cmd = analyze_subparsers.add_parser(
         "metrics",
         help=_("cli.analyze.metrics.help"),
+        description=_("cli.analyze.metrics.help"),
     )
     analyze_metrics_cmd.add_argument(
         "--input",

@@ -7,10 +7,17 @@ from llm_logparser.core.i18n import _
 
 
 def run_analyze_metrics(args, logger: logging.Logger) -> None:
-    from llm_logparser.core.analyzer_metrics import analyze_metrics
+    from llm_logparser.core.analyzer_metrics import (
+        MetricsDependencyError,
+        analyze_metrics,
+    )
 
     input_path = validate_path(args.input)
-    result = analyze_metrics(input_path)
+    try:
+        result = analyze_metrics(input_path)
+    except MetricsDependencyError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
     logger.info(_("runtime.analyze.metrics_written", threads=result["threads"]))
 
 

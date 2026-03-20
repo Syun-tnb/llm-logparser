@@ -41,3 +41,16 @@ def test_unknown_locale_falls_back_to_english_for_parser_help():
     assert "CLI interface for LLM Log Parser (MVP)" in help_text
     assert "Path to config.yaml" in help_text
     assert "Analyze canonical parsed JSONL threads" in help_text
+
+
+def test_analyze_metrics_help_mentions_token_stats_dependency(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "metrics", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "token_stats.json" in help_text
+    assert "analyze tokens" in help_text

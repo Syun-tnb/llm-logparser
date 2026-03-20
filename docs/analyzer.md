@@ -74,6 +74,11 @@ Current Layer 1 implementations include:
 - heuristic `safety.refusal`
 - heuristic `interaction.revision`
 
+Dependency order:
+
+- `analyze tokens` -> writes `token_stats.json`
+- `analyze metrics` -> reads `token_stats.json` and writes `metrics.json`
+
 The refusal and revision phrase lists are locale-backed and loaded from
 `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
 

@@ -46,7 +46,7 @@ messages:
   cli.analyze.tokens.help: 正規化済み parsed JSONL から決定的な token_stats.json を生成する
   cli.analyze.tokens.opt.model.help: トークナイザ解決用の任意モデル名 (主に OpenAI 向け)
   cli.analyze.tokens.opt.encoding.help: provider/model 解決より優先される明示的な tiktoken エンコーディング名
-  cli.analyze.metrics.help: parsed.jsonl と token_stats.json から決定的な metrics.json を生成する
+  cli.analyze.metrics.help: analyze tokens が生成した token_stats.json を使って parsed.jsonl から決定的な metrics.json を生成する
   cli.analyze.sqlite_build.help: 正規化済みスレッド成果物から任意の SQLite アクセラレータを構築する
   cli.analyze.sqlite_build.opt.input.help: provider ごとの成果物ディレクトリを含むルートディレクトリ
   cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"
@@ -62,6 +62,9 @@ messages:
   error.path: "パスエラー: {detail}"
   error.permission: "アクセス権限エラー: {detail}"
   error.unexpected: "予期しないエラー: {detail}"
+  runtime.analyze.metrics.missing_token_stats: |-
+    parsed.jsonl の隣に token_stats.json が見つかりません: {path}
+    `analyze metrics` を実行する前に `analyze tokens` を実行してください。
   error.path_not_found: "指定されたパスが存在しません: {path}"
   error.path_expected_file: "ファイルパスを指定してください: {path}"
   error.path_expected_dir: "ディレクトリパスを指定してください: {path}"

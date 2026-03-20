@@ -17,18 +17,25 @@ from .analyzer_common import (
     string_or_none,
     write_json_artifact,
 )
-from .i18n import get_resource_list
+from .i18n import _, get_resource_list
 from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
 
 REVISION_MIN_LENGTH = 8
 REVISION_SIMILARITY_THRESHOLD = 0.78
 
 
+class MetricsDependencyError(RuntimeError):
+    """Raised when analyze metrics is missing a required prerequisite artifact."""
+
+
 def _load_token_stats(parsed_path: Path) -> dict[str, Any]:
     token_stats_path = parsed_path.with_name("token_stats.json")
     if not token_stats_path.exists():
-        raise FileNotFoundError(
-            f"required token_stats.json not found next to parsed.jsonl: {token_stats_path}"
+        raise MetricsDependencyError(
+            _(
+                "runtime.analyze.metrics.missing_token_stats",
+                path=token_stats_path,
+            )
         )
 
     try:
