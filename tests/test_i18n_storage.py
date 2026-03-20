@@ -57,3 +57,36 @@ def test_structured_analyzer_resources_still_load_from_yaml():
 def test_locale_aliases_still_resolve_to_canonical_locales():
     assert resolve_locale("en") == "en-US"
     assert resolve_locale("ja") == "ja-JP"
+
+
+def test_language_aliases_are_derived_from_discovered_locale_filenames():
+    aliases = i18n_module._build_locale_aliases(["en-US", "ja-JP", "ko-KR"])
+
+    assert aliases["en"] == "en-US"
+    assert aliases["ja"] == "ja-JP"
+    assert aliases["ko"] == "ko-KR"
+
+
+def test_ambiguous_language_aliases_are_not_auto_derived():
+    aliases = i18n_module._build_locale_aliases(["en-US", "en-GB", "ja-JP"])
+
+    assert "en" not in aliases
+    assert aliases["ja"] == "ja-JP"
+
+
+def test_partial_locale_still_falls_back_safely(monkeypatch):
+    en_payload = _locale_payload("en-US")
+    monkeypatch.setitem(i18n_module.LOCALE_ALIASES, "ko", "ko-KR")
+    monkeypatch.setitem(
+        i18n_module._MESSAGES,
+        "ko-KR",
+        {"runtime.export.preview_only": "KO PREVIEW"},
+    )
+    monkeypatch.setitem(i18n_module._RESOURCE_MESSAGES, "ko-KR", {})
+
+    assert i18n_module.t("error.path", "ko-KR", detail="detail") == en_payload["messages"][
+        "error.path"
+    ].format(detail="detail")
+    assert get_resource_list("analysis.refusal.indicators", locale="ko") == (
+        en_payload["analysis"]["refusal"]["indicators"]
+    )

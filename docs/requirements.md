@@ -183,6 +183,8 @@ Current i18n behavior is split between scalar UI/runtime messages and structured
 analyzer phrase resources:
 
 - Locale files live under `src/llm_logparser/i18n/`.
+- Locale files are best-effort YAML mappings and may contain `messages:` and/or
+  `analysis:`.
 - Scalar CLI/help/runtime/error messages are stored under `messages:`.
 - Structured analyzer resources remain under `analysis:`.
 - The canonical fallback locale is `en-US`.
@@ -190,6 +192,8 @@ analyzer phrase resources:
   selected locale → `en-US` → raw key.
 - Analyzer resource lookup falls back as:
   selected locale → `en-US`.
+- Short language aliases are auto-derived from discovered locale filenames when
+  the language prefix is unambiguous.
 - Locale precedence is:
   `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`.
 - Unknown or unsupported locales resolve to `en-US`.
@@ -197,8 +201,7 @@ analyzer phrase resources:
   raw argv scanning.
 - Profile locale is applied only after config/profile resolution and must not
   override CLI or environment locale.
-- `analyze` currently uses CLI / environment locale only; it does not resolve a
-  profile locale.
+- `analyze` follows the same locale precedence as the other runtime commands.
 - Argparse built-ins (`usage:`, parser-generated errors, built-in help boilerplate)
   are not localized.
 - There is no top-level config `locale` and no system-locale fallback.

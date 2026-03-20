@@ -79,20 +79,22 @@ Current i18n behavior is narrower than a fully localized exporter:
 * `--timezone` controls exporter timestamp conversion
 * Locale resolution lives in `src/llm_logparser/core/i18n.py`
 * Locale files live under `src/llm_logparser/i18n/`
-* Each locale file currently contains:
+* Locale files are best-effort YAML mappings and may contain:
   * `messages:` for scalar CLI/help/runtime/error text
   * `analysis:` for structured analyzer phrase resources
+* Missing sections and missing keys are allowed; fallback behavior handles partial locale files safely
 * Scalar message lookup falls back as:
   selected locale → `en-US` → raw key
 * Analyzer resources fall back as:
   selected locale → `en-US`
+* Short aliases such as `en` and `ja` are derived from discovered locale filenames when the language prefix is unambiguous
 * Locale precedence is:
   `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`
 * Unknown locales resolve to `en-US`
 * Parser/help output can pick up CLI locale before parser construction via raw argv scanning
 * Config locale is applied only after config/profile resolution and does not override
   CLI or environment locale
-* `analyze` currently uses CLI / environment locale only; it does not resolve profile locale
+* `analyze` follows the same locale precedence as the other runtime commands
 * Argparse built-ins (`usage:`, parser-generated errors, built-in help boilerplate)
   are not localized
 

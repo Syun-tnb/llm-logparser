@@ -228,10 +228,15 @@ timezone: Asia/Tokyo
 
 Current locale behavior:
 
+* locale files are discovered from `src/llm_logparser/i18n/*.yaml`
+* a locale file may contain `messages:` and/or `analysis:` at the top level
+* missing sections and missing keys are allowed; fallback behavior is expected
 * scalar CLI/help/runtime/error messages are loaded from `messages:` in `src/llm_logparser/i18n/{locale}.yaml`
 * analyzer phrase resources are loaded from `analysis:` in the same locale files
 * missing message keys fall back to `en-US`, then to the raw key if still missing there
 * unknown locales resolve to `en-US`
+* short language aliases such as `en` or `ja` are derived automatically when one locale file unambiguously owns that language prefix
+* if multiple locale files share the same language prefix, use the full locale tag
 * profile locale is applied only after config/profile resolution
 * profile locale never overrides CLI `--locale` / `--lang` or `LLP_LOCALE`
 

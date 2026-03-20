@@ -2,23 +2,23 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 import yaml
 
 DEFAULT_LOCALE = "en-US"
 FALLBACK_LOCALE = "en-US"
 LOCALE_ENV_VAR = "LLP_LOCALE"
-LOCALE_ALIASES = {
-    "en": "en-US",
-    "ja": "ja-JP",
-}
+LOCALE_ALIASES: dict[str, str] = {}
 
 _CURRENT_LOCALE = DEFAULT_LOCALE
 _RESOURCE_DIR = Path(__file__).resolve().parent.parent / "i18n"
 
 
 def _load_locale_payload(path: Path) -> dict[str, Any]:
+    # Locale files are best-effort extensions. They are expected to be YAML
+    # mappings and may contain `messages:` and/or `analysis:`, but partial
+    # files must remain safe because fallback behavior is non-blocking.
     try:
         payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     except Exception:
@@ -39,6 +39,35 @@ def _load_locale_payloads(resource_dir: Path | None = None) -> Dict[str, dict[st
     return payloads
 
 
+def _normalize_locale(value: str | None) -> str:
+    if not value:
+        return DEFAULT_LOCALE
+    return value.replace("_", "-")
+
+
+def _build_locale_aliases(locales: Iterable[str]) -> dict[str, str]:
+    """Derive short aliases from discovered locale filenames.
+
+    A short language alias is only created when one locale file unambiguously
+    owns that language prefix. If multiple locale files share the same language,
+    callers must use the full locale tag.
+    """
+    by_language: dict[str, set[str]] = {}
+    for locale in locales:
+        normalized = _normalize_locale(locale)
+        language = normalized.split("-")[0]
+        by_language.setdefault(language, set()).add(normalized)
+
+    aliases: dict[str, str] = {}
+    for language, candidates in by_language.items():
+        if language in candidates:
+            aliases[language] = language
+            continue
+        if len(candidates) == 1:
+            aliases[language] = next(iter(candidates))
+    return aliases
+
+
 def _extract_scalar_messages(payload: dict[str, Any]) -> dict[str, str]:
     messages = payload.get("messages")
     if not isinstance(messages, dict):
@@ -50,9 +79,9 @@ def _extract_scalar_messages(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _with_aliases(catalogs: Dict[str, Any]) -> Dict[str, Any]:
+def _with_aliases(catalogs: Dict[str, Any], aliases: dict[str, str]) -> Dict[str, Any]:
     aliased = dict(catalogs)
-    for alias, canonical in LOCALE_ALIASES.items():
+    for alias, canonical in aliases.items():
         value = aliased.get(canonical)
         if value is not None:
             aliased[alias] = value
@@ -60,12 +89,14 @@ def _with_aliases(catalogs: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _LOCALE_PAYLOADS = _load_locale_payloads()
-_RESOURCE_MESSAGES = _with_aliases(_LOCALE_PAYLOADS)
+LOCALE_ALIASES = _build_locale_aliases(_LOCALE_PAYLOADS.keys())
+_RESOURCE_MESSAGES = _with_aliases(_LOCALE_PAYLOADS, LOCALE_ALIASES)
 _MESSAGES: Dict[str, Dict[str, str]] = _with_aliases(
     {
         locale: _extract_scalar_messages(payload)
         for locale, payload in _LOCALE_PAYLOADS.items()
-    }
+    },
+    LOCALE_ALIASES,
 )
 _MESSAGES.setdefault(FALLBACK_LOCALE, {})
 
@@ -117,14 +148,6 @@ def resolve_locale(
         return _resolve_supported_locale(config_locale)
 
     return FALLBACK_LOCALE
-
-
-def _normalize_locale(value: str | None) -> str:
-    if not value:
-        return DEFAULT_LOCALE
-    return value.replace("_", "-")
-
-
 def t(key: str, locale: str, **params: Any) -> str:
     """
     翻訳関数。

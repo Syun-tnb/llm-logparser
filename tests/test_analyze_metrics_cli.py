@@ -8,6 +8,11 @@ import tiktoken
 from llm_logparser.cli.cli import main
 
 
+@pytest.fixture(autouse=True)
+def _isolate_from_repo_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+
 def _write_parsed_jsonl(
     path: Path,
     conversation_id: str,
