@@ -5,10 +5,12 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from .l1_derivation import iter_parsed_records
-
-ROLE_ORDER = ("user", "assistant", "system", "tool")
-UNKNOWN_ROLE = "unknown"
+from .l1_derivation import (
+    ROLE_ORDER,
+    UNKNOWN_ROLE,
+    iter_parsed_records,
+    normalize_role_value,
+)
 
 
 def string_or_none(value: Any) -> str | None:
@@ -16,11 +18,7 @@ def string_or_none(value: Any) -> str | None:
 
 
 def normalize_role(value: Any) -> str:
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in ROLE_ORDER:
-            return normalized
-    return UNKNOWN_ROLE
+    return normalize_role_value(value)
 
 
 def resolve_canonical_text(row: dict[str, Any]) -> tuple[str, str]:

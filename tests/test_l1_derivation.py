@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from llm_logparser.core.l1_derivation import (
+    UNKNOWN_ROLE,
     derive_thread_metrics,
     derive_thread_metrics_from_rows,
     discover_parsed_jsonl,
@@ -11,6 +12,7 @@ from llm_logparser.core.l1_derivation import (
     message_character_count,
     message_role,
     message_text,
+    normalize_role_value,
     to_iso_utc,
     ts_to_seconds,
 )
@@ -129,6 +131,18 @@ def test_message_helpers_handle_partial_rows_without_exceptions():
     assert message_role({}) is None
     assert message_role({"role": ""}) is None
     assert message_role({"role": "User"}) == "User"
+    assert normalize_role_value("User") == "user"
+    assert normalize_role_value(" assistant ") == "assistant"
+    assert normalize_role_value("moderator") == UNKNOWN_ROLE
+    assert normalize_role_value("") == UNKNOWN_ROLE
+    assert normalize_role_value(None) == UNKNOWN_ROLE
+
+
+def test_message_role_preserves_raw_role_while_normalization_is_canonical():
+    row = {"role": "User"}
+
+    assert message_role(row) == "User"
+    assert normalize_role_value(row["role"]) == "user"
 
 
 def test_ts_conversion_utilities_handle_seconds_milliseconds_and_invalid_values():

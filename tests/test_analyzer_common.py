@@ -3,6 +3,7 @@ from llm_logparser.core.analyzer_common import (
     resolve_canonical_text,
     safe_ratio,
 )
+from llm_logparser.core.l1_derivation import normalize_role_value
 
 
 def test_normalize_role_handles_known_unknown_and_empty_inputs():
@@ -11,6 +12,8 @@ def test_normalize_role_handles_known_unknown_and_empty_inputs():
     assert normalize_role("moderator") == "unknown"
     assert normalize_role("") == "unknown"
     assert normalize_role(None) == "unknown"
+    assert normalize_role("USER") == normalize_role_value("USER")
+    assert normalize_role("moderator") == normalize_role_value("moderator")
 
 
 def test_resolve_canonical_text_prefers_text_then_content_parts_then_empty():
