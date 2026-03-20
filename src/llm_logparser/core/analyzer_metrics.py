@@ -315,15 +315,27 @@ def write_metrics_artifact(parsed_path: Path, artifact: dict[str, Any]) -> Path:
     return write_json_artifact(artifact_path, artifact)
 
 
-def analyze_metrics(input_path: Path) -> dict[str, Any]:
+def metrics_artifact_path(parsed_path: Path) -> Path:
+    return parsed_path.with_name("metrics.json")
+
+
+def analyze_metrics(input_path: Path, *, skip_existing: bool = False) -> dict[str, Any]:
     parsed_files = discover_parsed_jsonl(input_path)
     written_artifacts: list[Path] = []
+    skipped_artifacts: list[Path] = []
 
     for parsed_path in parsed_files:
+        artifact_path = metrics_artifact_path(parsed_path)
+        if skip_existing and artifact_path.exists():
+            skipped_artifacts.append(artifact_path)
+            continue
+
         artifact = build_metrics_artifact(parsed_path)
-        written_artifacts.append(write_metrics_artifact(parsed_path, artifact))
+        written_artifacts.append(write_json_artifact(artifact_path, artifact))
 
     return {
-        "threads": len(parsed_files),
+        "threads": len(written_artifacts),
         "artifacts": written_artifacts,
+        "skipped_threads": len(skipped_artifacts),
+        "skipped_artifacts": skipped_artifacts,
     }

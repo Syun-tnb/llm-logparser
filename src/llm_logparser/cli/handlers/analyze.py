@@ -14,7 +14,10 @@ def run_analyze_metrics(args, logger: logging.Logger) -> None:
 
     input_path = validate_path(args.input)
     try:
-        result = analyze_metrics(input_path)
+        result = analyze_metrics(
+            input_path,
+            skip_existing=args.skip_existing,
+        )
     except MetricsDependencyError as exc:
         logger.error(str(exc))
         raise SystemExit(2) from None
@@ -29,6 +32,7 @@ def run_analyze_tokens(args, logger: logging.Logger) -> None:
         input_path,
         model_override=args.model,
         encoding_override=args.encoding,
+        skip_existing=args.skip_existing,
     )
     logger.info(_("runtime.analyze.tokens_written", threads=result["threads"]))
 

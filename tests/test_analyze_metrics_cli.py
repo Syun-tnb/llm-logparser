@@ -68,6 +68,10 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _write_text(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+
 def _build_metrics_fixture(
     parsed: Path,
     monkeypatch,
@@ -736,3 +740,144 @@ def test_analyze_metrics_fails_with_actionable_message_when_token_stats_is_missi
     assert exc.value.code == 2
     assert "token_stats.json not found" in caplog.text
     assert "analyze tokens" in caplog.text
+
+
+def test_analyze_metrics_skip_existing_keeps_single_artifact_unchanged(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-metrics-skip" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-metrics-skip",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "world"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+    metrics_path = parsed.with_name("metrics.json")
+    original = '{"sentinel": "keep-metrics"}\n'
+    _write_text(metrics_path, original)
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "metrics",
+            "--input",
+            str(parsed),
+            "--skip-existing",
+        ],
+    )
+
+    assert metrics_path.read_text(encoding="utf-8") == original
+
+
+def test_analyze_metrics_without_skip_existing_overwrites_existing_artifact(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-metrics-overwrite" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-metrics-overwrite",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "world"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+    metrics_path = parsed.with_name("metrics.json")
+    _write_text(metrics_path, '{"sentinel": "replace-metrics"}\n')
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "metrics",
+            "--input",
+            str(parsed),
+        ],
+    )
+
+    payload = _load_json(metrics_path)
+    assert payload["artifact_type"] == "metrics"
+    assert payload["conversation_id"] == "conv-metrics-overwrite"
+    assert payload["schema_version"] == "1.0"
+
+
+def test_analyze_metrics_skip_existing_supports_directory_input(tmp_path, monkeypatch):
+    root = tmp_path / "parsed"
+    parsed_a = root / "a" / "thread-a" / "parsed.jsonl"
+    parsed_b = root / "b" / "thread-b" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_a,
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "one"},
+            {"message_id": "m2", "role": "assistant", "text": "two"},
+        ],
+    )
+    _write_parsed_jsonl(
+        parsed_b,
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "text": "three"},
+            {"message_id": "m2", "role": "assistant", "text": "four"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(root),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+    original = '{"sentinel": "preserve-metrics-a"}\n'
+    _write_text(parsed_a.with_name("metrics.json"), original)
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "metrics",
+            "--input",
+            str(root),
+            "--skip-existing",
+        ],
+    )
+
+    assert parsed_a.with_name("metrics.json").read_text(encoding="utf-8") == original
+    assert _load_json(parsed_b.with_name("metrics.json"))["conversation_id"] == "conv-b"

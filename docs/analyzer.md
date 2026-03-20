@@ -79,6 +79,12 @@ Dependency order:
 - `analyze tokens` -> writes `token_stats.json`
 - `analyze metrics` -> reads `token_stats.json` and writes `metrics.json`
 
+Incremental sidecar policy:
+
+- default behavior: existing `token_stats.json` and `metrics.json` sidecars are rebuilt and overwritten
+- `--skip-existing`: leave an existing sidecar untouched and only build missing sidecars
+- `analyze metrics --skip-existing` still requires pre-existing `token_stats.json` for any thread whose `metrics.json` is missing
+
 The refusal and revision phrase lists are locale-backed and loaded from
 `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
 

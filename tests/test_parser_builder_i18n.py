@@ -54,3 +54,18 @@ def test_analyze_metrics_help_mentions_token_stats_dependency(capsys):
     help_text = capsys.readouterr().out
     assert "token_stats.json" in help_text
     assert "analyze tokens" in help_text
+    assert "--skip-existing" in help_text
+    assert "rebuilt and overwritten" in help_text
+
+
+def test_analyze_tokens_help_mentions_skip_existing_policy(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "tokens", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--skip-existing" in help_text
+    assert "rebuilt and overwritten" in help_text

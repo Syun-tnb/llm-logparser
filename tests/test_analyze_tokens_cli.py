@@ -66,6 +66,10 @@ def _load_artifact(parsed_path: Path) -> dict:
     return json.loads(parsed_path.with_name("token_stats.json").read_text(encoding="utf-8"))
 
 
+def _write_text(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+
 def test_analyze_tokens_writes_deterministic_artifact(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-1" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -296,3 +300,97 @@ def test_analyze_tokens_allows_encoding_override_for_unsupported_provider(
     assert artifact["provider_id"] == "google"
     assert artifact["tokenizer"]["resolved_encoding"] == "o200k_base"
     assert artifact["tokenizer"]["resolution_source"] == "explicit_encoding"
+
+
+def test_analyze_tokens_skip_existing_keeps_single_artifact_unchanged(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-skip" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-skip",
+        [{"message_id": "m1", "role": "user", "text": "hello"}],
+    )
+    artifact_path = parsed.with_name("token_stats.json")
+    original = '{"sentinel": "keep-me"}\n'
+    _write_text(artifact_path, original)
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+            "--skip-existing",
+        ],
+    )
+
+    assert artifact_path.read_text(encoding="utf-8") == original
+
+
+def test_analyze_tokens_without_skip_existing_overwrites_existing_artifact(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-overwrite" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-overwrite",
+        [{"message_id": "m1", "role": "user", "text": "hello"}],
+    )
+    artifact_path = parsed.with_name("token_stats.json")
+    _write_text(artifact_path, '{"sentinel": "replace-me"}\n')
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert payload["artifact_type"] == "token_stats"
+    assert payload["conversation_id"] == "conv-overwrite"
+    assert payload["schema_version"] == "1.0"
+
+
+def test_analyze_tokens_skip_existing_supports_directory_input(tmp_path, monkeypatch):
+    root = tmp_path / "parsed"
+    parsed_a = root / "a" / "thread-a" / "parsed.jsonl"
+    parsed_b = root / "b" / "thread-b" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_a,
+        "conv-a",
+        [{"message_id": "m1", "role": "user", "text": "one"}],
+    )
+    _write_parsed_jsonl(
+        parsed_b,
+        "conv-b",
+        [{"message_id": "m1", "role": "assistant", "text": "two"}],
+    )
+    original = '{"sentinel": "preserve-a"}\n'
+    _write_text(parsed_a.with_name("token_stats.json"), original)
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(root),
+            "--encoding",
+            "o200k_base",
+            "--skip-existing",
+        ],
+    )
+
+    assert parsed_a.with_name("token_stats.json").read_text(encoding="utf-8") == original
+    assert _load_artifact(parsed_b)["conversation_id"] == "conv-b"

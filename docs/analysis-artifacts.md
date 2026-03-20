@@ -316,6 +316,9 @@ Contract:
   - current version is `1.0`
   - additive fields are allowed
   - removing fields or changing semantics requires a schema version change
+- incremental behavior:
+  - default CLI behavior rebuilds and overwrites an existing `token_stats.json`
+  - `analyze tokens --skip-existing` leaves an existing `token_stats.json` untouched
 
 ### `metrics.json`
 
@@ -348,6 +351,10 @@ Contract:
   - current version is `1.0`
   - additive fields are allowed
   - removing fields or changing semantics requires a schema version change
+- incremental behavior:
+  - default CLI behavior rebuilds and overwrites an existing `metrics.json`
+  - `analyze metrics --skip-existing` leaves an existing `metrics.json` untouched
+  - when `metrics.json` is missing, `token_stats.json` must already exist from `analyze tokens`
 
 Compatibility rule for analyzer sidecars:
 

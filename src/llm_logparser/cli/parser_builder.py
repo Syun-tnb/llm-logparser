@@ -238,6 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_tokens_cmd = analyze_subparsers.add_parser(
         "tokens",
         help=_("cli.analyze.tokens.help"),
+        description=_("cli.analyze.tokens.help"),
     )
     analyze_tokens_cmd.add_argument(
         "--input",
@@ -255,6 +256,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=False,
         help=_("cli.analyze.tokens.opt.encoding.help"),
     )
+    analyze_tokens_cmd.add_argument(
+        "--skip-existing",
+        dest="skip_existing",
+        action="store_true",
+        help=_("cli.analyze.opt.skip_existing.help"),
+    )
 
     analyze_metrics_cmd = analyze_subparsers.add_parser(
         "metrics",
@@ -266,6 +273,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=False,
         type=Path,
         help=_("cli.analyze.opt.input.help"),
+    )
+    analyze_metrics_cmd.add_argument(
+        "--skip-existing",
+        dest="skip_existing",
+        action="store_true",
+        help=_("cli.analyze.opt.skip_existing.help"),
     )
 
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
