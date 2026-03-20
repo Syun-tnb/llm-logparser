@@ -6,6 +6,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+from .i18n import _
 from .analyzer_common import (
     ROLE_ORDER,
     UNKNOWN_ROLE,
@@ -84,7 +85,9 @@ def resolve_analyze_tokenizer(
         try:
             encoder = tiktoken.get_encoding(encoding_override)
         except ValueError as exc:
-            raise SystemExit(f"unsupported --encoding for analyze tokens: {encoding_override}") from exc
+            raise SystemExit(
+                _("runtime.analyze_tokens.unsupported_encoding", encoding=encoding_override)
+            ) from exc
         spec = TokenizerSpec(
             family="gpt_bpe",
             library="tiktoken",
@@ -99,7 +102,9 @@ def resolve_analyze_tokenizer(
         try:
             encoder = tiktoken.encoding_for_model(model_override)
         except KeyError as exc:
-            raise SystemExit(f"unsupported --model for analyze tokens: {model_override}") from exc
+            raise SystemExit(
+                _("runtime.analyze_tokens.unsupported_model", model=model_override)
+            ) from exc
         spec = TokenizerSpec(
             family="gpt_bpe",
             library="tiktoken",
@@ -145,8 +150,7 @@ def resolve_analyze_tokenizer(
 
     provider_label = provider_id or "unknown"
     raise SystemExit(
-        "unsupported provider for analyze tokens: "
-        f"{provider_label}. Use --encoding to override tokenizer resolution."
+        _("runtime.analyze_tokens.unsupported_provider", provider=provider_label)
     )
 
 

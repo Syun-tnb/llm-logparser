@@ -51,14 +51,14 @@ def validate_split_option(raw: str | None) -> str | None:
     lowered = normalized.lower()
     if lowered == "auto" or lowered.startswith("size=") or lowered.startswith("count="):
         return normalized
-    raise SystemExit(f"invalid --split: {raw}")
+    raise SystemExit(_("runtime.split_invalid", raw=raw))
 
 
 def resolve_timezone(timezone_name: str, logger: logging.Logger):
     try:
         return ZoneInfo(timezone_name)
     except Exception:
-        logger.warning(f"Unknown timezone '{timezone_name}', fallback to UTC")
+        logger.warning(_("runtime.timezone_unknown", timezone_name=timezone_name))
         return _dt_timezone.utc
 
 

@@ -9,11 +9,15 @@ from llm_logparser.cli.config_loader import (
     load_config_file,
     resolve_explicit_config_path,
 )
+from llm_logparser.core.i18n import _
 
 
 def _resolved_config_path(explicit_path: Path | None) -> Path | None:
     if explicit_path is not None:
-        return resolve_explicit_config_path(explicit_path, missing_hint="passed via --config")
+        return resolve_explicit_config_path(
+            explicit_path,
+            missing_hint=_("runtime.config.hint_passed_via_config"),
+        )
     return discover_config_path()
 
 
@@ -34,12 +38,12 @@ def run_config_command(args, logger: logging.Logger) -> None:
 
     if command == "path":
         if path is None:
-            raise SystemExit("No config file found.")
+            raise SystemExit(_("runtime.config.no_file"))
         print(path)
         return
 
     if path is None:
-        raise SystemExit("No config file found.")
+        raise SystemExit(_("runtime.config.no_file"))
 
     config = load_config_file(path)
 
@@ -47,7 +51,7 @@ def run_config_command(args, logger: logging.Logger) -> None:
         if args.profile:
             resolve_profile(config, args.profile)
         selected = args.profile or config.active_profile or "<none>"
-        logger.info(f"Config structure is valid: {path} (profile: {selected})")
+        logger.info(_("runtime.config.valid", path=path, selected=selected))
         return
 
     if command == "show":
@@ -64,4 +68,4 @@ def run_config_command(args, logger: logging.Logger) -> None:
         print(_dump_yaml(payload))
         return
 
-    raise SystemExit(f"Unknown config command: {command}")
+    raise SystemExit(_("runtime.config.unknown_command", command=command))

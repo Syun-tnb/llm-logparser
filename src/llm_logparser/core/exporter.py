@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Iterable, List, Dict, Any, Optional, Literal
 
+from .i18n import _
 from .utils import parse_size_expr, format_bytes, sanitize_filename
 
 def _ts_to_seconds(ts: float | int | None) -> float | None:
@@ -211,11 +212,17 @@ def export_thread_md(
     # プレビュー（総バイト概算）
     total_preview = len("".join(body_blocks).encode("utf-8"))
     if split_conf["preview"]:
-        logger.info(f"[preview] ~{format_bytes(total_preview)} / {len(messages)} messages")
+        logger.info(
+            _(
+                "runtime.exporter.preview_bytes",
+                total_bytes=format_bytes(total_preview),
+                messages=len(messages),
+            )
+        )
         if split_conf["mode"] in ("auto", "size"):
             size_limit = split_conf["size_limit"] or parse_size_expr("4M")
             est = max(1, total_preview // max(1, size_limit))
-            logger.info(f"[preview] estimated parts: {est}")
+            logger.info(_("runtime.exporter.preview_estimated_parts", parts=est))
         return []
 
     # 分割なし（既存互換）
@@ -233,7 +240,14 @@ def export_thread_md(
         md = "\n".join(fm_lines) + "".join(body_blocks)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(md, encoding="utf-8")
-        logger.info(f"  - {out_path.name} (messages={len(messages)}, ~{format_bytes(len(md.encode('utf-8')))})")
+        logger.info(
+            _(
+                "runtime.exporter.wrote_file",
+                name=out_path.name,
+                messages=len(messages),
+                bytes=format_bytes(len(md.encode("utf-8"))),
+            )
+        )
         return [out_path]
 
     # 分割あり
@@ -336,7 +350,14 @@ def export_thread_md(
         out_name = sanitize_filename(f"{base}{suffix}.md")
         out_file = outdir / out_name
         out_file.write_text(page, encoding="utf-8")
-        logger.info(f"  - {out_name} (messages={len(blocks)}, ~{format_bytes(len(page.encode('utf-8')))})")
+        logger.info(
+            _(
+                "runtime.exporter.wrote_file",
+                name=out_name,
+                messages=len(blocks),
+                bytes=format_bytes(len(page.encode("utf-8"))),
+            )
+        )
         paths.append(out_file)
 
     return paths

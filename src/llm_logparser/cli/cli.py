@@ -66,7 +66,11 @@ def _resolve_profile(
     if config is not None:
         profile, profiles = resolve_profile(config, args.profile)
         if profile is None and can_prompt and len(profiles) > 1:
-            selected = prompt_choice("Select profile:", list(profiles.keys()), allow_skip=True)
+            selected = prompt_choice(
+                _("runtime.profile.select"),
+                list(profiles.keys()),
+                allow_skip=True,
+            )
             if selected is not None:
                 candidate = profiles.get(selected)
                 if candidate is not None:
@@ -103,13 +107,15 @@ def _apply_profile_input_defaults(
         and input_candidates
     ):
         if can_prompt:
-            selected_input = prompt_choice("Select input file:", [str(p) for p in input_candidates])
+            selected_input = prompt_choice(
+                _("runtime.profile.select_input"),
+                [str(p) for p in input_candidates],
+            )
             if selected_input:
                 args.input = Path(selected_input)
         else:
             print(
-                "Multiple input paths found in config. Resolve ambiguity with --input "
-                "or keep a single input.path/input.paths entry.",
+                _("runtime.profile.multiple_input_paths"),
                 file=sys.stderr,
             )
             sys.exit(2)
@@ -127,16 +133,22 @@ def _prompt_missing_required(
         if can_prompt:
             if "provider" in missing:
                 provider_default = profile.provider if profile is not None else None
-                args.provider = prompt_text("Provider (e.g., openai):", default=provider_default)
+                args.provider = prompt_text(
+                    _("runtime.prompt.provider"),
+                    default=provider_default,
+                )
             if "input" in missing:
                 default_input = None
                 if profile is not None:
                     default_input = profile.input.path or profile.input.parsed
-                args.input = prompt_existing_file("Input file path:", default=default_input)
+                args.input = prompt_existing_file(
+                    _("runtime.prompt.input_file_path"),
+                    default=default_input,
+                )
             if "conversation_id" in missing:
                 conv_default = profile.extract.conversation_id if profile is not None else None
                 args.conversation_id = prompt_text(
-                    "Conversation ID:",
+                    _("runtime.prompt.conversation_id"),
                     default=conv_default,
                 )
         else:
@@ -150,27 +162,21 @@ def _prompt_missing_required(
         if args.input is None:
             if can_prompt:
                 prompt_label = (
-                    "Input provider-root directory path:"
+                    _("runtime.prompt.analyze_provider_root")
                     if args.analyze_command == "sqlite-build"
-                    else "Input parsed.jsonl or directory path:"
+                    else _("runtime.prompt.analyze_input")
                 )
                 raw_input = prompt_text(prompt_label)
                 args.input = Path(raw_input) if raw_input else None
             else:
-                logger.error(
-                    f"Missing required options for 'analyze {args.analyze_command}':\n"
-                    "  - input: --input"
-                )
+                logger.error(_("runtime.analyze.missing_input", command=args.analyze_command))
                 sys.exit(2)
 
         if args.analyze_command == "sqlite-build" and not args.provider:
             if can_prompt:
-                args.provider = prompt_text("Provider ID (for example: openai):")
+                args.provider = prompt_text(_("runtime.prompt.provider_id"))
             else:
-                logger.error(
-                    "Missing required options for 'analyze sqlite-build':\n"
-                    "  - provider: --provider"
-                )
+                logger.error(_("runtime.analyze.missing_provider"))
                 sys.exit(2)
 
 
@@ -195,7 +201,7 @@ def _dispatch(args, logger) -> None:
     elif args.command == "chain":
         run_chain(args, logger)
     elif args.command == "viewer":
-        logger.warning("[TODO] Viewer not implemented yet.")
+        logger.warning(_("runtime.viewer.todo"))
     elif args.command == "config":
         run_config_command(args, logger)
 

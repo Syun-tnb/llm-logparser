@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from llm_logparser.cli.common import validate_path
+from llm_logparser.core.i18n import _
 
 
 def run_extract(args, logger: logging.Logger) -> None:
@@ -11,11 +12,11 @@ def run_extract(args, logger: logging.Logger) -> None:
     input_path = validate_path(args.input, expect_file=True)
     args.outdir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Provider: {args.provider}")
-    logger.info(f"Input file: {input_path}")
-    logger.info(f"Conversation ID: {args.conversation_id}")
-    logger.info(f"Output root: {args.outdir}")
-    logger.info(f"Dry run: {args.dry_run}")
+    logger.info(_("runtime.extract.provider", provider=args.provider))
+    logger.info(_("runtime.extract.input", path=input_path))
+    logger.info(_("runtime.extract.conversation_id", conversation_id=args.conversation_id))
+    logger.info(_("runtime.extract.output_root", path=args.outdir))
+    logger.info(_("runtime.extract.dry_run", dry_run=args.dry_run))
 
     result = extract_to_json(
         args.provider,
@@ -27,6 +28,6 @@ def run_extract(args, logger: logging.Logger) -> None:
         logger=logger,
     )
     if result.get("written"):
-        logger.info(f"✅ Extracted to {result.get('path')}")
+        logger.info(_("runtime.extract.done", path=result.get("path")))
     else:
-        logger.info(f"✅ Dry-run complete (planned output: {result.get('path')})")
+        logger.info(_("runtime.extract.dry_run_done", path=result.get("path")))

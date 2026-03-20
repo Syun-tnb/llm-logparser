@@ -7,6 +7,7 @@ from llm_logparser.cli.common import (
     validate_path,
     validate_split_option,
 )
+from llm_logparser.core.i18n import _
 
 
 def run_export(args, logger: logging.Logger) -> None:
@@ -23,14 +24,14 @@ def run_export(args, logger: logging.Logger) -> None:
     tz = resolve_timezone(args.timezone, logger)
     split_option = validate_split_option(args.split)
 
-    logger.info(f"Input JSONL: {in_path}")
+    logger.info(_("runtime.export.input_jsonl", path=in_path))
     logger.info(
-        f"Output MD  : {out_md.parent}/thread-<cid>*.md"
+        _("runtime.export.output_md_split", path=out_md.parent)
         if args.split
-        else f"Output MD  : {out_md}"
+        else _("runtime.export.output_md", path=out_md)
     )
-    logger.info(f"Timezone   : {args.timezone}")
-    logger.info(f"Formatting : {args.formatting}")
+    logger.info(_("runtime.export.timezone", timezone=args.timezone))
+    logger.info(_("runtime.export.formatting", formatting=args.formatting))
 
     opts = {
         "split": split_option,
@@ -43,9 +44,9 @@ def run_export(args, logger: logging.Logger) -> None:
     paths = export_thread_md(in_path, out_md, tz=tz, **opts)
 
     if args.split_preview:
-        logger.info("✅ Preview only (no files written)")
+        logger.info(_("runtime.export.preview_only"))
     else:
         if len(paths) == 1:
-            logger.info("✅ Exported 1 Markdown")
+            logger.info(_("runtime.export.exported_one"))
         else:
-            logger.info(f"✅ Exported {len(paths)} Markdown")
+            logger.info(_("runtime.export.exported_many", count=len(paths)))

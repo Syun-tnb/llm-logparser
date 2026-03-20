@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 from typing import Any, Pattern
 
+from .i18n import _
 
 DEFAULT_REPLACEMENT = "REDACTED"
 DEFAULT_SCOPE = "content_parts"
@@ -54,10 +55,7 @@ class SanitizePolicy:
         mask_patterns: tuple[str, ...] | None = None,
     ) -> SanitizePolicy:
         if scope not in {"content_parts", "all_strings"}:
-            raise SystemExit(
-                "Invalid config: sanitize.scope must be one of: "
-                "content_parts, all_strings"
-            )
+            raise SystemExit(_("runtime.sanitize.invalid_scope"))
 
         effective_patterns = (
             DEFAULT_MASK_PATTERNS if mask_patterns is None else tuple(mask_patterns)

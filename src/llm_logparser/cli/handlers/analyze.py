@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from llm_logparser.cli.common import validate_path, write_or_print
+from llm_logparser.core.i18n import _
 
 
 def run_analyze_metrics(args, logger: logging.Logger) -> None:
@@ -10,10 +11,7 @@ def run_analyze_metrics(args, logger: logging.Logger) -> None:
 
     input_path = validate_path(args.input)
     result = analyze_metrics(input_path)
-    logger.info(
-        "metrics.json written for %s thread(s)",
-        result["threads"],
-    )
+    logger.info(_("runtime.analyze.metrics_written", threads=result["threads"]))
 
 
 def run_analyze_tokens(args, logger: logging.Logger) -> None:
@@ -25,10 +23,7 @@ def run_analyze_tokens(args, logger: logging.Logger) -> None:
         model_override=args.model,
         encoding_override=args.encoding,
     )
-    logger.info(
-        "token_stats.json written for %s thread(s)",
-        result["threads"],
-    )
+    logger.info(_("runtime.analyze.tokens_written", threads=result["threads"]))
 
 
 def run_analyze_stats(args, logger: logging.Logger) -> None:
@@ -42,7 +37,7 @@ def run_analyze_stats(args, logger: logging.Logger) -> None:
     del logger
     input_path = validate_path(args.input)
     if args.top is not None and args.top < 0:
-        raise SystemExit("--top must be >= 0")
+        raise SystemExit(_("runtime.analyze.top_non_negative"))
 
     stats = analyze_stats(input_path)
     effective_sort = args.sort
@@ -94,9 +89,11 @@ def run_analyze_sqlite_build(args, logger: logging.Logger) -> None:
         overwrite=args.overwrite,
     )
     logger.info(
-        "analysis.db built: %s (threads=%s messages=%s windows=%s)",
-        result["db_path"],
-        result["threads"],
-        result["messages"],
-        result["message_windows"],
+        _(
+            "runtime.analyze.sqlite_built",
+            db_path=result["db_path"],
+            threads=result["threads"],
+            messages=result["messages"],
+            windows=result["message_windows"],
+        )
     )

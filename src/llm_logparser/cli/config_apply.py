@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from llm_logparser.cli.config_model import AppConfig, ConfigProfile
+from llm_logparser.core.i18n import _
 from llm_logparser.core.sanitize import SanitizePolicy
 
 REQUIRED_FIELDS_BY_COMMAND: dict[str, list[str]] = {
@@ -41,14 +42,14 @@ def resolve_profile(
     if profile_name:
         profile = profiles.get(profile_name)
         if profile is None:
-            raise SystemExit(f"Profile not found in config: {profile_name}")
+            raise SystemExit(_("runtime.config.profile_not_found", name=profile_name))
         return profile, profiles
 
     active = config.active_profile
     if active:
         profile = profiles.get(active)
         if profile is None:
-            raise SystemExit(f"Profile not found in config: {active}")
+            raise SystemExit(_("runtime.config.profile_not_found", name=active))
         return profile, profiles
 
     if len(profiles) == 1:

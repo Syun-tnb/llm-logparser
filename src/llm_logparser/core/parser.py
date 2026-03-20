@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover
     ijson = None
 
 from .l1_derivation import ThreadMetrics, build_thread_stats_artifact
+from .i18n import _
 from .message_windows import render_message_windows_jsonl
 
 # ============================================================
@@ -100,7 +101,9 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                     try:
                         yield json.loads(line)
                     except json.JSONDecodeError as e:
-                        logger.warning(f"skip invalid JSON line ({i}): {e}")
+                        logger.warning(
+                            _("runtime.parser.skip_invalid_json_line", index=i, detail=e)
+                        )
                         continue
                 return
 
@@ -109,7 +112,7 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                 if ijson is not None:
                     for i, item in enumerate(ijson.items(f, "item"), start=1):
                         if not isinstance(item, dict):
-                            logger.warning(f"skip invalid element ({i})")
+                            logger.warning(_("runtime.parser.skip_invalid_element", index=i))
                             continue
                         yield item
                     return
@@ -119,7 +122,7 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                     raise LLPInputError("expected JSON array")
                 for i, item in enumerate(data, start=1):
                     if not isinstance(item, dict):
-                        logger.warning(f"skip invalid element ({i})")
+                        logger.warning(_("runtime.parser.skip_invalid_element", index=i))
                         continue
                     yield item
                 return
@@ -286,7 +289,9 @@ def parse_to_jsonl(
     fail_fast=True の場合は一定数エラーで停止。
     """
     log = logger or logging.getLogger("llm_logparser.parser")
-    log.info(f"Starting parse for provider={provider} (dry-run={dry_run}, fail-fast={fail_fast})")
+    log.info(
+        _("runtime.parser.start_parse", provider=provider, dry_run=dry_run, fail_fast=fail_fast)
+    )
 
     adapter_func, manifest, policy = load_adapter(provider)
     provider_dir = outdir / provider
@@ -315,7 +320,7 @@ def parse_to_jsonl(
         try:
             expanded_records = list(record_expander(raw))
         except Exception as e:
-            msg = f"adapter error: {e}"
+            msg = _("runtime.parser.adapter_error", detail=e)
             log.warning(msg)
             errors += 1
             if len(sample_errors) < 5:
@@ -341,13 +346,13 @@ def parse_to_jsonl(
 
                 count += len(recs)
                 if count % progress_interval == 0:
-                    log.info(f"processed {count} messages...")
+                    log.info(_("runtime.parser.processed_messages", count=count))
 
                 recs.sort(key=lambda r: (r.get("ts") is None, r.get("ts"), r.get("message_id") or ""))
 
                 if should_skip_thread(cid, recs, manifest_old):
                     skipped += 1
-                    log.info(f"SKIP thread {cid} (unchanged)")
+                    log.info(_("runtime.parser.skip_thread_unchanged", conversation_id=cid))
                     continue
 
                 ts_values = [m.get("ts") for m in recs if isinstance(m.get("ts"), (int, float))]
@@ -378,8 +383,12 @@ def parse_to_jsonl(
                                     except message_validation_error_cls as verr:
                                         idx = m.get("message_id") or "<unknown>"
                                         log.warning(
-                                            f"schema validation failed for "
-                                            f"{cid}/{idx}: {verr}"
+                                            _(
+                                                "runtime.parser.schema_validation_failed",
+                                                conversation_id=cid,
+                                                message_id=idx,
+                                                detail=verr,
+                                            )
                                         )
                                         skipped += 1
                                         if fail_fast:
@@ -432,7 +441,7 @@ def parse_to_jsonl(
                     }
                 )
             except Exception as e:
-                msg = f"adapter error: {e}"
+                msg = _("runtime.parser.adapter_error", detail=e)
                 log.warning(msg)
                 errors += 1
                 if len(sample_errors) < 5:
@@ -451,10 +460,16 @@ def parse_to_jsonl(
             "index": {"threads": manifest_index},
         }
         manifest_path.write_text(json.dumps(manifest_obj, ensure_ascii=True, indent=2), encoding="utf-8")
-        log.info(f"manifest saved: {manifest_path}")
+        log.info(_("runtime.parser.manifest_saved", path=manifest_path))
 
     log.info(
-        f"SUMMARY: threads={stats['threads']} messages={stats['messages']} errors={errors} skipped={skipped}"
+        _(
+            "runtime.parser.summary",
+            threads=stats["threads"],
+            messages=stats["messages"],
+            errors=errors,
+            skipped=skipped,
+        )
     )
     return {**stats, "errors": errors, "skipped": skipped, "samples": sample_errors}
 
@@ -472,7 +487,12 @@ def extract_to_json(
     """指定 conversation_id の生会話を抽出し、Gemini-compat JSON を出力する。"""
     log = logger or logging.getLogger("llm_logparser.parser")
     log.info(
-        f"Starting extract for provider={provider}, conversation_id={conversation_id} (dry-run={dry_run})"
+        _(
+            "runtime.parser.start_extract",
+            provider=provider,
+            conversation_id=conversation_id,
+            dry_run=dry_run,
+        )
     )
     extractor = load_extractor(provider)
     extractor_kwargs: dict[str, Any] = {

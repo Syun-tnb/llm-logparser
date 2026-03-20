@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Any
 
+from llm_logparser.core.i18n import _
 
 SUPPORTED_CONFIG_SCHEMA_MAJOR = 1
 SUPPORTED_CONFIG_SCHEMA_VERSION = "1"
@@ -24,12 +25,12 @@ LEGACY_PROFILE_KEY_REPLACEMENTS: dict[str, str] = {
 
 
 def _raise_config_error(message: str) -> None:
-    raise SystemExit(f"Invalid config: {message}")
+    raise SystemExit(_("runtime.config.invalid", message=message))
 
 
 def _ensure_mapping(value: Any, context: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        _raise_config_error(f"{context} must be a mapping")
+        _raise_config_error(_("runtime.config.must_be_mapping", context=context))
     return value
 
 
@@ -45,7 +46,7 @@ def _optional_string(value: Any, context: str) -> str | None:
     if isinstance(value, str):
         stripped = value.strip()
         return stripped or None
-    _raise_config_error(f"{context} must be a string")
+    _raise_config_error(_("runtime.config.must_be_string", context=context))
 
 
 def _optional_bool(value: Any, context: str) -> bool | None:
@@ -61,34 +62,34 @@ def _optional_bool(value: Any, context: str) -> bool | None:
             return False
     if isinstance(value, int):
         return bool(value)
-    _raise_config_error(f"{context} must be a boolean")
+    _raise_config_error(_("runtime.config.must_be_boolean", context=context))
 
 
 def _optional_int(value: Any, context: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        _raise_config_error(f"{context} must be an integer")
+        _raise_config_error(_("runtime.config.must_be_integer", context=context))
     if isinstance(value, int):
         return value
-    _raise_config_error(f"{context} must be an integer")
+    _raise_config_error(_("runtime.config.must_be_integer", context=context))
 
 
 def _optional_number(value: Any, context: str) -> float | int | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        _raise_config_error(f"{context} must be a number")
+        _raise_config_error(_("runtime.config.must_be_number", context=context))
     if isinstance(value, (int, float)):
         return value
-    _raise_config_error(f"{context} must be a number")
+    _raise_config_error(_("runtime.config.must_be_number", context=context))
 
 
 def _string_list(value: Any, context: str) -> tuple[str, ...]:
     if value is None:
         return ()
     if not isinstance(value, list):
-        _raise_config_error(f"{context} must be a list of strings")
+        _raise_config_error(_("runtime.config.must_be_list_of_strings", context=context))
     out: list[str] = []
     for index, item in enumerate(value):
         normalized = _optional_string(item, f"{context}[{index}]")
@@ -114,7 +115,9 @@ def _validate_regex_patterns(
         try:
             re.compile(pattern)
         except re.error as exc:
-            _raise_config_error(f"{context}[{index}] is not a valid regex: {exc}")
+            _raise_config_error(
+                _("runtime.config.invalid_regex", context=context, index=index, detail=exc)
+            )
     return patterns
 
 
@@ -131,11 +134,12 @@ def _warn_deprecated_profile_keys(profile_name: str, data: dict[str, Any]) -> No
         if legacy_key not in data:
             continue
         _CONFIG_LOG.warning(
-            "Deprecated config key profiles.%s.%s is still supported for schema_version 1; "
-            "use %s instead. Removal is planned for a future schema_version 2 cleanup.",
-            profile_name,
-            legacy_key,
-            replacement,
+            _(
+                "runtime.config.deprecated_profile_key",
+                profile_name=profile_name,
+                legacy_key=legacy_key,
+                replacement=replacement,
+            )
         )
 
 
@@ -143,33 +147,33 @@ def normalize_schema_version(raw_version: Any) -> str | None:
     if raw_version is None:
         return None
     if isinstance(raw_version, bool):
-        _raise_config_error("schema_version must be a string or number")
+        _raise_config_error(_("runtime.config.schema_version_type"))
 
     if isinstance(raw_version, int):
         normalized = str(raw_version)
     elif isinstance(raw_version, float):
         if not raw_version.is_integer():
-            _raise_config_error("schema_version must use a whole-number major version")
+            _raise_config_error(_("runtime.config.schema_version_whole_major"))
         normalized = str(int(raw_version))
     elif isinstance(raw_version, str):
         normalized = raw_version.strip()
         if not normalized:
-            _raise_config_error("schema_version must not be empty")
+            _raise_config_error(_("runtime.config.schema_version_empty"))
     else:
-        _raise_config_error("schema_version must be a string or number")
+        _raise_config_error(_("runtime.config.schema_version_type"))
 
     major_token = normalized.split(".", 1)[0]
     if not major_token.isdigit():
-        _raise_config_error(
-            "schema_version must look like '1' or '1.0'"
-        )
+        _raise_config_error(_("runtime.config.schema_version_format"))
 
     major = int(major_token)
     if major != SUPPORTED_CONFIG_SCHEMA_MAJOR:
         raise SystemExit(
-            "Unsupported config schema_version "
-            f"'{normalized}'. This build supports major version "
-            f"{SUPPORTED_CONFIG_SCHEMA_MAJOR}."
+            _(
+                "runtime.config.unsupported_schema_version",
+                normalized=normalized,
+                major=SUPPORTED_CONFIG_SCHEMA_MAJOR,
+            )
         )
     return normalized
 
@@ -283,17 +287,13 @@ class SanitizeConfig:
         )
         if unknown_keys:
             _CONFIG_LOG.warning(
-                "Unknown sanitize config key(s) under %s: %s",
-                context,
-                ", ".join(unknown_keys),
+                _("runtime.config.unknown_sanitize_keys", context=context, keys=", ".join(unknown_keys))
             )
         enabled = _optional_bool(data.get("enabled"), f"{context}.enabled")
         replacement = _optional_string(data.get("replacement"), f"{context}.replacement")
         scope = _optional_string(data.get("scope"), f"{context}.scope")
         if scope is not None and scope not in {"content_parts", "all_strings"}:
-            _raise_config_error(
-                f"{context}.scope must be one of: content_parts, all_strings"
-            )
+            _raise_config_error(_("runtime.config.sanitize_scope_invalid", context=context))
 
         raw_patterns = (
             _optional_string_list(data.get("mask_patterns"), f"{context}.mask_patterns")
@@ -574,12 +574,12 @@ class AppConfig:
             profiles = {}
             for raw_name, profile_raw in _ensure_mapping(raw_profiles, "profiles").items():
                 if not isinstance(raw_name, str) or not raw_name.strip():
-                    _raise_config_error("profile names must be non-empty strings")
+                    _raise_config_error(_("runtime.config.profile_names_non_empty"))
                 name = raw_name.strip()
                 profiles[name] = ConfigProfile.from_raw(name, profile_raw)
 
         if active_profile is not None and active_profile not in profiles:
-            raise SystemExit(f"Profile not found in config: {active_profile}")
+            raise SystemExit(_("runtime.config.profile_not_found", name=active_profile))
 
         return cls(
             schema_version=schema_version,

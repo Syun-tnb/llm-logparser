@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from llm_logparser.core.i18n import _
 from llm_logparser.core.parser import LLPInputError, iter_json_records
 from llm_logparser.core.providers.openai.chatgpt.utils import json_safe
 from llm_logparser.core.sanitize import SanitizePolicy, sanitize_value
@@ -32,9 +33,7 @@ def get_extractor():
         log = logger or logging.getLogger("llm_logparser.extractor")
         policy = sanitize_policy or SanitizePolicy.defaults()
         if policy.enabled and policy.custom_mask_patterns:
-            log.info(
-                "[extract] custom sanitize mask_patterns configured; built-in email/phone masking is not active"
-            )
+            log.info(_("runtime.openai_extract.custom_mask_patterns"))
 
         matched_record: dict[str, Any] | None = None
         scanned = 0
@@ -62,7 +61,9 @@ def get_extractor():
         }
 
         if dry_run:
-            log.info(f"[extract] dry-run: matched conversation={conversation_id}; skip writing {out_path}")
+            log.info(
+                _("runtime.openai_extract.dry_run_skip", conversation_id=conversation_id, path=out_path)
+            )
             return {
                 "conversation_id": conversation_id,
                 "records_scanned": scanned,
@@ -80,7 +81,7 @@ def get_extractor():
             json.dumps(metadata, ensure_ascii=True, indent=2) + "\n",
             encoding="utf-8",
         )
-        log.info(f"[extract] wrote {out_path}")
+        log.info(_("runtime.openai_extract.wrote", path=out_path))
         return {
             "conversation_id": conversation_id,
             "records_scanned": scanned,
