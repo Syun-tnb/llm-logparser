@@ -2,9 +2,16 @@
 
 [![Sponsor](https://img.shields.io/github/sponsors/Syun-tnb)](https://github.com/sponsors/Syun-tnb)
 
-`llm-logparser` turns raw LLM export dumps into deterministic, local artifacts you can inspect, archive, analyze, and share. It parses provider-specific JSON into canonical thread-oriented JSONL, then exports readable GitHub-Flavored Markdown and optional analysis sidecars.
+`llm-logparser` is a local-first CLI for turning raw LLM exports into
+canonical `parsed.jsonl`, readable Markdown, and deterministic sidecar artifacts.
 
-Built for offline-first workflows, reproducibility, audits, and migration. No cloud. No telemetry. Your data stays local.
+The core mental model is:
+
+- parse raw exports into canonical `parsed.jsonl`
+- export canonical threads to Markdown when you want readable transcripts
+- analyze canonical artifacts locally when you want summaries, sidecars, or reports
+
+No cloud. No telemetry. Canonical data and analyzer outputs stay local.
 
 > Runtime caveat for token analysis: `tiktoken` may fetch encoding assets on first use, then caches them locally. Token counting is otherwise local and deterministic.
 
@@ -71,29 +78,33 @@ llm-logparser analyze stats \
 
 ---
 
-## What it does
+## Pipeline
 
-`llm-logparser` is designed around a simple pipeline:
+`llm-logparser` is built around one canonical source of truth:
 
-* parse provider exports into canonical JSONL thread records
-* export those records to readable Markdown
-* analyze canonical artifacts without re-parsing raw exports
+```text
+raw export
+  -> parse
+  -> canonical parsed.jsonl
+     -> export        -> Markdown transcripts
+     -> analyze stats -> aggregation and exploratory summaries
+     -> analyze tokens -> token_stats.json
+     -> analyze metrics -> metrics.json
+     -> analyze datasheet -> appendix-ready report (Markdown or JSON)
+```
+
+Analyzer commands reuse existing sidecar artifacts when they are already present
+and fall back to canonical `parsed.jsonl` when they are missing. Output remains
+deterministic and local-first either way.
 
 At a glance:
 
-* Parse -> Normalize -> JSONL -> Export (Markdown)
-* Thread-based layout with YAML front matter
-* Automatic splitting by size, count, or auto mode
-* Localized CLI, help, and runtime messages
-* Timezone-aware Markdown timestamps
-* `chain` mode for parse + export in one command
-* `analyze stats` and `analyze timeline` for reporting from canonical `parsed.jsonl`
-* `analyze tokens` for deterministic per-thread `token_stats.json`
-* `analyze metrics` for deterministic `metrics.json` with refusal and revision heuristics
-* `analyze sqlite-build` for an optional SQLite index built from canonical artifacts
-* Locale-tunable heuristic phrases via YAML resources
-* Deterministic, local-first workflows
-* Future-proof architecture for multiple providers
+* canonical `parsed.jsonl` is the source of truth
+* `thread_stats.json`, `token_stats.json`, and `metrics.json` are sidecar artifacts
+* `analyze stats` is for aggregation and exploration
+* `analyze metrics` is for deterministic per-thread signals
+* `analyze datasheet` is for concise research/reporting output
+* `analyze sqlite-build` is an optional SQLite index layer
 
 > MVP currently focuses on OpenAI logs. Providers like Claude and Gemini remain planned areas of expansion.
 
@@ -191,7 +202,7 @@ Localized:
 
 Not localized by design:
 
-* `analyze stats` and `analyze timeline` text summaries
+* `analyze stats`, `analyze datasheet`, and `analyze timeline` rendered summaries
 * JSON artifacts and stable schema keys
 * argparse built-ins such as `usage:` and parser-generated boilerplate
 * Markdown timestamp formatting beyond timezone conversion
@@ -218,7 +229,10 @@ Analyzer heuristics use locale-backed YAML resources under `analysis:`.
 Current analyzer-tunable keys include:
 
 * `analysis.refusal.indicators`
+* `analysis.safety.intervention_indicators`
 * `analysis.revision.cues`
+* `analysis.correction.cues`
+* `analysis.clarification.cues`
 
 If a selected locale does not provide one of these keys, the analyzer falls back to `en-US`.
 
@@ -347,6 +361,27 @@ uv run llm-logparser analyze stats \
   [--out <path>]
 ```
 
+Use `analyze stats` when you want aggregation and exploratory summaries across
+one thread or a directory of threads. It can render text or JSON directly from
+canonical `parsed.jsonl`, and its additive `research_summary` section provides
+deterministic temporal, turn-taking, safety, and lightweight structural
+aggregates.
+
+### Analyze Datasheet
+
+Build a concise appendix-ready dataset summary from canonical parsed artifacts:
+
+```bash
+uv run llm-logparser analyze datasheet \
+  --input <parsed.jsonl-or-directory> \
+  [--json] \
+  [--out <path>]
+```
+
+Use `analyze datasheet` when you want a stable report layer rather than an
+exploratory summary. Markdown is the default output. `--json` returns the same
+content as a machine-readable summary object.
+
 ### Analyze Timeline
 
 Aggregate timestamped message activity from canonical `parsed.jsonl` files:
@@ -412,6 +447,8 @@ Additional behavior notes:
 * existing `metrics.json` sidecars are rebuilt by default
 * `--skip-existing` only fills in missing sidecars
 * `--dry-run` previews sidecar generation before writing
+* current metrics include `safety.refusal`, broader `safety.intervention_count`,
+  `interaction.revision` subtypes, and `user_effort`
 
 ### Analyze SQLite Build
 
@@ -426,17 +463,34 @@ uv run llm-logparser analyze sqlite-build \
 
 ---
 
+## When To Use What
+
+Use:
+
+* `analyze stats` for aggregation and exploratory summaries over canonical `parsed.jsonl`
+* `analyze tokens` when you need deterministic per-thread token counts
+* `analyze metrics` when you need deterministic per-thread `metrics.json`
+* `analyze datasheet` when you need appendix-ready Markdown or JSON for research/reporting
+* `analyze timeline` when you want time-bucketed activity summaries
+* `analyze sqlite-build` when you want an optional SQLite index for larger datasets
+
 ## Analyzer Outputs
 
-Current analyze-layer sidecars:
+Current analyze-layer sidecars and report outputs:
 
 * `token_stats.json`
   Deterministic per-thread token counts derived from canonical message text. Includes tokenizer metadata, per-role token totals, and per-message token counts.
 
 * `metrics.json`
-  Deterministic per-thread research-oriented metrics derived from `parsed.jsonl` plus `token_stats.json`. Includes ratio, token, character, distribution, and diversity metrics together with heuristic `safety.refusal` and `interaction.revision`.
+  Deterministic per-thread metrics derived from `parsed.jsonl` plus `token_stats.json`. Includes ratio, token, character, distribution, diversity, safety, interaction, and `user_effort` sections.
 
-Both artifacts are rebuildable from canonical data and contain no runtime timestamps.
+* `analyze stats`
+  Deterministic aggregation and exploratory summaries rendered as text or JSON.
+
+* `analyze datasheet`
+  Deterministic report layer rendered as appendix-ready Markdown by default, with optional JSON.
+
+Sidecar artifacts are rebuildable from canonical `parsed.jsonl` and contain no runtime timestamps.
 
 Recommended sidecar workflow after parse:
 
@@ -469,8 +523,8 @@ uv run llm-logparser analyze metrics \
 
 These subcommands intentionally produce different output classes:
 
-* `stats` and `timeline` render results
-* `tokens` and `metrics` write per-thread JSON sidecars
+* `stats`, `datasheet`, and `timeline` render summaries or reports
+* `tokens` and `metrics` write per-thread JSON sidecar artifacts
 * `sqlite-build` writes a single SQLite database artifact
 
 ---

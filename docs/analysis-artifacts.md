@@ -38,7 +38,7 @@ Each stage has a clearly defined responsibility.
 | Stage | Purpose |
 |------|------|
 | parse | canonical normalization and deterministic parse-time artifact generation |
-| deterministic analyzer commands | local stats/timeline views plus `token_stats.json` and `metrics.json` sidecars |
+| deterministic analyzer commands | local stats/datasheet/timeline views plus `token_stats.json` and `metrics.json` sidecar artifacts |
 | optional SQLite index (L2) | query accelerator built from canonical or canonical-derived artifacts |
 | L3 | external consumers (local LLM pipelines, embeddings, search) |
 
@@ -47,9 +47,10 @@ A core design principle is:
 > **Later stages must never require re-running earlier stages if artifacts already exist.**
 
 > [!NOTE]
-> `analyze stats` currently recomputes from canonical `parsed.jsonl` rather than
-> consuming `thread_stats.json`. This keeps correctness anchored to the source
-> of truth today; a future optimization may use `thread_stats.json` when present.
+> `analyze stats` computes from canonical `parsed.jsonl`.
+> `analyze datasheet` may opportunistically reuse `thread_stats.json` and
+> `metrics.json` sidecar artifacts when they are already present, but it still
+> falls back to canonical `parsed.jsonl` when they are missing or unusable.
 
 
 ---
@@ -101,7 +102,7 @@ thread-<conversation_id>/
     message_windows.jsonl
 ```
 
-The analyzer currently adds deterministic sidecars in the same thread directory:
+The analyzer currently adds deterministic sidecar artifacts in the same thread directory:
 
 ```text
 thread-<conversation_id>/
@@ -575,6 +576,25 @@ llm-logparser analyze timeline
 ```
 
 These commands may perform full dataset scans if needed.
+
+The analyze command family separates concerns deliberately:
+
+```text
+parsed.jsonl (canonical)
+    -> analyze tokens     -> token_stats.json
+    -> analyze metrics    -> metrics.json
+    -> analyze stats      -> aggregation and exploratory summaries
+    -> analyze datasheet  -> report layer for appendix-ready Markdown/JSON
+```
+
+In this model:
+
+- `analyze stats` is the aggregation/exploration layer
+- `analyze metrics` is the per-thread sidecar artifact layer
+- `analyze datasheet` is the reporting layer built on the same deterministic
+  research-oriented summary concepts
+- existing sidecar artifacts are preferred when available, but canonical
+  `parsed.jsonl` remains the source of truth
 
 
 ---

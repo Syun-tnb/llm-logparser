@@ -77,33 +77,40 @@ Current Layer 1 implementations include:
 - heuristic `interaction.revision`
 - additive `user_effort` metrics derived from assistant → user timing and text length
 
-Recommended workflow:
+## Analyze Pipeline
+
+The analyze subcommands sit on top of canonical `parsed.jsonl`:
+
+```text
+parsed.jsonl (canonical)
+    -> analyze tokens     -> token_stats.json
+    -> analyze metrics    -> metrics.json
+    -> analyze stats      -> aggregation / exploration
+    -> analyze datasheet  -> report layer (Markdown or JSON)
+```
+
+Recommended workflow when you want the full analyze stack:
 
 1. parse the provider export into canonical `parsed.jsonl`
 2. run `analyze tokens` to write `token_stats.json`
 3. run `analyze metrics` to write `metrics.json`
+4. use `analyze stats` for exploratory aggregation
+5. use `analyze datasheet` for appendix-ready reporting
 
-`analyze stats`, `analyze datasheet`, and `analyze timeline` can be run directly
-on `parsed.jsonl`.
-`analyze stats` now also emits an additive research-oriented summary section in
-text and JSON output for temporal, turn-taking, safety, and lightweight
-structural aggregates.
-`analyze datasheet` renders those same research-oriented concepts as a concise,
-appendix-ready Markdown summary, with optional JSON output.
+`analyze stats`, `analyze datasheet`, and `analyze timeline` can run directly on
+canonical `parsed.jsonl`. They do not require sidecars.
 
 Data source policy:
 
-- `analyze stats` computes its results from canonical `parsed.jsonl`
-- `analyze datasheet` is also anchored to canonical `parsed.jsonl`
-- it may opportunistically reuse existing `thread_stats.json` and `metrics.json`
-  sidecars when present
-- its additive research summary may opportunistically reuse existing `metrics.json`
-  sidecars for thread-level safety counts when present
-- if those sidecars are missing, safety aggregates are recomputed
-  deterministically from canonical assistant text
-- `thread_stats.json` is not used as an input today
-- a future implementation may use `thread_stats.json` as a cache or optimization
-- canonical correctness for stats must still come from `parsed.jsonl`
+- canonical correctness remains anchored to `parsed.jsonl`
+- `analyze metrics` requires sibling `token_stats.json`
+- `analyze stats` computes from canonical `parsed.jsonl`
+- `analyze datasheet` may opportunistically reuse existing `thread_stats.json`
+  and `metrics.json` sidecar artifacts when present
+- when those sidecars are missing or unusable, `analyze datasheet` falls back
+  deterministically to canonical `parsed.jsonl`
+- `analyze stats` research-oriented safety aggregates may also reuse
+  `metrics.json` when present, but still work without it
 
 CLI consistency note:
 
@@ -112,6 +119,16 @@ CLI consistency note:
   default, supports `--json`, and can write the rendered result via `--out`
 - `analyze tokens` and `analyze metrics` are sidecar builders: they write per-thread JSON artifacts next to each `parsed.jsonl` and use `--skip-existing` instead of presentation flags
 - `analyze sqlite-build` writes a single `analysis.db` index artifact and uses `--overwrite` for rebuild control
+
+## When To Use Which Command
+
+Use:
+
+- `analyze stats` for aggregation and exploratory summaries
+- `analyze metrics` for deterministic per-thread `metrics.json`
+- `analyze datasheet` for concise appendix-ready Markdown or JSON
+- `analyze timeline` for time-bucketed activity summaries
+- `analyze sqlite-build` for an optional SQLite index
 
 Config boundary note:
 
@@ -149,7 +166,8 @@ The metrics heuristics are deterministic and local:
 Analyzer i18n is intentionally narrow:
 
 - locale-backed YAML resources only affect heuristic inputs such as refusal and revision cues
-- the human-readable text renderers for `analyze stats` and `analyze timeline` are intentionally English-only
+- the human-readable text renderers for `analyze stats`, `analyze datasheet`,
+  and `analyze timeline` are intentionally English-only
 - structured JSON output and schema keys remain English for tooling stability
 
 This is a best-effort design boundary, not a missing translation pass.
@@ -190,6 +208,14 @@ The additive `analyze stats` research summary is intentionally lightweight:
   existing `metrics.json` when present but still working without it
 - structural aggregates use simple local heuristics such as `content.parts`
   length and fenced code block markers; they are not a Markdown or multimodal parser
+
+`analyze datasheet` builds on those same deterministic concepts, but presents
+them as a stable report layer:
+
+- Markdown by default, JSON with `--json`
+- appendix-ready section structure
+- opportunistic sidecar artifact reuse
+- canonical `parsed.jsonl` fallback when sidecars are missing
 
 This layer should remain:
 
