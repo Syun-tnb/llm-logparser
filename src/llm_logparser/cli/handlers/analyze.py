@@ -6,6 +6,29 @@ from llm_logparser.cli.common import validate_path, write_or_print
 from llm_logparser.core.i18n import _
 
 
+def _log_sidecar_dry_run_summary(
+    logger: logging.Logger,
+    *,
+    artifact_name: str,
+    result: dict,
+) -> None:
+    logger.info(_("runtime.analyze.dry_run.preview", artifact_name=artifact_name))
+    logger.info(
+        _("runtime.analyze.dry_run.detected_threads", count=result["detected_threads"])
+    )
+    logger.info(
+        _("runtime.analyze.dry_run.existing_sidecars", count=result["existing_threads"])
+    )
+    logger.info(_("runtime.analyze.dry_run.new_sidecars", count=result["new_threads"]))
+    logger.info(
+        _("runtime.analyze.dry_run.rebuild_sidecars", count=result["rebuild_threads"])
+    )
+    logger.info(
+        _("runtime.analyze.dry_run.skipped_sidecars", count=result["skipped_threads"])
+    )
+    logger.info(_("runtime.analyze.dry_run.no_writes"))
+
+
 def run_analyze_metrics(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_metrics import (
         MetricsDependencyError,
@@ -17,10 +40,18 @@ def run_analyze_metrics(args, logger: logging.Logger) -> None:
         result = analyze_metrics(
             input_path,
             skip_existing=args.skip_existing,
+            dry_run=args.dry_run,
         )
     except MetricsDependencyError as exc:
-        logger.error(str(exc))
+        logger.error(_("runtime.error.with_code", code=exc.code, detail=str(exc)))
         raise SystemExit(2) from None
+    if args.dry_run:
+        _log_sidecar_dry_run_summary(
+            logger,
+            artifact_name="metrics.json",
+            result=result,
+        )
+        return
     logger.info(_("runtime.analyze.metrics_written", threads=result["threads"]))
 
 
@@ -33,7 +64,15 @@ def run_analyze_tokens(args, logger: logging.Logger) -> None:
         model_override=args.model,
         encoding_override=args.encoding,
         skip_existing=args.skip_existing,
+        dry_run=args.dry_run,
     )
+    if args.dry_run:
+        _log_sidecar_dry_run_summary(
+            logger,
+            artifact_name="token_stats.json",
+            result=result,
+        )
+        return
     logger.info(_("runtime.analyze.tokens_written", threads=result["threads"]))
 
 

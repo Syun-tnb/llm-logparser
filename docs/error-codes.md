@@ -37,7 +37,14 @@ is planned for a future release.
 | LP4xxx | Normalization/schema | Planned |
 | LP5xxx | Output/splitting | Planned |
 | LP6xxx | i18n/locale | Planned |
+| LP7xxx | Analyze / artifacts / dependency errors | **Implemented** — `LP7100` (metrics dependency missing) |
 | LP9xxx | Unexpected internal | Planned |
+
+## LP7xxx Analyze / Artifacts / Dependency Errors
+
+| Code | Meaning | Current CLI Behavior |
+|------|---------|----------------------|
+| `LP7100` | Metrics dependency missing | Emitted when `analyze metrics` requires sibling `token_stats.json` that does not exist. CLI exits with code `2` and keeps the existing actionable hint to run `analyze tokens` first. |
 
 ## Exit Codes
 
@@ -46,4 +53,3 @@ is planned for a future release.
 - `3`: permission error
 - `4`: chain-mode directory error
 - `99`: unexpected error
-

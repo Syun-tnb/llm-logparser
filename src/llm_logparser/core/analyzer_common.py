@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Callable
 from typing import Any
 
 from .l1_derivation import (
@@ -118,3 +119,42 @@ def write_json_artifact(path: Path, artifact: dict[str, Any]) -> Path:
     tmp.write_text(render_artifact_json(artifact), encoding="utf-8")
     tmp.replace(path)
     return path
+
+
+def plan_sidecar_actions(
+    parsed_files: list[Path],
+    artifact_path_resolver: Callable[[Path], Path],
+    *,
+    skip_existing: bool,
+) -> dict[str, Any]:
+    planned_actions: list[tuple[Path, Path]] = []
+    existing_artifacts: list[Path] = []
+    new_artifacts: list[Path] = []
+    rebuild_artifacts: list[Path] = []
+    skipped_artifacts: list[Path] = []
+
+    for parsed_path in parsed_files:
+        artifact_path = artifact_path_resolver(parsed_path)
+        if artifact_path.exists():
+            existing_artifacts.append(artifact_path)
+            if skip_existing:
+                skipped_artifacts.append(artifact_path)
+                continue
+            rebuild_artifacts.append(artifact_path)
+        else:
+            new_artifacts.append(artifact_path)
+
+        planned_actions.append((parsed_path, artifact_path))
+
+    return {
+        "detected_threads": len(parsed_files),
+        "planned_actions": planned_actions,
+        "existing_artifacts": existing_artifacts,
+        "existing_threads": len(existing_artifacts),
+        "new_artifacts": new_artifacts,
+        "new_threads": len(new_artifacts),
+        "rebuild_artifacts": rebuild_artifacts,
+        "rebuild_threads": len(rebuild_artifacts),
+        "skipped_artifacts": skipped_artifacts,
+        "skipped_threads": len(skipped_artifacts),
+    }

@@ -33,6 +33,7 @@ messages:
   cli.analyze.opt.json.help: Emit JSON instead of human-readable text
   cli.analyze.opt.out.help: Write the rendered result to a file
   cli.analyze.opt.skip_existing.help: Skip threads whose sidecar already exists. By default, existing sidecars are rebuilt and overwritten.
+  cli.analyze.opt.dry_run.help: Preview sidecar generation without writing any files
   cli.analyze.stats.help: Compute deterministic conversation statistics from parsed JSONL
   cli.analyze.stats.opt.per_thread.help: Include per-thread rows in human-readable output
   cli.analyze.stats.opt.top.help: Limit the number of per-thread rows after sorting
@@ -66,6 +67,7 @@ messages:
   error.path_not_found: "Path does not exist: {path}"
   error.path_expected_file: "File path expected: {path}"
   error.path_expected_dir: "Directory path expected: {path}"
+  runtime.error.with_code: "[{code}] {detail}"
   error.missing_required: "Missing required options for '{command}':"
   error.missing_required_hint.provider: "--provider / config: provider"
   error.missing_required_hint.input: "--input / config: input.path, input.paths, input.parsed(export)"
@@ -134,6 +136,13 @@ messages:
     token_stats.json not found next to parsed.jsonl: {path}
     Please run `analyze tokens` before running `analyze metrics`.
   runtime.analyze.tokens_written: "token_stats.json written for {threads} thread(s)"
+  runtime.analyze.dry_run.preview: "[dry-run] Previewing {artifact_name} generation"
+  runtime.analyze.dry_run.detected_threads: "Detected threads: {count}"
+  runtime.analyze.dry_run.existing_sidecars: "Existing sidecars: {count}"
+  runtime.analyze.dry_run.new_sidecars: "New sidecars to create: {count}"
+  runtime.analyze.dry_run.rebuild_sidecars: "Existing sidecars to rebuild: {count}"
+  runtime.analyze.dry_run.skipped_sidecars: "Skipped existing sidecars: {count}"
+  runtime.analyze.dry_run.no_writes: "No files written."
   runtime.analyze.top_non_negative: "--top must be >= 0"
   runtime.analyze.sqlite_built: "analysis.db built: {db_path} (threads={threads} messages={messages} windows={windows})"
   runtime.chain.provider: "[chain] Provider : {provider}"

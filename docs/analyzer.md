@@ -100,6 +100,7 @@ Incremental sidecar policy:
 
 - default behavior: existing `token_stats.json` and `metrics.json` sidecars are rebuilt and overwritten
 - `--skip-existing`: leave an existing sidecar untouched and only build missing sidecars
+- `--dry-run`: preview detected threads plus planned create/rebuild/skip counts without writing files
 - `analyze metrics --skip-existing` still requires pre-existing `token_stats.json` for any thread whose `metrics.json` is missing
 
 The refusal and revision phrase lists are locale-backed and loaded from

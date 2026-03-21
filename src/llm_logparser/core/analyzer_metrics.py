@@ -10,6 +10,7 @@ from .analyzer_common import (
     normalize_analysis_text,
     normalized_similarity,
     normalize_role,
+    plan_sidecar_actions,
     render_artifact_json,
     resolve_canonical_text,
     safe_average,
@@ -39,6 +40,8 @@ REVISION_SIMILARITY_THRESHOLD = 0.78
 
 class MetricsDependencyError(RuntimeError):
     """Raised when analyze metrics is missing a required prerequisite artifact."""
+
+    code = "LP7100"
 
 
 def _load_token_stats(parsed_path: Path) -> dict[str, Any]:
@@ -351,23 +354,34 @@ def metrics_artifact_path(parsed_path: Path) -> Path:
     return parsed_path.with_name("metrics.json")
 
 
-def analyze_metrics(input_path: Path, *, skip_existing: bool = False) -> dict[str, Any]:
+def analyze_metrics(
+    input_path: Path,
+    *,
+    skip_existing: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
     parsed_files = discover_parsed_jsonl(input_path)
+    plan = plan_sidecar_actions(
+        parsed_files,
+        metrics_artifact_path,
+        skip_existing=skip_existing,
+    )
     written_artifacts: list[Path] = []
-    skipped_artifacts: list[Path] = []
 
-    for parsed_path in parsed_files:
-        artifact_path = metrics_artifact_path(parsed_path)
-        if skip_existing and artifact_path.exists():
-            skipped_artifacts.append(artifact_path)
-            continue
-
+    for parsed_path, artifact_path in plan["planned_actions"]:
         artifact = build_metrics_artifact(parsed_path)
+        if dry_run:
+            continue
         written_artifacts.append(write_json_artifact(artifact_path, artifact))
 
     return {
         "threads": len(written_artifacts),
         "artifacts": written_artifacts,
-        "skipped_threads": len(skipped_artifacts),
-        "skipped_artifacts": skipped_artifacts,
+        "detected_threads": plan["detected_threads"],
+        "existing_threads": plan["existing_threads"],
+        "new_threads": plan["new_threads"],
+        "rebuild_threads": plan["rebuild_threads"],
+        "skipped_threads": plan["skipped_threads"],
+        "skipped_artifacts": plan["skipped_artifacts"],
+        "dry_run": dry_run,
     }

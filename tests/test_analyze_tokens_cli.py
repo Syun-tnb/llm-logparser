@@ -480,6 +480,8 @@ def test_analyze_tokens_skip_existing_supports_directory_input(tmp_path, monkeyp
         monkeypatch,
         [
             "llm-logparser",
+            "--locale",
+            "en-US",
             "analyze",
             "tokens",
             "--input",
@@ -492,3 +494,48 @@ def test_analyze_tokens_skip_existing_supports_directory_input(tmp_path, monkeyp
 
     assert parsed_a.with_name("token_stats.json").read_text(encoding="utf-8") == original
     assert _load_artifact(parsed_b)["conversation_id"] == "conv-b"
+
+
+def test_analyze_tokens_dry_run_does_not_write_and_reports_counts(
+    tmp_path, monkeypatch, caplog
+):
+    root = tmp_path / "parsed"
+    parsed_a = root / "a" / "thread-a" / "parsed.jsonl"
+    parsed_b = root / "b" / "thread-b" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_a,
+        "conv-a",
+        [{"message_id": "m1", "role": "user", "text": "one"}],
+    )
+    _write_parsed_jsonl(
+        parsed_b,
+        "conv-b",
+        [{"message_id": "m1", "role": "assistant", "text": "two"}],
+    )
+    _write_text(parsed_a.with_name("token_stats.json"), '{"sentinel": "preserve-a"}\n')
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "--locale",
+            "en-US",
+            "analyze",
+            "tokens",
+            "--input",
+            str(root),
+            "--encoding",
+            "o200k_base",
+            "--skip-existing",
+            "--dry-run",
+        ],
+    )
+
+    assert parsed_a.with_name("token_stats.json").read_text(encoding="utf-8") == '{"sentinel": "preserve-a"}\n'
+    assert not parsed_b.with_name("token_stats.json").exists()
+    assert "Previewing token_stats.json generation" in caplog.text
+    assert "Detected threads: 2" in caplog.text
+    assert "Existing sidecars: 1" in caplog.text
+    assert "New sidecars to create: 1" in caplog.text
+    assert "Skipped existing sidecars: 1" in caplog.text
+    assert "No files written." in caplog.text

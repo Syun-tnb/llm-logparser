@@ -11,6 +11,7 @@ from .analyzer_common import (
     ROLE_ORDER,
     UNKNOWN_ROLE,
     normalize_role,
+    plan_sidecar_actions,
     render_artifact_json,
     resolve_canonical_text,
     string_or_none,
@@ -292,27 +293,34 @@ def analyze_tokens(
     model_override: str | None = None,
     encoding_override: str | None = None,
     skip_existing: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     parsed_files = discover_parsed_jsonl(input_path)
+    plan = plan_sidecar_actions(
+        parsed_files,
+        token_stats_artifact_path,
+        skip_existing=skip_existing,
+    )
     written_artifacts: list[Path] = []
-    skipped_artifacts: list[Path] = []
 
-    for parsed_path in parsed_files:
-        artifact_path = token_stats_artifact_path(parsed_path)
-        if skip_existing and artifact_path.exists():
-            skipped_artifacts.append(artifact_path)
-            continue
-
+    for parsed_path, artifact_path in plan["planned_actions"]:
         artifact = build_token_stats_artifact(
             parsed_path,
             model_override=model_override,
             encoding_override=encoding_override,
         )
+        if dry_run:
+            continue
         written_artifacts.append(write_json_artifact(artifact_path, artifact))
 
     return {
         "threads": len(written_artifacts),
         "artifacts": written_artifacts,
-        "skipped_threads": len(skipped_artifacts),
-        "skipped_artifacts": skipped_artifacts,
+        "detected_threads": plan["detected_threads"],
+        "existing_threads": plan["existing_threads"],
+        "new_threads": plan["new_threads"],
+        "rebuild_threads": plan["rebuild_threads"],
+        "skipped_threads": plan["skipped_threads"],
+        "skipped_artifacts": plan["skipped_artifacts"],
+        "dry_run": dry_run,
     }

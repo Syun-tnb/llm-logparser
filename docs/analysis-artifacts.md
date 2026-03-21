@@ -46,6 +46,11 @@ A core design principle is:
 
 > **Later stages must never require re-running earlier stages if artifacts already exist.**
 
+> [!NOTE]
+> `analyze stats` currently recomputes from canonical `parsed.jsonl` rather than
+> consuming `thread_stats.json`. This keeps correctness anchored to the source
+> of truth today; a future optimization may use `thread_stats.json` when present.
+
 
 ---
 
@@ -369,6 +374,7 @@ Contract:
 - incremental behavior:
   - default CLI behavior rebuilds and overwrites an existing `token_stats.json`
   - `analyze tokens --skip-existing` leaves an existing `token_stats.json` untouched
+  - `analyze tokens --dry-run` previews detected threads and planned sidecar actions without writing files
 
 ### `metrics.json`
 
@@ -408,6 +414,7 @@ Contract:
   - default CLI behavior rebuilds and overwrites an existing `metrics.json`
   - `analyze metrics --skip-existing` leaves an existing `metrics.json` untouched
   - when `metrics.json` is missing, `token_stats.json` must already exist from `analyze tokens`
+  - `analyze metrics --dry-run` previews detected threads and planned sidecar actions without writing files
 
 Reasons:
 

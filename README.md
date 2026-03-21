@@ -110,6 +110,14 @@ uv run llm-logparser analyze tokens \
   --input artifacts/output/openai
 ```
 
+Preview sidecar generation before writing:
+
+```bash
+uv run llm-logparser analyze tokens \
+  --input artifacts/output/openai \
+  --dry-run
+```
+
 Then build per-thread metrics sidecars from `parsed.jsonl` plus `token_stats.json`:
 
 ```bash
@@ -367,7 +375,8 @@ uv run llm-logparser analyze tokens \
   --input <parsed.jsonl-or-directory> \
   [--model <model>] \
   [--encoding <tiktoken-encoding>] \
-  [--skip-existing]
+  [--skip-existing] \
+  [--dry-run]
 ```
 
 Current tokenizer backend:
@@ -382,6 +391,7 @@ Runtime caveat:
 * downloaded encoding data is cached locally afterward
 * subsequent token analysis runs use the local cache
 * existing `token_stats.json` sidecars are rebuilt by default; `--skip-existing` only fills in missing sidecars
+* `--dry-run` previews sidecar generation without writing files
 
 ### Analyze Metrics
 
@@ -390,7 +400,8 @@ Build deterministic per-thread `metrics.json` sidecars from `parsed.jsonl` plus 
 ```bash
 uv run llm-logparser analyze metrics \
   --input <parsed.jsonl-or-directory> \
-  [--skip-existing]
+  [--skip-existing] \
+  [--dry-run]
 ```
 
 Run `analyze tokens` first so each thread already has a sibling `token_stats.json`.
@@ -403,6 +414,7 @@ Current metrics include:
 
 `metrics.json` requires `token_stats.json` to exist next to each `parsed.jsonl`.
 Existing `metrics.json` sidecars are rebuilt by default; `--skip-existing` only fills in missing sidecars.
+Use `--dry-run` to preview sidecar generation before writing.
 
 ### Analyze SQLite Build
 

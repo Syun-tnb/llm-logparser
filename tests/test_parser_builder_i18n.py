@@ -56,6 +56,7 @@ def test_analyze_metrics_help_mentions_token_stats_dependency(capsys):
     assert "token_stats.json" in help_text
     assert "Run `analyze tokens` first." in help_text
     assert "--skip-existing" in help_text
+    assert "--dry-run" in help_text
     assert "rebuilt and overwritten" in help_text
 
 
@@ -69,4 +70,5 @@ def test_analyze_tokens_help_mentions_skip_existing_policy(capsys):
     assert exc.value.code == 0
     help_text = capsys.readouterr().out
     assert "--skip-existing" in help_text
+    assert "--dry-run" in help_text
     assert "rebuilt and overwritten" in help_text

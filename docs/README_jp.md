@@ -158,6 +158,14 @@ uv run llm-logparser analyze tokens \
   --input artifacts/output/openai
 ```
 
+書き込む前に sidecar 生成をプレビューしたい場合は、`--dry-run` を使います。
+
+```bash
+uv run llm-logparser analyze tokens \
+  --input artifacts/output/openai \
+  --dry-run
+```
+
 続いて `metrics.json` を生成します。
 
 ```bash
@@ -365,7 +373,8 @@ uv run llm-logparser analyze tokens \
   --input <parsed.jsonl-or-directory> \
   [--model <model>] \
   [--encoding <tiktoken-encoding>] \
-  [--skip-existing]
+  [--skip-existing] \
+  [--dry-run]
 ```
 
 このコマンドの特徴は次の通りです。
@@ -382,6 +391,7 @@ Tokenizer の現在のバックエンドは `tiktoken` です。
 - `--encoding` は provider / model 解決を上書きする
 - 初回利用時のみエンコーディング資産を取得するため、**一度だけネットワークアクセスが発生する可能性**がある
 - 取得後はローカルキャッシュが使われるため、それ以降の token counting 自体は local / deterministic に動作する
+- `--dry-run` を付けると、ファイルは書き込まずに sidecar 生成件数を確認できる
 
 ### `analyze metrics`
 
@@ -390,7 +400,8 @@ Tokenizer の現在のバックエンドは `tiktoken` です。
 ```bash
 uv run llm-logparser analyze metrics \
   --input <parsed.jsonl-or-directory> \
-  [--skip-existing]
+  [--skip-existing] \
+  [--dry-run]
 ```
 
 重要:
@@ -398,6 +409,7 @@ uv run llm-logparser analyze metrics \
 - `metrics.json` の生成には、各スレッド横の `token_stats.json` が必要です
 - そのため、通常は先に `analyze tokens` を実行します
 - これも sidecar builder であり、presentation output ではありません
+- `--dry-run` を付けると、書き込み前に sidecar 生成プレビューだけを実行できます
 
 含まれる代表的な内容:
 

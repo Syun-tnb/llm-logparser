@@ -37,6 +37,7 @@ messages:
   cli.analyze.opt.json.help: 人間向けテキストではなく JSON を出力する
   cli.analyze.opt.out.help: 描画結果をファイルに書き込む
   cli.analyze.opt.skip_existing.help: 既存のサイドカーがあるスレッドをスキップする。既定では既存サイドカーを再生成して上書きする。
+  cli.analyze.opt.dry_run.help: ファイルを書き込まずにサイドカー生成をプレビューする
   cli.analyze.stats.help: parsed JSONL から決定的な会話統計を計算する
   cli.analyze.stats.opt.per_thread.help: 人間向け出力にスレッドごとの行を含める
   cli.analyze.stats.opt.top.help: ソート後にスレッドごとの行数を制限する
@@ -63,9 +64,17 @@ messages:
   error.path: "パスエラー: {detail}"
   error.permission: "アクセス権限エラー: {detail}"
   error.unexpected: "予期しないエラー: {detail}"
+  runtime.error.with_code: "[{code}] {detail}"
   runtime.analyze.metrics.missing_token_stats: |-
     parsed.jsonl の隣に token_stats.json が見つかりません: {path}
     `analyze metrics` を実行する前に `analyze tokens` を実行してください。
+  runtime.analyze.dry_run.preview: "[dry-run] {artifact_name} 生成をプレビューしています"
+  runtime.analyze.dry_run.detected_threads: "検出したスレッド数: {count}"
+  runtime.analyze.dry_run.existing_sidecars: "既存サイドカー数: {count}"
+  runtime.analyze.dry_run.new_sidecars: "新規作成予定のサイドカー数: {count}"
+  runtime.analyze.dry_run.rebuild_sidecars: "再生成予定の既存サイドカー数: {count}"
+  runtime.analyze.dry_run.skipped_sidecars: "スキップした既存サイドカー数: {count}"
+  runtime.analyze.dry_run.no_writes: "ファイルは書き込まれていません。"
   error.path_not_found: "指定されたパスが存在しません: {path}"
   error.path_expected_file: "ファイルパスを指定してください: {path}"
   error.path_expected_dir: "ディレクトリパスを指定してください: {path}"

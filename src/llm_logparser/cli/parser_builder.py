@@ -262,6 +262,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=_("cli.analyze.opt.skip_existing.help"),
     )
+    analyze_tokens_cmd.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help=_("cli.analyze.opt.dry_run.help"),
+    )
 
     analyze_metrics_cmd = analyze_subparsers.add_parser(
         "metrics",
@@ -279,6 +285,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="skip_existing",
         action="store_true",
         help=_("cli.analyze.opt.skip_existing.help"),
+    )
+    analyze_metrics_cmd.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help=_("cli.analyze.opt.dry_run.help"),
     )
 
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
