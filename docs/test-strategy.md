@@ -7,6 +7,28 @@ uv sync --extra dev
 uv run pytest
 ```
 
+## Suite Categories
+
+The pytest suite is grouped with lightweight markers so contributors can choose
+the right confidence level for local work and releases:
+
+* `unit`: isolated logic and helper coverage
+* `cli`: parser/handler/command-path coverage
+* `contract`: machine-readable artifact/schema coverage
+* `integration`: deterministic end-to-end or subsystem pipeline coverage
+
+Recommended commands:
+
+```bash
+uv run pytest
+uv run pytest -m integration
+```
+
+Release gate:
+
+* run `uv run pytest -m integration` for the focused end-to-end pipeline checks
+* run `uv run pytest` before cutting a release for the full suite
+
 ## Golden Tests
 
 * Provider adapter samples → expected normalized JSONL output.
