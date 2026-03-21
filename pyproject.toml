@@ -4,9 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-logparser"
-version = "0.1.0"
+version = "1.3.0"
+description = "Privacy-first LLM chat log parser for deterministic local analysis and export"
+readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["jsonschema>=4", "PyYAML>=6", "tiktoken>=0.12.0"]
+
+authors = [
+  { name = "Syun-tnb" }
+]
+
+dependencies = [
+  "jsonschema>=4",
+  "PyYAML>=6"
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -18,10 +28,11 @@ where = ["src"]
 llm_logparser = ["i18n/*.yaml", "core/schemas/*.json"]
 
 [project.scripts]
-llm-logparser = "llm_logparser.cli.cli:main"  # 例：CLIがあるなら
+llm-logparser = "llm_logparser.cli.cli:main"
 llp = "llm_logparser.cli.cli:main"
 
 [project.optional-dependencies]
+tokens = ["tiktoken>=0.12.0"]
 dev = ["pytest"]
 
 [tool.pytest.ini_options]
