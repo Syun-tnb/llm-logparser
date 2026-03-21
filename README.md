@@ -64,6 +64,10 @@ uv sync
 uv sync --extra dev
 ```
 
+Command alias:
+
+`llp` is a convenience alias for `llm-logparser`. All existing commands work the same way under either executable, for example `llp parse ...` or `llp analyze ...`.
+
 Parse an export:
 
 ```bash

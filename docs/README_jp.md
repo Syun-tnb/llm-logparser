@@ -100,6 +100,10 @@ uv sync
 uv sync --extra dev
 ```
 
+コマンドエイリアス:
+
+`llp` は `llm-logparser` の簡易エイリアスです。既存のコマンドはどちらの実行名でも同じように利用でき、たとえば `llp parse ...` や `llp analyze ...` のように実行できます。
+
 ### 2. エクスポートを parse する
 
 ```bash
