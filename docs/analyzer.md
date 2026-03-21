@@ -117,9 +117,13 @@ The refusal and revision phrase lists are locale-backed and loaded from
 The metrics heuristics are deterministic and local:
 
 - refusal detection: normalized substring match on assistant messages only
+- safety intervention detection: normalized substring match on assistant messages using locale YAML caveat indicators
 - revision detection: normalized cue match or similarity match between consecutive user messages
 - short user messages are ignored for revision counting to reduce false positives
 - revision subtypes use cue precedence: correction, then clarification, then generic retry
+- `safety.refusal`: existing refusal-only heuristic and rates over assistant messages
+- `safety.intervention_count`: broader message-based count of assistant messages matching refusal or caveat indicators
+- `safety.trigger_types`: subtype totals for `refusal` and `caveat`; one message may increment both subtype counters while `intervention_count` increments once
 - `user_effort.rapid_revisions`: count assistant → next user transitions under `60` seconds
 - `user_effort.response_length_ratio`: `total_assistant_characters / total_user_characters`, or `null` when user characters are `0`
 - `user_effort.negative_deltas`: count assistant → next user transitions whose timestamp delta is negative

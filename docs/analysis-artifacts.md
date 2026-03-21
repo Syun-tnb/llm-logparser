@@ -396,17 +396,18 @@ Derived from `parsed.jsonl` plus `token_stats.json`.
 Includes:
 
 - deterministic ratio / token / character / distribution / diversity metrics
-- heuristic `safety.refusal`
+- heuristic `safety.refusal` plus additive safety intervention tracking
 - heuristic `interaction.revision`
 - additive `user_effort` metrics derived from assistant → user timing and character totals
 
-The refusal and revision phrase lists are locale-backed resources under
+The refusal, safety intervention, and revision phrase lists are locale-backed resources under
 `src/llm_logparser/i18n/` and fall back to `en-US` when a selected locale
 does not define the relevant key.
 
 Current heuristic behavior:
 
 - refusal detection is a normalized substring match on assistant messages only
+- intervention detection is a normalized substring match on assistant messages only
 - revision detection compares consecutive user messages using cue matching and normalized similarity
 - very short user messages are ignored for revision counting to reduce false positives
 - correction beats clarification when both subtype cues match; otherwise the revision is counted as a retry
@@ -424,7 +425,7 @@ Contract:
   `diversity`, `safety`, `interaction`
 - important nested structures:
   - `ratios`, `tokens`, `characters`, `distribution`, `diversity`: deterministic numeric summaries
-  - `safety`: refusal counters and refusal rate derived from locale-backed refusal indicators
+  - `safety`: refusal counters plus broader intervention counters/rates derived from locale-backed refusal and caveat indicators
   - `interaction`: revision, correction, clarification, and retry counters/rates derived from locale-backed cues
   - `user_effort`:
     - `rapid_revisions`: count of assistant → next user transitions whose delta is under `60` seconds
@@ -438,6 +439,8 @@ Contract:
   - if that tokenizer metadata is unavailable or unusable, diversity falls back to whitespace-split pieces for both the unique-token count and total-token denominator
   - `diversity.type_token_ratio` and `diversity.unique_token_ratio` currently use the same formula: `unique_units / total_units`
   - refusal and revision phrase matching uses normalized text (`casefold` + collapsed whitespace) against locale-backed YAML cues
+  - `safety.intervention_count` is message-based: each assistant message counts at most once even if it matches both refusal and caveat indicators
+  - `safety.trigger_types` exposes subtype totals for `refusal` and `caveat`, so one assistant message may increment both subtype counters
   - `user_effort.human_read_time` excludes assistant → user gaps larger than `3600` seconds from its summary statistics and records them as `excluded_long_gaps`
   - `user_effort.negative_deltas` counts assistant → user transitions with negative timestamp deltas, and those transitions are excluded from rapid-revision and read-time statistics
 - incremental behavior:

@@ -91,6 +91,12 @@ analysis:
       - "お答えできません"
       - "ポリシー"
       - "ガイドライン"
+  safety:
+    intervention_indicators:
+      - "重要なのは"
+      - "注意してください"
+      - "安全な代替案"
+      - "気をつけてください"
   correction:
     cues:
       - "違う"

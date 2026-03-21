@@ -86,7 +86,17 @@
       "required": ["refusal_count", "refusal_rate"],
       "properties": {
         "refusal_count": { "$ref": "#/$defs/nonNegativeInteger" },
-        "refusal_rate": { "$ref": "#/$defs/nonNegativeNumber" }
+        "refusal_rate": { "$ref": "#/$defs/nonNegativeNumber" },
+        "intervention_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "intervention_rate": { "$ref": "#/$defs/nonNegativeNumber" },
+        "trigger_types": {
+          "type": "object",
+          "properties": {
+            "refusal": { "$ref": "#/$defs/nonNegativeInteger" },
+            "caveat": { "$ref": "#/$defs/nonNegativeInteger" }
+          },
+          "additionalProperties": true
+        }
       },
       "additionalProperties": true
     },

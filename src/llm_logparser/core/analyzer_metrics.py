@@ -27,6 +27,7 @@ from .l1_derivation import discover_parsed_jsonl, iter_parsed_records, ts_to_sec
 # lists in `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US`
 # handled by `get_resource_list()`.
 REFUSAL_INDICATORS_RESOURCE_KEY = "analysis.refusal.indicators"
+INTERVENTION_INDICATORS_RESOURCE_KEY = "analysis.safety.intervention_indicators"
 REVISION_CUES_RESOURCE_KEY = "analysis.revision.cues"
 CORRECTION_CUES_RESOURCE_KEY = "analysis.correction.cues"
 CLARIFICATION_CUES_RESOURCE_KEY = "analysis.clarification.cues"
@@ -140,6 +141,10 @@ def _load_refusal_indicators() -> list[str]:
     return _load_normalized_phrases(REFUSAL_INDICATORS_RESOURCE_KEY)
 
 
+def _load_intervention_indicators() -> list[str]:
+    return _load_normalized_phrases(INTERVENTION_INDICATORS_RESOURCE_KEY)
+
+
 def _load_revision_cues() -> list[str]:
     return _load_normalized_phrases(REVISION_CUES_RESOURCE_KEY)
 
@@ -209,6 +214,36 @@ def _classify_revisions(
         previous_text = current_text
 
     return counts
+
+
+def _classify_safety_interventions(
+    assistant_texts: list[str],
+    refusal_indicators: list[str],
+    intervention_indicators: list[str],
+) -> dict[str, Any]:
+    refusal_count = 0
+    intervention_count = 0
+    trigger_types = {
+        "refusal": 0,
+        "caveat": 0,
+    }
+
+    for text in assistant_texts:
+        refusal_matched = _matches_phrase(text, refusal_indicators)
+        caveat_matched = _matches_phrase(text, intervention_indicators)
+        if refusal_matched:
+            refusal_count += 1
+            trigger_types["refusal"] += 1
+        if caveat_matched:
+            trigger_types["caveat"] += 1
+        if refusal_matched or caveat_matched:
+            intervention_count += 1
+
+    return {
+        "refusal_count": refusal_count,
+        "intervention_count": intervention_count,
+        "trigger_types": trigger_types,
+    }
 
 
 def _timestamp_seconds(value: Any) -> float | None:
@@ -309,6 +344,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     token_stats = _load_token_stats(parsed_path)
     provider_id, conversation_id = detect_header_metadata(parsed_path)
     refusal_indicators = _load_refusal_indicators()
+    intervention_indicators = _load_intervention_indicators()
     revision_cues = _load_revision_cues()
     correction_cues = _load_correction_cues()
     clarification_cues = _load_clarification_cues()
@@ -318,10 +354,10 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     char_count_assistant = 0
     texts: list[str] = []
     user_texts: list[str] = []
+    assistant_texts: list[str] = []
     effort_messages: list[dict[str, Any]] = []
     message_count_user = 0
     message_count_assistant = 0
-    refusal_count = 0
 
     for row in iter_parsed_records(parsed_path):
         if row.get("record_type") != "message":
@@ -352,10 +388,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         elif role == "assistant":
             message_count_assistant += 1
             char_count_assistant += char_count
-            # Refusal is only counted on assistant turns. User text that echoes
-            # a refusal phrase is intentionally ignored.
-            if _matches_phrase(text, refusal_indicators):
-                refusal_count += 1
+            assistant_texts.append(text)
 
     if conversation_id is None:
         raise ValueError(f"parsed thread has no conversation_id: {parsed_path}")
@@ -377,6 +410,11 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     )
     revision_count = interaction_counts["revision_count"]
     user_effort = compute_user_effort(effort_messages)
+    safety_counts = _classify_safety_interventions(
+        assistant_texts,
+        refusal_indicators,
+        intervention_indicators,
+    )
 
     artifact = {
         "artifact_type": "metrics",
@@ -422,8 +460,17 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
             "unique_token_ratio": safe_ratio(unique_token_count, diversity_token_total),
         },
         "safety": {
-            "refusal_count": refusal_count,
-            "refusal_rate": safe_ratio(refusal_count, message_count_assistant),
+            "refusal_count": safety_counts["refusal_count"],
+            "refusal_rate": safe_ratio(
+                safety_counts["refusal_count"],
+                message_count_assistant,
+            ),
+            "intervention_count": safety_counts["intervention_count"],
+            "intervention_rate": safe_ratio(
+                safety_counts["intervention_count"],
+                message_count_assistant,
+            ),
+            "trigger_types": safety_counts["trigger_types"],
         },
         "interaction": {
             "revision_count": revision_count,

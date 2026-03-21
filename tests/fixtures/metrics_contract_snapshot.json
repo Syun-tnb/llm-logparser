@@ -36,7 +36,13 @@
   },
   "safety": {
     "refusal_count": 1,
-    "refusal_rate": 1.0
+    "refusal_rate": 1.0,
+    "intervention_count": 1,
+    "intervention_rate": 1.0,
+    "trigger_types": {
+      "caveat": 0,
+      "refusal": 1
+    }
   },
   "schema_version": "1.0",
   "tokens": {

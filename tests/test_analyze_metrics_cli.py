@@ -480,6 +480,9 @@ def test_analyze_metrics_detects_refusal_in_assistant_message(tmp_path, monkeypa
 
     assert metrics["safety"]["refusal_count"] == 1
     assert metrics["safety"]["refusal_rate"] == 1.0
+    assert metrics["safety"]["intervention_count"] == 1
+    assert metrics["safety"]["intervention_rate"] == 1.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 1, "caveat": 0}
 
 
 def test_analyze_metrics_refusal_count_stays_zero_without_match(tmp_path, monkeypatch):
@@ -497,6 +500,9 @@ def test_analyze_metrics_refusal_count_stays_zero_without_match(tmp_path, monkey
 
     assert metrics["safety"]["refusal_count"] == 0
     assert metrics["safety"]["refusal_rate"] == 0.0
+    assert metrics["safety"]["intervention_count"] == 0
+    assert metrics["safety"]["intervention_rate"] == 0.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 0}
 
 
 def test_analyze_metrics_does_not_count_user_refusal_like_text(tmp_path, monkeypatch):
@@ -518,6 +524,9 @@ def test_analyze_metrics_does_not_count_user_refusal_like_text(tmp_path, monkeyp
 
     assert metrics["safety"]["refusal_count"] == 0
     assert metrics["safety"]["refusal_rate"] == 0.0
+    assert metrics["safety"]["intervention_count"] == 0
+    assert metrics["safety"]["intervention_rate"] == 0.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 0}
 
 
 def test_analyze_metrics_computes_partial_refusal_rate(tmp_path, monkeypatch):
@@ -540,6 +549,9 @@ def test_analyze_metrics_computes_partial_refusal_rate(tmp_path, monkeypatch):
 
     assert metrics["safety"]["refusal_count"] == 1
     assert metrics["safety"]["refusal_rate"] == 0.5
+    assert metrics["safety"]["intervention_count"] == 1
+    assert metrics["safety"]["intervention_rate"] == 0.5
+    assert metrics["safety"]["trigger_types"] == {"refusal": 1, "caveat": 0}
 
 
 def test_analyze_metrics_uses_en_us_indicator_fallback_for_missing_locale(
@@ -567,6 +579,109 @@ def test_analyze_metrics_uses_en_us_indicator_fallback_for_missing_locale(
 
     assert metrics["safety"]["refusal_count"] == 1
     assert metrics["safety"]["refusal_rate"] == 1.0
+    assert metrics["safety"]["intervention_count"] == 1
+    assert metrics["safety"]["intervention_rate"] == 1.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 1, "caveat": 0}
+
+
+def test_analyze_metrics_detects_caveat_only_intervention(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-caveat-only" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-caveat-only",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain the risks."},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "It's important to note that you should validate the source first.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 0
+    assert metrics["safety"]["refusal_rate"] == 0.0
+    assert metrics["safety"]["intervention_count"] == 1
+    assert metrics["safety"]["intervention_rate"] == 1.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 1}
+
+
+def test_analyze_metrics_counts_both_trigger_types_in_one_message(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-safety-overlap" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-safety-overlap",
+        [
+            {"message_id": "m1", "role": "user", "text": "Help with this unsafe action."},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "I can't help with that request, but I can provide safer alternatives.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 1
+    assert metrics["safety"]["refusal_rate"] == 1.0
+    assert metrics["safety"]["intervention_count"] == 1
+    assert metrics["safety"]["intervention_rate"] == 1.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 1, "caveat": 1}
+
+
+def test_analyze_metrics_intervention_count_stays_zero_without_safety_signal(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-no-safety-signal" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-no-safety-signal",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "Here is a normal answer."},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["safety"]["refusal_count"] == 0
+    assert metrics["safety"]["refusal_rate"] == 0.0
+    assert metrics["safety"]["intervention_count"] == 0
+    assert metrics["safety"]["intervention_rate"] == 0.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 0}
+
+
+def test_analyze_metrics_uses_en_us_intervention_indicator_fallback_for_missing_locale(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-intervention-locale-fallback" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-intervention-locale-fallback",
+        [
+            {"message_id": "m1", "role": "user", "text": "Explain the issue."},
+            {
+                "message_id": "m2",
+                "role": "assistant",
+                "text": "Be careful when sharing personal data online.",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(
+        parsed,
+        monkeypatch,
+        metrics_args=["--locale", "fr-FR"],
+    )
+
+    assert metrics["safety"]["refusal_count"] == 0
+    assert metrics["safety"]["refusal_rate"] == 0.0
+    assert metrics["safety"]["intervention_count"] == 1
+    assert metrics["safety"]["intervention_rate"] == 1.0
+    assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 1}
 
 
 def test_analyze_metrics_detects_similarity_revision_across_assistant_gap(

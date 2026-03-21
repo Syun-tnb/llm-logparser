@@ -209,6 +209,12 @@ analysis:
       - "I can't help with that"
       - "I cannot provide"
       - "against policy"
+  safety:
+    intervention_indicators:
+      - "it's important to note"
+      - "however, you should be aware"
+      - "i can provide safer alternatives"
+      - "be careful when"
   correction:
     cues:
       - "no, that's not what I meant"
