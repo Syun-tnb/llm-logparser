@@ -23,6 +23,12 @@ def _iter_jsonl_objects(path: Path) -> Iterator[dict[str, Any]]:
             yield payload
 
 
+def _json_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+
+
 def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
     path = thread_dir / "message_windows.jsonl"
     if not path.exists():
@@ -37,6 +43,8 @@ def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 row.get("provider_id"),
                 row.get("conversation_id"),
                 row.get("window_id"),
+                _json_text(row.get("message_ids")),
+                _json_text(row.get("roles")),
                 row.get("message_count"),
                 row.get("char_count"),
                 row.get("ts_start"),
@@ -52,12 +60,14 @@ def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 provider_id,
                 conversation_id,
                 window_id,
+                message_ids,
+                roles,
                 message_count,
                 char_count,
                 ts_start,
                 ts_end,
                 text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             batch,
         )
@@ -71,12 +81,14 @@ def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 provider_id,
                 conversation_id,
                 window_id,
+                message_ids,
+                roles,
                 message_count,
                 char_count,
                 ts_start,
                 ts_end,
                 text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             batch,
         )

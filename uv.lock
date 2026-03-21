@@ -193,17 +193,19 @@ wheels = [
 
 [[package]]
 name = "llm-logparser"
-version = "0.1.0"
+version = "1.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
     { name = "pyyaml" },
-    { name = "tiktoken" },
 ]
 
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
+]
+tokens = [
+    { name = "tiktoken" },
 ]
 
 [package.metadata]
@@ -211,9 +213,9 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml", specifier = ">=6" },
-    { name = "tiktoken", specifier = ">=0.12.0" },
+    { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.12.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["tokens", "dev"]
 
 [[package]]
 name = "packaging"

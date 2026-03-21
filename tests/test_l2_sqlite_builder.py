@@ -9,6 +9,7 @@ from llm_logparser.cli.cli import main
 from llm_logparser.core.l1_derivation import ThreadMetrics, build_thread_stats_artifact
 from llm_logparser.core.message_windows import render_message_windows_jsonl
 from llm_logparser.l2_sqlite import build_analysis_db
+from llm_logparser.l2_sqlite.schema import SQLITE_SCHEMA_VERSION
 
 
 def _canonical_message(
@@ -92,11 +93,20 @@ def _dump_db(db_path: Path) -> dict[str, list[tuple]]:
     conn = sqlite3.connect(db_path)
     try:
         return {
+            "metadata": conn.execute(
+                """
+                SELECT schema_version, provider_id
+                FROM metadata
+                ORDER BY provider_id
+                """
+            ).fetchall(),
             "threads": conn.execute(
                 """
                 SELECT provider_id, conversation_id, message_count, user_messages,
-                       assistant_messages, other_roles, characters_total,
-                       first_timestamp, last_timestamp
+                       assistant_messages, other_roles, character_count,
+                       characters_total, characters_user, characters_assistant,
+                       other_role_breakdown, first_timestamp, last_timestamp,
+                       conversation_span_seconds
                 FROM threads
                 ORDER BY conversation_id
                 """
@@ -110,8 +120,8 @@ def _dump_db(db_path: Path) -> dict[str, list[tuple]]:
             ).fetchall(),
             "message_windows": conn.execute(
                 """
-                SELECT provider_id, conversation_id, window_id, message_count,
-                       char_count, ts_start, ts_end, text
+                SELECT provider_id, conversation_id, window_id, message_ids,
+                       roles, message_count, char_count, ts_start, ts_end, text
                 FROM message_windows
                 ORDER BY conversation_id, window_id
                 """
@@ -171,9 +181,73 @@ def test_l2_sqlite_cli_builds_database_from_fixture_threads(tmp_path, monkeypatc
 
     conn = sqlite3.connect(db_path)
     try:
+        assert _table_count(conn, "metadata") == 1
         assert _table_count(conn, "threads") == 2
         assert _table_count(conn, "messages") == 5
         assert _table_count(conn, "message_windows") == 2
+    finally:
+        conn.close()
+
+
+def test_l2_sqlite_builder_preserves_thread_and_window_fidelity(tmp_path):
+    root = _build_fixture_root(tmp_path)
+
+    result = build_analysis_db(root, "openai")
+    conn = sqlite3.connect(result["db_path"])
+    try:
+        metadata = conn.execute(
+            """
+            SELECT schema_version, provider_id
+            FROM metadata
+            """
+        ).fetchall()
+        assert metadata == [(SQLITE_SCHEMA_VERSION, "openai")]
+
+        threads = conn.execute(
+            """
+            SELECT conversation_id, character_count, characters_total,
+                   characters_user, characters_assistant, other_role_breakdown,
+                   first_timestamp, last_timestamp, conversation_span_seconds
+            FROM threads
+            ORDER BY conversation_id
+            """
+        ).fetchall()
+        assert threads == [
+            (
+                "conv-a",
+                21,
+                21,
+                5,
+                5,
+                '{"tool":1}',
+                1704067201000,
+                1704067203000,
+                2,
+            ),
+            (
+                "conv-b",
+                12,
+                12,
+                0,
+                6,
+                '{"system":1}',
+                1704067301000,
+                1704067302000,
+                1,
+            ),
+        ]
+
+        windows = conn.execute(
+            """
+            SELECT conversation_id, message_ids, roles
+            FROM message_windows
+            ORDER BY conversation_id, window_id
+            """
+        ).fetchall()
+        assert windows == [
+            ("conv-a", '["m1","m2","m3"]', '["user","assistant","tool"]'),
+            ("conv-b", '["m1","m2"]', '["system","assistant"]'),
+        ]
     finally:
         conn.close()
 

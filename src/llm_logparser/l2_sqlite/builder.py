@@ -7,7 +7,7 @@ from typing import Any
 from .ingest_messages import ingest_messages
 from .ingest_threads import ingest_thread_stats
 from .ingest_windows import ingest_message_windows
-from .schema import create_schema
+from .schema import create_schema, insert_metadata
 
 
 def _iter_thread_dirs(provider_dir: Path) -> list[Path]:
@@ -45,6 +45,7 @@ def build_analysis_db(
     conn = sqlite3.connect(db_path)
     try:
         create_schema(conn)
+        insert_metadata(conn, provider_id=provider_id)
         conn.commit()
 
         threads_inserted = 0
