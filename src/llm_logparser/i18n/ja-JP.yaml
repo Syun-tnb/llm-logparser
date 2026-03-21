@@ -43,6 +43,7 @@ messages:
   cli.analyze.stats.opt.top.help: ソート後にスレッドごとの行数を制限する
   cli.analyze.stats.opt.sort.help: スレッドごとの行のソート項目
   cli.analyze.stats.opt.include_role_breakdown.help: user / assistant 以外のロール内訳を含める
+  cli.analyze.datasheet.help: 正規化済み成果物から付録向けの決定的なデータセット要約を生成する
   cli.analyze.timeline.help: 時刻付きメッセージの活動を時間軸で集計する
   cli.analyze.timeline.opt.bucket.help: タイムライン集計のバケット幅
   cli.analyze.tokens.help: 正規化済み parsed JSONL から決定的な token_stats.json を生成する。既存サイドカーは既定で再生成して上書きする。

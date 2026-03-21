@@ -111,6 +111,24 @@ def run_analyze_stats(args, logger: logging.Logger) -> None:
     write_or_print(rendered, args.out)
 
 
+def run_analyze_datasheet(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_datasheet import (
+        build_datasheet_summary,
+        render_datasheet_json,
+        render_datasheet_markdown,
+    )
+
+    del logger
+    input_path = validate_path(args.input)
+    summary = build_datasheet_summary(input_path)
+    rendered = (
+        render_datasheet_json(summary)
+        if args.json
+        else render_datasheet_markdown(summary)
+    )
+    write_or_print(rendered, args.out)
+
+
 def run_analyze_timeline(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_timeline import (
         analyze_timeline,

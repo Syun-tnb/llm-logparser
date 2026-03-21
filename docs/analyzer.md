@@ -60,6 +60,7 @@ These analyses are fast, reproducible, and safe to run in any environment.
 Current Layer 1 implementations include:
 
 - `analyze stats`
+- `analyze datasheet`
 - `analyze timeline`
 - `analyze tokens`
 - `analyze metrics`
@@ -82,14 +83,20 @@ Recommended workflow:
 2. run `analyze tokens` to write `token_stats.json`
 3. run `analyze metrics` to write `metrics.json`
 
-`analyze stats` and `analyze timeline` can be run directly on `parsed.jsonl`.
+`analyze stats`, `analyze datasheet`, and `analyze timeline` can be run directly
+on `parsed.jsonl`.
 `analyze stats` now also emits an additive research-oriented summary section in
 text and JSON output for temporal, turn-taking, safety, and lightweight
 structural aggregates.
+`analyze datasheet` renders those same research-oriented concepts as a concise,
+appendix-ready Markdown summary, with optional JSON output.
 
 Data source policy:
 
 - `analyze stats` computes its results from canonical `parsed.jsonl`
+- `analyze datasheet` is also anchored to canonical `parsed.jsonl`
+- it may opportunistically reuse existing `thread_stats.json` and `metrics.json`
+  sidecars when present
 - its additive research summary may opportunistically reuse existing `metrics.json`
   sidecars for thread-level safety counts when present
 - if those sidecars are missing, safety aggregates are recomputed
@@ -101,6 +108,8 @@ Data source policy:
 CLI consistency note:
 
 - `analyze stats` and `analyze timeline` are presentation commands: they render terminal output, support `--json`, and can write the rendered result via `--out`
+- `analyze datasheet` is also a presentation command: it renders Markdown by
+  default, supports `--json`, and can write the rendered result via `--out`
 - `analyze tokens` and `analyze metrics` are sidecar builders: they write per-thread JSON artifacts next to each `parsed.jsonl` and use `--skip-existing` instead of presentation flags
 - `analyze sqlite-build` writes a single `analysis.db` index artifact and uses `--overwrite` for rebuild control
 
@@ -158,6 +167,8 @@ Typical metrics include:
 - revision heuristics
 - research-oriented `analyze stats` aggregates for pacing, turn-taking, safety,
   and lightweight message structure
+- appendix-ready `analyze datasheet` summaries built from the same deterministic
+  research-oriented aggregates
 
 Example outputs:
 

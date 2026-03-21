@@ -533,7 +533,7 @@ If it is missing, the system must still be able to recompute results from `parse
 
 # 8. Deterministic Analyzer Views
 
-The implemented `analyze stats` and `analyze timeline` commands perform
+The implemented `analyze stats`, `analyze datasheet`, and `analyze timeline` commands perform
 deterministic dataset-level aggregation and presentation-level processing.
 
 These commands operate on canonical input and **do not modify canonical parse results**.
@@ -559,11 +559,17 @@ and a matching compact text section. This summary remains deterministic and loca
 - structural aggregates are intentionally lightweight heuristics based on
   canonical message text and `content.parts`, including fenced code block detection
 
+`analyze datasheet` builds on the same research-oriented summary concepts, but
+renders them as an appendix-ready Markdown report by default, with optional JSON.
+It may opportunistically reuse existing `thread_stats.json` and `metrics.json`
+sidecars, but it must still work correctly from canonical `parsed.jsonl` alone.
+
 Example commands:
 
 ```
 
 llm-logparser analyze stats
+llm-logparser analyze datasheet
 llm-logparser analyze timeline
 
 ```

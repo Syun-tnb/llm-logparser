@@ -206,6 +206,29 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.stats.opt.include_role_breakdown.help"),
     )
 
+    analyze_datasheet_cmd = analyze_subparsers.add_parser(
+        "datasheet",
+        help=_("cli.analyze.datasheet.help"),
+    )
+    analyze_datasheet_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.input.help"),
+    )
+    analyze_datasheet_cmd.add_argument(
+        "--json",
+        dest="json",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    analyze_datasheet_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
+
     analyze_timeline_cmd = analyze_subparsers.add_parser(
         "timeline",
         help=_("cli.analyze.timeline.help"),

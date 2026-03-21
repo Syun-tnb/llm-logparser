@@ -39,6 +39,7 @@ messages:
   cli.analyze.stats.opt.top.help: Limit the number of per-thread rows after sorting
   cli.analyze.stats.opt.sort.help: Sort field for per-thread rows
   cli.analyze.stats.opt.include_role_breakdown.help: Include breakdown of roles other than user and assistant
+  cli.analyze.datasheet.help: Build a deterministic appendix-ready dataset summary from canonical parsed artifacts
   cli.analyze.timeline.help: Aggregate timestamped message activity over time
   cli.analyze.timeline.opt.bucket.help: Bucket size for timeline aggregation
   cli.analyze.tokens.help: Build deterministic token_stats.json sidecars from canonical parsed JSONL. Existing sidecars are rebuilt by default.
