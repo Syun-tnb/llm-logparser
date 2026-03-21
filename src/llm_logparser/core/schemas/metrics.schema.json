@@ -119,6 +119,7 @@
       "properties": {
         "rapid_revisions": { "$ref": "#/$defs/nonNegativeInteger" },
         "response_length_ratio": { "$ref": "#/$defs/nonNegativeNumberOrNull" },
+        "negative_deltas": { "$ref": "#/$defs/nonNegativeInteger" },
         "human_read_time": {
           "type": "object",
           "properties": {

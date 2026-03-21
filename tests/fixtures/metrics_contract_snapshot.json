@@ -54,6 +54,7 @@
       "sample_count": 1,
       "session_gap_seconds": 3600
     },
+    "negative_deltas": 0,
     "rapid_revisions": 1,
     "response_length_ratio": 0.3333
   }

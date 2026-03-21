@@ -202,6 +202,7 @@ def test_analyze_metrics_counts_rapid_revisions(tmp_path, monkeypatch):
         len("Draft answer") / len("Please change it"),
         4,
     )
+    assert metrics["user_effort"]["negative_deltas"] == 0
     assert metrics["user_effort"]["human_read_time"] == {
         "avg_seconds": 30,
         "median_seconds": 30,
@@ -227,6 +228,7 @@ def test_analyze_metrics_excludes_long_read_gaps(tmp_path, monkeypatch):
     _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
 
     assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["negative_deltas"] == 0
     assert metrics["user_effort"]["human_read_time"] == {
         "avg_seconds": None,
         "median_seconds": None,
@@ -256,6 +258,7 @@ def test_analyze_metrics_user_effort_handles_mixed_valid_and_excluded_pairs(
     _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
 
     assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["negative_deltas"] == 0
     assert metrics["user_effort"]["human_read_time"] == {
         "avg_seconds": 120,
         "median_seconds": 120,
@@ -300,6 +303,7 @@ def test_analyze_metrics_user_effort_ignores_missing_timestamps_safely(
     _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
 
     assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["negative_deltas"] == 0
     assert metrics["user_effort"]["human_read_time"] == {
         "avg_seconds": None,
         "median_seconds": None,
@@ -328,12 +332,41 @@ def test_analyze_metrics_user_effort_handles_non_alternating_roles(
     _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
 
     assert metrics["user_effort"]["rapid_revisions"] == 1
+    assert metrics["user_effort"]["negative_deltas"] == 0
     assert metrics["user_effort"]["human_read_time"] == {
         "avg_seconds": 30,
         "median_seconds": 30,
         "min_seconds": 30,
         "max_seconds": 30,
         "sample_count": 1,
+        "excluded_long_gaps": 0,
+        "session_gap_seconds": 3600,
+    }
+
+
+def test_analyze_metrics_tracks_negative_deltas_without_affecting_read_time(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-user-effort-negative-delta" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-effort-negative-delta",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "Draft answer", "ts": 200_000},
+            {"message_id": "m2", "role": "user", "text": "Please revise", "ts": 150_000},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["negative_deltas"] == 1
+    assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["human_read_time"] == {
+        "avg_seconds": None,
+        "median_seconds": None,
+        "min_seconds": None,
+        "max_seconds": None,
+        "sample_count": 0,
         "excluded_long_gaps": 0,
         "session_gap_seconds": 3600,
     }

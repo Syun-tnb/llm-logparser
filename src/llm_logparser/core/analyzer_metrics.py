@@ -236,6 +236,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
     total_user_characters = 0
     total_assistant_characters = 0
     rapid_revisions = 0
+    negative_deltas = 0
     read_time_samples: list[float] = []
     excluded_long_gaps = 0
     previous_message: dict[str, Any] | None = None
@@ -258,6 +259,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
                 if previous_ts is not None and current_ts is not None:
                     delta_seconds = current_ts - previous_ts
                     if delta_seconds < 0:
+                        negative_deltas += 1
                         previous_message = message
                         continue
                     if delta_seconds < RAPID_REVISION_SECONDS:
@@ -290,6 +292,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "rapid_revisions": rapid_revisions,
         "response_length_ratio": response_length_ratio,
+        "negative_deltas": negative_deltas,
         "human_read_time": {
             "avg_seconds": avg_seconds,
             "median_seconds": median_seconds,

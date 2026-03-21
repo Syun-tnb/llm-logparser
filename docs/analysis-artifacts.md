@@ -429,6 +429,7 @@ Contract:
   - `user_effort`:
     - `rapid_revisions`: count of assistant → next user transitions whose delta is under `60` seconds
     - `response_length_ratio`: `assistant_characters / user_characters`, or `null` when the user denominator is `0`
+    - `negative_deltas`: count of assistant → next user transitions whose timestamp delta is negative
     - `human_read_time`: summary of assistant → next user deltas with `avg_seconds`, `median_seconds`, `min_seconds`, `max_seconds`, `sample_count`, `excluded_long_gaps`, and the fixed threshold `session_gap_seconds`
 - reproducibility notes:
   - character-based metrics use the same canonical text fallback chain described above
@@ -438,6 +439,7 @@ Contract:
   - `diversity.type_token_ratio` and `diversity.unique_token_ratio` currently use the same formula: `unique_units / total_units`
   - refusal and revision phrase matching uses normalized text (`casefold` + collapsed whitespace) against locale-backed YAML cues
   - `user_effort.human_read_time` excludes assistant → user gaps larger than `3600` seconds from its summary statistics and records them as `excluded_long_gaps`
+  - `user_effort.negative_deltas` counts assistant → user transitions with negative timestamp deltas, and those transitions are excluded from rapid-revision and read-time statistics
 - incremental behavior:
   - default CLI behavior rebuilds and overwrites an existing `metrics.json`
   - `analyze metrics --skip-existing` leaves an existing `metrics.json` untouched
