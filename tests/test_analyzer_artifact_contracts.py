@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from llm_logparser.core.l1_derivation import build_thread_stats_artifact, derive_thread_metrics
 from llm_logparser.core.analyzer_metrics import build_metrics_artifact
 from llm_logparser.core.analyzer_tokens import (
     build_token_stats_artifact,
@@ -11,6 +12,7 @@ from llm_logparser.core.analyzer_tokens import (
 from llm_logparser.core.i18n import set_locale
 from llm_logparser.core.schema_validation import (
     load_metrics_validator,
+    load_thread_stats_validator,
     load_token_stats_validator,
 )
 
@@ -101,6 +103,30 @@ def test_token_stats_artifact_matches_schema_and_snapshot(tmp_path):
     )
 
 
+def test_thread_stats_artifact_matches_schema(tmp_path):
+    parsed = tmp_path / "thread-thread-stats-contract" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-thread-stats-contract",
+        [
+            {"message_id": "m1", "role": "user", "text": "alpha beta"},
+            {"message_id": "m2", "role": "assistant", "text": "gamma"},
+            {"message_id": "m3", "role": "system", "text": "delta"},
+        ],
+    )
+
+    metrics = derive_thread_metrics(parsed)
+    artifact = build_thread_stats_artifact(metrics, provider_id="openai")
+    validator = load_thread_stats_validator()
+
+    assert list(validator.iter_errors(artifact)) == []
+    assert artifact["artifact_type"] == "thread_stats"
+    assert artifact["provider_id"] == "openai"
+    assert artifact["conversation_id"] == "conv-thread-stats-contract"
+    assert artifact["character_count"] == len("alpha beta") + len("gamma") + len("delta")
+    assert artifact["other_role_breakdown"] == {"system": 1}
+
+
 def test_metrics_artifact_matches_schema_and_snapshot(tmp_path):
     set_locale("en-US")
     parsed = tmp_path / "thread-metrics-contract" / "parsed.jsonl"
@@ -173,6 +199,25 @@ def test_metrics_schema_requires_schema_version(tmp_path):
     artifact.pop("schema_version")
 
     validator = load_metrics_validator()
+    errors = list(validator.iter_errors(artifact))
+
+    assert errors
+    assert any(error.validator == "required" for error in errors)
+
+
+def test_thread_stats_schema_requires_other_role_breakdown(tmp_path):
+    parsed = tmp_path / "thread-thread-stats-invalid" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-thread-stats-invalid",
+        [{"message_id": "m1", "role": "user", "text": "hello"}],
+    )
+
+    metrics = derive_thread_metrics(parsed)
+    artifact = build_thread_stats_artifact(metrics, provider_id="openai")
+    artifact.pop("other_role_breakdown")
+
+    validator = load_thread_stats_validator()
     errors = list(validator.iter_errors(artifact))
 
     assert errors

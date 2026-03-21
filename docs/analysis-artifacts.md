@@ -117,6 +117,7 @@ L3/local-LLM pipelines without requiring a later thread rescan.
 
 Contract:
 
+- schema: `src/llm_logparser/core/schemas/thread_stats.schema.json`
 - purpose: stable parse-time thread-local summary for one canonical thread
 - required top-level fields emitted today:
   - `artifact_type`: always `thread_stats`
@@ -138,6 +139,12 @@ Contract:
   - it does not currently emit `schema_version`
   - analyzers may consume it as a lightweight summary in the future, but it is not the canonical source for analysis
   - analyzer correctness must still come from `parsed.jsonl`, even if `thread_stats.json` is missing or stale
+
+SQLite correspondence for downstream consumers:
+
+- `thread_stats.json.character_count` maps to SQLite `threads.characters_total`
+- `thread_stats.json.first_timestamp` / `last_timestamp` are stored in SQLite `threads.first_timestamp` / `last_timestamp` after conversion from UTC ISO 8601 text to epoch milliseconds
+- `thread_stats.json.other_role_breakdown` is not currently imported into SQLite; it remains available only in the JSON artifact
 
 `message_windows.jsonl` is a deterministic thread-local text artifact derived
 only from canonical message rows. The first version uses simple fixed-size
@@ -396,6 +403,8 @@ Current heuristic behavior:
 - revision detection compares consecutive user messages using cue matching and normalized similarity
 - very short user messages are ignored for revision counting to reduce false positives
 - correction beats clarification when both subtype cues match; otherwise the revision is counted as a retry
+- revision candidate minimum normalized length is `8`
+- normalized similarity threshold is `0.78`
 
 Contract:
 
@@ -410,6 +419,13 @@ Contract:
   - `ratios`, `tokens`, `characters`, `distribution`, `diversity`: deterministic numeric summaries
   - `safety`: refusal counters and refusal rate derived from locale-backed refusal indicators
   - `interaction`: revision, correction, clarification, and retry counters/rates derived from locale-backed cues
+- reproducibility notes:
+  - character-based metrics use the same canonical text fallback chain described above
+  - aggregate token fields are read from sibling `token_stats.json`, so metrics inherit the tokenizer basis selected by `analyze tokens`
+  - diversity prefers the same `tiktoken` encoding recorded in `token_stats.json.tokenizer.resolved_encoding`
+  - if that tokenizer metadata is unavailable or unusable, diversity falls back to whitespace-split pieces for both the unique-token count and total-token denominator
+  - `diversity.type_token_ratio` and `diversity.unique_token_ratio` currently use the same formula: `unique_units / total_units`
+  - refusal and revision phrase matching uses normalized text (`casefold` + collapsed whitespace) against locale-backed YAML cues
 - incremental behavior:
   - default CLI behavior rebuilds and overwrites an existing `metrics.json`
   - `analyze metrics --skip-existing` leaves an existing `metrics.json` untouched

@@ -69,6 +69,7 @@ MESSAGE_SCHEMA_NAME = "message.schema.json"
 MANIFEST_SCHEMA_NAME = "manifest.schema.json"
 TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
 METRICS_SCHEMA_NAME = "metrics.schema.json"
+THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +201,17 @@ def load_metrics_validator(
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / METRICS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_thread_stats_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    thread_stats.schema.json 用の validator を返す。
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / THREAD_STATS_SCHEMA_NAME
     return _make_validator(schema_path)
 
 
