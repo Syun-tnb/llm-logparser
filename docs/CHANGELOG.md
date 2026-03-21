@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [v1.3.0] - YYYY-MM-DD
+## [v1.3.0] - 2026-03-21
 
 ### Summary
 
@@ -167,3 +167,18 @@ This remains a SemVer **minor** release: substantial new capabilities without in
   * `3ed89f7`
 
 ---
+
+## [v1.0.0] - 2026-01-02
+
+Exporter MVP — first public release
+
+This release ships the first stable Exporter MVP.
+
+Highlights:
+- end-to-end parse → normalize → export pipeline
+- canonical JSONL format + Markdown contract
+- offline-first behavior (no telemetry)
+- chain mode and automatic splitting
+- schema validation (optional)
+
+This tag marks the start of the public history line (v1.x).

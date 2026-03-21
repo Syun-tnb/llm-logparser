@@ -2,7 +2,8 @@ name: Validate manifest
 on:
   push:
     paths:
-      - artifacts/manifest.json
+      - tests/fixtures/manifest.json
+      - src/llm_logparser/core/parser.py
       - src/llm_logparser/core/schemas/manifest.schema.json
       - .github/workflows/validate-manifest.yml
   workflow_dispatch:
@@ -18,12 +19,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install jsonschema
           python - <<'PY'
-          import json, sys
+          import json
+          from pathlib import Path
           from jsonschema import validate, Draft202012Validator
-          sch = json.load(open("src/llm_logparser/core/schemas/manifest.schema.json"))
-          man = json.load(open("tests/fixtures/manifest.json"))
+          schema_path = Path("src/llm_logparser/core/schemas/manifest.schema.json")
+          manifest_path = Path("tests/fixtures/manifest.json")
+          sch = json.loads(schema_path.read_text(encoding="utf-8"))
+          man = json.loads(manifest_path.read_text(encoding="utf-8"))
           Draft202012Validator.check_schema(sch)
           validate(instance=man, schema=sch)
-          print("manifest.json is valid ✅")
+          print(f"{manifest_path} is valid against {schema_path} ✅")
           PY
-
