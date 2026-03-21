@@ -240,11 +240,13 @@ Two record types exist:
 * Messages are sorted **chronologically**
   (`ts`, then `message_id` as a tie-breaker)
 
-* `text` is always present and equals:
+* `text` is part of the canonical normalized message contract and is expected to equal:
 
   ```
   "\n".join(content.parts)
   ```
+
+* adapters/parser own producing this normalized field in `parsed.jsonl`
 
 * Additional / unknown fields MAY appear
   (tools MUST ignore what they don’t understand)
@@ -256,6 +258,14 @@ Two record types exist:
 
 This schema is intentionally minimal and stable.
 Future fields may be added **without breaking compatibility** as long as these rules hold.
+
+> [!NOTE]
+> The Exporter includes a defensive fallback that reconstructs text from
+> `content.parts` when a malformed or incomplete normalized row is encountered.
+> This is a resilience measure only. It does not redefine the canonical JSONL
+> contract, does not create a second authoritative text-generation path, and
+> does not shift responsibility away from adapters/parser for emitting normalized
+> `text`.
 
 ---
 

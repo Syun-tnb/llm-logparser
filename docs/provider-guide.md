@@ -22,6 +22,12 @@
 | `message.content` | `content` | `{ "content_type": "…", "parts": [...] }` |
 | *(derived from parts)* | `text` | `"\n".join(content.parts)` |
 
+Adapter responsibility note:
+
+- adapters are the primary boundary that produces normalized top-level `text`
+- exporter-side reconstruction from `content.parts` is only a defensive fallback for malformed or incomplete normalized rows
+- that fallback does not redefine the canonical contract or move normalization responsibility out of adapters
+
 > **Note:** In the current MVP, normalization is handled internally by Python code.
 > The file `mapping.sample.yaml` in `docs/examples/` is provided only as a **sample** for future external mapping support.
 > It is **not yet used** by the CLI or parser.

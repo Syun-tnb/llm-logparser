@@ -247,7 +247,9 @@ Current locale behavior:
 
 Current command scope:
 
-* `parse`, `export`, `chain`, `extract`, and `analyze` can apply `profiles.<name>.locale`
+* `parse`, `export`, `chain`, and `extract` use broader profile-backed CLI defaults
+* `analyze` currently shares locale resolution only; analyze inputs and command-specific options should still be passed explicitly
+* `profiles.<name>.locale` can still affect `analyze` because locale resolution is shared across runtime commands
 * `config` can apply profile locale after config/profile resolution
 
 Analyzer text output policy:

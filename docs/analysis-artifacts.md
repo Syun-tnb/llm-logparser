@@ -213,6 +213,12 @@ Current shared responsibilities include:
 These helpers are intended to be reusable both from `analyze` subcommands and
 from future parse-time thread-local artifact generation.
 
+The primary contract remains the normalized top-level `text` emitted during
+parse. When downstream consumers fall back to `content.parts`, they are doing
+defensive recovery over an already normalized artifact. That fallback is for
+resilience only; it does not redefine canonical text semantics or move text
+normalization responsibility away from adapters/parser.
+
 For analyzer-generated sidecars, canonical text resolution is:
 
 1. use top-level `text` when it is a string
