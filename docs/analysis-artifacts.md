@@ -398,6 +398,7 @@ Includes:
 - deterministic ratio / token / character / distribution / diversity metrics
 - heuristic `safety.refusal`
 - heuristic `interaction.revision`
+- additive `user_effort` metrics derived from assistant → user timing and character totals
 
 The refusal and revision phrase lists are locale-backed resources under
 `src/llm_logparser/i18n/` and fall back to `en-US` when a selected locale
@@ -425,6 +426,10 @@ Contract:
   - `ratios`, `tokens`, `characters`, `distribution`, `diversity`: deterministic numeric summaries
   - `safety`: refusal counters and refusal rate derived from locale-backed refusal indicators
   - `interaction`: revision, correction, clarification, and retry counters/rates derived from locale-backed cues
+  - `user_effort`:
+    - `rapid_revisions`: count of assistant → next user transitions whose delta is under `60` seconds
+    - `response_length_ratio`: `assistant_characters / user_characters`, or `null` when the user denominator is `0`
+    - `human_read_time`: summary of assistant → next user deltas with `avg_seconds`, `median_seconds`, `min_seconds`, `max_seconds`, `sample_count`, `excluded_long_gaps`, and the fixed threshold `session_gap_seconds`
 - reproducibility notes:
   - character-based metrics use the same canonical text fallback chain described above
   - aggregate token fields are read from sibling `token_stats.json`, so metrics inherit the tokenizer basis selected by `analyze tokens`
@@ -432,6 +437,7 @@ Contract:
   - if that tokenizer metadata is unavailable or unusable, diversity falls back to whitespace-split pieces for both the unique-token count and total-token denominator
   - `diversity.type_token_ratio` and `diversity.unique_token_ratio` currently use the same formula: `unique_units / total_units`
   - refusal and revision phrase matching uses normalized text (`casefold` + collapsed whitespace) against locale-backed YAML cues
+  - `user_effort.human_read_time` excludes assistant → user gaps larger than `3600` seconds from its summary statistics and records them as `excluded_long_gaps`
 - incremental behavior:
   - default CLI behavior rebuilds and overwrites an existing `metrics.json`
   - `analyze metrics --skip-existing` leaves an existing `metrics.json` untouched

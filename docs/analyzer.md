@@ -74,6 +74,7 @@ Current Layer 1 implementations include:
 - ratio / token / character / distribution / diversity metrics
 - heuristic `safety.refusal`
 - heuristic `interaction.revision`
+- additive `user_effort` metrics derived from assistant → user timing and text length
 
 Recommended workflow:
 
@@ -119,6 +120,9 @@ The metrics heuristics are deterministic and local:
 - revision detection: normalized cue match or similarity match between consecutive user messages
 - short user messages are ignored for revision counting to reduce false positives
 - revision subtypes use cue precedence: correction, then clarification, then generic retry
+- `user_effort.rapid_revisions`: count assistant → next user transitions under `60` seconds
+- `user_effort.response_length_ratio`: `total_assistant_characters / total_user_characters`, or `null` when user characters are `0`
+- `user_effort.human_read_time`: assistant → next user deltas, excluding gaps over `3600` seconds from summary stats and counting them separately as `excluded_long_gaps`
 - phrase lists come from locale YAML resources and remain auditable/editable on disk
 
 Analyzer i18n is intentionally narrow:

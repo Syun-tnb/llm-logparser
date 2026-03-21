@@ -184,6 +184,161 @@ def test_analyze_metrics_calculates_ratios_and_character_counts(tmp_path, monkey
     assert metrics["ratios"]["assistant_to_user_ratio"] == 0.5
 
 
+def test_analyze_metrics_counts_rapid_revisions(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-rapid-revision" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-rapid-revision",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "Draft answer", "ts": 1_704_067_200_000},
+            {"message_id": "m2", "role": "user", "text": "Please change it", "ts": 1_704_067_230_000},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["rapid_revisions"] == 1
+    assert metrics["user_effort"]["response_length_ratio"] == round(
+        len("Draft answer") / len("Please change it"),
+        4,
+    )
+    assert metrics["user_effort"]["human_read_time"] == {
+        "avg_seconds": 30,
+        "median_seconds": 30,
+        "min_seconds": 30,
+        "max_seconds": 30,
+        "sample_count": 1,
+        "excluded_long_gaps": 0,
+        "session_gap_seconds": 3600,
+    }
+
+
+def test_analyze_metrics_excludes_long_read_gaps(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-long-gap" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-long-gap",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "Long gap answer", "ts": 1_704_067_200_000},
+            {"message_id": "m2", "role": "user", "text": "Delayed reply", "ts": 1_704_071_200_000},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["human_read_time"] == {
+        "avg_seconds": None,
+        "median_seconds": None,
+        "min_seconds": None,
+        "max_seconds": None,
+        "sample_count": 0,
+        "excluded_long_gaps": 1,
+        "session_gap_seconds": 3600,
+    }
+
+
+def test_analyze_metrics_user_effort_handles_mixed_valid_and_excluded_pairs(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-user-effort-mixed" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-effort-mixed",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "Answer one", "ts": 1_704_067_200_000},
+            {"message_id": "m2", "role": "user", "text": "Reply one", "ts": 1_704_067_320_000},
+            {"message_id": "m3", "role": "assistant", "text": "Answer two", "ts": 1_704_067_400_000},
+            {"message_id": "m4", "role": "user", "text": "Reply two", "ts": 1_704_071_500_000},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["human_read_time"] == {
+        "avg_seconds": 120,
+        "median_seconds": 120,
+        "min_seconds": 120,
+        "max_seconds": 120,
+        "sample_count": 1,
+        "excluded_long_gaps": 1,
+        "session_gap_seconds": 3600,
+    }
+
+
+def test_analyze_metrics_user_effort_ratio_is_null_without_user_text(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-user-effort-no-user" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-effort-no-user",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "hello"},
+            {"message_id": "m2", "role": "system", "text": "setup"},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["response_length_ratio"] is None
+    assert metrics["user_effort"]["human_read_time"]["sample_count"] == 0
+
+
+def test_analyze_metrics_user_effort_ignores_missing_timestamps_safely(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-user-effort-missing-ts" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-effort-missing-ts",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "hello", "ts": None},
+            {"message_id": "m2", "role": "user", "text": "reply", "ts": 1_704_067_230_000},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["human_read_time"] == {
+        "avg_seconds": None,
+        "median_seconds": None,
+        "min_seconds": None,
+        "max_seconds": None,
+        "sample_count": 0,
+        "excluded_long_gaps": 0,
+        "session_gap_seconds": 3600,
+    }
+
+
+def test_analyze_metrics_user_effort_handles_non_alternating_roles(
+    tmp_path, monkeypatch
+):
+    parsed = tmp_path / "thread-conv-user-effort-nonalternating" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-effort-nonalternating",
+        [
+            {"message_id": "m1", "role": "assistant", "text": "first answer", "ts": 1_704_067_200_000},
+            {"message_id": "m2", "role": "assistant", "text": "second answer", "ts": 1_704_067_220_000},
+            {"message_id": "m3", "role": "user", "text": "follow-up", "ts": 1_704_067_250_000},
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["rapid_revisions"] == 1
+    assert metrics["user_effort"]["human_read_time"] == {
+        "avg_seconds": 30,
+        "median_seconds": 30,
+        "min_seconds": 30,
+        "max_seconds": 30,
+        "sample_count": 1,
+        "excluded_long_gaps": 0,
+        "session_gap_seconds": 3600,
+    }
+
+
 def test_analyze_metrics_handles_zero_division_consistently(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-zero" / "parsed.jsonl"
     _write_parsed_jsonl(

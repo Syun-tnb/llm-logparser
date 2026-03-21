@@ -43,5 +43,18 @@
     "avg_per_message": 8.33,
     "avg_per_turn": 12.5,
     "total": 25
+  },
+  "user_effort": {
+    "human_read_time": {
+      "avg_seconds": 0,
+      "excluded_long_gaps": 0,
+      "max_seconds": 0,
+      "median_seconds": 0,
+      "min_seconds": 0,
+      "sample_count": 1,
+      "session_gap_seconds": 3600
+    },
+    "rapid_revisions": 1,
+    "response_length_ratio": 0.3333
   }
 }

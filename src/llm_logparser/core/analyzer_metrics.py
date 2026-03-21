@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 from .analyzer_common import (
@@ -19,7 +21,7 @@ from .analyzer_common import (
     write_json_artifact,
 )
 from .i18n import _, get_resource_list
-from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
+from .l1_derivation import discover_parsed_jsonl, iter_parsed_records, ts_to_seconds
 
 # Refusal detection is a normalized substring match against locale-backed cue
 # lists in `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US`
@@ -36,6 +38,8 @@ CLARIFICATION_CUES_RESOURCE_KEY = "analysis.clarification.cues"
 #   sufficiently similar to the previous user message after normalization
 REVISION_MIN_NORMALIZED_LENGTH = 8
 REVISION_SIMILARITY_THRESHOLD = 0.78
+RAPID_REVISION_SECONDS = 60
+SESSION_GAP_SECONDS = 3600
 
 
 class MetricsDependencyError(RuntimeError):
@@ -207,6 +211,97 @@ def _classify_revisions(
     return counts
 
 
+def _timestamp_seconds(value: Any) -> float | None:
+    numeric_seconds = ts_to_seconds(value)
+    if numeric_seconds is not None:
+        return numeric_seconds
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _round_seconds(value: float | None) -> int | float | None:
+    if value is None:
+        return None
+    rounded = round(value, 2)
+    if rounded.is_integer():
+        return int(rounded)
+    return rounded
+
+
+def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    total_user_characters = 0
+    total_assistant_characters = 0
+    rapid_revisions = 0
+    read_time_samples: list[float] = []
+    excluded_long_gaps = 0
+    previous_message: dict[str, Any] | None = None
+
+    for message in messages:
+        role = normalize_role(message.get("role"))
+        text = message.get("text")
+        char_count = len(text) if isinstance(text, str) else 0
+
+        if role == "user":
+            total_user_characters += char_count
+        elif role == "assistant":
+            total_assistant_characters += char_count
+
+        if previous_message is not None:
+            previous_role = normalize_role(previous_message.get("role"))
+            if previous_role == "assistant" and role == "user":
+                previous_ts = _timestamp_seconds(previous_message.get("ts"))
+                current_ts = _timestamp_seconds(message.get("ts"))
+                if previous_ts is not None and current_ts is not None:
+                    delta_seconds = current_ts - previous_ts
+                    if delta_seconds < 0:
+                        previous_message = message
+                        continue
+                    if delta_seconds < RAPID_REVISION_SECONDS:
+                        rapid_revisions += 1
+                    if delta_seconds <= SESSION_GAP_SECONDS:
+                        read_time_samples.append(delta_seconds)
+                    else:
+                        excluded_long_gaps += 1
+
+        previous_message = message
+
+    response_length_ratio = None
+    if total_user_characters:
+        response_length_ratio = round(
+            total_assistant_characters / total_user_characters,
+            4,
+        )
+
+    if read_time_samples:
+        avg_seconds = _round_seconds(sum(read_time_samples) / len(read_time_samples))
+        median_seconds = _round_seconds(median(read_time_samples))
+        min_seconds = _round_seconds(min(read_time_samples))
+        max_seconds = _round_seconds(max(read_time_samples))
+    else:
+        avg_seconds = None
+        median_seconds = None
+        min_seconds = None
+        max_seconds = None
+
+    return {
+        "rapid_revisions": rapid_revisions,
+        "response_length_ratio": response_length_ratio,
+        "human_read_time": {
+            "avg_seconds": avg_seconds,
+            "median_seconds": median_seconds,
+            "min_seconds": min_seconds,
+            "max_seconds": max_seconds,
+            "sample_count": len(read_time_samples),
+            "excluded_long_gaps": excluded_long_gaps,
+            "session_gap_seconds": SESSION_GAP_SECONDS,
+        },
+    }
+
+
 def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     token_stats = _load_token_stats(parsed_path)
     provider_id, conversation_id = detect_header_metadata(parsed_path)
@@ -220,6 +315,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
     char_count_assistant = 0
     texts: list[str] = []
     user_texts: list[str] = []
+    effort_messages: list[dict[str, Any]] = []
     message_count_user = 0
     message_count_assistant = 0
     refusal_count = 0
@@ -235,6 +331,13 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
 
         text, _text_source = resolve_canonical_text(row)
         texts.append(text)
+        effort_messages.append(
+            {
+                "role": row.get("role"),
+                "ts": row.get("ts"),
+                "text": text,
+            }
+        )
         char_count = len(text)
         char_count_total += char_count
 
@@ -270,6 +373,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         clarification_cues,
     )
     revision_count = interaction_counts["revision_count"]
+    user_effort = compute_user_effort(effort_messages)
 
     artifact = {
         "artifact_type": "metrics",
@@ -337,6 +441,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
                 message_count_user,
             ),
         },
+        "user_effort": user_effort,
     }
     return artifact
 

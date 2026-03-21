@@ -113,6 +113,27 @@
         "retry_rate": { "$ref": "#/$defs/nonNegativeNumber" }
       },
       "additionalProperties": true
+    },
+    "user_effort": {
+      "type": "object",
+      "properties": {
+        "rapid_revisions": { "$ref": "#/$defs/nonNegativeInteger" },
+        "response_length_ratio": { "$ref": "#/$defs/nonNegativeNumberOrNull" },
+        "human_read_time": {
+          "type": "object",
+          "properties": {
+            "avg_seconds": { "$ref": "#/$defs/nonNegativeNumberOrNull" },
+            "median_seconds": { "$ref": "#/$defs/nonNegativeNumberOrNull" },
+            "min_seconds": { "$ref": "#/$defs/nonNegativeNumberOrNull" },
+            "max_seconds": { "$ref": "#/$defs/nonNegativeNumberOrNull" },
+            "sample_count": { "$ref": "#/$defs/nonNegativeInteger" },
+            "excluded_long_gaps": { "$ref": "#/$defs/nonNegativeInteger" },
+            "session_gap_seconds": { "$ref": "#/$defs/nonNegativeInteger" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
     }
   },
   "$defs": {
@@ -123,6 +144,12 @@
     "nonNegativeNumber": {
       "type": "number",
       "minimum": 0
+    },
+    "nonNegativeNumberOrNull": {
+      "anyOf": [
+        { "$ref": "#/$defs/nonNegativeNumber" },
+        { "type": "null" }
+      ]
     }
   },
   "additionalProperties": true
