@@ -548,6 +548,17 @@ Typical responsibilities:
 | summarization | dataset statistics |
 | CLI formatting | human-readable views |
 
+`analyze stats` now includes an additive `research_summary` section in JSON mode
+and a matching compact text section. This summary remains deterministic and local:
+
+- temporal aggregates are derived from canonical thread timestamp spans
+- turn-taking aggregates summarize per-thread `characters_user / characters_assistant`
+- safety aggregates may reuse existing `metrics.json` sidecars for thread-level
+  refusal/intervention counts, but must still work without them by recomputing
+  deterministic canonical heuristics
+- structural aggregates are intentionally lightweight heuristics based on
+  canonical message text and `content.parts`, including fenced code block detection
+
 Example commands:
 
 ```

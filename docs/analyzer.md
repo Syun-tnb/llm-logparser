@@ -83,10 +83,17 @@ Recommended workflow:
 3. run `analyze metrics` to write `metrics.json`
 
 `analyze stats` and `analyze timeline` can be run directly on `parsed.jsonl`.
+`analyze stats` now also emits an additive research-oriented summary section in
+text and JSON output for temporal, turn-taking, safety, and lightweight
+structural aggregates.
 
 Data source policy:
 
-- `analyze stats` currently computes its results from canonical `parsed.jsonl`
+- `analyze stats` computes its results from canonical `parsed.jsonl`
+- its additive research summary may opportunistically reuse existing `metrics.json`
+  sidecars for thread-level safety counts when present
+- if those sidecars are missing, safety aggregates are recomputed
+  deterministically from canonical assistant text
 - `thread_stats.json` is not used as an input today
 - a future implementation may use `thread_stats.json` as a cache or optimization
 - canonical correctness for stats must still come from `parsed.jsonl`
@@ -149,6 +156,8 @@ Typical metrics include:
 - inter-message timing
 - refusal heuristics
 - revision heuristics
+- research-oriented `analyze stats` aggregates for pacing, turn-taking, safety,
+  and lightweight message structure
 
 Example outputs:
 
@@ -159,6 +168,17 @@ assistant_messages: 21
 characters_total: 18345
 conversation_duration: 2h14m
 ```
+
+The additive `analyze stats` research summary is intentionally lightweight:
+
+- temporal aggregates use canonical thread timestamp spans and exclude threads
+  without valid timestamps from duration summaries
+- turn-taking aggregates summarize per-thread `characters_user / characters_assistant`
+  and exclude zero assistant denominators
+- safety aggregates count threads with refusal or intervention signals, reusing
+  existing `metrics.json` when present but still working without it
+- structural aggregates use simple local heuristics such as `content.parts`
+  length and fenced code block markers; they are not a Markdown or multimodal parser
 
 This layer should remain:
 
