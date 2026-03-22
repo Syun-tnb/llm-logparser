@@ -166,9 +166,13 @@ Contract:
 
 SQLite correspondence for downstream consumers:
 
-- `thread_stats.json.character_count` maps to SQLite `threads.characters_total`
+- `thread_stats.json.character_count` currently populates both SQLite
+  `threads.character_count` and `threads.characters_total` with the same value
+  for legacy compatibility; `characters_total` is the preferred canonical name
+  going forward
 - `thread_stats.json.first_timestamp` / `last_timestamp` are stored in SQLite `threads.first_timestamp` / `last_timestamp` after conversion from UTC ISO 8601 text to epoch milliseconds
-- `thread_stats.json.other_role_breakdown` is not currently imported into SQLite; it remains available only in the JSON artifact
+- `thread_stats.json.other_role_breakdown` is currently imported into SQLite
+  `threads.other_role_breakdown` as JSON-serialized `TEXT`
 
 `message_windows.jsonl` is a deterministic thread-local text artifact derived
 only from canonical message rows. The first version uses simple fixed-size
@@ -508,15 +512,15 @@ message sequence and role-aware heuristics.
 
 # 6. Optional SQLite Accelerator (L2)
 
-An optional per-provider SQLite database may be built later as a query
-accelerator:
+The implemented Layer 2 SQLite index is an optional per-provider database built
+by `analyze sqlite-build` as a query accelerator:
 
 ```text
 <outdir>/<provider>/analysis.db
 ```
 
-This database is **not canonical state**. It is an optional analysis index.
-It must be fully rebuildable from
+This database is **not canonical state**. It is an implemented optional
+analysis index. It must be fully rebuildable from
 existing canonical or canonical-derived artifacts such as:
 
 - `thread_stats.json`
@@ -524,6 +528,14 @@ existing canonical or canonical-derived artifacts such as:
 - `message_windows.jsonl`
 
 The SQLite build step must not mutate those artifacts.
+
+Current thread-level SQLite correspondence includes:
+
+- `threads.character_count` and `threads.characters_total`, which currently
+  store the same value for legacy compatibility; `characters_total` is the
+  preferred canonical name going forward
+- `threads.other_role_breakdown`, which stores imported
+  `thread_stats.json.other_role_breakdown` as JSON-serialized `TEXT`
 
 L2 expectations:
 
@@ -770,7 +782,6 @@ Possible future additions include:
 
 - chunk manifests
 - conversation window artifacts
-- SQLite optional indexes
 - timeline precomputation
 
 Any new artifact must follow the principles described in this document.
