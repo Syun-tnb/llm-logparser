@@ -494,6 +494,32 @@ Command boundary rule:
 - L2 commands build optional deterministic index artifacts
 - L3/L4 commands, when implemented, should remain explicitly higher-layer and opt-in
 
+## CLI Design Direction (v1.4)
+
+The `analyze` CLI is designed to preserve a clear separation between
+deterministic and model-derived capabilities.
+
+- L1/L2 commands (`stats`, `timeline`, `tokens`, `metrics`, `sqlite-build`)
+  are deterministic, rebuildable, and safe for local-first workflows
+
+- L3/L4 commands (`local`, `llm`) are conceptual future extensions and
+  remain opt-in, model-dependent, and potentially non-deterministic
+
+Design constraints:
+
+- deterministic commands must not depend on model-derived layers
+- model-derived commands must not alter or redefine deterministic artifacts
+- command naming should reflect layer boundaries and user expectations
+
+This ensures that future expansion of the CLI does not break:
+
+- reproducibility
+- local-only usage
+- existing user workflows
+
+The CLI structure is intentionally layered to align with the analyzer’s
+"canonical-first + additive layers" philosophy.
+
 ---
 
 # Relationship to Parser
