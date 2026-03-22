@@ -1,99 +1,37 @@
 # llm-logparser
 
-**`llm-logparser` は、LLM チャットのエクスポートデータを、ローカル環境だけで扱いやすい形に変換・整理・解析するための CLI ツールです。** OpenAI のエクスポートを起点に、将来的には Claude / Gemini など複数プロバイダのログも同じ土台で扱えるように設計されています。出力は GitHub Flavored Markdown と canonical JSONL を中心に構成され、監査、アーカイブ、再利用、移行に耐えることを重視しています。
+[![PyPI version](https://img.shields.io/pypi/v/llm-logparser)](https://pypi.org/project/llm-logparser/)[![Python versions](https://img.shields.io/pypi/pyversions/llm-logparser)](https://pypi.org/project/llm-logparser/)[![License](https://img.shields.io/github/license/Syun-tnb/llm-logparser)](LICENSE)[![GitHub Sponsors](https://img.shields.io/github/sponsors/Syun-tnb)](https://github.com/sponsors/Syun-tnb)
 
-このプロジェクトの中心思想は、**deterministic、offline-first、privacy-first、canonical-first** です。`parsed.jsonl` を唯一の正規データソースとして据え、Parser はデータの正規化に専念し、Exporter / Analyzer はその上に表現や分析を積み上げます。テレメトリはありません。クラウドへの送信もありません。生成される sidecar は再構築可能な派生成果物であり、正しさの起点は常に canonical data model にあります。
+生の LLM チャットエクスポートを、読んで、検索して、分析できる構造化データへ
+変換する local-first CLI です。何もクラウドへ送信しません。
 
----
+**できること:**
 
-## ✨ 主な機能
+1. あなたの ChatGPT（または他の LLM）のエクスポートを、きれいで構造化されたデータへ **Parse**
+2. 会話を読みやすい Markdown ファイルとして **Export**
+3. メッセージ数、トークン使用量、安全性メトリクス、タイムラインなどを会話ごとに **Analyze**
 
-- **Parse → Normalize → JSONL → Export** の一連のワークフローを CLI で実行
-- LLM エクスポートを **canonical JSONL (`parsed.jsonl`)** に正規化
-- スレッド単位の **Markdown 出力** を生成
-- YAML front-matter 付きの **thread-based layout**
-- サイズ / 件数 / 自動判定による **Markdown 分割出力**
-- **ローカライズ可能な CLI / help / runtime メッセージ**
-- IANA タイムゾーンに基づく **時刻変換付き Markdown 出力**
-- `chain` による **parse + export の一括実行**
-- `analyze stats` / `analyze timeline` による **canonical データからの集計**
-- `analyze tokens` による **決定的な `token_stats.json` sidecar** の生成
-- `analyze metrics` による **決定的な `metrics.json` sidecar** の生成
-- `analyze sqlite-build` による **任意の SQLite 分析インデックス** の生成
-- refusal / revision 系ヒューリスティクスを **YAML リソースで調整可能**
-- **local-first / deterministic** を維持しやすいアーキテクチャ
-- 将来のマルチプロバイダ対応を見据えた **adapter-based design**
+すべてローカルで動作します。クラウドなし。テレメトリなし。データはあなたのマシンに留まります。
 
-> 現在の MVP は主に OpenAI ログを中心に整備されています。  
-> Claude / Gemini などは今後の対応対象です。
+> 現在は OpenAI のエクスポートをサポートしています。Claude と Gemini のサポートは予定されています。
 
 ---
 
-## 🧱 アーキテクチャ
+## インストール
 
-### Canonical Data Model
+> **ほとんどのユーザー:** 必要なのは `pip install llm-logparser` だけです。
 
-`llm-logparser` の中心は **`parsed.jsonl`** です。これは各プロバイダ固有のエクスポート形式を、解析しやすく比較しやすい **canonical JSONL** に正規化したものです。
+`pip` または `uv` を使って PyPI からインストールします:
 
-この `parsed.jsonl` が、プロジェクト全体における **single source of truth** です。
+```bash
+pip install llm-logparser
+```
 
-以下の機能はすべて、この canonical data model を前提に動作します。
+```bash
+uv pip install llm-logparser
+```
 
-- Markdown Export
-- Analyzer
-- 将来の Viewer / GUI
-- SQLite インデックス
-- 下流のアプリケーションや研究用処理
-
-重要なのは、**正しさの基準が sidecar ではなく `parsed.jsonl` にある** という点です。`thread_stats.json`、`token_stats.json`、`metrics.json` などは便利な派生成果物ですが、正規入力ではありません。必要であればいつでも再生成できる、という前提で扱います。
-
-### 責務分離: Parser / Exporter / Analyzer
-
-このプロジェクトでは、責務を明確に分けています。
-
-**Parser**
-- プロバイダ固有のデータを canonical 形式に正規化する役割
-- `parsed.jsonl` を生成する
-- parse 時点で軽量な thread-local artifact を作ることはあるが、あくまで canonical data の補助に留まる
-
-**Exporter**
-- canonical data を人間が読みやすい Markdown に整形する役割
-- 表示、分割、タイムゾーン変換、front-matter 付与を担う
-- データそのものの意味づけや解析はしない
-
-**Analyzer**
-- canonical data に対して deterministic な集計や派生 artifact を作る役割
-- `stats` / `timeline` は presentation-oriented な集計出力
-- `tokens` / `metrics` は per-thread sidecar の生成
-- 将来的に `thread_stats.json` のような parse-time metadata を最適化用途で使う可能性はあるが、**正しさは常に `parsed.jsonl` に依存**する
-
-### Canonical First の原則
-
-以下は、このプロジェクトで特に重要な設計ルールです。
-
-- `parsed.jsonl` は唯一の canonical source of truth
-- `thread_stats.json` は parse-time の補助メタデータであり、canonical input ではない
-- Analyzer は sidecar が無くても正しく動けるべきである
-- `token_stats.json` や `metrics.json` は **rebuildable artifact** である
-- 将来的に最適化を入れる場合でも、canonical correctness は `parsed.jsonl` から検証可能でなければならない
-
-### `thread_stats.json` の位置づけ
-
-`thread_stats.json` は parse 時に生成される軽量な thread-local summary です。メッセージ数、文字数、タイムスタンプ範囲などを素早く参照するには便利ですが、**解析の真実源ではありません**。
-
-将来的に Analyzer がこれをキャッシュや最適化のために参照する実装はあり得ます。ただしその場合でも、以下の原則は変わりません。
-
-- `thread_stats.json` が欠けていても Analyzer は成立する
-- `thread_stats.json` が古くても、正しさの最終判定は `parsed.jsonl` に戻れる
-- canonical data と sidecar は混同しない
-
----
-
-## 🚀 クイックスタート
-
-### 1. セットアップ
-
-依存管理には [`uv`](https://docs.astral.sh/uv/getting-started/installation/) を利用します。
+インストール済みパッケージではなく、リポジトリのチェックアウトから作業している場合:
 
 ```bash
 uv sync
@@ -102,119 +40,557 @@ uv sync --extra dev
 
 コマンドエイリアス:
 
-`llp` は `llm-logparser` の簡易エイリアスです。既存のコマンドはどちらの実行名でも同じように利用でき、たとえば `llp parse ...` や `llp analyze ...` のように実行できます。
+`llp` は `llm-logparser` の簡易エイリアスです。どちらの実行名でも、すべてのコマンドは同じように動作します。
 
-### 2. エクスポートを parse する
+例:
 
 ```bash
-uv run llm-logparser parse \
-  --provider openai \
-  --input examples/messages.jsonl \
-  --outdir artifacts
+llp parse ...
+llm-logparser analyze stats ...
 ```
 
-このコマンドは、プロバイダの生データを canonical thread records に正規化し、`artifacts/output/<provider>/thread-*/parsed.jsonl` を生成します。
+リポジトリを clone した場合は、`uv run ...` でコマンドを実行できます。パッケージをインストールした場合は、`llm-logparser ...` を直接実行してください。
 
-### 3. 正規化済みスレッドを Markdown に出力する
+---
 
-```bash
-uv run llm-logparser export \
-  --input artifacts/output/openai/thread-abc123/parsed.jsonl \
-  --timezone Asia/Tokyo \
-  --formatting light
-```
+## クイックスタート
 
-`export` は canonical data をもとに Markdown を生成します。タイムゾーン変換や分割出力は Exporter の責務です。
-
-### 4. parse と export をまとめて実行する
+生のエクスポートから読みやすい出力まで最短で進む方法:
 
 ```bash
-uv run llm-logparser chain \
+llm-logparser chain \
   --provider openai \
-  --input examples/messages.jsonl \
+  --input path/to/conversations.json \
   --outdir artifacts \
   --timezone Asia/Tokyo
 ```
 
-`chain` は **parse → export** を一度に実行したい場合のためのコマンドです。
+これは 2 つのことを行います:
+1. 生のエクスポートを、会話ごとの構造化データへ **Parse** します
+2. 各会話を Markdown ファイルとして **Export** します
 
-### 5. Analyze を実行する
+完了すると、次のようなディレクトリが表示されます:
 
-まず canonical thread 全体に対する統計を確認できます。
+```text
+artifacts/output/openai/
+  manifest.json                        ← 解析済み会話すべてのインデックス
+  thread-abc123/
+    parsed.jsonl                       ← 構造化された会話データ
+    thread_stats.json                  ← メッセージ数、タイムスタンプなど
+    message_windows.jsonl              ← グループ化されたメッセージセグメント
+    thread-abc123__gpt-4o.md           ← 読みやすい Markdown 文字起こし
+```
+
+任意の `.md` ファイルを開けば会話を読めます。これで終わりです。基本は
+これで完了です。
+
+**さらに進みたいですか？** [First Steps After Setup](#first-steps-after-setup)
+を見て、analyze コマンドから会話について何が分かるか確認してください。
+
+---
+
+## セットアップ後の最初のステップ
+
+`chain`（または `parse`）を実行した後、データを最大限活用するための
+推奨手順は次のとおりです。各ステップは前のステップの上に積み上がります。
+
+### Step 1 — 会話を閲覧する
+
+生成された `.md` ファイルを開きます。これらはタイムスタンプ、ロールラベル、
+保持された書式を備えた標準的な Markdown です。
+
+### Step 2 — すばやく要約を確認する
+
+```bash
+llm-logparser analyze stats --input artifacts/output/openai
+```
+
+これにより、会話の要約が出力されます。スレッド数、総メッセージ数、
+文字数、期間です。機械可読な出力が必要なら `--json` を追加してください。
+
+### Step 3 — トークンを数える
+
+```bash
+llm-logparser analyze tokens --input artifacts/output/openai
+```
+
+これにより、各会話の横に `token_stats.json` ファイルが書き込まれ、
+メッセージごとのトークン数が入ります。コストやコンテキストウィンドウの使用量を理解したい場合に有用です。
+
+### Step 4 — 完全なメトリクスを構築する
+
+```bash
+llm-logparser analyze metrics --input artifacts/output/openai
+```
+
+これにより、各会話の横に `metrics.json` ファイルが書き込まれ、安全性シグナル、
+相互作用パターン、文字数/トークン比が含まれます。**先に Step 3 が必要です。**
+
+> **どのステップでも止められます。** それぞれ単独で有用です。Step 3–4 では
+> 解析済みデータの横に置かれるファイルが生成され、いつでも再構築できます。
+
+---
+
+## Analyzer は実際に何を出力するのか？
+
+各 analyze コマンドは異なる種類の出力を生成します。ここでは、実際に
+何が得られ、何に答えるのかを示します。
+
+---
+
+### `analyze stats` → ターミナル要約（または JSON）
+
+**含まれるもの:** 会話全体にまたがる集計済みの件数と分布。
+
+**答える問い:**
+- 会話はいくつあるのか？ 総メッセージ数はいくつか？
+- 最も長い会話はどれか？
+- user と assistant のメッセージ比率はどれくらいか？
+
+**出力例（テキスト）:**
+```text
+threads:    12
+messages:   847
+  user:     421
+  assistant: 426
+characters: 312,504
+timespan:   2025-01-15 — 2025-03-20
+```
+
+構造化出力が必要なら `--json` を追加してください。会話ごとの内訳が必要なら
+`--per-thread` を追加してください。
+
+---
+
+### `analyze tokens` → `token_stats.json`（会話ごと）
+
+**含まれるもの:** すべてのメッセージのトークン数。ロール別の内訳と、
+tokenizer メタデータを含みます。
+
+**答える問い:**
+- この会話では何トークン使われたか？
+- 最もコストの高いメッセージはどれか？
+- user と assistant のトークン配分はどうなっているか？
+
+**フィールド例:**
+```json
+{
+  "summary": { "total_tokens": 4821, "total_messages": 42 },
+  "by_role": { "user": { "tokens": 1200 }, "assistant": { "tokens": 3621 } },
+  "messages": [{ "message_id": "m1", "role": "user", "token_count": 28 }]
+}
+```
+
+---
+
+### `analyze metrics` → `metrics.json`（会話ごと）
+
+**含まれるもの:** 文字数/トークン比、語彙多様性、安全性シグナル、
+相互作用パターンを含む派生メトリクス。
+
+**答える問い:**
+- assistant は何かの要求を拒否したか？ どのくらいの頻度か？
+- user は自分の発言を修正または訂正したか？
+- assistant 対 user の文字数比はどれくらいか？
+- assistant のメッセージ後、user はどれくらい早く応答したか？
+
+**フィールド例:**
+```json
+{
+  "safety": { "refusal_count": 1, "intervention_count": 2 },
+  "interaction": { "revision_count": 3, "correction_count": 1 },
+  "user_effort": { "rapid_revisions": 2, "response_length_ratio": 3.4 },
+  "diversity": { "type_token_ratio": 0.62 }
+}
+```
+
+**`token_stats.json` が必要です** — 先に `analyze tokens` を実行してください。
+
+---
+
+### `analyze datasheet` → レポート（Markdown または JSON）
+
+**含まれるもの:** 構成、時間的範囲、主要統計をカバーする、
+簡潔で付録向けのデータセット要約。
+
+**答える問い:**
+- このデータセット全体はどのような見た目か？
+- 研究論文の付録には何を書けばよいか？
+
+**出力:** 既定では Markdown です。構造化データが必要なら `--json` を追加してください。
+
+---
+
+### `analyze timeline` → 時間バケット化された活動量（テキストまたは JSON）
+
+**含まれるもの:** 時間単位（時間、日、週、または月）ごとにまとめられたメッセージ数。
+
+**答える問い:**
+- もっとも活動していたのはいつか？
+- 利用に空白期間はあるか？
+
+**出力例:**
+```text
+2025-01-15:  48 messages
+2025-01-16:  12 messages
+2025-01-17:   0 messages
+2025-01-18:  93 messages
+```
+
+---
+
+### `analyze sqlite-build` → `analysis.db`（任意）
+
+**含まれるもの:** thread stats、messages、message windows を統合し、
+問い合わせ可能なテーブルにした SQLite データベース。
+
+**答える問い:**
+- 特定のトピックに言及する会話はどれか？
+- ある日付範囲にある assistant の全メッセージは何か？
+- SQL による会話横断の集計
+
+**これは完全にスキップできます。** これは、SQL クエリを実行したい大規模データセットのユーザー向けの任意の高速化レイヤーです。データベースはいつでも解析済みデータから完全に
+再構築できます。
+
+```bash
+llm-logparser analyze sqlite-build \
+  --input artifacts/output \
+  --provider openai
+```
+
+---
+
+## どれを使うべきか
+
+| コマンド | 使う場面 |
+|---------|---------------|
+| `analyze stats` | 会話のすばやい要約を得る |
+| `analyze tokens` | メッセージごとのトークン数を数える（コスト/コンテキスト分析向け） |
+| `analyze metrics` | 安全性、相互作用、労力のパターンを理解する |
+| `analyze datasheet` | 研究用にそのまま使えるデータセット要約を生成する |
+| `analyze timeline` | いつ最も活動していたかを確認する |
+| `analyze sqlite-build` | SQL で大規模データセットを問い合わせる（任意） |
+
+---
+
+## CLI リファレンス
+
+以下のセクションでは、ソースチェックアウトから作業する際にも便利なため `uv run` を使っています。PyPI からインストールした場合は、`uv run` の接頭辞を外してください。
+
+### Parse
+
+生の provider エクスポートを canonical thread artifact に正規化します:
+
+```bash
+uv run llm-logparser parse \
+  --provider openai \
+  --input <file> \
+  --outdir artifacts \
+  [--dry-run] [--fail-fast] \
+  [--validate-schema]
+```
+
+### Export
+
+canonical `parsed.jsonl` を Markdown にレンダリングします:
+
+```bash
+uv run llm-logparser export \
+  --input parsed.jsonl \
+  [--out <md>] \
+  [--split auto|size=N|count=N] \
+  [--timezone <IANA>] \
+  [--formatting none|light]
+```
+
+### Extract
+
+PII マスキング付きで、単一の会話を Gemini 互換 JSON として抽出します:
+
+```bash
+uv run llm-logparser extract \
+  --provider openai \
+  --input <file> \
+  --conversation-id <id> \
+  --outdir artifacts \
+  [--dry-run]
+```
+
+### Chain
+
+単一コマンドで parse と export を行います。すでに `parse` を別で実行していて export だけ行いたい場合は、`export` を直接使ってください。`chain` は一般的な parse → export ワークフローのための簡易コマンドです。
+
+```bash
+uv run llm-logparser chain \
+  --provider openai \
+  --input <raw> \
+  --outdir artifacts \
+  [--validate-schema] \
+  [other export options...]
+```
+
+便利なオプション:
+
+```text
+--parsed-root       既存の parsed threads を再利用
+--export-outdir     Markdown を別の場所に配置
+--dry-run           parse のみ実行（書き込みなし）
+--fail-fast         最初の export エラーで停止
+```
+
+### Analyze Stats
+
+canonical `parsed.jsonl` ファイルから、決定的な thread および message 統計を計算します:
 
 ```bash
 uv run llm-logparser analyze stats \
-  --input artifacts/output/openai
+  --input <parsed.jsonl-or-directory> \
+  [--per-thread] \
+  [--top <N>] \
+  [--sort messages|chars|span|conversation_id] \
+  [--include-role-breakdown] \
+  [--json] \
+  [--out <path>]
 ```
 
-Analyze 系サブコマンドは、意図的に出力クラスが分かれています。
+`analyze stats` は、1 つの thread または thread ディレクトリ全体に対する集計や探索的要約が欲しいときに使います。canonical `parsed.jsonl` から直接テキストまたは JSON をレンダリングでき、その加算的な `research_summary` セクションは、決定的な時間軸、発話交代、安全性、軽量な構造集計を提供します。
 
-- `stats` / `timeline` は端末表示やファイル保存を前提とした **presentation output**
-- `tokens` / `metrics` は各スレッド横に作られる **JSON sidecar**
-- `sqlite-build` は単一の **SQLite database artifact**
+### Analyze Datasheet
 
-Analyzer のレイヤーは次のように整理されています。
-
-- L1 は deterministic analysis: `stats` / `timeline` / `tokens` / `metrics` / `datasheet`
-- L2 は `sqlite-build`: **任意の deterministic な SQLite インデックス**
-- L3 / L4 は将来の model-based layer（local / API）であり、現時点の CLI 機能ではありません
-
-### 6. 推奨 sidecar ワークフロー
-
-`metrics.json` は `token_stats.json` に依存するため、先に `analyze tokens` を実行してください。
+canonical parsed artifact から、簡潔で付録向けのデータセット要約を構築します:
 
 ```bash
-uv run llm-logparser analyze tokens \
-  --input artifacts/output/openai
+uv run llm-logparser analyze datasheet \
+  --input <parsed.jsonl-or-directory> \
+  [--json] \
+  [--out <path>]
 ```
 
-書き込む前に sidecar 生成をプレビューしたい場合は、`--dry-run` を使います。
+`analyze datasheet` は、探索的要約ではなく安定したレポートレイヤーが欲しいときに使います。既定の出力は Markdown です。`--json` は同じ内容を機械可読な要約オブジェクトとして返します。
+
+### Analyze Timeline
+
+canonical `parsed.jsonl` ファイルからタイムスタンプ付きメッセージ活動を集計します:
 
 ```bash
-uv run llm-logparser analyze tokens \
+uv run llm-logparser analyze timeline \
   --input artifacts/output/openai \
-  --dry-run
+  --bucket day \
+  [--json] \
+  [--out <path>]
 ```
 
-続いて `metrics.json` を生成します。
+### Analyze Tokens
+
+canonical `parsed.jsonl` から、決定的なスレッドごとの `token_stats.json` sidecar を構築します:
+
+```bash
+uv run llm-logparser analyze tokens \
+  --input <parsed.jsonl-or-directory> \
+  [--model <model>] \
+  [--encoding <tiktoken-encoding>] \
+  [--skip-existing] \
+  [--dry-run]
+```
+
+現在の tokenizer バックエンド:
+
+* `tiktoken`
+* `openai`、`anthropic`、`xai` 向けの provider 既定値
+* `--encoding` は provider と model の解決を上書きします
+
+実行時の注意点:
+
+* `tiktoken` は初回利用時にエンコーディングデータをダウンロードするため、一度だけネットワーク取得を行う可能性があります
+* ダウンロードされたエンコーディングデータは、その後ローカルにキャッシュされます
+* それ以降の token analysis 実行ではローカルキャッシュが使われます
+* 既存の `token_stats.json` sidecar は既定で再構築されます。`--skip-existing` は不足している sidecar のみを埋めます
+* `--dry-run` はファイルを書き込まずに sidecar 生成をプレビューします
+
+### Analyze Metrics
+
+`parsed.jsonl` と `token_stats.json` から、決定的なスレッドごとの `metrics.json` sidecar を構築します:
 
 ```bash
 uv run llm-logparser analyze metrics \
-  --input artifacts/output/openai
+  --input <parsed.jsonl-or-directory> \
+  [--skip-existing] \
+  [--dry-run]
 ```
 
-### 7. よく使う補助オプション
+各 thread が隣接する `token_stats.json` をすでに持っているよう、先に `analyze tokens` を実行してください。
 
-Markdown 分割は次のように指定できます。
+現在のメトリクスには次が含まれます:
+
+* ratio、token、character、distribution、diversity の各メトリクス
+* `safety.refusal`
+* `safety.intervention_count`
+* `correction`、`clarification`、`retry` の subtype count を伴う `interaction.revision`
+* `user_effort` メトリクス
+
+追加の挙動メモ:
+
+* 既存の `metrics.json` sidecar は既定で再構築されます
+* `--skip-existing` は不足している sidecar のみを埋めます
+* `--dry-run` は書き込み前に sidecar 生成をプレビューします
+
+### Analyze SQLite Build
+
+canonical かつ決定的な thread artifact から、任意の provider ごとの SQLite analysis index を構築します:
 
 ```bash
+uv run llm-logparser analyze sqlite-build \
+  --input <provider-artifact-root> \
+  --provider <provider-id> \
+  [--overwrite]
+```
+
+`analysis.db` は、クエリ高速化のための任意の、決定的で、再構築可能で、
+non-canonical なインデックスです。これは `parsed.jsonl` を置き換えず、将来のあらゆる派生成果物のストレージレイヤーでもありません。
+
+---
+
+## Markdown フォーマット
+
+エクスポートされる各 Markdown ファイルは、YAML front matter から始まります:
+
+```yaml
+---
+thread: "abc123"
+provider: "openai"
+messages: 42
+models: ["gpt-4o"]
+range: "2025-10-01T01:00:00+00:00 〜 2025-10-18T10:15:00+00:00"
+---
+```
+
+メッセージはタイムスタンプ順に続きます:
+
+```markdown
+## [User] 2025-10-18 10:00
+Good morning!
+
+## [Assistant] 2025-10-18 10:01
+Good morning - how can I help today?
+```
+
+Markdown は GFM 互換で、次を保持します:
+
+* fenced code blocks
+* links
+* tables
+* quotes
+
+---
+
+## 分割
+
+大きな Markdown 出力は、サイズ、件数、または自動プリセットで分割できます:
+
+```text
 --split size=4M
 --split count=1500
 --split auto
 ```
 
-追加調整も可能です。
+追加の調整:
 
-```bash
+```text
 --split-soft-overflow 0.20
 --split-hard
 --tiny-tail-threshold 20
 ```
 
-`chain` では以下のようなオプションが利用できます。
-
-```text
---parsed-root       既存の parsed thread を再利用
---export-outdir     Markdown の出力先を別ルートに変更
---dry-run           parse フェーズのみ試行して書き込みを行わない
---fail-fast         export エラーで即停止
-```
-
 ---
 
-## 📁 ディレクトリ構造
+## アーキテクチャ
 
-標準的な出力構造は次のようになります。
+> **このセクションは、ツールが内部でどう動くかを理解するためのものです。** ツールを使うだけなら
+> 必要ありません。代わりに [Quick Start](#quick-start) を参照してください。
+
+### パイプライン
+
+`llm-logparser` は、1 つの canonical source of truth を中心に構築されています:
+
+```text
+raw export
+  -> parse
+  -> canonical parsed.jsonl
+     -> export        -> Markdown 文字起こし
+     -> analyze stats -> 集計と探索的要約
+     -> analyze tokens -> token_stats.json
+     -> analyze metrics -> metrics.json
+     -> analyze datasheet -> 付録向けレポート（Markdown または JSON）
+```
+
+Analyzer コマンドは、既存の sidecar artifact がすでに存在する場合はそれらを再利用し、
+欠けている場合は canonical `parsed.jsonl` にフォールバックします。どちらでも
+出力は決定的で local-first のままです。
+
+### Canonical Data Model
+
+parser は provider 固有のエクスポートを安定した JSONL schema に正規化します。その JSONL が、このプロジェクトにおける canonical な中間フォーマットです。
+
+下流の機能はその canonical layer を利用します:
+
+* Markdown export
+* HTML または GUI viewer
+* analyzer
+* 将来のアプリケーション
+
+Parser の責務は、決定的な JSONL 生成で終わります。presentation、export formatting、analysis は、別個に扱われる下流の関心事です。
+
+### Analyzer Layering
+
+概要:
+
+* canonical `parsed.jsonl` が source of truth です
+* `thread_stats.json`、`token_stats.json`、`metrics.json` は sidecar artifact です
+* Layer 1（L1）は決定的 analysis です: `stats`、`timeline`、`tokens`、`metrics`、`datasheet`
+* Layer 2（L2）は `analyze sqlite-build` です: 任意の決定的 SQLite index
+* Layer 3 / Layer 4 は将来の model-based layer（local / API）であり、現在の CLI 機能ではありません
+* `analyze sqlite-build` は再構築可能な non-canonical index であり、汎用 analysis engine や、あらゆる派生データをまとめて置くストアではありません
+
+Sidecar artifact は canonical `parsed.jsonl` から再構築可能で、実行時タイムスタンプを含みません。`analysis.db` も同様に再構築可能で non-canonical です。
+
+データソース方針:
+
+- canonical correctness は `parsed.jsonl` に固定されます
+- `analyze metrics` には隣接する `token_stats.json` が必要です
+- `analyze stats` は canonical `parsed.jsonl` から計算します
+- `analyze datasheet` は、存在する場合は既存の `thread_stats.json`
+  と `metrics.json` sidecar artifact を便宜的に再利用することがあります
+- それらの sidecar が欠けているか使えない場合、`analyze datasheet` は
+  決定的に canonical `parsed.jsonl` へフォールバックします
+- `analyze stats` の研究指向の安全性集計も、存在する場合は
+  `metrics.json` を再利用することがありますが、それがなくても動作します
+
+CLI 一貫性メモ:
+
+- `analyze stats` と `analyze timeline` は presentation command です: ターミナル出力をレンダリングし、`--json` をサポートし、レンダリング結果を `--out` 経由で書き出せます
+- `analyze datasheet` も presentation command です: 既定では Markdown を
+  レンダリングし、`--json` をサポートし、レンダリング結果を `--out` 経由で書き出せます
+- `analyze tokens` と `analyze metrics` は sidecar builder です: 各 `parsed.jsonl` の横にスレッドごとの JSON artifact を書き込み、presentation flag の代わりに `--skip-existing` を使います
+- `analyze sqlite-build` は単一の `analysis.db` index artifact を書き込み、再構築の制御に `--overwrite` を使います
+
+段階的 sidecar 方針:
+
+- 既定の挙動: 既存の `token_stats.json` と `metrics.json` sidecar は再構築されて上書きされます
+- `--skip-existing`: 既存の sidecar はそのままにして、不足している sidecar だけを構築します
+- `--dry-run`: ファイルを書き込まず、検出された thread と予定されている create/rebuild/skip 件数をプレビューします
+- `analyze metrics --skip-existing` でも、`metrics.json` が欠けている thread については、既存の `token_stats.json` が依然として必要です
+
+Analyzer の i18n は意図的に狭くしています:
+
+- locale に支えられた YAML resource は、refusal や revision cue などのヒューリスティック入力にのみ影響します
+- `analyze stats`、`analyze datasheet`、
+  `analyze timeline` の human-readable text renderer は意図的に英語のみです
+- 構造化 JSON 出力と schema key は、ツールの安定性のため英語のままです
+
+### ディレクトリ構造
+
+> **これを覚える必要はありません。** ツールがこの構造を
+> 自動で作成します。このリファレンスは必要なときのためにあります。
 
 ```text
 artifacts/
@@ -228,360 +604,40 @@ artifacts/
         token_stats.json
         metrics.json
         thread-<conversation_id>__*.md
-        meta.json (optional)
+        meta.json (任意)
 ```
 
-### 各ファイルの役割
-
-`manifest.json`
-- provider 単位の軽量インデックス
-- スレッド一覧、パス、件数などの把握に使える
-
-`parsed.jsonl`
-- canonical thread data
-- parser が生成する正規データ
-- 本プロジェクト全体の source of truth
-
-`thread_stats.json`
-- parse-time の thread-local summary
-- 便利な補助メタデータだが canonical input ではない
-
-`message_windows.jsonl`
-- メッセージウィンドウ単位の deterministic artifact
-- 下流処理や将来機能の足場となる
-
-`token_stats.json`
-- `analyze tokens` が生成する per-thread sidecar
-- tokenizer ベースの集計情報を保持
-
-`metrics.json`
-- `analyze metrics` が生成する per-thread sidecar
-- `token_stats.json` と canonical message text を使って派生指標を計算
-
-`thread-<conversation_id>__*.md`
-- Exporter が生成する Markdown ファイル
-- 分割が有効な場合は複数ファイルになる
-
-> `--outdir` には **ルートだけ** を渡してください。  
-> 実際の `output/<provider>/...` 配下はツールが自動で構成します。
+`--outdir` にはルートパスだけを渡してください。ツールが `output/<provider>/...` を自動で作成します。
 
 ---
 
-## 📝 Markdownフォーマット説明
+## 設定 (`config.yaml`)
 
-出力される Markdown は **GitHub Flavored Markdown (GFM)** を前提にしています。
+> **設定は任意です。** CLI はコマンドラインフラグだけでも動作します。
+> `config.yaml` は、既定設定を保存したいときや、
+> 複数のエクスポート元を管理したいときに便利です。
 
-### Front Matter
+`llm-logparser` は、YAML `config.yaml` を通じた任意の runtime 既定値をサポートします。CLI フラグが常に優先されます。profile の値は、不足しているオプションを埋めるためにのみ使われます。
 
-各 Markdown ファイルの先頭には YAML front-matter が付きます。
+外部 provider mapping YAML は、まだ runtime では使われていません。現在の正規化は `src/llm_logparser/core/providers/` 配下の adapter ベースです。
 
-```yaml
----
-thread: "abc123"
-provider: "openai"
-messages: 42
-models: ["gpt-4o"]
-range: "2025-10-01T01:00:00+00:00 〜 2025-10-18T10:15:00+00:00"
----
-```
+### Config Discovery Order
 
-この front-matter には、スレッド識別子、プロバイダ、メッセージ数、モデル情報、時刻範囲など、人間とツールの両方が参照しやすい最小限のメタデータを入れます。
+`--config` フラグが指定されていない場合、ツールは次の順で探索します:
 
-### 本文構造
-
-メッセージ本文は時系列順に並びます。
-
-```markdown
-## [User] 2025-10-18 10:00
-Good morning!
-
-## [Assistant] 2025-10-18 10:01
-Good morning — how can I help today?
-```
-
-### 保持される表現
-
-Markdown 出力では、会話内容の可読性を損なわないことを重視しています。
-
-- fenced code block
-- link
-- table
-- quote
-- 基本的な段落構造
-
-### 日時と整形
-
-- 日時は `--timezone` に基づいて変換されます
-- Markdown 自体は locale 依存で再整形されません
-- `formatting` は最小限の整形ポリシーです
-- 出力は GFM 互換を保つことを意図しています
-
-Exporter の役割は、canonical data の意味を変えることではなく、**人間に読みやすく表現すること**です。
-
----
-
-## 📊 Analyze機能（stats / timeline / tokens / metrics）
-
-Analyze 系は、canonical data に基づく deterministic analysis のための機能群です。ここで最も重要なのは、**すべての正しさの起点が `parsed.jsonl` である** という点です。
-
-### 共通ポリシー
-
-- `parsed.jsonl` が canonical source である
-- `thread_stats.json` は補助メタデータであり、canonical input ではない
-- `token_stats.json` と `metrics.json` は rebuildable sidecar である
-- sidecar が欠けていても、Analyzer の設計上の正しさは canonical data に戻れる必要がある
-
-### `analyze stats`
-
-`stats` は canonical `parsed.jsonl` を走査して、スレッド数、メッセージ数、文字数、ロール別件数、時刻範囲などを deterministic に集計します。
-
-```bash
-uv run llm-logparser analyze stats \
-  --input <parsed.jsonl-or-directory> \
-  [--per-thread] \
-  [--top <N>] \
-  [--sort messages|chars|span|conversation_id] \
-  [--include-role-breakdown] \
-  [--json] \
-  [--out <path>]
-```
-
-ポイント:
-
-- 現在の実装は `thread_stats.json` を入力として使いません
-- canonical `parsed.jsonl` から直接値を導出します
-- `--json` は machine-readable な presentation output を得たい場合に使います
-- `--out` は描画済み結果をファイルに保存したい場合に使います
-
-### `analyze timeline`
-
-`timeline` は canonical `parsed.jsonl` の時刻付きメッセージを UTC ベースでバケット集計します。
-
-```bash
-uv run llm-logparser analyze timeline \
-  --input <parsed.jsonl-or-directory> \
-  --bucket day \
-  [--json] \
-  [--out <path>]
-```
-
-利用できるバケットは以下です。
-
-- `hour`
-- `day`
-- `week`
-- `month`
-
-`stats` と同様に、`timeline` も presentation-oriented なコマンドであり、結果を画面表示またはファイル出力します。
-
-### `analyze tokens`
-
-`tokens` は各スレッドの横に `token_stats.json` を生成します。
-
-```bash
-uv run llm-logparser analyze tokens \
-  --input <parsed.jsonl-or-directory> \
-  [--model <model>] \
-  [--encoding <tiktoken-encoding>] \
-  [--skip-existing] \
-  [--dry-run]
-```
-
-このコマンドの特徴は次の通りです。
-
-- `parsed.jsonl` を入力にして per-thread sidecar を生成する
-- 出力は presentation text ではなく `token_stats.json`
-- `--json` や `--out` ではなく、`--skip-existing` を持つ
-- sidecar は既定で再生成・上書きされる
-- `--skip-existing` を付けると既存 sidecar を温存し、欠けているものだけ作る
-
-Tokenizer の現在のバックエンドは `tiktoken` です。
-
-- `openai` / `anthropic` / `xai` には provider default がある
-- `--encoding` は provider / model 解決を上書きする
-- 初回利用時のみエンコーディング資産を取得するため、**一度だけネットワークアクセスが発生する可能性**がある
-- 取得後はローカルキャッシュが使われるため、それ以降の token counting 自体は local / deterministic に動作する
-- `--dry-run` を付けると、ファイルは書き込まずに sidecar 生成件数を確認できる
-
-### `analyze metrics`
-
-`metrics` は `parsed.jsonl` と `token_stats.json` をもとに `metrics.json` を生成します。
-
-```bash
-uv run llm-logparser analyze metrics \
-  --input <parsed.jsonl-or-directory> \
-  [--skip-existing] \
-  [--dry-run]
-```
-
-重要:
-
-- `metrics.json` の生成には、各スレッド横の `token_stats.json` が必要です
-- そのため、通常は先に `analyze tokens` を実行します
-- これも sidecar builder であり、presentation output ではありません
-- `--dry-run` を付けると、書き込み前に sidecar 生成プレビューだけを実行できます
-
-含まれる代表的な内容:
-
-- ratio / token / character / distribution / diversity 指標
-- `safety.refusal`
-- `interaction.revision`
-- `correction` / `clarification` / `retry` の subtype count
-
-既定の挙動:
-
-- 既存の `metrics.json` は再生成・上書きされます
-- `--skip-existing` は既存 artifact を温存し、欠けたものだけ補います
-- ただし、`metrics.json` が無いスレッドについては、必要な `token_stats.json` が存在しなければなりません
-
-### Analyze の出力クラスの違い
-
-Analyze サブコマンドは、見た目を統一するよりも、**生成物の性質をそのまま CLI に反映する** 方針です。
-
-- `stats` / `timeline`
-  - 端末表示または `--out` への保存
-  - `--json` による機械可読な presentation output が利用可能
-- `tokens` / `metrics`
-  - スレッドディレクトリ内に sidecar JSON を生成
-  - `--skip-existing` によって sidecar 再生成ポリシーを制御
-- `sqlite-build`
-  - 単一の `analysis.db` を作る L2 の補助コマンド
-  - `--overwrite` で DB 再構築を制御
-
-### Sidecar の位置づけ
-
-`token_stats.json` と `metrics.json` は便利な機械可読 artifact ですが、canonical source ではありません。
-
-- canonical input は `parsed.jsonl`
-- sidecar は再構築可能
-- sidecar の欠落はアーキテクチャ上の破綻を意味しない
-- correctness を確認したいときは canonical data に戻れるべき
-
-`analysis.db` も同様に、canonical source ではなく、L2 のための
-**任意の deterministic / rebuildable なインデックス**です。
-
-- `parsed.jsonl` を置き換えない
-- `token_stats.json` / `metrics.json` を置き換えない
-- 汎用の分析エンジンや、あらゆる派生成果物の保存先として扱わない
-- より大きなデータセットでの問い合わせや探索を補助するための index layer として扱う
-
----
-
-## 🌍 ローカライゼーション
-
-`llm-logparser` の i18n は、完全翻訳を強制するモデルではなく、**best-effort で安全にフォールバックするモデル** です。locale file の欠落やキー不足は異常ではなく、通常の運用範囲として扱われます。
-
-### 何がローカライズされるか
-
-ローカライズ対象:
-
-- CLI の help / runtime / error メッセージ
-- Analyzer の heuristic phrase resource
-
-ローカライズ対象外:
-
-- `analyze stats` と `analyze timeline` の英語テキスト要約
-- JSON artifact のキー名
-- 安定した machine-readable schema
-- argparse 由来の `usage:` や built-in boilerplate
-- Markdown の日時表現そのもの
-
-### 指定方法
-
-```text
---locale   en-US | ja-JP | …
---timezone Asia/Tokyo | UTC | …
-```
-
-### locale file の配置
-
-```text
-src/llm_logparser/i18n/*.yaml
-```
-
-locale YAML は次のようなトップレベル構造を持ちます。
-
-- `messages:`  
-  CLI / help / runtime / error 用の文字列
-- `analysis:`  
-  refusal / revision などのヒューリスティクスに使う構造化リソース
-
-### 優先順位
-
-通常の locale 解決順序は次の通りです。
-
-1. CLI `--locale` / `--lang`
-2. 環境変数 `LLP_LOCALE`
-3. 選択された profile の `locale`
-4. `en-US`
-
-### フォールバック動作
-
-- 未知の locale は `en-US` に解決される
-- `messages:` のキー欠落は `en-US`、それでも無ければ raw key にフォールバックする
-- `analysis:` のキー欠落は `en-US` にフォールバックする
-- `en` や `ja` のような短縮名は、一意に解決できる場合に自動導出される
-- 同じ言語プレフィックスを複数 locale file が共有する場合は、完全な locale tag を使う
-
-### Analyzer 用 YAML カスタマイズ
-
-Analyzer の phrase-based heuristic は YAML から調整できます。代表的なキーは以下です。
-
-- `analysis.refusal.indicators`
-- `analysis.revision.cues`
-- `analysis.correction.cues`
-- `analysis.clarification.cues`
-
-方針:
-
-- CLI 文言を変えたいなら `messages:` を編集する
-- 組織固有の言い回しやドメイン表現を調整したいなら `analysis:` を編集する
-- phrase list は大きくしすぎず、保守的に増やす方が誤検出を避けやすい
-- まず YAML を調整し、それでも足りなければコード変更を検討する
-
-### 現状の制約
-
-- top-level config `locale` はまだない
-- argparse built-in の完全な多言語化は未対応
-- system locale の自動利用は行わない
-
----
-
-## ⚙️ 設定（config.yaml）
-
-`llm-logparser` は、CLI の既定値を YAML で与えるための `config.yaml` をサポートしています。これは実行時の利便性を上げる仕組みであり、**CLI 引数が常に最優先**です。
-
-### 基本原則
-
-- CLI flags が最優先
-- profile の値は「足りない引数を埋める」ために使われる
-- built-in CLI defaults は最後に適用される
-
-優先順位:
-
-```text
-CLI flags > selected profile values > built-in CLI defaults
-```
-
-locale には追加ルールがあります。
-
-```text
-CLI --locale/--lang > LLP_LOCALE > selected profile locale > en-US
-```
-
-### config の探索順
-
-`--config` を渡さない場合、設定ファイルは次の順で探索されます。
-
-1. `--config <path>`
+1. 明示的な `--config <path>`
 2. 環境変数 `LLM_LOGPARSER_CONFIG=<path>`
 3. カレントディレクトリの `config.yaml`
-4. 親ディレクトリ方向にたどって最初に見つかる `config.yaml`
-5. `~/.config/llm-logparser/config.yaml`
+4. `config.yaml` を含む最も近い親ディレクトリ
+5. 該当する場合は `~/.config/llm-logparser/config.yaml`
 
-設定ファイルが見つからなくても CLI は通常通り動作します。
+設定ファイルが見つからなくても、CLI は通常どおり動作します。
 
-### 最小構成例
+---
+
+### Profiles
+
+複数の profile を定義し、`--profile <name>` で 1 つ選択できます:
 
 ```yaml
 schema_version: 1
@@ -590,146 +646,72 @@ active_profile: default
 profiles:
   default:
     provider: openai
-    timezone: Asia/Tokyo
-    locale: ja-JP
 
     input:
       path: exports/messages.jsonl
+      # or:
+      # paths: [exports/a.jsonl, exports/b.jsonl]
+      # export uses:
+      # parsed: artifacts/output/openai/thread-123/parsed.jsonl
 
     sanitize:
       enabled: true
       replacement: REDACTED
       scope: content_parts
 
-    parse:
-      outdir: artifacts
-      validate_schema: true
-
     output:
       path: artifacts/thread.md
       formatting: light
       split: auto
+
+    parse:
+      outdir: artifacts
+      validate_schema: true
 ```
 
-### Profile
-
-複数 profile を定義し、`--profile <name>` で選択できます。
-
-選択優先順位:
+Profile 選択の優先順位:
 
 ```text
---profile > active_profile > ひとつだけ定義されている profile
+--profile > active_profile > the only defined profile
 ```
 
-複数 profile が存在し、自動選択も明示指定もない場合:
+サポートされている config 由来オプションの値の優先順位:
 
-- interactive mode では選択プロンプトが出る
-- non-interactive mode では profile default は適用されない
-
-### `input`
-
-`input` は config-aware な各コマンドで共有されます。
-
-```yaml
-input:
-  path: exports/messages.json
-  parsed: artifacts/output/openai/thread-123/parsed.jsonl
+```text
+CLI flags > selected profile values > built-in CLI defaults
 ```
 
-意味:
+section ベースの形が canonical です。`outdir`、`dry_run`、`fail_fast`、`validate_schema`、`export_outdir`、`parsed_root`、`conversation_id` のような古い profile-level 互換キーも `schema_version: 1` では引き続き受け付けられますが、loader は警告を出し、section ベースの置き換え先を示します。この互換性は、将来の schema-version-2 cleanup で削除される想定です。
 
-- `input.path` / `input.paths` は `parse` / `chain` / `extract` 向け
-- `input.parsed` は `export` 向け
+複数の `input.paths` が定義されていて、明示的な `--input` が指定されていない場合:
 
-### `output`
+* interactive mode では、プロンプトが表示されます
+* non-interactive mode では、プログラムはコード `2` で終了します
 
-Exporter の既定値をまとめるセクションです。
+複数の profile が存在し、`--profile` でも `active_profile` でも選ばれない場合:
 
-```yaml
-output:
-  path: artifacts/thread.md
-  formatting: light
-  split: auto
-```
+* interactive mode では、profile を選ぶよう促されます
+* non-interactive mode では、profile 既定値は適用されません
 
-補足:
+---
 
-- `output.path` が canonical な出力先キー
-- `output.dir` はサポートしていない
+### Relative Path Resolution
 
-### `parse` / `chain` / `extract`
+`config.yaml` で定義された相対パスは、見つかった `config.yaml` が存在するディレクトリを基準に解決されます。
 
-コマンド別の既定値は、それぞれ対応するセクションに置きます。
-
-```yaml
-parse:
-  outdir: artifacts
-  validate_schema: true
-
-chain:
-  outdir: artifacts
-  export_outdir: artifacts/markdown
-
-extract:
-  outdir: artifacts
-  conversation_id: conv-123
-```
-
-### 後方互換キー
-
-`schema_version: 1` では、古い profile-level key も後方互換のために受け付けています。ただし今後の cleanup で削除予定です。
-
-代表例:
-
-- `outdir` → `parse.outdir`, `chain.outdir`, `extract.outdir`
-- `dry_run` → `parse.dry_run`, `chain.dry_run`, `extract.dry_run`
-- `fail_fast` → `parse.fail_fast`, `chain.fail_fast`
-- `validate_schema` → `parse.validate_schema`, `chain.validate_schema`
-- `export_outdir` → `chain.export_outdir`
-- `parsed_root` → `chain.parsed_root`
-- `conversation_id` → `extract.conversation_id`
-
-新規設定では section-based shape を使うことを推奨します。
-
-### `sanitize`
-
-`extract` のマスキング動作は `sanitize` セクションで制御します。
-
-```yaml
-sanitize:
-  enabled: true
-  replacement: REDACTED
-  scope: content_parts
-  extra_keywords: [credential]
-  mask_patterns:
-    - acct-\d+
-```
-
-`scope` は以下をサポートします。
-
-- `content_parts`
-- `all_strings`
-
-既定動作:
-
-- `sanitize` を省略しても `extract` の安全寄り既定値は有効
-- フィールド名ベースの秘匿と、内蔵 email / phone パターンが適用される
-- `mask_patterns` を指定すると、そのリストが実際の string masking に使われる
-- `mask_patterns: []` にすると regex ベースの masking を止めつつ、field-name redaction は維持できる
-
-### 相対パスの解決
-
-`config.yaml` に書いた相対パスは、**その `config.yaml` が置かれているディレクトリ基準**で解決されます。カレントディレクトリ依存ではありません。
-
-これは次のような運用で重要です。
+これにより、次のような使い方でも挙動が安定します:
 
 ```bash
 LLM_LOGPARSER_CONFIG=/etc/llm/config.yaml
 ```
 
-### config サブコマンド
+また、意図しない CWD 依存のパス解決を避けられます。
 
-設定解決を確認したいときは、軽量なサブコマンドを使えます。
+---
+
+### Config Subcommands
+
+config 解決の確認やデバッグには、次のヘルパーを使います:
 
 ```bash
 uv run llm-logparser config path
@@ -737,9 +719,31 @@ uv run llm-logparser config show [--profile work]
 uv run llm-logparser config validate
 ```
 
+`config show` は、1 つ選ばれた profile が解決された場合は正規化済みのその profile を表示します。そうでない場合は、正規化済みの設定全体構造を表示します。
+
+`extract` に対する canonical な sanitize セクションは次のとおりです:
+
+```yaml
+sanitize:
+  enabled: true
+  replacement: REDACTED
+  scope: content_parts   # or: all_strings
+  extra_keywords: [credential]
+  mask_patterns:
+    - acct-\d+
+```
+
+`sanitize` が省略されても、`extract` は現在の安全寄りの既定挙動を維持します:
+
+* sanitization は有効のままです
+* 機微なフィールド名は redact されます
+* 組み込みの email および phone パターンが `content.parts` に適用されます
+
+---
+
 ### Non-Interactive Mode
 
-CI や自動処理向けにプロンプトを止めたい場合は、以下を使います。
+次でプロンプトを無効化できます:
 
 ```bash
 --non-interactive
@@ -751,117 +755,176 @@ CI や自動処理向けにプロンプトを止めたい場合は、以下を�
 LLM_LOGPARSER_NON_INTERACTIVE=1
 ```
 
-non-interactive mode では、以下の条件で exit code `2` になります。
+non-interactive mode では、次の場合にプログラムはコード `2` で終了します:
 
-- 必須オプションが不足している
-- 複数候補があり入力が曖昧である
+* 必須オプションが不足している
+* 複数の入力候補が曖昧である
 
----
-
-## 🔒 セキュリティとプライバシー
-
-`llm-logparser` は、対話ログという機密性の高いデータを扱う前提で設計されています。そのため、privacy-first と local-first を強く意識しています。
-
-### 基本方針
-
-- parse / export / 大半の analyzer workflow は offline-first
-- テレメトリなし
-- ログデータを外部送信しない
-- 監査に向いた deterministic output
-- 秘匿処理が必要な `extract` では sanitize が config-driven で既定有効
-
-### `extract` のサニタイズ
-
-`extract` 実行時には、適用した sanitize policy の概要を `extract.meta.json` に記録します。これにより、後から以下を確認できます。
-
-- sanitize が有効だったか
-- どの scope を使ったか
-- どの replacement token を使ったか
-- custom keyword / pattern を指定していたか
-
-### `tiktoken` に関する注意
-
-`analyze tokens` / `analyze metrics` は基本的にローカル処理ですが、`tiktoken` は初回使用時に encoding data を取得するため、一度だけネットワークアクセスが発生する可能性があります。取得後はローカルキャッシュが使われます。
-
-### 監査可能性
-
-このプロジェクトは「便利さのために正規データを曖昧にする」設計を避けています。
-
-- canonical data は `parsed.jsonl`
-- sidecar は再生成可能
-- parser と analyzer の責務が分離されている
-- data lineage を説明しやすい
-
-これにより、ログ保管、検証、再解析、将来の移行がしやすくなります。
+これにより、CLI は CI や自動化ワークフローで安全に使えます。
 
 ---
 
-## 🗺 ロードマップ
+## ローカライゼーション
 
-### すでに実装済み
+> **このセクションは無視してかまいません**。英語以外のヒューリスティック句リストが必要な場合や、
+> 日本語の CLI 出力が欲しい場合を除きます。
 
-- [x] CLI MVP (`parse` / `export` / `extract` / `chain` / `analyze`)
-- [x] スレッド分割対応 Markdown exporter
+`llm-logparser` は best-effort な i18n モデルを採用しています。locale file は任意で、ユーザーが拡張可能な YAML resource であり、キー欠落は実行を妨げるのではなく安全にフォールバックすることが想定されています。
+
+出力フォーマットは次で制御できます:
+
+```text
+--locale   en-US | ja-JP | …
+--timezone Asia/Tokyo | UTC | …
+```
+
+Locale file は `src/llm_logparser/i18n/*.yaml` 配下にあり、次を含められます:
+
+* `messages:` はスカラーな CLI、help、runtime、error テキスト用
+* `analysis:` は構造化された analyzer phrase resource 用
+
+ローカライズされるもの:
+
+* `messages:` に由来する CLI、help、runtime メッセージ
+* `analysis:` に由来する analyzer のヒューリスティック phrase resource
+
+設計上ローカライズされないもの:
+
+* `analyze stats`、`analyze datasheet`、`analyze timeline` のレンダリング済み要約
+* JSON artifact と安定した schema key
+* `usage:` などの argparse 組み込みや parser 生成 boilerplate
+* タイムゾーン変換を除く Markdown タイムスタンプ整形
+
+Locale の優先順位:
+
+1. CLI `--locale` または `--lang`
+2. 環境変数 `LLP_LOCALE`
+3. 該当する場合は選択された profile locale `profiles.<name>.locale`
+4. `en-US`
+
+メモ:
+
+* まだすべてのコマンドが profile-level locale を完全には尊重しません。CLI と環境設定が優先されます
+* parser と help 出力は、生の argv スキャンにより早い段階で CLI locale を取り込めます
+* 未知の locale は `en-US` に解決されます
+* message key が欠けている場合は `en-US` にフォールバックし、それでも無ければ生の key にフォールバックします
+* analyzer resource key は `en-US` にフォールバックします
+* `en` や `ja` のような短い別名は、言語接頭辞が曖昧でない場合に locale filename から自動導出されます
+* 複数の locale file が同じ言語接頭辞を共有する場合は、完全な locale tag を使ってください
+
+---
+
+## YAML カスタマイズ
+
+Locale データは YAML 駆動です。`src/llm_logparser/i18n/` 配下の locale file は、厳密な契約ではなく best-effort な拡張です。部分的な file でも受け入れられ、`en-US` へのフォールバックは通常挙動です。
+
+スカラーな CLI、help、runtime メッセージは `messages:` 配下にあり、analyzer の phrase 調整は `analysis:` 配下にあります。
+
+キー:
+
+* `analysis.refusal.indicators`
+  assistant メッセージに対する `metrics.json` の refusal 検出で使われる phrase list。
+
+* `analysis.revision.cues`
+  user メッセージに対する `metrics.json` の revision 検出で使われる phrase list。
+
+* `analysis.correction.cues`
+  検出された revision の correction subtype 判定で `metrics.json` が使う phrase list。
+
+* `analysis.clarification.cues`
+  検出された revision の clarification subtype 判定で `metrics.json` が使う phrase list。
+
+ガイダンス:
+
+* user 向け CLI、help、runtime テキストを変更するときだけ `messages:` を編集してください
+* ドメイン固有の表現、方言、口語表現は YAML に直接追加してください
+* 明らかな偽陽性を避けるため、小さく保守的な phrase list を推奨します
+* ログが組織固有の言い回しを使っている場合は、コードを変える前にまず YAML を調整してください
+* section や key が欠けている場合、locale 固有の挙動は `en-US` にフォールバックします
+* revision ヒューリスティックは、cue や類似度マッチングの前に非常に短い user メッセージを無視します
+
+これが、phrase ベースのヒューリスティック調整のために想定されているカスタマイズ経路です。
+
+---
+
+## セキュリティとプライバシー
+
+* parse、export、ほとんどの analyzer workflow は offline-first です
+* テレメトリはありません
+* 機微なログはローカルに留まります
+* 監査向けの決定的な出力です
+* `extract` の sanitization は config 駆動で、互換性のため既定で有効です
+* `extract.meta.json` には、sanitization が有効だったか、どの scope が実行されたか、どの replacement token が使われたか、custom keyword や pattern が与えられたかが記録されます
+* `analyze tokens` と `analyze metrics` は通常ローカルですが、`tiktoken` は初回利用時に一度だけ encoding data を取得し、その後はローカルキャッシュを使う可能性があります
+
+---
+
+## 依存関係とクレジット
+
+現在の analyze と tokenizer 関連の実装は、主に次に依存しています:
+
+* 決定的 analysis とヒューリスティックのための Python 標準ライブラリユーティリティ
+* tokenizer ベース analysis のための [`tiktoken`](https://github.com/openai/tiktoken)
+
+refusal と revision ヒューリスティックの phrase resource は、`src/llm_logparser/i18n/` 配下のプロジェクト YAML file にあり、ユーザーが調整できるよう意図されています。
+
+---
+
+## ロードマップ
+
+- [x] CLI MVP (parse / export / extract / chain / analyze)
+- [x] thread 分割付き Markdown exporter
 - [x] JSON Schema validation
 - [x] 設定ファイル読み込み（auto-discovery + profiles）
-- [x] Analyzer (`stats` / `timeline` / `tokens` / `metrics`)
+- [x] Analyzer stats / timeline / tokens / metrics
 
-### 近い将来の候補
+Near term:
 
-- [ ] Anthropic / Claude 対応
-- [ ] xAI / Grok 対応
-- [ ] 正規化ログを閲覧するための VS Code Extension
+- [ ] Anthropic / Claude support
+- [ ] xAI / Grok support
+- [ ] 正規化済みログを閲覧するための VS Code Extension
 
-### 中長期・探索的テーマ
+Later / exploratory:
 
-- [ ] Gemini 対応
-- [ ] GUI アプリケーション
-- [ ] Viewer / downstream toolchain の拡張
-- [ ] canonical data を土台にした研究・分析ユースケースの強化
+- [ ] Gemini support（形式は評価中）
+- [ ] GUI applications
 
 ---
 
-## 🤝 コントリビューション
+## コントリビュート
 
-Issue、Discussion、Pull Request を歓迎します。特に次の領域は貢献しやすいポイントです。
+PR を歓迎します。
 
-- provider adapter
-- exporter の改善
-- localization
-- analyzer の deterministic な改良
-- ドキュメント整備
+始めやすい場所:
 
-### コントリビューション時の原則
+* adapters
+* exporter 改善
+* localization
 
-- deterministic core を壊さない
-- provider-specific behavior は adapter に閉じ込める
-- offline-first を既定方針とする
-- canonical source と sidecar を混同しない
-- parser / exporter / analyzer の責務分離を維持する
+原則:
 
-### テスト
+* deterministic core
+* provider 固有の振る舞いは adapters に置く
+* 既定で offline
 
-変更前後の確認には、少なくともローカルでテストを回してください。
+次でローカルのテストスイートを実行できます:
 
 ```bash
 uv run pytest
 ```
 
-ドキュメントだけの変更であっても、設計方針との整合は意識してください。特に `parsed.jsonl` を中心とした canonical-first の説明は、実装とずれないことが重要です。
+---
+
+## ライセンス
+
+MIT - シンプルで制約の少ないライセンスです。
 
 ---
 
-## 📄 ライセンス
+## 著者
 
-このプロジェクトは **MIT License** のもとで公開されています。  
-利用、改変、再配布は比較的自由ですが、詳細はリポジトリ直下の `LICENSE` を確認してください。
-
----
-
-## Author
-
-> "The words you weave are not mere echoes;  
-> they carry weight,  
+> "The words you weave are not mere echoes;
+> they carry weight,
 > and may they never be lost to the tide of time."
 
-© 2025 **Ashes Division — Reyz Laboratory**  
+© 2025 **Ashes Division - Reyz Laboratory**
