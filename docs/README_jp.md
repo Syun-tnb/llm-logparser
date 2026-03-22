@@ -2,26 +2,26 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/llm-logparser)](https://pypi.org/project/llm-logparser/)[![Python versions](https://img.shields.io/pypi/pyversions/llm-logparser)](https://pypi.org/project/llm-logparser/)[![License](https://img.shields.io/github/license/Syun-tnb/llm-logparser)](LICENSE)[![GitHub Sponsors](https://img.shields.io/github/sponsors/Syun-tnb)](https://github.com/sponsors/Syun-tnb)
 
-生の LLM チャットエクスポートを、読んで、検索して、分析できる構造化データへ
-変換する local-first CLI です。何もクラウドへ送信しません。
+LLM のチャットエクスポートを、読みやすく・検索しやすく・分析しやすい形に整える local-first CLI です。
+データをクラウドへ送信することはありません。
 
 **できること:**
 
-1. あなたの ChatGPT（または他の LLM）のエクスポートを、きれいで構造化されたデータへ **Parse**
+1. ChatGPT（または他の LLM）のエクスポートを、きれいで構造化されたデータに **Parse**
 2. 会話を読みやすい Markdown ファイルとして **Export**
 3. メッセージ数、トークン使用量、安全性メトリクス、タイムラインなどを会話ごとに **Analyze**
 
-すべてローカルで動作します。クラウドなし。テレメトリなし。データはあなたのマシンに留まります。
+すべてローカルで動作します。クラウドなし、テレメトリなし。データは手元の環境に保存されます。
 
-> 現在は OpenAI のエクスポートをサポートしています。Claude と Gemini のサポートは予定されています。
+> 現在サポートしているのは OpenAI 、Claude 、Grok のエクスポートです。Gemini には今後対応予定です。
 
 ---
 
 ## インストール
 
-> **ほとんどのユーザー:** 必要なのは `pip install llm-logparser` だけです。
+> **ほとんどの場合:** `pip install llm-logparser` だけで使い始められます。
 
-`pip` または `uv` を使って PyPI からインストールします:
+`pip` または `uv` を使って、PyPI からインストールできます:
 
 ```bash
 pip install llm-logparser
@@ -31,7 +31,7 @@ pip install llm-logparser
 uv pip install llm-logparser
 ```
 
-インストール済みパッケージではなく、リポジトリのチェックアウトから作業している場合:
+リポジトリを clone して開発する場合は、次のようにセットアップします:
 
 ```bash
 uv sync
@@ -40,7 +40,7 @@ uv sync --extra dev
 
 コマンドエイリアス:
 
-`llp` は `llm-logparser` の簡易エイリアスです。どちらの実行名でも、すべてのコマンドは同じように動作します。
+`llp` は `llm-logparser` の簡易エイリアスです。どちらを使っても同じように動作します。
 
 例:
 
@@ -49,7 +49,10 @@ llp parse ...
 llm-logparser analyze stats ...
 ```
 
-リポジトリを clone した場合は、`uv run ...` でコマンドを実行できます。パッケージをインストールした場合は、`llm-logparser ...` を直接実行してください。
+実行方法の違い:
+
+* パッケージとしてインストールした場合 → `llm-logparser ...`
+* リポジトリから実行する場合 → `uv run ...`
 
 ---
 
@@ -923,8 +926,10 @@ MIT - シンプルで制約の少ないライセンスです。
 
 ## 著者
 
-> "The words you weave are not mere echoes;
-> they carry weight,
-> and may they never be lost to the tide of time."
+```text
+The words you weave are not mere echoes;
+they carry weight,
+and may they never be lost to the tide of time.
+```
 
 © 2025 **Ashes Division - Reyz Laboratory**
