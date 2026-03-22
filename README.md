@@ -933,8 +933,10 @@ MIT - simple and permissive.
 
 ## Author
 
-> "The words you weave are not mere echoes;
-> they carry weight,
-> and may they never be lost to the tide of time."
+```text
+The words you weave are not mere echoes;
+they carry weight,
+and may they never be lost to the tide of time.
+```
 
 © 2025 **Ashes Division - Reyz Laboratory**
