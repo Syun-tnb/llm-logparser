@@ -252,6 +252,30 @@ def test_l2_sqlite_builder_preserves_thread_and_window_fidelity(tmp_path):
         conn.close()
 
 
+def test_l2_sqlite_builder_runs_analyze_and_restores_delete_journal_mode(tmp_path):
+    root = _build_fixture_root(tmp_path)
+
+    result = build_analysis_db(root, "openai")
+    conn = sqlite3.connect(result["db_path"])
+    try:
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert journal_mode == "delete"
+
+        stat_table = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'sqlite_stat1'
+            """
+        ).fetchall()
+        assert stat_table == [("sqlite_stat1",)]
+    finally:
+        conn.close()
+
+    assert not (root / "openai" / "analysis.db-wal").exists()
+    assert not (root / "openai" / "analysis.db-shm").exists()
+
+
 def test_l2_sqlite_builder_is_deterministic(tmp_path):
     root = _build_fixture_root(tmp_path)
 
@@ -295,4 +319,16 @@ def test_l2_sqlite_builder_raises_on_invalid_json(tmp_path):
     windows_path.write_text("{bad json}\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match=r"invalid JSON .*message_windows\.jsonl:1"):
+        build_analysis_db(root, "openai")
+
+
+def test_l2_sqlite_builder_validates_metadata_row(tmp_path, monkeypatch):
+    root = _build_fixture_root(tmp_path)
+
+    monkeypatch.setattr(
+        "llm_logparser.l2_sqlite.builder.insert_metadata",
+        lambda conn, *, provider_id: None,
+    )
+
+    with pytest.raises(ValueError, match="metadata row mismatch"):
         build_analysis_db(root, "openai")
