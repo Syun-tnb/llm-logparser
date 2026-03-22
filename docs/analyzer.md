@@ -6,6 +6,11 @@ canonical JSONL conversation format produced by the parser.
 Its purpose is **not** to replace the parser or exporter, but to build
 additional insight layers on top of the normalized conversation data.
 
+The canonical source of truth remains `parsed.jsonl`. Analyzer outputs are
+derived layers built above that canonical base. Deterministic layers remain
+the stable foundation; optional higher layers may add capability, but they do
+not replace canonical or deterministic artifacts.
+
 The design follows a **layered analysis model**, where each layer adds
 capability while preserving deterministic and local-first behavior
 whenever possible.
@@ -18,12 +23,15 @@ The analyzer is designed around three core principles:
 
 - **Canonical input**  
   All analysis operates on normalized JSONL threads produced by the parser.
+  `parsed.jsonl` remains the canonical source of truth.
 
 - **Deterministic first**  
-  Analyses that do not require AI models should remain deterministic and reproducible.
+  Analyses that do not require AI models should remain deterministic,
+  reproducible, and rebuildable from canonical data.
 
 - **Progressive capability**  
-  More powerful analysis layers exist above deterministic ones but remain optional.
+  More powerful analysis layers exist above deterministic ones but remain
+  optional, additive, and isolated from users who do not use them.
 
 This allows users to run the analyzer in environments ranging from:
 
@@ -39,13 +47,29 @@ This allows users to run the analyzer in environments ranging from:
 The analyzer is structured into four conceptual layers.
 
 ```
-L1  Text / Schema Analysis
-L2  Indexed Analysis (SQLite)
-L3  Local LLM Analysis
-L4  Frontier LLM Analysis (API)
+L1  Deterministic analysis over canonical parsed.jsonl
+L2  Deterministic / rebuildable SQLite analysis index
+L3  Optional local LLM layer
+L4  Optional external/API LLM layer
 ```
 
 Each layer builds on the same canonical JSONL conversation structure.
+
+Architecture boundary:
+
+- command level:
+  deterministic commands and optional higher-layer commands remain separate
+- artifact/output-layer level:
+  canonical data, deterministic sidecars/views, optional SQLite indexes, and
+  future model-derived or GUI-oriented outputs remain separate artifacts
+
+This separation matters because `analysis.db` is an optional analysis index,
+not canonical storage. Higher layers may be model-derived and non-deterministic,
+but they must remain opt-in additive layers on top of the deterministic base.
+
+Users who only rely on `parsed.jsonl`, `token_stats.json`, `metrics.json`, or
+the deterministic views should not be affected by whether L2, L3, L4, or any
+future GUI-oriented layer is used.
 
 ---
 
@@ -56,6 +80,7 @@ This layer performs analysis using only the normalized JSONL data.
 No databases, no AI models.
 
 These analyses are fast, reproducible, and safe to run in any environment.
+Their outputs are deterministic artifacts or views derived from canonical data.
 
 Current Layer 1 implementations include:
 
@@ -89,6 +114,14 @@ parsed.jsonl (canonical)
     -> analyze datasheet  -> report layer (Markdown or JSON)
 ```
 
+In this model:
+
+- `parsed.jsonl` is canonical
+- Layer 1 outputs are deterministic and rebuildable
+- Layer 2 adds an optional deterministic SQLite index
+- Layer 3 and Layer 4 outputs, when added, remain separate higher-layer artifacts
+- higher layers do not replace canonical data or deterministic sidecars/views
+
 Recommended workflow when you want the full analyze stack:
 
 1. parse the provider export into canonical `parsed.jsonl`
@@ -119,6 +152,7 @@ CLI consistency note:
   default, supports `--json`, and can write the rendered result via `--out`
 - `analyze tokens` and `analyze metrics` are sidecar builders: they write per-thread JSON artifacts next to each `parsed.jsonl` and use `--skip-existing` instead of presentation flags
 - `analyze sqlite-build` writes a single `analysis.db` index artifact and uses `--overwrite` for rebuild control
+- future L3/L4 commands should remain separate from deterministic L1/L2 builders and presentation commands
 
 ## When To Use Which Command
 
@@ -240,7 +274,19 @@ into a local SQLite database.
 
 The database acts as an **analysis index**, not as the canonical storage.
 
-Canonical data remains JSONL.
+Canonical data remains `parsed.jsonl`.
+
+Layer 2 is therefore:
+
+- optional
+- deterministic and rebuildable
+- derived from canonical or deterministic lower-layer artifacts
+- safe to delete and rebuild
+- isolated from users who do not need indexed querying
+
+It does not replace `parsed.jsonl`, `token_stats.json`, `metrics.json`, or the
+deterministic view/report commands. It accelerates query workloads on top of
+them.
 
 SQLite enables:
 
@@ -260,7 +306,8 @@ assistant/user ratio
 top threads by size
 ```
 
-SQLite databases may be generated during parsing or imported later.
+`analyze sqlite-build` writes `analysis.db` as a separate artifact. If the
+index is absent, canonical and deterministic analyzer workflows still work.
 
 ---
 
@@ -286,6 +333,15 @@ Local models may include:
 
 Because these models run locally, this layer remains privacy-friendly
 and compatible with offline workflows.
+
+Layer 3 remains an optional higher layer. Its outputs are additive and may be
+model-derived or non-deterministic. They must not replace canonical
+`parsed.jsonl`, deterministic Layer 1 artifacts, or the optional deterministic
+Layer 2 SQLite index.
+
+Future local GUI-oriented summaries, annotations, or caches should follow the
+same rule: additive artifacts on top of the deterministic base, not
+redefinitions of it.
 
 Example tasks:
 
@@ -327,6 +383,11 @@ analyze llm --template architecture_review
 Because this layer depends on external APIs, it is optional and
 disabled by default in privacy-sensitive environments.
 
+Layer 4 is also an additive higher layer. Outputs from external/API models may
+be useful, but they are not canonical and may be non-deterministic. They must
+remain opt-in and isolated from deterministic artifacts and from users who do
+not use them.
+
 ---
 
 # CLI Concept
@@ -361,6 +422,12 @@ Possible modes:
 | sqlite-build | L2 |
 | local | L3 (conceptual / future) |
 | llm | L4 (conceptual / future) |
+
+Command boundary rule:
+
+- L1 commands operate on canonical data and produce deterministic views or sidecars
+- L2 commands build optional deterministic index artifacts
+- L3/L4 commands, when implemented, should remain explicitly higher-layer and opt-in
 
 ---
 
@@ -402,6 +469,9 @@ Potential future expansions include:
 - research tooling
 
 These features will remain layered on top of the canonical JSONL model.
+Any future GUI-oriented data products should follow the same additive model:
+they may consume canonical or deterministic artifacts, but they must not
+replace them.
 
 ---
 
@@ -411,7 +481,7 @@ The analyzer transforms normalized conversation logs into
 useful insights through a progressive analysis stack:
 
 ```
-JSONL → deterministic analysis → indexed analysis → local AI → frontier AI
+parsed.jsonl → deterministic analysis → optional index → optional local AI → optional frontier AI
 ```
 
 This design preserves the core philosophy of the project:
@@ -419,3 +489,5 @@ This design preserves the core philosophy of the project:
 - deterministic where possible
 - powerful where needed
 - always built on canonical normalized data
+- higher layers remain additive and opt-in
+- users who do not use higher layers remain on the same deterministic foundation

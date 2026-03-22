@@ -1,10 +1,14 @@
 # Analysis Artifacts and Processing Stages
 
-This document defines the architectural boundaries between **parse**, **deterministic analyzer sidecars/views**, the optional **SQLite analysis index (L2)**, and downstream processing in `llm-logparser`.
+This document defines the architectural boundaries between the canonical
+parse output, **deterministic analyzer sidecars/views (L1)**, the optional
+**SQLite analysis index (L2)**, and optional higher derived layers in
+`llm-logparser`.
 
 The goal is to ensure that:
 
 - `parse` remains **lightweight and deterministic**
+- deterministic and rebuildable artifacts remain the stable base
 - reusable artifacts are produced early enough for **local LLM pipelines**
 - optional indexed or downstream computation is layered cleanly on top
 
@@ -25,11 +29,13 @@ raw provider export
 parse
 │
 ▼
-deterministic analyzer commands / sidecars
+deterministic analyzer commands / sidecars (L1)
 │
 ▼
-optional SQLite index (L2) or downstream / L3
-(local LLM, search, indexing, etc.)
+optional SQLite index (L2)
+│
+▼
+optional higher derived layers (L3 / L4 / future GUI-oriented outputs)
 
 ```
 
@@ -38,13 +44,26 @@ Each stage has a clearly defined responsibility.
 | Stage | Purpose |
 |------|------|
 | parse | canonical normalization and deterministic parse-time artifact generation |
-| deterministic analyzer commands | local stats/datasheet/timeline views plus `token_stats.json` and `metrics.json` sidecar artifacts |
-| optional SQLite index (L2) | query accelerator built from canonical or canonical-derived artifacts |
-| L3 | external consumers (local LLM pipelines, embeddings, search) |
+| deterministic analyzer commands (L1) | local stats/datasheet/timeline views plus `token_stats.json` and `metrics.json` sidecar artifacts |
+| optional SQLite index (L2) | deterministic query accelerator built from canonical or canonical-derived artifacts |
+| optional higher layers (L3 / L4) | additive model-derived or downstream artifacts such as local-LLM or API-backed outputs |
+
+Future GUI-oriented data products follow the same rule as L3/L4: they are
+additional derived layers on top of canonical or deterministic artifacts, not
+replacements for them.
 
 A core design principle is:
 
 > **Later stages must never require re-running earlier stages if artifacts already exist.**
+
+Boundary rules:
+
+- `parsed.jsonl` is the canonical source of truth
+- L1 and L2 artifacts are deterministic and rebuildable
+- L2 is an optional analysis index, not canonical storage
+- L3, L4, and future GUI-oriented outputs are additive higher layers
+- higher-layer outputs must not replace or redefine canonical or deterministic artifacts
+- users who do not use L2/L3/L4 or GUI-related features should remain on the same canonical/deterministic workflow
 
 > [!NOTE]
 > `analyze stats` computes from canonical `parsed.jsonl`.
@@ -66,6 +85,10 @@ parsed.jsonl
 ```
 
 All higher-level artifacts must be derivable from this dataset.
+
+This is the stable, deterministic base of the system. Canonical correctness
+remains anchored here even when additional sidecars, indexes, reports, or
+future model-derived outputs exist.
 
 Key properties:
 
@@ -234,7 +257,7 @@ does not emit per-message `text_source`.
 
 ---
 
-# 4. Parse Stage (L1)
+# 4. Parse Stage (Canonical Base)
 
 The `parse` stage performs provider normalization and generates thread-local artifacts.
 
@@ -331,6 +354,7 @@ Chunking must never operate directly on raw provider exports.
 
 Implemented deterministic analyzer commands read canonical `parsed.jsonl` and
 produce optional sidecars or rendered views without changing parse-time behavior.
+These artifacts form the stable rebuildable base above parse.
 
 Implemented today:
 
@@ -342,6 +366,13 @@ Implemented today:
 Separately implemented:
 
 - `analyze sqlite-build` builds the optional SQLite index described below
+
+Artifact boundary:
+
+- `token_stats.json` and `metrics.json` are deterministic L1 sidecars
+- `analysis.db` is a separate optional L2 index artifact
+- future L3/L4/GUI outputs must be separate additive artifacts, not replacements
+  for canonical or deterministic ones
 
 Current thread-local analyzer artifacts:
 
@@ -484,7 +515,8 @@ accelerator:
 <outdir>/<provider>/analysis.db
 ```
 
-This database is **not canonical state**. It must be fully rebuildable from
+This database is **not canonical state**. It is an optional analysis index.
+It must be fully rebuildable from
 existing canonical or canonical-derived artifacts such as:
 
 - `thread_stats.json`
@@ -492,6 +524,16 @@ existing canonical or canonical-derived artifacts such as:
 - `message_windows.jsonl`
 
 The SQLite build step must not mutate those artifacts.
+
+L2 expectations:
+
+- deterministic and rebuildable
+- optional for users who need indexed querying
+- additive to the canonical/deterministic base
+- safe to delete and rebuild without loss of canonical correctness
+
+If `analysis.db` is missing, canonical and deterministic analyzer workflows
+must remain unaffected.
 
 ---
 
@@ -599,20 +641,23 @@ In this model:
 
 ---
 
-# 9. L3 / Downstream Processing
+# 9. Optional Higher Layers (L3 / L4 / GUI-Oriented Outputs)
 
-L3 refers to systems outside the core parser.
+L3 and L4 refer to optional higher layers outside the deterministic base.
 
 Examples include:
 
 - local LLM analysis
+- external/API-backed LLM analysis
 - RAG pipelines
 - embedding generation
 - search indexing
 - clustering
 - conversation summarization
+- future GUI-oriented caches, annotations, or derived summaries
 
-L3 systems should operate on artifacts produced by L1 and L2.
+These systems should operate on artifacts produced by the canonical base, L1,
+and optionally L2.
 
 Typical inputs:
 
@@ -625,10 +670,26 @@ analysis outputs
 
 ```
 
+Architectural rule:
+
+- higher-layer outputs are additive derived artifacts
+- they must not replace `parsed.jsonl`, `token_stats.json`, `metrics.json`, or `analysis.db`
+- they may be model-derived and non-deterministic
+- they remain opt-in and isolated from users who do not use them
+
+Provenance expectation:
+
+Future higher-layer artifacts should carry their own provenance and metadata
+appropriate to the layer that produced them. At minimum, they should be able to
+identify their source thread or dataset inputs and the model/configuration basis
+used to derive them. This document does not define a full L3/L4 schema, but the
+artifacts must remain clearly separate from the canonical/deterministic base.
+
 This separation ensures that:
 
-- L3 pipelines can evolve independently
+- L3/L4 pipelines can evolve independently
 - the parser remains deterministic
+- deterministic artifacts remain stable and rebuildable
 - heavy compute stays outside the core tool
 
 
@@ -650,37 +711,47 @@ This enables partial processing and incremental datasets.
 
 ### Reconstructibility
 
-All artifacts must be reconstructible from `parsed.jsonl`.
+Canonical correctness must always be reconstructible from `parsed.jsonl`.
+Deterministic L1/L2 artifacts must be rebuildable from canonical or lower-layer
+deterministic artifacts.
+
+Higher-layer L3/L4/GUI artifacts may depend on model execution, but they must
+remain additive and must not replace the deterministic base.
 
 ### Incrementality
 
 Artifacts should support incremental updates without full recomputation when possible.
 
+### Isolation
+
+Optional indexes, model-derived outputs, and future GUI-oriented data products
+must remain isolated from users who do not enable them.
+
 
 ---
 
-# 10. Architectural Summary
+# 11. Architectural Summary
 
 | Stage | Allowed Work |
 |------|------|
 | parse | normalization, thread-local stats, lightweight accumulators |
-| analyze | cross-thread computation, sorting, aggregation |
-| L3 | semantic analysis, embeddings, search, LLM workflows |
+| analyze (L1/L2) | deterministic sidecars/views plus optional rebuildable SQLite indexing |
+| L3/L4 | semantic analysis, embeddings, search, LLM workflows, other additive higher-layer outputs |
 
 Or more simply:
 
 ```
 
-parse   = produce deterministic building blocks
-analyze = assemble cross-thread views
-L3      = perform semantic or AI processing
+parse   = produce canonical deterministic building blocks
+L1/L2   = produce deterministic and rebuildable analysis artifacts
+L3/L4   = perform optional additive semantic or AI processing
 
 ```
 
 
 ---
 
-# 11. Rationale
+# 12. Rationale
 
 This architecture ensures:
 
@@ -693,7 +764,7 @@ This architecture ensures:
 
 ---
 
-# 12. Future Extensions
+# 13. Future Extensions
 
 Possible future additions include:
 
@@ -703,3 +774,5 @@ Possible future additions include:
 - timeline precomputation
 
 Any new artifact must follow the principles described in this document.
+In particular, future L3/L4/GUI-oriented outputs must be additive, optional,
+and isolated from the canonical/deterministic base rather than redefining it.
