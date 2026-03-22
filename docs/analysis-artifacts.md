@@ -544,6 +544,19 @@ L2 expectations:
 - additive to the canonical/deterministic base
 - safe to delete and rebuild without loss of canonical correctness
 
+For v1.4, the intended direction is narrow:
+
+- SQLite remains a deterministic query/index layer
+- it is not yet being expanded into a broader analysis query engine
+- ingesting `token_stats.json` or `metrics.json` into SQLite is deferred and
+  out of scope for v1.4
+- future L3/L4/GUI-oriented outputs should remain separate from L2 by command
+  surface, artifact/output layer, and, if needed later, storage/DB boundary
+- `analysis.db` is not a catch-all store for every future derived output
+
+This preserves the project's canonical-first and deterministic-first design
+while leaving room for future additive layers.
+
 If `analysis.db` is missing, canonical and deterministic analyzer workflows
 must remain unaffected.
 
