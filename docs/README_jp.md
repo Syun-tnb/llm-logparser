@@ -153,6 +153,12 @@ Analyze 系サブコマンドは、意図的に出力クラスが分かれてい
 - `tokens` / `metrics` は各スレッド横に作られる **JSON sidecar**
 - `sqlite-build` は単一の **SQLite database artifact**
 
+Analyzer のレイヤーは次のように整理されています。
+
+- L1 は deterministic analysis: `stats` / `timeline` / `tokens` / `metrics` / `datasheet`
+- L2 は `sqlite-build`: **任意の deterministic な SQLite インデックス**
+- L3 / L4 は将来の model-based layer（local / API）であり、現時点の CLI 機能ではありません
+
 ### 6. 推奨 sidecar ワークフロー
 
 `metrics.json` は `token_stats.json` に依存するため、先に `analyze tokens` を実行してください。
@@ -439,7 +445,7 @@ Analyze サブコマンドは、見た目を統一するよりも、**生成物�
   - スレッドディレクトリ内に sidecar JSON を生成
   - `--skip-existing` によって sidecar 再生成ポリシーを制御
 - `sqlite-build`
-  - 単一の `analysis.db` を作る補助コマンド
+  - 単一の `analysis.db` を作る L2 の補助コマンド
   - `--overwrite` で DB 再構築を制御
 
 ### Sidecar の位置づけ
@@ -450,6 +456,14 @@ Analyze サブコマンドは、見た目を統一するよりも、**生成物�
 - sidecar は再構築可能
 - sidecar の欠落はアーキテクチャ上の破綻を意味しない
 - correctness を確認したいときは canonical data に戻れるべき
+
+`analysis.db` も同様に、canonical source ではなく、L2 のための
+**任意の deterministic / rebuildable なインデックス**です。
+
+- `parsed.jsonl` を置き換えない
+- `token_stats.json` / `metrics.json` を置き換えない
+- 汎用の分析エンジンや、あらゆる派生成果物の保存先として扱わない
+- より大きなデータセットでの問い合わせや探索を補助するための index layer として扱う
 
 ---
 

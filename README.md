@@ -101,10 +101,10 @@ At a glance:
 
 * canonical `parsed.jsonl` is the source of truth
 * `thread_stats.json`, `token_stats.json`, and `metrics.json` are sidecar artifacts
-* `analyze stats` is for aggregation and exploration
-* `analyze metrics` is for deterministic per-thread signals
-* `analyze datasheet` is for concise research/reporting output
-* `analyze sqlite-build` is an optional SQLite index layer
+* Layer 1 (L1) is deterministic analysis: `stats`, `timeline`, `tokens`, `metrics`, and `datasheet`
+* Layer 2 (L2) is `analyze sqlite-build`: an optional deterministic SQLite index
+* Layer 3 / Layer 4 are future model-based layers (local / API), not current CLI features
+* `analyze sqlite-build` is a rebuildable non-canonical index, not a general-purpose analysis engine or catch-all derived-data store
 
 > MVP currently focuses on OpenAI logs. Providers like Claude and Gemini remain planned areas of expansion.
 
@@ -452,7 +452,8 @@ Additional behavior notes:
 
 ### Analyze SQLite Build
 
-Build an optional per-provider SQLite analysis index from canonical thread artifacts:
+Build an optional per-provider SQLite analysis index from canonical and
+deterministic thread artifacts:
 
 ```bash
 uv run llm-logparser analyze sqlite-build \
@@ -460,6 +461,11 @@ uv run llm-logparser analyze sqlite-build \
   --provider <provider-id> \
   [--overwrite]
 ```
+
+`analysis.db` is Layer 2 (L2): an optional deterministic, rebuildable, and
+non-canonical index for query acceleration. It does not replace
+`parsed.jsonl`, does not redefine analyzer sidecars, and is not a storage layer
+for every future derived artifact.
 
 ---
 
@@ -472,7 +478,7 @@ Use:
 * `analyze metrics` when you need deterministic per-thread `metrics.json`
 * `analyze datasheet` when you need appendix-ready Markdown or JSON for research/reporting
 * `analyze timeline` when you want time-bucketed activity summaries
-* `analyze sqlite-build` when you want an optional SQLite index for larger datasets
+* `analyze sqlite-build` when you want an optional deterministic SQLite index for larger datasets
 
 ## Analyzer Outputs
 
@@ -490,7 +496,13 @@ Current analyze-layer sidecars and report outputs:
 * `analyze datasheet`
   Deterministic report layer rendered as appendix-ready Markdown by default, with optional JSON.
 
-Sidecar artifacts are rebuildable from canonical `parsed.jsonl` and contain no runtime timestamps.
+Analyzer layering:
+
+* L1: deterministic analysis over canonical `parsed.jsonl` (`stats`, `timeline`, `tokens`, `metrics`, `datasheet`)
+* L2: `sqlite-build`, which writes a single optional deterministic SQLite index
+* L3 / L4: future conceptual model-based layers (local / API), kept opt-in and separate from the deterministic base
+
+Sidecar artifacts are rebuildable from canonical `parsed.jsonl` and contain no runtime timestamps. `analysis.db` is likewise rebuildable and non-canonical.
 
 Recommended sidecar workflow after parse:
 
@@ -525,7 +537,7 @@ These subcommands intentionally produce different output classes:
 
 * `stats`, `datasheet`, and `timeline` render summaries or reports
 * `tokens` and `metrics` write per-thread JSON sidecar artifacts
-* `sqlite-build` writes a single SQLite database artifact
+* `sqlite-build` writes a single optional SQLite database artifact for Layer 2 indexing
 
 ---
 
