@@ -390,6 +390,71 @@ not use them.
 
 ---
 
+# Future Higher-Layer Artifact Boundaries
+
+Future higher-layer artifacts should remain clearly separated from the
+deterministic L1/L2 base.
+
+Intended future artifact classes:
+
+- L3 artifacts: local model-derived outputs
+- L4 artifacts: external/API-derived outputs
+- GUI-oriented caches or indexes: display-optimization or UI-support artifacts,
+  not canonical state
+
+These are future additive layers on top of canonical and deterministic
+artifacts. They are not canonical, are not deterministic by default, and
+should not be mixed into the deterministic artifact layer by default.
+
+Minimum provenance metadata expectation:
+
+Future model-derived artifacts should carry enough provenance metadata to
+explain how they were produced. The exact field names are not yet frozen, but
+the metadata should cover at least:
+
+- `producer_layer`
+- `model`
+- `provider`
+- `prompt_template` or `template_id`
+- `created_at`
+- `source_inputs`
+- `schema_version`
+- `reproducibility_note`
+
+This is not a final schema contract. It is a design rule that future
+model-derived outputs must remain attributable, auditable, and clearly separate
+from deterministic artifacts.
+
+Intended layout guidance:
+
+The layout below is guidance for isolation, not a locked implementation
+contract:
+
+```text
+thread-<conversation_id>/
+    parsed.jsonl
+    token_stats.json
+    metrics.json
+    l3/   # future local model-derived outputs
+    l4/   # future API-derived outputs
+
+<provider>/
+    analysis.db
+    gui/  # future GUI-oriented cache or index artifacts
+```
+
+In this model:
+
+- the thread directory root remains for deterministic artifacts
+- `l3/` is the intended place for future local LLM-derived outputs
+- `l4/` is the intended place for future API-derived outputs
+- provider-root `gui/` is the intended place for GUI-specific cache/index data
+- `analysis.db` remains Layer 2, not a catch-all store for future higher layers
+- users who stay on the deterministic path should not be affected by whether
+  these higher-layer artifacts ever exist
+
+---
+
 # CLI Concept
 
 The analyzer is exposed via the `analyze` command.
