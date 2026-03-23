@@ -1,0 +1,66 @@
+[
+  {
+    "id": "aaaaaaaa-1111-2222-3333-444444444444",
+    "version": 0,
+    "chatId": "thread-1111-2222-3333-444444444444",
+    "content": "Plan a 3 day Kyoto itinerary.",
+    "contentChunks": null,
+    "role": "user",
+    "createdAt": "2026-03-17T10:53:35.234Z",
+    "reaction": "neutral",
+    "reactionDetail": null,
+    "reactionComment": null,
+    "preference": null,
+    "preferenceOver": null,
+    "context": null,
+    "canvas": [],
+    "files": []
+  },
+  {
+    "id": "bbbbbbbb-1111-2222-3333-555555555555",
+    "version": 0,
+    "chatId": "thread-1111-2222-3333-444444444444",
+    "content": "Day 1\nDay 2",
+    "contentChunks": [
+      {
+        "text": "Day 1",
+        "type": "text"
+      },
+      {
+        "text": "Day 2",
+        "type": "text"
+      }
+    ],
+    "role": "assistant",
+    "createdAt": "2026-03-17T10:53:40.000Z",
+    "reaction": "neutral",
+    "reactionDetail": "helpful",
+    "reactionComment": null,
+    "preference": null,
+    "preferenceOver": null,
+    "context": {
+      "source": "memory"
+    },
+    "canvas": [],
+    "files": []
+  },
+  {
+    "id": "cccccccc-1111-2222-3333-666666666666",
+    "version": 0,
+    "chatId": "thread-1111-2222-3333-444444444444",
+    "content": "",
+    "contentChunks": null,
+    "role": "assistant",
+    "createdAt": "2026-03-17T10:53:41.111Z",
+    "reaction": "neutral",
+    "reactionDetail": null,
+    "reactionComment": null,
+    "preference": null,
+    "preferenceOver": null,
+    "context": {
+      "note": "empty-content"
+    },
+    "canvas": [],
+    "files": []
+  }
+]

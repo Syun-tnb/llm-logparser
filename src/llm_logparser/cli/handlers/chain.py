@@ -14,7 +14,7 @@ def run_chain(args, logger: logging.Logger) -> None:
     from llm_logparser.core.exporter import export_thread_md
     from llm_logparser.core.parser import parse_to_jsonl
 
-    input_path = validate_path(args.input, expect_file=True)
+    input_path = validate_path(args.input)
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     logger.info(_("runtime.chain.provider", provider=args.provider))

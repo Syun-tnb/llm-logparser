@@ -79,3 +79,27 @@ They are not active runtime config until external provider mapping support is im
 - `openai/chatgpt.yaml`: example/spec for current ChatGPT normalization shape
 - `anthropic/claude.yaml`: example/spec aligned with the current Claude adapter
 - `xai/grok.yaml`: documentation/example only until a Grok runtime adapter exists
+
+## Mistral AI (Le Chat export)
+
+- Provider ID: `mistral_ai`
+- Service/family: `le_chat`
+- Input: one JSON file per thread where the top-level value is a non-empty list of message objects
+- Detection is schema-first:
+  - top-level JSON must be a non-empty list
+  - sampled items must contain `id`, `chatId`, `role`, `createdAt`
+  - sampled items must contain either `content` or `contentChunks`
+  - `contentChunks: null` is accepted
+
+### Normalized mapping
+
+| Raw field | Normalized field | Notes |
+|-----------|-----------------|-------|
+| `chatId` | `conversation_id` | Shortened with the shared ID helper for consistency with existing providers |
+| `id` | `message_id` | Shortened with the shared ID helper |
+| *(not available in export)* | `parent_id` | Always `null` in v1 |
+| `role` | `role` | Lowercased with small alias handling |
+| `createdAt` | `ts` | ISO-8601 → epoch milliseconds |
+| `content` | `text` | Canonical top-level text comes directly from `content` |
+| `contentChunks[*].text` / `content` | `content.parts` | Uses chunk texts first, then falls back to `[content]`, then `[]` |
+| provider-specific fields | `meta` | Includes `service="le_chat"` plus raw IDs and extra provider fields |

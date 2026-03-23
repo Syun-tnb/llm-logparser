@@ -9,7 +9,7 @@ from llm_logparser.core.i18n import _
 def run_parse(args, logger: logging.Logger) -> None:
     from llm_logparser.core.parser import parse_to_jsonl
 
-    input_path = validate_path(args.input, expect_file=True)
+    input_path = validate_path(args.input)
     args.outdir.mkdir(parents=True, exist_ok=True)
     provider_outdir = args.outdir / args.provider
 

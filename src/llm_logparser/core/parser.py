@@ -55,6 +55,12 @@ def load_adapter(provider: str):
             setattr(adapter, "__llp_record_expander__", get_record_expander())
         except Exception:
             pass
+    get_input_records = getattr(mod, "get_input_records", None)
+    if callable(get_input_records):
+        try:
+            setattr(adapter, "__llp_input_records__", get_input_records())
+        except Exception:
+            pass
     manifest = getattr(mod, "get_manifest", lambda: {})()
     policy = getattr(mod, "get_policy", lambda: {})()
     return adapter, manifest, policy
@@ -140,6 +146,24 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
         raise LLPInputError(f"permission denied: {path}")
     except Exception as e:
         raise LLPInputError(f"reader error: {e}")
+
+
+def iter_input_records(
+    path: Path,
+    logger: logging.Logger,
+) -> Generator[tuple[Any, str], None, None]:
+    """Yield provider input records with their concrete source path."""
+    target = path.expanduser()
+    if target.is_dir():
+        for child in sorted(
+            candidate for candidate in target.rglob("*.json") if candidate.is_file()
+        ):
+            for record in iter_json_records(child, logger):
+                yield record, str(child)
+        return
+
+    for record in iter_json_records(target, logger):
+        yield record, str(target)
 
 
 # ============================================================
@@ -268,6 +292,35 @@ def _invoke_adapter(adapter_func, raw: dict, *, source: str) -> list[dict]:
     return list(recs_iter)
 
 
+def _iter_provider_input_records(adapter_func, input_path: Path, logger: logging.Logger):
+    """Call provider input iterator with TypeError fallback and normalize tuples."""
+    input_records_func = getattr(adapter_func, "__llp_input_records__", None)
+    if not callable(input_records_func):
+        input_records_func = iter_input_records
+
+    try:
+        try:
+            params = signature(input_records_func).parameters
+        except Exception:
+            params = {}
+        if "logger" in params or len(params) >= 2:
+            records_iter = input_records_func(input_path, logger)
+        else:
+            records_iter = input_records_func(input_path)
+    except TypeError:
+        records_iter = input_records_func(input_path)
+
+    for item in records_iter:
+        if (
+            isinstance(item, tuple)
+            and len(item) == 2
+            and isinstance(item[1], str)
+        ):
+            yield item[0], item[1]
+        else:
+            yield item, str(input_path)
+
+
 # ============================================================
 # 5. Main Parser
 # ============================================================
@@ -316,7 +369,7 @@ def parse_to_jsonl(
     if not callable(record_expander):
         record_expander = lambda raw: [raw]
 
-    for raw in iter_json_records(input_path, log):
+    for raw, raw_source in _iter_provider_input_records(adapter_func, input_path, log):
         try:
             expanded_records = list(record_expander(raw))
         except Exception as e:
@@ -334,7 +387,7 @@ def parse_to_jsonl(
                 recs = _invoke_adapter(
                     adapter_func,
                     expanded_raw,
-                    source=str(input_path),
+                    source=raw_source,
                 )
                 if not recs:
                     continue

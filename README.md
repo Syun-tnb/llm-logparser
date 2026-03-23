@@ -13,7 +13,7 @@ read, search, and analyze — without sending anything to the cloud.
 
 Everything runs locally. No cloud. No telemetry. Your data stays on your machine.
 
-> Currently supports OpenAI exports. Claude and Gemini support is planned.
+> Current parse/import adapters: OpenAI ChatGPT, Anthropic Claude, xAI Grok, and Mistral Le Chat.
 
 ---
 
