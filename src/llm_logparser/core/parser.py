@@ -401,7 +401,7 @@ def parse_to_jsonl(
                 if count % progress_interval == 0:
                     log.info(_("runtime.parser.processed_messages", count=count))
 
-                recs.sort(key=lambda r: (r.get("ts") is None, r.get("ts"), r.get("message_id") or ""))
+                recs.sort(key=lambda r: (r.get("ts") is None, r.get("ts")))
 
                 if should_skip_thread(cid, recs, manifest_old):
                     skipped += 1

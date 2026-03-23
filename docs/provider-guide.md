@@ -103,3 +103,36 @@ They are not active runtime config until external provider mapping support is im
 | `content` | `text` | Canonical top-level text comes directly from `content` |
 | `contentChunks[*].text` / `content` | `content.parts` | Uses chunk texts first, then falls back to `[content]`, then `[]` |
 | provider-specific fields | `meta` | Includes `service="le_chat"` plus raw IDs and extra provider fields |
+
+## Google (Gemini My Activity)
+
+- Provider ID: `google`
+- Service/family: `gemini_activity`
+- Input: Google Takeout My Activity JSON arrays containing Gemini activity records
+- Import mode: event-first
+
+Google Gemini My Activity is imported as deterministic event-scoped mini-threads because the export does not expose stable conversation or thread identifiers. This is intentional: it keeps parse output truthful and deterministic instead of implying multi-turn fidelity that the source does not provide.
+
+### Detection
+
+- top-level JSON must be a non-empty list
+- sampled items must contain `title`, `time`, and `products`
+- at least some sampled items must contain `safeHtmlItem`
+- and Gemini activity must be indicated by `header` / `products`
+
+### Normalized mapping
+
+| Raw field | Normalized field | Notes |
+|-----------|-----------------|-------|
+| synthetic hash over raw event fields | `conversation_id` | One source event becomes one synthetic mini-thread |
+| synthetic hash over raw event fields + role | `message_id` | Deterministic per event and role |
+| `title` | user `text` | `送信したメッセージ: ` is stripped when present |
+| `safeHtmlItem[*].html` | assistant `text` | HTML is converted to plain text with a real HTML parser |
+| `time` | `ts` | ISO-8601 → epoch milliseconds |
+| provider-specific fields | `meta` | Includes `service="gemini_activity"` and raw activity fields |
+
+### Current limitations
+
+- exact original conversation boundaries are not guaranteed by the source export
+- canonical parse v1 does not do heuristic time-gap clustering or semantic re-threading
+- future higher-level re-threading can be added separately without redefining the canonical import
