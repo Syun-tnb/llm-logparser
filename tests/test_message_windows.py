@@ -6,6 +6,7 @@ from llm_logparser.core.message_windows import (
     build_message_window_artifact,
     iter_message_windows_from_rows,
 )
+from llm_logparser.core.schema_validation import load_message_windows_validator
 
 
 def _canonical_message(
@@ -100,6 +101,36 @@ def test_iter_message_windows_from_rows_is_deterministic_and_role_aware():
     assert "unknown: fifth" in first[1]["text"]
 
 
+def test_message_window_artifact_matches_schema():
+    rows = [
+        _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),
+        _canonical_message("conv-1", "m2", "assistant", 1704067202000, "second"),
+    ]
+
+    artifact = build_message_window_artifact(rows, window_index=1)
+    validator = load_message_windows_validator()
+
+    assert list(validator.iter_errors(artifact)) == []
+    assert artifact["record_type"] == "message_window"
+    assert artifact["schema_version"] == "1.0"
+
+
+def test_message_window_schema_rejects_malformed_row():
+    rows = [
+        _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),
+        _canonical_message("conv-1", "m2", "assistant", 1704067202000, "second"),
+    ]
+
+    artifact = build_message_window_artifact(rows, window_index=1)
+    artifact["message_ids"] = "m1,m2"
+
+    validator = load_message_windows_validator()
+    errors = list(validator.iter_errors(artifact))
+
+    assert errors
+    assert any(error.validator == "type" for error in errors)
+
+
 def test_parse_writes_message_windows_jsonl_next_to_parsed_jsonl(monkeypatch, tmp_path):
     monkeypatch.setattr(
         parser_module,
@@ -134,6 +165,7 @@ def test_parse_writes_message_windows_jsonl_next_to_parsed_jsonl(monkeypatch, tm
 
     assert windows[0]["message_ids"] == ["m1", "m2", "m3", "m4"]
     assert windows[0]["roles"] == ["user", "system", "assistant", "tool"]
+    assert windows[0]["schema_version"] == "1.0"
     assert windows[1]["message_ids"] == ["m5"]
     assert windows[1]["roles"] == ["assistant"]
     assert windows[0]["ts_start"] == 1704067201000

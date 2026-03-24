@@ -39,6 +39,7 @@ def test_parse_writes_thread_stats_artifact_next_to_parsed_jsonl(tmp_path):
 
     assert payload == expected
     assert payload["artifact_type"] == "thread_stats"
+    assert payload["schema_version"] == "1.0"
     assert payload["conversation_id"] == conv_id
 
 

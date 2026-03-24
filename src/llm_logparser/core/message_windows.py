@@ -45,6 +45,7 @@ def build_message_window_artifact(
 
     return {
         "record_type": "message_window",
+        "schema_version": "1.0",
         "provider_id": provider_id,
         "conversation_id": conversation_id,
         "window_id": _window_id(window_index),

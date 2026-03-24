@@ -70,6 +70,7 @@ MANIFEST_SCHEMA_NAME = "manifest.schema.json"
 TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
 METRICS_SCHEMA_NAME = "metrics.schema.json"
 THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
+MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +213,17 @@ def load_thread_stats_validator(
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / THREAD_STATS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_message_windows_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    message_windows.schema.json 用の validator を返す。
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / MESSAGE_WINDOWS_SCHEMA_NAME
     return _make_validator(schema_path)
 
 

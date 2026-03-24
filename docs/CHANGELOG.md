@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+* Hardened parse-time L1 artifact contracts:
+  * `thread_stats.json` now emits `schema_version: "1.0"`
+  * `message_windows.jsonl` rows now emit `schema_version: "1.0"`
+  * added formal JSON Schema for `message_windows.jsonl` rows
+
+---
+
 ## [v1.3.0] - 2026-03-21
 
 ### Summary

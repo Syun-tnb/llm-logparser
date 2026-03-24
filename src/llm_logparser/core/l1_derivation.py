@@ -229,6 +229,7 @@ def build_thread_stats_artifact(
     artifact.update(
         {
             "artifact_type": "thread_stats",
+            "schema_version": "1.0",
             "provider_id": provider_id,
             "other_role_breakdown": dict(sorted((metrics.other_role_breakdown or {}).items())),
         }

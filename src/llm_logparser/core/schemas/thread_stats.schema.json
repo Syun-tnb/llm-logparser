@@ -4,6 +4,7 @@
   "type": "object",
   "required": [
     "artifact_type",
+    "schema_version",
     "provider_id",
     "conversation_id",
     "message_count",
@@ -20,6 +21,7 @@
   ],
   "properties": {
     "artifact_type": { "const": "thread_stats" },
+    "schema_version": { "type": "string", "const": "1.0" },
     "provider_id": { "type": "string", "minLength": 1 },
     "conversation_id": { "type": "string", "minLength": 1 },
     "message_count": { "$ref": "#/$defs/nonNegativeInteger" },

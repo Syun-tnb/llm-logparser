@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/message_windows.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "window_id",
+    "message_ids",
+    "roles",
+    "message_count",
+    "char_count",
+    "ts_start",
+    "ts_end",
+    "text"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "message_window" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "window_id": { "type": "string", "minLength": 1 },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "message_count": { "$ref": "#/$defs/nonNegativeInteger" },
+    "char_count": { "$ref": "#/$defs/nonNegativeInteger" },
+    "ts_start": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
+    "ts_end": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
+    "text": { "type": "string" }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeIntegerOrNull": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    }
+  },
+  "additionalProperties": true
+}

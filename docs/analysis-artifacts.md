@@ -145,6 +145,7 @@ Contract:
 - purpose: stable parse-time thread-local summary for one canonical thread
 - required top-level fields emitted today:
   - `artifact_type`: always `thread_stats`
+  - `schema_version`: currently `"1.0"`
   - `provider_id`: provider identifier for the thread
   - `conversation_id`: canonical thread/conversation identifier
   - `message_count`: total message records in the thread
@@ -160,7 +161,7 @@ Contract:
   - `other_role_breakdown`: sorted mapping of each non-`user`/`assistant` raw role label to its count, using `unknown` for missing roles
 - notes:
   - `thread_stats.json` is parse-time metadata, not an analyzer-generated sidecar
-  - it does not currently emit `schema_version`
+  - it now emits an explicit `schema_version` for contract stability
   - analyzers may consume it as a lightweight summary in the future, but it is not the canonical source for analysis
   - analyzer correctness must still come from `parsed.jsonl`, even if `thread_stats.json` is missing or stale
 
@@ -177,6 +178,28 @@ SQLite correspondence for downstream consumers:
 `message_windows.jsonl` is a deterministic thread-local text artifact derived
 only from canonical message rows. The first version uses simple fixed-size
 contiguous message windows with preserved role sequence and message traceability.
+
+Contract:
+
+- schema: `src/llm_logparser/core/schemas/message_windows.schema.json`
+- purpose: stable machine-readable row contract for one deterministic message window
+- required per-row fields emitted today:
+  - `record_type`: always `message_window`
+  - `schema_version`: currently `"1.0"`
+  - `provider_id`: provider identifier for the source thread
+  - `conversation_id`: canonical thread/conversation identifier
+  - `window_id`: deterministic window identifier within the thread
+  - `message_ids`: ordered canonical message identifiers included in the window
+  - `roles`: ordered normalized roles for the included messages, using `unknown` when needed
+  - `message_count`: number of messages in the window
+  - `char_count`: total characters across the included canonical message text
+  - `ts_start`: earliest message timestamp in the window as epoch milliseconds, or `null`
+  - `ts_end`: latest message timestamp in the window as epoch milliseconds, or `null`
+  - `text`: deterministic concatenated window text
+- notes:
+  - `message_windows.jsonl` is a parse-time thread-local artifact, not canonical storage
+  - rows now emit an explicit `schema_version` for contract stability
+  - the schema describes the emitted row contract as it exists today; it does not imply future chunking or L3 structure
 
 The `parsed.jsonl` file contains:
 
