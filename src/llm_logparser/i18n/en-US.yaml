@@ -50,6 +50,10 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: Root directory containing per-provider artifact directories
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
+  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl and window_neighbors.jsonl artifacts from message_windows.jsonl
+  cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl file or a directory containing message_windows.jsonl files
+  cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
+  cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl and window_neighbors.jsonl artifacts
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.
@@ -146,6 +150,7 @@ messages:
   runtime.analyze.dry_run.no_writes: "No files written."
   runtime.analyze.top_non_negative: "--top must be >= 0"
   runtime.analyze.sqlite_built: "analysis.db built: {db_path} (threads={threads} messages={messages} windows={windows})"
+  runtime.analyze.semantic_prototype_written: "semantic prototype artifacts written for {threads} thread(s) ({windows} windows, model={model})"
   runtime.chain.provider: "[chain] Provider : {provider}"
   runtime.chain.input: "[chain] Input    : {path}"
   runtime.chain.root: "[chain] Root     : {path}"

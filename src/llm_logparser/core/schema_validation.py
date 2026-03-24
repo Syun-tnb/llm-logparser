@@ -71,6 +71,8 @@ TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
 METRICS_SCHEMA_NAME = "metrics.schema.json"
 THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
 MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
+WINDOW_EMBEDDING_SCHEMA_NAME = "window_embedding.schema.json"
+WINDOW_NEIGHBORS_SCHEMA_NAME = "window_neighbors.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +226,28 @@ def load_message_windows_validator(
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / MESSAGE_WINDOWS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_window_embedding_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    window_embedding.schema.json 用の validator を返す。
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / WINDOW_EMBEDDING_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_window_neighbors_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    window_neighbors.schema.json 用の validator を返す。
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / WINDOW_NEIGHBORS_SCHEMA_NAME
     return _make_validator(schema_path)
 
 

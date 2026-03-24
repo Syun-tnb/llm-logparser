@@ -474,6 +474,7 @@ llm-logparser analyze timeline ...
 llm-logparser analyze tokens ...
 llm-logparser analyze metrics ...
 llm-logparser analyze sqlite-build ...
+llm-logparser analyze semantic-prototype ...
 ```
 
 Conceptual future modes:
@@ -494,6 +495,7 @@ Possible modes:
 | tokens | L1 |
 | metrics | L1 |
 | sqlite-build | L2 |
+| semantic-prototype | L3 prototype (experimental) |
 | semantic-topics | L3 (conceptual / future) |
 | topic-summary | L3 (conceptual / future) |
 | topic-timeline | L3 (conceptual / future) |
@@ -512,6 +514,10 @@ deterministic and model-derived capabilities.
 
 - L1/L2 commands (`stats`, `timeline`, `tokens`, `metrics`, `sqlite-build`)
   are deterministic, rebuildable, and safe for local-first workflows
+
+- `semantic-prototype` is an experimental bridge into future L3 work: it
+  reads deterministic `message_windows.jsonl`, writes rebuildable embedding and
+  neighbor artifacts, and does not perform topic labeling or clustering
 
 - L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
   are conceptual future extensions and remain opt-in, model-dependent, and

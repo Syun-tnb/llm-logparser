@@ -1,6 +1,7 @@
 from .analyze import (
     run_analyze_datasheet,
     run_analyze_metrics,
+    run_analyze_semantic_prototype,
     run_analyze_sqlite_build,
     run_analyze_stats,
     run_analyze_tokens,
@@ -15,6 +16,7 @@ from .parse import run_parse
 __all__ = [
     "run_analyze_datasheet",
     "run_analyze_metrics",
+    "run_analyze_semantic_prototype",
     "run_analyze_stats",
     "run_analyze_tokens",
     "run_analyze_timeline",

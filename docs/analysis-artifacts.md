@@ -714,6 +714,7 @@ Typical inputs:
 parsed.jsonl
 chunks.jsonl
 thread_stats.json
+message_windows.jsonl
 analysis outputs
 
 ```
@@ -732,6 +733,17 @@ appropriate to the layer that produced them. At minimum, they should be able to
 identify their source thread or dataset inputs and the model/configuration basis
 used to derive them. This document does not define a full L3/L4 schema, but the
 artifacts must remain clearly separate from the canonical/deterministic base.
+
+Experimental prototype note:
+
+- `analyze semantic-prototype` is an experimental higher-layer bridge built on
+  `message_windows.jsonl`
+- it currently writes rebuildable `window_embeddings.jsonl` and
+  `window_neighbors.jsonl` artifacts next to each thread's window artifact
+- those outputs are non-canonical and intentionally limited to embeddings plus
+  nearest-neighbor structure
+- this prototype does not perform topic labeling, clustering, or timeline
+  reconstruction yet
 
 This separation ensures that:
 

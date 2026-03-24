@@ -165,3 +165,30 @@ def run_analyze_sqlite_build(args, logger: logging.Logger) -> None:
             windows=result["message_windows"],
         )
     )
+
+
+def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_prototype import (
+        SemanticPrototypeError,
+        analyze_semantic_prototype,
+    )
+
+    input_path = validate_path(args.input)
+    try:
+        result = analyze_semantic_prototype(
+            input_path,
+            top_k=args.top_k,
+            overwrite=args.overwrite,
+        )
+    except SemanticPrototypeError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        _(
+            "runtime.analyze.semantic_prototype_written",
+            threads=result["threads"],
+            windows=result["windows"],
+            model=result["embedding_model"],
+        )
+    )

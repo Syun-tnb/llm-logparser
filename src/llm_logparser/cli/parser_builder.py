@@ -338,6 +338,30 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.sqlite_build.opt.overwrite.help"),
     )
 
+    analyze_semantic_prototype_cmd = analyze_subparsers.add_parser(
+        "semantic-prototype",
+        help=_("cli.analyze.semantic_prototype.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_prototype.opt.input.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--top-k",
+        dest="top_k",
+        type=int,
+        default=5,
+        help=_("cli.analyze.semantic_prototype.opt.top_k.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.semantic_prototype.opt.overwrite.help"),
+    )
+
     chain_cmd = subparsers.add_parser(
         "chain",
         help=_("cli.chain.help"),

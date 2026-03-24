@@ -8,6 +8,11 @@
   * `thread_stats.json` now emits `schema_version: "1.0"`
   * `message_windows.jsonl` rows now emit `schema_version: "1.0"`
   * added formal JSON Schema for `message_windows.jsonl` rows
+* Added experimental `analyze semantic-prototype`:
+  * reads `message_windows.jsonl`
+  * writes rebuildable `window_embeddings.jsonl` and `window_neighbors.jsonl`
+  * uses a deterministic local hash backend by default
+  * does not perform topic labeling or clustering
 
 ---
 
