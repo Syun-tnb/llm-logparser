@@ -49,7 +49,7 @@ The analyzer is structured into four conceptual layers.
 ```
 L1  Deterministic analysis over canonical parsed.jsonl
 L2  Deterministic / rebuildable SQLite analysis index
-L3  Optional local LLM layer
+L3  Optional semantic topic tracking layer
 L4  Optional external/API LLM layer
 ```
 
@@ -311,28 +311,37 @@ index is absent, canonical and deterministic analyzer workflows still work.
 
 ---
 
-# Layer 3 — Local LLM Analysis
+# Layer 3 — Semantic Topic Tracking
 
-This layer uses **local language models** to perform lightweight semantic analysis.
+This layer introduces **semantic topic tracking** across canonical messages and
+derived lower-layer artifacts.
+
+Its purpose is to recover continuity of work even when related discussion is:
+
+- fragmented across multiple threads
+- revisited over time
+- mixed with unrelated topics in the same thread
+- weakly represented by provider-native thread structure
 
 Typical tasks include:
 
-- conversation summarization
-- topic extraction
-- tag generation
-- classification
-- TODO or task extraction
-- clustering conversations
+- grouping semantically related messages across threads
+- tracking topic lifecycle over time
+- surfacing decisions made
+- identifying open questions
+- extracting next actions
+- generating topic-level summaries or timelines
 
-Local models may include:
+Typical implementation building blocks may include:
 
-- llama.cpp
-- Ollama
-- local transformers
-- any compatible inference backend
+- local embedding models
+- sentence-transformer-style similarity pipelines
+- graph-based clustering
+- `DBSCAN` or `HDBSCAN`
+- optional local summarization backends
 
-Because these models run locally, this layer remains privacy-friendly
-and compatible with offline workflows.
+Because this layer can be implemented with local embeddings or local models, it
+remains compatible with privacy-sensitive and offline-first workflows.
 
 Layer 3 remains an optional higher layer. Its outputs are additive and may be
 model-derived or non-deterministic. They must not replace canonical
@@ -343,13 +352,8 @@ Future local GUI-oriented summaries, annotations, or caches should follow the
 same rule: additive artifacts on top of the deterministic base, not
 redefinitions of it.
 
-Example tasks:
-
-```
-summarize thread
-extract key topics
-generate tags
-```
+See [Semantic Topic Tracking (L3)](semantic-topic-tracking.md) for the
+layer-specific design.
 
 ---
 
@@ -397,7 +401,8 @@ deterministic L1/L2 base.
 
 Intended future artifact classes:
 
-- L3 artifacts: local model-derived outputs
+- L3 artifacts: semantic topic tracking outputs such as topic clusters,
+  timelines, summaries, embeddings, or other local semantic artifacts
 - L4 artifacts: external/API-derived outputs
 - GUI-oriented caches or indexes: display-optimization or UI-support artifacts,
   not canonical state
@@ -435,18 +440,20 @@ thread-<conversation_id>/
     parsed.jsonl
     token_stats.json
     metrics.json
-    l3/   # future local model-derived outputs
-    l4/   # future API-derived outputs
 
 <provider>/
     analysis.db
+    l3/
+      semantic-topics/  # future cross-thread semantic topic artifacts
+    l4/   # future API-derived outputs
     gui/  # future GUI-oriented cache or index artifacts
 ```
 
 In this model:
 
 - the thread directory root remains for deterministic artifacts
-- `l3/` is the intended place for future local LLM-derived outputs
+- provider-root `l3/semantic-topics/` is the intended place for future
+  cross-thread semantic topic artifacts
 - `l4/` is the intended place for future API-derived outputs
 - provider-root `gui/` is the intended place for GUI-specific cache/index data
 - `analysis.db` remains Layer 2, not a catch-all store for future higher layers
@@ -472,7 +479,9 @@ llm-logparser analyze sqlite-build ...
 Conceptual future modes:
 
 ```
-llm-logparser analyze local ...
+llm-logparser analyze semantic-topics ...
+llm-logparser analyze topic-summary ...
+llm-logparser analyze topic-timeline ...
 llm-logparser analyze llm ...
 ```
 
@@ -485,7 +494,9 @@ Possible modes:
 | tokens | L1 |
 | metrics | L1 |
 | sqlite-build | L2 |
-| local | L3 (conceptual / future) |
+| semantic-topics | L3 (conceptual / future) |
+| topic-summary | L3 (conceptual / future) |
+| topic-timeline | L3 (conceptual / future) |
 | llm | L4 (conceptual / future) |
 
 Command boundary rule:
@@ -502,8 +513,9 @@ deterministic and model-derived capabilities.
 - L1/L2 commands (`stats`, `timeline`, `tokens`, `metrics`, `sqlite-build`)
   are deterministic, rebuildable, and safe for local-first workflows
 
-- L3/L4 commands (`local`, `llm`) are conceptual future extensions and
-  remain opt-in, model-dependent, and potentially non-deterministic
+- L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
+  are conceptual future extensions and remain opt-in, model-dependent, and
+  potentially non-deterministic
 
 Design constraints:
 
