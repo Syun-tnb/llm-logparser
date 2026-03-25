@@ -131,20 +131,77 @@ def _display_role(role: str) -> str:
     return lowered[:1].upper() + lowered[1:]
 
 
-def format_window_text(record: WindowPreviewRecord) -> str:
+def _display_turn_role(role: str) -> str:
+    lowered = role.strip().lower()
+    if lowered == "user":
+        return "U"
+    if lowered == "assistant":
+        return "A"
+    if not lowered:
+        return "?"
+    return lowered[:1].upper()
+
+
+def _window_messages(record: WindowPreviewRecord) -> list[tuple[str, str]]:
     if not record.text:
-        return ""
+        return []
 
     parts = record.text.split("\n\n")
-    formatted_parts: list[str] = []
-    for index, part in enumerate(parts):
+    message_count = max(len(parts), len(record.roles))
+    messages: list[tuple[str, str]] = []
+    for index in range(message_count):
         role = record.roles[index] if index < len(record.roles) else "unknown"
-        body = part
+        body = parts[index] if index < len(parts) else ""
         prefix = f"{role}:"
         if body.casefold().startswith(prefix.casefold()):
             body = body[len(prefix) :].lstrip()
-        formatted_parts.append(f"[{_display_role(role)}] {body}")
-    return "\n\n".join(formatted_parts)
+        messages.append((role, body))
+    return messages
+
+
+def format_window_turns(record: WindowPreviewRecord) -> str:
+    messages = _window_messages(record)
+    if not messages:
+        return ""
+
+    turns: list[list[tuple[str, str]]] = []
+    current_turn: list[tuple[str, str]] = []
+
+    def _flush_current_turn() -> None:
+        if current_turn:
+            turns.append(current_turn.copy())
+            current_turn.clear()
+
+    for role, body in messages:
+        if role == "user":
+            _flush_current_turn()
+            current_turn.append(("U", body))
+            continue
+        if not current_turn:
+            current_turn.append((_display_turn_role(role), body))
+            continue
+        current_turn.append((_display_turn_role(role), body))
+
+    _flush_current_turn()
+
+    lines: list[str] = []
+    for index, turn in enumerate(turns, start=1):
+        lines.append(f"Turn {index}")
+        for label, body in turn:
+            lines.append(f"{label}: {body}")
+        if index != len(turns):
+            lines.append("")
+    return "\n".join(lines)
+
+
+def _similarity_label(score: float) -> str:
+    if score >= 0.90:
+        return "🔥 almost same"
+    if score >= 0.80:
+        return "👍 very similar"
+    if score >= 0.65:
+        return "🤝 related"
+    return "... weak"
 
 
 def render_semantic_preview(
@@ -175,38 +232,36 @@ def render_semantic_preview(
     if top_k is not None:
         neighbor_refs = neighbor_refs[:top_k]
 
-    lines = [f"### Window: {target.window_id} ({target.conversation_id})", ""]
+    lines = ["=== Target Window ===", f"[{target.window_id}]", ""]
     if show_meta:
         lines.extend(_render_meta_block(target))
         lines.extend(["", "---", ""])
     if include_text:
-        lines.extend(
-            [
-                "[Content]",
-                truncate_text(format_window_text(target), max_chars=max_chars)
-                if target.text
-                else "",
-                "",
-                "---",
-                "",
-            ]
+        lines.append(
+            truncate_text(format_window_turns(target), max_chars=max_chars)
+            if target.text
+            else ""
         )
+        lines.extend(["", "---", ""])
 
-    lines.extend(["### Neighbors", ""])
+    lines.extend(["=== Top Neighbors ===", ""])
     if not neighbor_refs:
         lines.append("No neighbors found")
         return "\n".join(lines)
 
     for index, neighbor in enumerate(neighbor_refs, start=1):
-        lines.append(f"({index}) score: {neighbor.score:.4f}")
-        lines.append(f"{neighbor.conversation_id} / {neighbor.window_id}")
+        lines.append(
+            f"#{index} ({neighbor.score:.2f} {_similarity_label(neighbor.score)})"
+        )
+        lines.append(f"[{neighbor.window_id}]")
         lines.append("")
         neighbor_record = windows.get((neighbor.conversation_id, neighbor.window_id))
         if neighbor_record is None:
-            lines.append("[Meta]")
-            lines.append("Turns: ?")
-            lines.append("Messages: ?")
-            lines.append("Chars: ?")
+            if show_meta:
+                lines.append("[Meta]")
+                lines.append("Turns: ?")
+                lines.append("Messages: ?")
+                lines.append("Chars: ?")
         elif show_meta:
             lines.extend(_render_meta_block(neighbor_record))
         if include_text:
@@ -216,11 +271,20 @@ def render_semantic_preview(
             else:
                 lines.append(
                     truncate_text(
-                        format_window_text(neighbor_record),
+                        format_window_turns(neighbor_record),
                         max_chars=max_chars,
                     )
                 )
         lines.extend(["", "---", ""])
+
+    top_neighbor = neighbor_refs[0]
+    lines.extend(
+        [
+            "NEXT",
+            f"thread: {top_neighbor.conversation_id}",
+            f"window: {top_neighbor.window_id}",
+        ]
+    )
 
     return "\n".join(lines).rstrip()
 

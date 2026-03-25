@@ -43,5 +43,23 @@ The roadmap is intentionally incremental: stabilize the pipeline first, then ite
 
 ---
 
+### 🧠 Phase 4: Experimental Semantic Layer
+
+| Priority | Item                        | Status     | Notes |
+| -------: | --------------------------- | ---------- | ----- |
+|      ⭐⭐ | Window embeddings           | ✅ Done     | Experimental, local-first, additive, non-canonical prototype sidecars |
+|      ⭐⭐ | Semantic neighbors          | ✅ Done     | Experimental nearest-neighbor view over window embeddings |
+|       ⭐ | `analyze semantic-preview`  | ✅ Done     | Read-only CLI renderer for one window and its stored neighbors |
+|       ⭐ | Interactive semantic preview | 🕓 Exploratory | Future CLI exploration only; default-off by design and not planned as the default workflow |
+
+Current semantic-layer positioning:
+
+* semantic outputs remain experimental and should not be treated as stable canonical analysis
+* the current scope is window embeddings, semantic neighbors, and `semantic-preview`
+* these features remain local-first, additive, rebuildable, and non-canonical
+* higher-level topic clustering, labeling, and timeline tracking remain future work
+
+---
+
 > Roadmap items may shift as we gain more real-world usage feedback.
 > Breaking changes will follow semantic versioning and be documented before release.

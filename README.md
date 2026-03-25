@@ -11,6 +11,11 @@ read, search, and analyze — without sending anything to the cloud.
 2. **Export** conversations as readable Markdown files
 3. **Analyze** your conversations: message counts, token usage, safety metrics, timelines, and more
 
+Experimental higher-layer analysis is also available as an additive, local-first
+preview path: window embeddings, semantic neighbors, and a read-only
+`semantic-preview` renderer. These semantic features are non-canonical,
+rebuildable, and still intentionally conservative in scope.
+
 Everything runs locally. No cloud. No telemetry. Your data stays on your machine.
 
 > Current parse/import adapters: OpenAI ChatGPT, Anthropic Claude, xAI Grok, Mistral Le Chat, and Google Gemini My Activity.
@@ -272,6 +277,8 @@ llm-logparser analyze sqlite-build \
 | `analyze datasheet` | Generate a research-ready dataset summary |
 | `analyze timeline` | See when you were most active |
 | `analyze sqlite-build` | Query large datasets with SQL (optional) |
+| `analyze semantic-prototype` | Build experimental window embeddings and semantic neighbors |
+| `analyze semantic-preview` | Read one semantic window and its nearest neighbors in terminal |
 
 ---
 
@@ -458,6 +465,51 @@ uv run llm-logparser analyze sqlite-build \
 for query acceleration. It does not replace `parsed.jsonl` and is not a storage
 layer for every future derived artifact.
 
+### Analyze Semantic Prototype
+
+Build experimental semantic sidecars from deterministic `message_windows.jsonl`:
+
+```bash
+uv run llm-logparser analyze semantic-prototype \
+  --input <provider-artifact-root> \
+  [--backend deterministic-hash|ollama] \
+  [--model <local-embedding-model>] \
+  [--top-k <N>] \
+  [--overwrite]
+```
+
+This command currently produces:
+
+* `window_embeddings.jsonl`
+* `window_neighbors.jsonl`
+
+These outputs are:
+
+* experimental
+* local-first
+* non-canonical
+* additive
+* rebuildable from L1 artifacts
+
+They are not yet positioned as a stable semantic topic system.
+
+### Analyze Semantic Preview
+
+Render one window and its stored nearest neighbors in a readable terminal view:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --thread <conversation_id> \
+  --window <window_id> \
+  [--top-k <N>] \
+  [--max-chars <N>]
+```
+
+`semantic-preview` is read-only. It reuses stored semantic neighbor artifacts
+plus `message_windows.jsonl`; it does not recompute embeddings or write new
+files.
+
 ---
 
 ## Markdown Format
@@ -558,7 +610,9 @@ At a glance:
 * `thread_stats.json`, `token_stats.json`, and `metrics.json` are sidecar artifacts
 * Layer 1 (L1) is deterministic analysis: `stats`, `timeline`, `tokens`, `metrics`, and `datasheet`
 * Layer 2 (L2) is `analyze sqlite-build`: an optional deterministic SQLite index
-* Layer 3 / Layer 4 are future model-based layers (local / API), not current CLI features
+* Layer 3 (L3) now has an experimental additive semantic path: window embeddings, semantic neighbors, and `semantic-preview`
+* L3 remains experimental, local-first, non-canonical, and rebuildable from lower-layer artifacts
+* Layer 4 (L4) remains a future model/API layer, not a stable current CLI feature
 * `analyze sqlite-build` is a rebuildable non-canonical index, not a general-purpose analysis engine or catch-all derived-data store
 
 Sidecar artifacts are rebuildable from canonical `parsed.jsonl` and contain no runtime timestamps. `analysis.db` is likewise rebuildable and non-canonical.
