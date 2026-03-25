@@ -475,6 +475,7 @@ llm-logparser analyze tokens ...
 llm-logparser analyze metrics ...
 llm-logparser analyze sqlite-build ...
 llm-logparser analyze semantic-prototype ...
+llm-logparser analyze semantic-preview ...
 ```
 
 Conceptual future modes:
@@ -496,6 +497,7 @@ Possible modes:
 | metrics | L1 |
 | sqlite-build | L2 |
 | semantic-prototype | L3 prototype (experimental) |
+| semantic-preview | L3 prototype viewer (experimental) |
 | semantic-topics | L3 (conceptual / future) |
 | topic-summary | L3 (conceptual / future) |
 | topic-timeline | L3 (conceptual / future) |
@@ -518,6 +520,24 @@ deterministic and model-derived capabilities.
 - `semantic-prototype` is an experimental bridge into future L3 work: it
   reads deterministic `message_windows.jsonl`, writes rebuildable embedding and
   neighbor artifacts, and does not perform topic labeling or clustering
+  It supports a default `deterministic-hash` backend for local plumbing/tests
+  and an `ollama` backend for real local embeddings via a local Ollama model
+  such as `nomic-embed-text-v2-moe` or `embeddinggemma`.
+  For Ollama-backed runs, oversized window text is chunked automatically and
+  chunk embeddings are aggregated back into one final embedding per window.
+  Neighbor construction now uses vectorized cosine similarity instead of
+  Python-level all-pairs math, and long-running phases emit lightweight
+  progress logs while windows load, embeddings generate, neighbors build, and
+  artifacts are written.
+  Recommended starting settings are:
+  `nomic-embed-text-v2-moe` with `max_input_tokens=512`,
+  `chunk_overlap_tokens=64`, `aggregate=mean`; and `embeddinggemma` with
+  `max_input_tokens=2048`, `chunk_overlap_tokens=128`, `aggregate=mean`.
+
+- `semantic-preview` is a read-only companion to `semantic-prototype`: it
+  reads stored `window_neighbors.jsonl` plus `message_windows.jsonl` and renders
+  one target window with its nearest-neighbor text side by side for quick human
+  inspection. It does not recompute embeddings or modify artifacts.
 
 - L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
   are conceptual future extensions and remain opt-in, model-dependent, and

@@ -431,6 +431,94 @@ class ExtractConfig:
 
 
 @dataclass(frozen=True)
+class SemanticPrototypeEmbeddingConfig:
+    max_input_tokens: int | None = None
+    chunk_overlap_tokens: int | None = None
+    aggregate: str | None = None
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> SemanticPrototypeEmbeddingConfig:
+        data = _optional_mapping(raw, context)
+        return cls(
+            max_input_tokens=_optional_int(
+                data.get("max_input_tokens"),
+                f"{context}.max_input_tokens",
+            ),
+            chunk_overlap_tokens=_optional_int(
+                data.get("chunk_overlap_tokens"),
+                f"{context}.chunk_overlap_tokens",
+            ),
+            aggregate=_optional_string(data.get("aggregate"), f"{context}.aggregate"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "max_input_tokens": self.max_input_tokens,
+                "chunk_overlap_tokens": self.chunk_overlap_tokens,
+                "aggregate": self.aggregate,
+            }
+        )
+
+
+@dataclass(frozen=True)
+class SemanticPrototypeConfig:
+    backend: str | None = None
+    model: str | None = None
+    top_k: int | None = None
+    embedding: SemanticPrototypeEmbeddingConfig = field(
+        default_factory=SemanticPrototypeEmbeddingConfig
+    )
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> SemanticPrototypeConfig:
+        data = _optional_mapping(raw, context)
+        return cls(
+            backend=_optional_string(data.get("backend"), f"{context}.backend"),
+            model=_optional_string(data.get("model"), f"{context}.model"),
+            top_k=_optional_int(data.get("top_k"), f"{context}.top_k"),
+            embedding=SemanticPrototypeEmbeddingConfig.from_raw(
+                data.get("embedding"),
+                context=f"{context}.embedding",
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "backend": self.backend,
+                "model": self.model,
+                "top_k": self.top_k,
+                "embedding": self.embedding.to_dict(),
+            }
+        )
+
+
+@dataclass(frozen=True)
+class AnalyzeConfig:
+    semantic_prototype: SemanticPrototypeConfig = field(
+        default_factory=SemanticPrototypeConfig
+    )
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> AnalyzeConfig:
+        data = _optional_mapping(raw, context)
+        return cls(
+            semantic_prototype=SemanticPrototypeConfig.from_raw(
+                data.get("semantic_prototype"),
+                context=f"{context}.semantic_prototype",
+            )
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "semantic_prototype": self.semantic_prototype.to_dict(),
+            }
+        )
+
+
+@dataclass(frozen=True)
 class ConfigProfile:
     name: str
     locale: str | None = None
@@ -444,6 +532,7 @@ class ConfigProfile:
     parse: ParseConfig = field(default_factory=ParseConfig)
     chain: ChainConfig = field(default_factory=ChainConfig)
     extract: ExtractConfig = field(default_factory=ExtractConfig)
+    analyze: AnalyzeConfig = field(default_factory=AnalyzeConfig)
 
     @classmethod
     def from_raw(cls, name: str, raw: Any) -> ConfigProfile:
@@ -454,6 +543,10 @@ class ConfigProfile:
         extract = ExtractConfig.from_raw(
             data.get("extract"),
             context=f"profiles.{name}.extract",
+        )
+        analyze = AnalyzeConfig.from_raw(
+            data.get("analyze"),
+            context=f"profiles.{name}.analyze",
         )
 
         # Temporary compatibility with earlier profile-level keys.
@@ -535,6 +628,7 @@ class ConfigProfile:
                     extract.dry_run if extract.dry_run is not None else legacy_dry_run
                 ),
             ),
+            analyze=analyze,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -551,6 +645,7 @@ class ConfigProfile:
                 "parse": self.parse.to_dict(),
                 "chain": self.chain.to_dict(),
                 "extract": self.extract.to_dict(),
+                "analyze": self.analyze.to_dict(),
             }
         )
 

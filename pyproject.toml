@@ -21,6 +21,7 @@ authors = [
 ]
 
 dependencies = [
+  "numpy>=1.26",
   "jsonschema>=4",
   "PyYAML>=6"
 ]

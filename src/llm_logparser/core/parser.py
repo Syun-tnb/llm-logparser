@@ -430,11 +430,19 @@ def parse_to_jsonl(
                             }
                             f.write(json.dumps(thread_meta, ensure_ascii=True) + "\n")
                             for m in recs:
+                                if not validate_message(m, fail_fast=fail_fast):
+                                    skipped += 1
+                                    continue
+                                canonical_row = {
+                                    "record_type": "message",
+                                    "provider_id": provider,
+                                    **m,
+                                }
                                 if schema_validator:
                                     try:
-                                        schema_validator.validate_message(m)
+                                        schema_validator.validate_message(canonical_row)
                                     except message_validation_error_cls as verr:
-                                        idx = m.get("message_id") or "<unknown>"
+                                        idx = canonical_row.get("message_id") or "<unknown>"
                                         log.warning(
                                             _(
                                                 "runtime.parser.schema_validation_failed",
@@ -449,15 +457,6 @@ def parse_to_jsonl(
                                                 "message schema validation failed"
                                             ) from verr
                                         continue
-
-                                if not validate_message(m, fail_fast=fail_fast):
-                                    skipped += 1
-                                    continue
-                                canonical_row = {
-                                    "record_type": "message",
-                                    "provider_id": provider,
-                                    **m,
-                                }
                                 # Keep derived artifacts tied to the exact canonical rows we write.
                                 canonical_rows.append(canonical_row)
                                 thread_metrics.add_message(canonical_row)

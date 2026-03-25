@@ -21,6 +21,7 @@ from llm_logparser.cli.config_loader import load_config_with_discovery
 from llm_logparser.cli.handlers import (
     run_analyze_datasheet,
     run_analyze_metrics,
+    run_analyze_semantic_preview,
     run_analyze_semantic_prototype,
     run_analyze_sqlite_build,
     run_analyze_stats,
@@ -182,6 +183,7 @@ def _prompt_missing_required(
             "metrics",
             "sqlite-build",
             "semantic-prototype",
+            "semantic-preview",
         }
     ):
         if args.input is None:
@@ -227,6 +229,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_sqlite_build(args, logger)
         elif args.analyze_command == "semantic-prototype":
             run_analyze_semantic_prototype(args, logger)
+        elif args.analyze_command == "semantic-preview":
+            run_analyze_semantic_preview(args, logger)
     elif args.command == "chain":
         run_chain(args, logger)
     elif args.command == "viewer":

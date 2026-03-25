@@ -248,7 +248,8 @@ Current locale behavior:
 Current command scope:
 
 * `parse`, `export`, `chain`, and `extract` use broader profile-backed CLI defaults
-* `analyze` currently shares locale resolution only; analyze inputs and command-specific options should still be passed explicitly
+* `analyze semantic-prototype` supports profile-backed defaults for its input path and embedding settings
+* other `analyze` modes currently share locale resolution only; their command-specific options should still be passed explicitly
 * `profiles.<name>.locale` can still affect `analyze` because locale resolution is shared across runtime commands
 * `config` can apply profile locale after config/profile resolution
 
@@ -258,6 +259,46 @@ Analyzer text output policy:
 * `--json` output is the primary machine-readable analyzer interface
 * locale-backed analyzer resources under `analysis:` are for heuristic inputs, not artifact schema localization
 * exported Markdown remains timezone-aware but not locale-formatted
+
+---
+
+## `analyze.semantic_prototype`
+
+The experimental semantic prototype can read backend and embedding defaults from
+config:
+
+```yaml
+analyze:
+  semantic_prototype:
+    backend: ollama
+    model: nomic-embed-text-v2-moe
+    top_k: 5
+    embedding:
+      max_input_tokens: 512
+      chunk_overlap_tokens: 64
+      aggregate: mean
+```
+
+CLI flags still override config values. `input.path` remains the default source
+path for `analyze semantic-prototype` when `--input` is omitted.
+
+Recommended starting presets:
+
+* `nomic-embed-text-v2-moe`
+  * `max_input_tokens: 512`
+  * `chunk_overlap_tokens: 64`
+  * `aggregate: mean`
+* `embeddinggemma`
+  * `max_input_tokens: 2048`
+  * `chunk_overlap_tokens: 128`
+  * `aggregate: mean`
+
+Behavior notes:
+
+* long window text is chunked automatically before embedding requests
+* chunk embeddings are aggregated into one final embedding per original window
+* outputs remain rebuildable, non-canonical prototype artifacts
+* `deterministic-hash` remains the default backend for plumbing and tests
 
 Current limitations:
 

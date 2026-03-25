@@ -349,6 +349,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.input.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
+        "--backend",
+        choices=["deterministic-hash", "ollama"],
+        default="deterministic-hash",
+        help=_("cli.analyze.semantic_prototype.opt.backend.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--model",
+        required=False,
+        help=_("cli.analyze.semantic_prototype.opt.model.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
         "--top-k",
         dest="top_k",
         type=int,
@@ -356,10 +367,76 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.top_k.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
+        "--max-input-tokens",
+        dest="max_input_tokens",
+        type=int,
+        help=_("cli.analyze.semantic_prototype.opt.max_input_tokens.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--chunk-overlap-tokens",
+        dest="chunk_overlap_tokens",
+        type=int,
+        help=_("cli.analyze.semantic_prototype.opt.chunk_overlap_tokens.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--aggregate",
+        choices=["mean"],
+        help=_("cli.analyze.semantic_prototype.opt.aggregate.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",
         help=_("cli.analyze.semantic_prototype.opt.overwrite.help"),
+    )
+
+    analyze_semantic_preview_cmd = analyze_subparsers.add_parser(
+        "semantic-preview",
+        help=_("cli.analyze.semantic_preview.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_preview.opt.input.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--thread",
+        dest="thread_id",
+        required=True,
+        help=_("cli.analyze.semantic_preview.opt.thread.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--window",
+        required=True,
+        help=_("cli.analyze.semantic_preview.opt.window.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--top-k",
+        dest="top_k",
+        type=int,
+        help=_("cli.analyze.semantic_preview.opt.top_k.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--include-text",
+        dest="include_text",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=_("cli.analyze.semantic_preview.opt.include_text.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--max-chars",
+        dest="max_chars",
+        type=int,
+        default=400,
+        help=_("cli.analyze.semantic_preview.opt.max_chars.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--show-meta",
+        dest="show_meta",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=_("cli.analyze.semantic_preview.opt.show_meta.help"),
     )
 
     chain_cmd = subparsers.add_parser(

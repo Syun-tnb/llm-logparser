@@ -154,7 +154,14 @@ def apply_profile_defaults(
             profile.provider,
         )
 
-    if args.command in ("parse", "export", "chain", "extract") and not cli_provided(explicit_flags, "--input"):
+    if (
+        args.command in ("parse", "export", "chain", "extract")
+        or (
+            args.command == "analyze"
+            and getattr(args, "analyze_command", None)
+            in {"semantic-prototype", "semantic-preview"}
+        )
+    ) and not cli_provided(explicit_flags, "--input"):
         candidates = _input_candidates(profile, args.command, base_dir)
         if len(candidates) == 1:
             args.input = Path(candidates[0])
@@ -269,6 +276,51 @@ def apply_profile_defaults(
         dry = profile.extract.dry_run
         if dry is not None:
             _set_if_not_cli(args, explicit_flags, "dry_run", ("--dry-run",), dry)
+
+    elif args.command == "analyze" and args.analyze_command == "semantic-prototype":
+        semantic = profile.analyze.semantic_prototype
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "backend",
+            ("--backend",),
+            semantic.backend,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "model",
+            ("--model",),
+            semantic.model,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "top_k",
+            ("--top-k",),
+            semantic.top_k,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "max_input_tokens",
+            ("--max-input-tokens",),
+            semantic.embedding.max_input_tokens,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "chunk_overlap_tokens",
+            ("--chunk-overlap-tokens",),
+            semantic.embedding.chunk_overlap_tokens,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "aggregate",
+            ("--aggregate",),
+            semantic.embedding.aggregate,
+        )
 
     return info
 

@@ -740,10 +740,24 @@ Experimental prototype note:
   `message_windows.jsonl`
 - it currently writes rebuildable `window_embeddings.jsonl` and
   `window_neighbors.jsonl` artifacts next to each thread's window artifact
+- it supports a default `deterministic-hash` backend plus an `ollama` backend
+  for local embedding models served by Ollama
+- Ollama-backed runs automatically chunk oversized window text and aggregate
+  chunk embeddings back into one final embedding per source window
+- neighbor construction now uses vectorized cosine similarity and emits
+  lightweight progress logs for long-running phases
+- recommended starting settings are `nomic-embed-text-v2-moe` with
+  `max_input_tokens=512`, `chunk_overlap_tokens=64`, `aggregate=mean`, and
+  `embeddinggemma` with `max_input_tokens=2048`,
+  `chunk_overlap_tokens=128`, `aggregate=mean`
 - those outputs are non-canonical and intentionally limited to embeddings plus
   nearest-neighbor structure
 - this prototype does not perform topic labeling, clustering, or timeline
   reconstruction yet
+- `analyze semantic-preview` is a read-only renderer for those same prototype
+  artifacts; it reads `window_neighbors.jsonl` plus `message_windows.jsonl`
+  and prints a human-readable target-window-versus-neighbors comparison
+  without writing new files
 
 This separation ensures that:
 

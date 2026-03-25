@@ -72,3 +72,33 @@ def test_analyze_tokens_help_mentions_skip_existing_policy(capsys):
     assert "--skip-existing" in help_text
     assert "--dry-run" in help_text
     assert "rebuilt and overwritten" in help_text
+
+
+def test_analyze_semantic_prototype_help_mentions_backend_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-prototype", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--backend" in help_text
+    assert "--model" in help_text
+    assert "deterministic-hash" in help_text
+    assert "ollama" in help_text
+
+
+def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-preview", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--thread" in help_text
+    assert "--window" in help_text
+    assert "--top-k" in help_text
+    assert "--max-chars" in help_text

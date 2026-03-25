@@ -52,8 +52,21 @@ messages:
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
   cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl and window_neighbors.jsonl artifacts from message_windows.jsonl
   cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl file or a directory containing message_windows.jsonl files
+  cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
+  cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama` (for example: `nomic-embed-text-v2-moe` or `embeddinggemma`)"
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
+  cli.analyze.semantic_prototype.opt.max_input_tokens.help: Safe input budget for one embedding request before deterministic chunking is applied
+  cli.analyze.semantic_prototype.opt.chunk_overlap_tokens.help: Overlap budget to retain between deterministic embedding chunks
+  cli.analyze.semantic_prototype.opt.aggregate.help: Aggregation method for chunk embeddings
   cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl and window_neighbors.jsonl artifacts
+  cli.analyze.semantic_preview.help: Render a human-readable preview for one semantic window and its stored neighbors
+  cli.analyze.semantic_preview.opt.input.help: Provider artifact root containing message_windows.jsonl and window_neighbors.jsonl files
+  cli.analyze.semantic_preview.opt.thread.help: Conversation/thread ID to preview
+  cli.analyze.semantic_preview.opt.window.help: Window ID to preview
+  cli.analyze.semantic_preview.opt.top_k.help: Limit the number of neighbors shown. By default, use the stored neighbor list.
+  cli.analyze.semantic_preview.opt.include_text.help: Include reconstructed window text in the preview (use --no-include-text to disable)
+  cli.analyze.semantic_preview.opt.max_chars.help: Maximum number of characters to show per window before truncation
+  cli.analyze.semantic_preview.opt.show_meta.help: Include metadata blocks in the preview (use --no-show-meta to disable)
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.
@@ -150,6 +163,13 @@ messages:
   runtime.analyze.dry_run.no_writes: "No files written."
   runtime.analyze.top_non_negative: "--top must be >= 0"
   runtime.analyze.sqlite_built: "analysis.db built: {db_path} (threads={threads} messages={messages} windows={windows})"
+  runtime.analyze.semantic_prototype.loading_windows: "semantic prototype: loading windows"
+  runtime.analyze.semantic_prototype.loaded_windows: "semantic prototype: loaded {windows} windows"
+  runtime.analyze.semantic_prototype.generating_embeddings: "semantic prototype: generating embeddings"
+  runtime.analyze.semantic_prototype.embeddings_complete: "semantic prototype: embeddings complete ({windows} windows)"
+  runtime.analyze.semantic_prototype.building_neighbors: "semantic prototype: building neighbors"
+  runtime.analyze.semantic_prototype.neighbor_progress: "semantic prototype: neighbors {count} / {total}"
+  runtime.analyze.semantic_prototype.writing_artifacts: "semantic prototype: writing artifacts"
   runtime.analyze.semantic_prototype_written: "semantic prototype artifacts written for {threads} thread(s) ({windows} windows, model={model})"
   runtime.chain.provider: "[chain] Provider : {provider}"
   runtime.chain.input: "[chain] Input    : {path}"

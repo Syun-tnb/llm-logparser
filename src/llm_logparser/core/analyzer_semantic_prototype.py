@@ -2,20 +2,27 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from .embedding_backend import (
     DeterministicHashEmbeddingBackend,
     EmbeddingBackend,
+    OllamaEmbeddingBackend,
+    resolve_embedding_model_settings,
 )
+from .i18n import _
 from .schema_validation import load_message_windows_validator
 
 EMBEDDING_SCHEMA_VERSION = "0.1"
 NEIGHBORS_SCHEMA_VERSION = "0.1"
 EMBEDDING_DECIMAL_PLACES = 6
 SIMILARITY_DECIMAL_PLACES = 4
+NEIGHBOR_PROGRESS_INTERVAL = 500
 
 
 class SemanticPrototypeError(RuntimeError):
@@ -111,7 +118,12 @@ def build_window_embedding_records(
     *,
     backend: EmbeddingBackend,
 ) -> list[WindowEmbeddingRecord]:
-    vectors = backend.embed([window.text for window in windows])
+    try:
+        vectors = backend.embed([window.text for window in windows])
+    except Exception as exc:
+        raise SemanticPrototypeError(
+            f"embedding backend '{backend.model_id}' failed: {exc}"
+        ) from exc
     if len(vectors) != len(windows):
         raise SemanticPrototypeError(
             "embedding backend returned a different vector count than input texts"
@@ -172,40 +184,91 @@ def cosine_similarity(left: list[float] | tuple[float, ...], right: list[float] 
     return dot_product / (left_norm * right_norm)
 
 
+def _emit_progress(
+    progress: Callable[[str], None] | None,
+    key: str,
+    **kwargs: Any,
+) -> None:
+    if progress is None:
+        return
+    progress(_(key, **kwargs))
+
+
+def _normalized_embedding_matrix(embeddings: list[WindowEmbeddingRecord]) -> np.ndarray:
+    if not embeddings:
+        return np.zeros((0, 0), dtype=np.float64)
+
+    matrix = np.asarray([record.embedding for record in embeddings], dtype=np.float64)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return np.divide(
+        matrix,
+        norms,
+        out=np.zeros_like(matrix),
+        where=norms != 0.0,
+    )
+
+
 def build_window_neighbor_rows(
     embeddings: list[WindowEmbeddingRecord],
     *,
     top_k: int,
+    progress: Callable[[str], None] | None = None,
+    progress_every: int | None = None,
 ) -> list[dict[str, Any]]:
     if top_k <= 0:
         raise ValueError("top_k must be > 0")
+    if progress_every is not None and progress_every <= 0:
+        raise ValueError("progress_every must be > 0")
+
+    if not embeddings:
+        return []
 
     rows: list[dict[str, Any]] = []
+    total = len(embeddings)
+    effective_top_k = min(top_k, max(0, total - 1))
+    provider_ids = np.asarray([record.provider_id for record in embeddings], dtype=object)
+    conversation_ids = np.asarray(
+        [record.conversation_id for record in embeddings],
+        dtype=object,
+    )
+    window_ids = np.asarray([record.window_id for record in embeddings], dtype=object)
 
-    for record in embeddings:
-        neighbors: list[dict[str, Any]] = []
-        for candidate in embeddings:
-            if candidate is record:
-                continue
-            score = cosine_similarity(record.embedding, candidate.embedding)
-            neighbors.append(
-                {
-                    "provider_id": candidate.provider_id,
-                    "conversation_id": candidate.conversation_id,
-                    "window_id": candidate.window_id,
-                    "score": round(score, SIMILARITY_DECIMAL_PLACES),
-                }
-            )
+    normalized = _normalized_embedding_matrix(embeddings)
+    similarity = normalized @ normalized.T
+    np.fill_diagonal(similarity, -np.inf)
 
-        neighbors.sort(
-            key=lambda row: (
-                -row["score"],
-                row["provider_id"],
-                row["conversation_id"],
-                row["window_id"],
-            )
-        )
-        top_neighbors = neighbors[:top_k]
+    for index, record in enumerate(embeddings):
+        top_neighbors: list[dict[str, Any]] = []
+        if effective_top_k > 0:
+            row_scores = similarity[index]
+            cutoff = np.partition(row_scores, total - effective_top_k)[
+                total - effective_top_k
+            ]
+            candidate_indices = np.flatnonzero(row_scores >= cutoff)
+            ordered_candidate_indices = candidate_indices[
+                np.lexsort(
+                    (
+                        window_ids[candidate_indices],
+                        conversation_ids[candidate_indices],
+                        provider_ids[candidate_indices],
+                        -row_scores[candidate_indices],
+                    )
+                )
+            ]
+
+            for candidate_index in ordered_candidate_indices[:effective_top_k]:
+                top_neighbors.append(
+                    {
+                        "provider_id": embeddings[candidate_index].provider_id,
+                        "conversation_id": embeddings[candidate_index].conversation_id,
+                        "window_id": embeddings[candidate_index].window_id,
+                        "score": round(
+                            float(row_scores[candidate_index]),
+                            SIMILARITY_DECIMAL_PLACES,
+                        ),
+                    }
+                )
+
         rows.append(
             {
                 "record_type": "window_neighbors",
@@ -218,6 +281,15 @@ def build_window_neighbor_rows(
                 "neighbors": top_neighbors,
             }
         )
+        if progress_every is not None and (
+            (index + 1) % progress_every == 0 or index + 1 == total
+        ):
+            _emit_progress(
+                progress,
+                "runtime.analyze.semantic_prototype.neighbor_progress",
+                count=index + 1,
+                total=total,
+            )
 
     return rows
 
@@ -244,7 +316,13 @@ def analyze_semantic_prototype(
     *,
     top_k: int = 5,
     overwrite: bool = False,
+    backend_name: str = "deterministic-hash",
+    model: str | None = None,
+    max_input_tokens: int | None = None,
+    chunk_overlap_tokens: int | None = None,
+    aggregate: str | None = None,
     backend: EmbeddingBackend | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     if top_k <= 0:
         raise SemanticPrototypeError("top_k must be > 0")
@@ -260,15 +338,40 @@ def analyze_semantic_prototype(
                     f"artifact already exists: {artifact_path} (rerun with --overwrite)"
                 )
 
-    backend = backend or DeterministicHashEmbeddingBackend()
+    if backend is None:
+        backend = resolve_embedding_backend(
+            backend_name=backend_name,
+            model=model,
+            max_input_tokens=max_input_tokens,
+            chunk_overlap_tokens=chunk_overlap_tokens,
+            aggregate=aggregate,
+        )
 
+    _emit_progress(progress, "runtime.analyze.semantic_prototype.loading_windows")
     all_windows: list[MessageWindowRecord] = []
     for windows_path in windows_files:
         all_windows.extend(load_message_window_records(windows_path))
+    _emit_progress(
+        progress,
+        "runtime.analyze.semantic_prototype.loaded_windows",
+        windows=len(all_windows),
+    )
 
+    _emit_progress(progress, "runtime.analyze.semantic_prototype.generating_embeddings")
     embeddings = build_window_embedding_records(all_windows, backend=backend)
+    _emit_progress(
+        progress,
+        "runtime.analyze.semantic_prototype.embeddings_complete",
+        windows=len(embeddings),
+    )
     embedding_rows = [render_window_embedding_row(record) for record in embeddings]
-    neighbor_rows = build_window_neighbor_rows(embeddings, top_k=top_k)
+    _emit_progress(progress, "runtime.analyze.semantic_prototype.building_neighbors")
+    neighbor_rows = build_window_neighbor_rows(
+        embeddings,
+        top_k=top_k,
+        progress=progress,
+        progress_every=NEIGHBOR_PROGRESS_INTERVAL if len(embeddings) >= NEIGHBOR_PROGRESS_INTERVAL else None,
+    )
 
     rows_by_source: dict[Path, dict[str, list[dict[str, Any]]]] = {
         path: {"embeddings": [], "neighbors": []} for path in windows_files
@@ -283,6 +386,7 @@ def analyze_semantic_prototype(
     written_embeddings: list[Path] = []
     written_neighbors: list[Path] = []
 
+    _emit_progress(progress, "runtime.analyze.semantic_prototype.writing_artifacts")
     for windows_path in windows_files:
         written_embeddings.append(
             _write_jsonl_rows(
@@ -304,3 +408,31 @@ def analyze_semantic_prototype(
         "embedding_artifacts": written_embeddings,
         "neighbor_artifacts": written_neighbors,
     }
+
+
+def resolve_embedding_backend(
+    *,
+    backend_name: str,
+    model: str | None,
+    max_input_tokens: int | None = None,
+    chunk_overlap_tokens: int | None = None,
+    aggregate: str | None = None,
+) -> EmbeddingBackend:
+    if backend_name == "deterministic-hash":
+        return DeterministicHashEmbeddingBackend()
+    if backend_name == "ollama":
+        if not model:
+            raise SemanticPrototypeError(
+                "--backend ollama requires --model <ollama-embedding-model>"
+            )
+        try:
+            settings = resolve_embedding_model_settings(
+                model,
+                max_input_tokens=max_input_tokens,
+                chunk_overlap_tokens=chunk_overlap_tokens,
+                aggregate=aggregate,
+            )
+            return OllamaEmbeddingBackend(model=model, settings=settings)
+        except ValueError as exc:
+            raise SemanticPrototypeError(str(exc)) from exc
+    raise SemanticPrototypeError(f"unsupported embedding backend: {backend_name}")

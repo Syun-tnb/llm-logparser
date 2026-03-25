@@ -179,6 +179,12 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
             input_path,
             top_k=args.top_k,
             overwrite=args.overwrite,
+            backend_name=args.backend,
+            model=args.model,
+            max_input_tokens=args.max_input_tokens,
+            chunk_overlap_tokens=args.chunk_overlap_tokens,
+            aggregate=args.aggregate,
+            progress=logger.info,
         )
     except SemanticPrototypeError as exc:
         logger.error(str(exc))
@@ -192,3 +198,27 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
             model=result["embedding_model"],
         )
     )
+
+
+def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_preview import (
+        SemanticPreviewError,
+        render_semantic_preview,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        rendered = render_semantic_preview(
+            input_root=input_root,
+            conversation_id=args.thread_id,
+            window_id=args.window,
+            top_k=args.top_k,
+            include_text=args.include_text,
+            max_chars=args.max_chars,
+            show_meta=args.show_meta,
+        )
+    except SemanticPreviewError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    write_or_print(rendered, None)
