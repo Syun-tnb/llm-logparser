@@ -523,16 +523,20 @@ deterministic and model-derived capabilities.
   It supports a default `deterministic-hash` backend for local plumbing/tests
   and an `ollama` backend for real local embeddings via a local Ollama model
   such as `nomic-embed-text-v2-moe` or `embeddinggemma`.
-  For Ollama-backed runs, oversized window text is chunked automatically and
-  chunk embeddings are aggregated back into one final embedding per window.
+  For Ollama-backed runs, oversized window text is chunked automatically with a
+  deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
+  one final embedding per window.
   Neighbor construction now uses vectorized cosine similarity instead of
   Python-level all-pairs math, and long-running phases emit lightweight
   progress logs while windows load, embeddings generate, neighbors build, and
   artifacts are written.
-  Recommended starting settings are:
-  `nomic-embed-text-v2-moe` with `max_input_tokens=512`,
-  `chunk_overlap_tokens=64`, `aggregate=mean`; and `embeddinggemma` with
-  `max_input_tokens=2048`, `chunk_overlap_tokens=128`, `aggregate=mean`.
+  Built-in Ollama presets are applied automatically when users do not override
+  them:
+  `nomic-embed-text-v2-moe` uses `max_input_bytes=512`,
+  `chunk_overlap_bytes=64`, `aggregate=mean`; `embeddinggemma` uses
+  `max_input_bytes=2048`, `chunk_overlap_bytes=128`, `aggregate=mean`; and
+  unknown models fall back to `max_input_bytes=256`,
+  `chunk_overlap_bytes=32`, `aggregate=mean`.
 
 - `semantic-preview` is a read-only companion to `semantic-prototype`: it
   reads stored `window_neighbors.jsonl` plus `message_windows.jsonl` and renders

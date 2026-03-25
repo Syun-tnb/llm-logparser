@@ -14,6 +14,8 @@
   * uses a deterministic local hash backend by default
   * now also supports a local `ollama` embedding backend via `--backend ollama --model <name>`
   * supports profile-backed `analyze.semantic_prototype` embedding settings
+  * uses deterministic UTF-8 byte-based chunking controls (`max_input_bytes`, `chunk_overlap_bytes`)
+  * automatically applies built-in Ollama presets for known models and conservative fallback defaults for unknown models
   * automatically chunks oversized Ollama embedding inputs and aggregates them into one final embedding per window
   * now uses vectorized neighbor construction and phase-level progress logging for longer runs
   * does not perform topic labeling or clustering

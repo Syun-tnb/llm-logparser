@@ -440,8 +440,8 @@ def test_known_model_preset_and_unknown_model_fallback():
     nomic = resolve_embedding_model_settings("nomic-embed-text-v2-moe")
     unknown = resolve_embedding_model_settings("unknown-local-model")
 
-    assert nomic.max_input_tokens == 512
-    assert nomic.chunk_overlap_tokens == 64
+    assert nomic.max_input_bytes == 512
+    assert nomic.chunk_overlap_bytes == 64
     assert nomic.aggregate == "mean"
     assert unknown == DEFAULT_EMBEDDING_SETTINGS
 
@@ -449,15 +449,15 @@ def test_known_model_preset_and_unknown_model_fallback():
 def test_chunk_text_for_embedding_is_deterministic_and_aggregate_is_mean():
     chunks = chunk_text_for_embedding(
         "abcdefgh",
-        max_input_tokens=4,
-        chunk_overlap_tokens=1,
+        max_input_bytes=4,
+        chunk_overlap_bytes=1,
     )
 
     assert chunks == ["abcd", "defg", "gh"]
     assert chunk_text_for_embedding(
         "abcdefgh",
-        max_input_tokens=4,
-        chunk_overlap_tokens=1,
+        max_input_bytes=4,
+        chunk_overlap_bytes=1,
     ) == chunks
     assert aggregate_embeddings([[1.0, 3.0], [3.0, 5.0]], aggregate="mean") == [2.0, 4.0]
 
@@ -545,8 +545,8 @@ def test_ollama_embedding_backend_chunks_long_input_and_aggregates(monkeypatch):
         "nomic-embed-text-v2-moe",
         settings=resolve_embedding_model_settings(
             "nomic-embed-text-v2-moe",
-            max_input_tokens=4,
-            chunk_overlap_tokens=1,
+            max_input_bytes=4,
+            chunk_overlap_bytes=1,
         ),
     )
 
@@ -676,8 +676,8 @@ def test_semantic_prototype_reads_config_profile_settings(tmp_path, monkeypatch)
                 "        model: nomic-embed-text-v2-moe",
                 "        top_k: 1",
                 "        embedding:",
-                "          max_input_tokens: 4",
-                "          chunk_overlap_tokens: 1",
+                "          max_input_bytes: 4",
+                "          chunk_overlap_bytes: 1",
                 "          aggregate: mean",
             ]
         )
@@ -749,8 +749,8 @@ def test_semantic_prototype_cli_overrides_config(tmp_path, monkeypatch):
                 "        model: nomic-embed-text-v2-moe",
                 "        top_k: 2",
                 "        embedding:",
-                "          max_input_tokens: 4",
-                "          chunk_overlap_tokens: 1",
+                "          max_input_bytes: 4",
+                "          chunk_overlap_bytes: 1",
                 "          aggregate: mean",
             ]
         )

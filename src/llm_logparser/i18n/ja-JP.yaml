@@ -59,8 +59,8 @@ messages:
   cli.analyze.semantic_prototype.opt.backend.help: "使用する埋め込みバックエンド (`deterministic-hash` または `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須 (例: `nomic-embed-text-v2-moe`, `embeddinggemma`)"
   cli.analyze.semantic_prototype.opt.top_k.help: 各ウィンドウごとに保持する近傍数
-  cli.analyze.semantic_prototype.opt.max_input_tokens.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な入力予算
-  cli.analyze.semantic_prototype.opt.chunk_overlap_tokens.help: 決定的な埋め込み chunk 間で保持する overlap 予算
+  cli.analyze.semantic_prototype.opt.max_input_bytes.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な UTF-8 バイト予算
+  cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算
   cli.analyze.semantic_prototype.opt.aggregate.help: chunk 埋め込みの集約方式
   cli.analyze.semantic_prototype.opt.overwrite.help: 既存の window_embeddings.jsonl と window_neighbors.jsonl を上書きする
   cli.analyze.semantic_preview.help: 1 つの semantic window と保存済み近傍を人間向けにプレビューする
@@ -101,6 +101,7 @@ messages:
   runtime.analyze.semantic_prototype.neighbor_progress: "semantic prototype: 近傍 {count} / {total}"
   runtime.analyze.semantic_prototype.writing_artifacts: "semantic prototype: 成果物を書き込んでいます"
   runtime.analyze.semantic_prototype_written: "semantic prototype 成果物を書き込みました: {threads} スレッド / {windows} ウィンドウ (model={model})"
+  runtime.config.deprecated_semantic_embedding_key: "非推奨の設定キー {context}.{legacy_key} は引き続き受け付けますが、今後は {context}.{replacement} を使用してください。"
   error.path_not_found: "指定されたパスが存在しません: {path}"
   error.path_expected_file: "ファイルパスを指定してください: {path}"
   error.path_expected_dir: "ディレクトリパスを指定してください: {path}"

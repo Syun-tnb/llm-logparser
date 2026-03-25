@@ -742,14 +742,18 @@ Experimental prototype note:
   `window_neighbors.jsonl` artifacts next to each thread's window artifact
 - it supports a default `deterministic-hash` backend plus an `ollama` backend
   for local embedding models served by Ollama
-- Ollama-backed runs automatically chunk oversized window text and aggregate
-  chunk embeddings back into one final embedding per source window
+- Ollama-backed runs automatically chunk oversized window text with a
+  deterministic UTF-8 byte budget and aggregate chunk embeddings back into one
+  final embedding per source window
 - neighbor construction now uses vectorized cosine similarity and emits
   lightweight progress logs for long-running phases
-- recommended starting settings are `nomic-embed-text-v2-moe` with
-  `max_input_tokens=512`, `chunk_overlap_tokens=64`, `aggregate=mean`, and
-  `embeddinggemma` with `max_input_tokens=2048`,
-  `chunk_overlap_tokens=128`, `aggregate=mean`
+- built-in Ollama presets are automatically applied when users do not override
+  them:
+  `nomic-embed-text-v2-moe` uses `max_input_bytes=512`,
+  `chunk_overlap_bytes=64`, `aggregate=mean`; `embeddinggemma` uses
+  `max_input_bytes=2048`, `chunk_overlap_bytes=128`, `aggregate=mean`; and
+  unknown models fall back to `max_input_bytes=256`,
+  `chunk_overlap_bytes=32`, `aggregate=mean`
 - those outputs are non-canonical and intentionally limited to embeddings plus
   nearest-neighbor structure
 - this prototype does not perform topic labeling, clustering, or timeline

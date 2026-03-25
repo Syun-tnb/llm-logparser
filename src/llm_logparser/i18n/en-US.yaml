@@ -55,8 +55,8 @@ messages:
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama` (for example: `nomic-embed-text-v2-moe` or `embeddinggemma`)"
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
-  cli.analyze.semantic_prototype.opt.max_input_tokens.help: Safe input budget for one embedding request before deterministic chunking is applied
-  cli.analyze.semantic_prototype.opt.chunk_overlap_tokens.help: Overlap budget to retain between deterministic embedding chunks
+  cli.analyze.semantic_prototype.opt.max_input_bytes.help: Safe UTF-8 byte budget for one embedding request before deterministic chunking is applied
+  cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks
   cli.analyze.semantic_prototype.opt.aggregate.help: Aggregation method for chunk embeddings
   cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl and window_neighbors.jsonl artifacts
   cli.analyze.semantic_preview.help: Render a human-readable preview for one semantic window and its stored neighbors
@@ -113,6 +113,7 @@ messages:
   runtime.config.invalid: "Invalid config: {message}"
   runtime.config.unsupported_schema_version: "Unsupported config schema_version '{normalized}'. This build supports major version {major}."
   runtime.config.deprecated_profile_key: "Deprecated config key profiles.{profile_name}.{legacy_key} is still supported for schema_version 1; use {replacement} instead. Removal is planned for a future schema_version 2 cleanup."
+  runtime.config.deprecated_semantic_embedding_key: "Deprecated config key {context}.{legacy_key} is still supported; use {context}.{replacement} instead."
   runtime.config.unknown_sanitize_keys: "Unknown sanitize config key(s) under {context}: {keys}"
   runtime.config.must_be_mapping: "{context} must be a mapping"
   runtime.config.must_be_string: "{context} must be a string"

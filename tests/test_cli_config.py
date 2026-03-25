@@ -340,6 +340,73 @@ def test_canonical_section_keys_do_not_emit_deprecation_warnings(tmp_path, caplo
     assert "Deprecated config key" not in caplog.text
 
 
+def test_semantic_embedding_byte_keys_are_normalized_in_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    analyze:",
+                "      semantic_prototype:",
+                "        backend: ollama",
+                "        model: embeddinggemma",
+                "        embedding:",
+                "          max_input_bytes: 2048",
+                "          chunk_overlap_bytes: 128",
+                "          aggregate: mean",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+    embedding = config.profiles["default"].analyze.semantic_prototype.embedding
+
+    assert embedding.max_input_bytes == 2048
+    assert embedding.chunk_overlap_bytes == 128
+    assert embedding.aggregate == "mean"
+    assert config.to_dict()["profiles"]["default"]["analyze"]["semantic_prototype"][
+        "embedding"
+    ] == {
+        "max_input_bytes": 2048,
+        "chunk_overlap_bytes": 128,
+        "aggregate": "mean",
+    }
+
+
+def test_legacy_semantic_embedding_token_keys_emit_deprecation_warnings(tmp_path, caplog):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    analyze:",
+                "      semantic_prototype:",
+                "        backend: ollama",
+                "        model: embeddinggemma",
+                "        embedding:",
+                "          max_input_tokens: 512",
+                "          chunk_overlap_tokens: 64",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+    embedding = config.profiles["default"].analyze.semantic_prototype.embedding
+
+    assert embedding.max_input_bytes == 512
+    assert embedding.chunk_overlap_bytes == 64
+    assert "Deprecated config key profiles.default.analyze.semantic_prototype.embedding.max_input_tokens" in caplog.text
+    assert "use profiles.default.analyze.semantic_prototype.embedding.max_input_bytes instead" in caplog.text
+    assert "Deprecated config key profiles.default.analyze.semantic_prototype.embedding.chunk_overlap_tokens" in caplog.text
+    assert "use profiles.default.analyze.semantic_prototype.embedding.chunk_overlap_bytes instead" in caplog.text
+
+
 def test_unsupported_config_schema_version_exits(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

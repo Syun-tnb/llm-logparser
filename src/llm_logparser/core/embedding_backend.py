@@ -19,26 +19,26 @@ class EmbeddingBackend(Protocol):
 
 @dataclass(frozen=True)
 class EmbeddingModelSettings:
-    max_input_tokens: int
-    chunk_overlap_tokens: int
+    max_input_bytes: int
+    chunk_overlap_bytes: int
     aggregate: str = "mean"
 
 
 DEFAULT_EMBEDDING_SETTINGS = EmbeddingModelSettings(
-    max_input_tokens=256,
-    chunk_overlap_tokens=32,
+    max_input_bytes=256,
+    chunk_overlap_bytes=32,
     aggregate="mean",
 )
 
 OLLAMA_MODEL_PRESETS: dict[str, EmbeddingModelSettings] = {
     "nomic-embed-text-v2-moe": EmbeddingModelSettings(
-        max_input_tokens=512,
-        chunk_overlap_tokens=64,
+        max_input_bytes=512,
+        chunk_overlap_bytes=64,
         aggregate="mean",
     ),
     "embeddinggemma": EmbeddingModelSettings(
-        max_input_tokens=2048,
-        chunk_overlap_tokens=128,
+        max_input_bytes=2048,
+        chunk_overlap_bytes=128,
         aggregate="mean",
     ),
 }
@@ -100,8 +100,8 @@ class OllamaEmbeddingBackend:
         for text in texts:
             chunks = chunk_text_for_embedding(
                 text,
-                max_input_tokens=self.settings.max_input_tokens,
-                chunk_overlap_tokens=self.settings.chunk_overlap_tokens,
+                max_input_bytes=self.settings.max_input_bytes,
+                chunk_overlap_bytes=self.settings.chunk_overlap_bytes,
             )
             chunk_vectors = self._embed_request(chunks)
             vectors.append(
@@ -198,26 +198,26 @@ def _decode_error_body(exc: urllib_error.HTTPError) -> str:
 def resolve_embedding_model_settings(
     model: str,
     *,
-    max_input_tokens: int | None = None,
-    chunk_overlap_tokens: int | None = None,
+    max_input_bytes: int | None = None,
+    chunk_overlap_bytes: int | None = None,
     aggregate: str | None = None,
 ) -> EmbeddingModelSettings:
     preset = OLLAMA_MODEL_PRESETS.get(model, DEFAULT_EMBEDDING_SETTINGS)
     resolved = EmbeddingModelSettings(
-        max_input_tokens=max_input_tokens or preset.max_input_tokens,
-        chunk_overlap_tokens=(
-            chunk_overlap_tokens
-            if chunk_overlap_tokens is not None
-            else preset.chunk_overlap_tokens
+        max_input_bytes=max_input_bytes or preset.max_input_bytes,
+        chunk_overlap_bytes=(
+            chunk_overlap_bytes
+            if chunk_overlap_bytes is not None
+            else preset.chunk_overlap_bytes
         ),
         aggregate=aggregate or preset.aggregate,
     )
-    if resolved.max_input_tokens <= 0:
-        raise ValueError("max_input_tokens must be > 0")
-    if resolved.chunk_overlap_tokens < 0:
-        raise ValueError("chunk_overlap_tokens must be >= 0")
-    if resolved.chunk_overlap_tokens >= resolved.max_input_tokens:
-        raise ValueError("chunk_overlap_tokens must be smaller than max_input_tokens")
+    if resolved.max_input_bytes <= 0:
+        raise ValueError("max_input_bytes must be > 0")
+    if resolved.chunk_overlap_bytes < 0:
+        raise ValueError("chunk_overlap_bytes must be >= 0")
+    if resolved.chunk_overlap_bytes >= resolved.max_input_bytes:
+        raise ValueError("chunk_overlap_bytes must be smaller than max_input_bytes")
     if resolved.aggregate != "mean":
         raise ValueError("aggregate must be 'mean'")
     return resolved
@@ -226,9 +226,12 @@ def resolve_embedding_model_settings(
 def chunk_text_for_embedding(
     text: str,
     *,
-    max_input_tokens: int,
-    chunk_overlap_tokens: int,
+    max_input_bytes: int,
+    chunk_overlap_bytes: int,
 ) -> list[str]:
+    # This chunker is intentionally deterministic and byte-budget based.
+    # It keeps the current experimental semantic layer rebuildable without
+    # claiming tokenizer-accurate context budgeting.
     if not text:
         return [""]
 
@@ -241,7 +244,7 @@ def chunk_text_for_embedding(
         budget = 0
         while end < len(chars):
             char_cost = _estimate_text_budget(chars[end])
-            if budget and budget + char_cost > max_input_tokens:
+            if budget and budget + char_cost > max_input_bytes:
                 break
             budget += char_cost
             end += 1
@@ -257,7 +260,7 @@ def chunk_text_for_embedding(
         overlap_start = end
         while overlap_start > start:
             char_cost = _estimate_text_budget(chars[overlap_start - 1])
-            if overlap_budget + char_cost > chunk_overlap_tokens:
+            if overlap_budget + char_cost > chunk_overlap_bytes:
                 break
             overlap_budget += char_cost
             overlap_start -= 1
@@ -293,4 +296,6 @@ def aggregate_embeddings(
 
 
 def _estimate_text_budget(text: str) -> int:
+    # The embedding prototype uses UTF-8 byte length as its deterministic
+    # chunk-size estimate. This is deliberate and not tokenizer-accurate.
     return max(1, len(text.encode("utf-8")))

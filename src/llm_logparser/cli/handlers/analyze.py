@@ -181,8 +181,8 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
             overwrite=args.overwrite,
             backend_name=args.backend,
             model=args.model,
-            max_input_tokens=args.max_input_tokens,
-            chunk_overlap_tokens=args.chunk_overlap_tokens,
+            max_input_bytes=args.max_input_bytes,
+            chunk_overlap_bytes=args.chunk_overlap_bytes,
             aggregate=args.aggregate,
             progress=logger.info,
         )

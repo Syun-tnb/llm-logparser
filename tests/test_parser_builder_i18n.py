@@ -85,6 +85,8 @@ def test_analyze_semantic_prototype_help_mentions_backend_options(capsys):
     help_text = capsys.readouterr().out
     assert "--backend" in help_text
     assert "--model" in help_text
+    assert "--max-input-bytes" in help_text
+    assert "--chunk-overlap-bytes" in help_text
     assert "deterministic-hash" in help_text
     assert "ollama" in help_text
 

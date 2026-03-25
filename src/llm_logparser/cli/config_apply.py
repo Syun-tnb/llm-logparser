@@ -303,16 +303,16 @@ def apply_profile_defaults(
         _set_if_not_cli(
             args,
             explicit_flags,
-            "max_input_tokens",
-            ("--max-input-tokens",),
-            semantic.embedding.max_input_tokens,
+            "max_input_bytes",
+            ("--max-input-bytes",),
+            semantic.embedding.max_input_bytes,
         )
         _set_if_not_cli(
             args,
             explicit_flags,
-            "chunk_overlap_tokens",
-            ("--chunk-overlap-tokens",),
-            semantic.embedding.chunk_overlap_tokens,
+            "chunk_overlap_bytes",
+            ("--chunk-overlap-bytes",),
+            semantic.embedding.chunk_overlap_bytes,
         )
         _set_if_not_cli(
             args,

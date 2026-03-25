@@ -491,7 +491,18 @@ These outputs are:
 * additive
 * rebuildable from L1 artifacts
 
-They are not yet positioned as a stable semantic topic system.
+Current Ollama chunking behavior is deterministic and UTF-8 byte-based. It is
+intentionally not tokenizer-accurate token budgeting.
+
+Automatic Ollama preset behavior:
+
+* `nomic-embed-text-v2-moe` → `max_input_bytes=512`, `chunk_overlap_bytes=64`
+* `embeddinggemma` → `max_input_bytes=2048`, `chunk_overlap_bytes=128`
+* unknown Ollama models fall back to `max_input_bytes=256`,
+  `chunk_overlap_bytes=32`
+
+These presets are automatically applied when you do not override them. The
+semantic layer is not yet positioned as a stable topic system.
 
 ### Analyze Semantic Preview
 
@@ -611,7 +622,7 @@ At a glance:
 * Layer 1 (L1) is deterministic analysis: `stats`, `timeline`, `tokens`, `metrics`, and `datasheet`
 * Layer 2 (L2) is `analyze sqlite-build`: an optional deterministic SQLite index
 * Layer 3 (L3) now has an experimental additive semantic path: window embeddings, semantic neighbors, and `semantic-preview`
-* L3 remains experimental, local-first, non-canonical, and rebuildable from lower-layer artifacts
+* L3 remains experimental, local-first, additive, rebuildable, and non-canonical
 * Layer 4 (L4) remains a future model/API layer, not a stable current CLI feature
 * `analyze sqlite-build` is a rebuildable non-canonical index, not a general-purpose analysis engine or catch-all derived-data store
 

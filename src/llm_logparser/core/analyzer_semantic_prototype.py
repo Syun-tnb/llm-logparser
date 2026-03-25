@@ -318,8 +318,8 @@ def analyze_semantic_prototype(
     overwrite: bool = False,
     backend_name: str = "deterministic-hash",
     model: str | None = None,
-    max_input_tokens: int | None = None,
-    chunk_overlap_tokens: int | None = None,
+    max_input_bytes: int | None = None,
+    chunk_overlap_bytes: int | None = None,
     aggregate: str | None = None,
     backend: EmbeddingBackend | None = None,
     progress: Callable[[str], None] | None = None,
@@ -342,8 +342,8 @@ def analyze_semantic_prototype(
         backend = resolve_embedding_backend(
             backend_name=backend_name,
             model=model,
-            max_input_tokens=max_input_tokens,
-            chunk_overlap_tokens=chunk_overlap_tokens,
+            max_input_bytes=max_input_bytes,
+            chunk_overlap_bytes=chunk_overlap_bytes,
             aggregate=aggregate,
         )
 
@@ -414,8 +414,8 @@ def resolve_embedding_backend(
     *,
     backend_name: str,
     model: str | None,
-    max_input_tokens: int | None = None,
-    chunk_overlap_tokens: int | None = None,
+    max_input_bytes: int | None = None,
+    chunk_overlap_bytes: int | None = None,
     aggregate: str | None = None,
 ) -> EmbeddingBackend:
     if backend_name == "deterministic-hash":
@@ -428,8 +428,8 @@ def resolve_embedding_backend(
         try:
             settings = resolve_embedding_model_settings(
                 model,
-                max_input_tokens=max_input_tokens,
-                chunk_overlap_tokens=chunk_overlap_tokens,
+                max_input_bytes=max_input_bytes,
+                chunk_overlap_bytes=chunk_overlap_bytes,
                 aggregate=aggregate,
             )
             return OllamaEmbeddingBackend(model=model, settings=settings)

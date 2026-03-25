@@ -23,6 +23,11 @@ LEGACY_PROFILE_KEY_REPLACEMENTS: dict[str, str] = {
     "conversation_id": "extract.conversation_id",
 }
 
+LEGACY_SEMANTIC_EMBEDDING_KEY_REPLACEMENTS: dict[str, str] = {
+    "max_input_tokens": "max_input_bytes",
+    "chunk_overlap_tokens": "chunk_overlap_bytes",
+}
+
 
 def _raise_config_error(message: str) -> None:
     raise SystemExit(_("runtime.config.invalid", message=message))
@@ -141,6 +146,18 @@ def _warn_deprecated_profile_keys(profile_name: str, data: dict[str, Any]) -> No
                 replacement=replacement,
             )
         )
+
+
+def _warn_deprecated_semantic_embedding_key(context: str, legacy_key: str) -> None:
+    replacement = LEGACY_SEMANTIC_EMBEDDING_KEY_REPLACEMENTS[legacy_key]
+    _CONFIG_LOG.warning(
+        _(
+            "runtime.config.deprecated_semantic_embedding_key",
+            context=context,
+            legacy_key=legacy_key,
+            replacement=replacement,
+        )
+    )
 
 
 def normalize_schema_version(raw_version: Any) -> str | None:
@@ -432,21 +449,25 @@ class ExtractConfig:
 
 @dataclass(frozen=True)
 class SemanticPrototypeEmbeddingConfig:
-    max_input_tokens: int | None = None
-    chunk_overlap_tokens: int | None = None
+    max_input_bytes: int | None = None
+    chunk_overlap_bytes: int | None = None
     aggregate: str | None = None
 
     @classmethod
     def from_raw(cls, raw: Any, *, context: str) -> SemanticPrototypeEmbeddingConfig:
         data = _optional_mapping(raw, context)
+        if "max_input_tokens" in data:
+            _warn_deprecated_semantic_embedding_key(context, "max_input_tokens")
+        if "chunk_overlap_tokens" in data:
+            _warn_deprecated_semantic_embedding_key(context, "chunk_overlap_tokens")
         return cls(
-            max_input_tokens=_optional_int(
-                data.get("max_input_tokens"),
-                f"{context}.max_input_tokens",
+            max_input_bytes=_optional_int(
+                data.get("max_input_bytes", data.get("max_input_tokens")),
+                f"{context}.max_input_bytes",
             ),
-            chunk_overlap_tokens=_optional_int(
-                data.get("chunk_overlap_tokens"),
-                f"{context}.chunk_overlap_tokens",
+            chunk_overlap_bytes=_optional_int(
+                data.get("chunk_overlap_bytes", data.get("chunk_overlap_tokens")),
+                f"{context}.chunk_overlap_bytes",
             ),
             aggregate=_optional_string(data.get("aggregate"), f"{context}.aggregate"),
         )
@@ -454,8 +475,8 @@ class SemanticPrototypeEmbeddingConfig:
     def to_dict(self) -> dict[str, Any]:
         return _compact_dict(
             {
-                "max_input_tokens": self.max_input_tokens,
-                "chunk_overlap_tokens": self.chunk_overlap_tokens,
+                "max_input_bytes": self.max_input_bytes,
+                "chunk_overlap_bytes": self.chunk_overlap_bytes,
                 "aggregate": self.aggregate,
             }
         )

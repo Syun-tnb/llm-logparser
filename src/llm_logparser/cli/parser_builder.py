@@ -367,16 +367,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.top_k.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
-        "--max-input-tokens",
-        dest="max_input_tokens",
+        "--max-input-bytes",
+        dest="max_input_bytes",
         type=int,
-        help=_("cli.analyze.semantic_prototype.opt.max_input_tokens.help"),
+        help=_("cli.analyze.semantic_prototype.opt.max_input_bytes.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
-        "--chunk-overlap-tokens",
-        dest="chunk_overlap_tokens",
+        "--chunk-overlap-bytes",
+        dest="chunk_overlap_bytes",
         type=int,
-        help=_("cli.analyze.semantic_prototype.opt.chunk_overlap_tokens.help"),
+        help=_("cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
         "--aggregate",

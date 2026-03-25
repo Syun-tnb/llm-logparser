@@ -273,29 +273,45 @@ analyze:
     backend: ollama
     model: nomic-embed-text-v2-moe
     top_k: 5
-    embedding:
-      max_input_tokens: 512
-      chunk_overlap_tokens: 64
-      aggregate: mean
 ```
 
 CLI flags still override config values. `input.path` remains the default source
 path for `analyze semantic-prototype` when `--input` is omitted.
 
-Recommended starting presets:
+For known Ollama models, built-in presets are applied automatically when
+`embedding` overrides are omitted:
 
 * `nomic-embed-text-v2-moe`
-  * `max_input_tokens: 512`
-  * `chunk_overlap_tokens: 64`
+  * `max_input_bytes: 512`
+  * `chunk_overlap_bytes: 64`
   * `aggregate: mean`
 * `embeddinggemma`
-  * `max_input_tokens: 2048`
-  * `chunk_overlap_tokens: 128`
+  * `max_input_bytes: 2048`
+  * `chunk_overlap_bytes: 128`
   * `aggregate: mean`
+* unknown Ollama models
+  * `max_input_bytes: 256`
+  * `chunk_overlap_bytes: 32`
+  * `aggregate: mean`
+
+Advanced override example for custom or unknown models:
+
+```yaml
+analyze:
+  semantic_prototype:
+    backend: ollama
+    model: my-local-embedder
+    top_k: 5
+    embedding:
+      max_input_bytes: 768
+      chunk_overlap_bytes: 96
+      aggregate: mean
+```
 
 Behavior notes:
 
 * long window text is chunked automatically before embedding requests
+* chunk sizing is deterministic UTF-8 byte-based sizing, not tokenizer-accurate token budgeting
 * chunk embeddings are aggregated into one final embedding per original window
 * outputs remain rebuildable, non-canonical prototype artifacts
 * `deterministic-hash` remains the default backend for plumbing and tests
