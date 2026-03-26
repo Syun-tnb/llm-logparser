@@ -8,11 +8,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+from ....i18n import _, get_resource_list
 from ....utils import shorten_id
 
 
-USER_TITLE_PREFIX = "送信したメッセージ: "
 GEMINI_SERVICE_TOKEN = "Gemini"
+GEMINI_USER_TITLE_PREFIXES_RESOURCE_KEY = "parsing.google_gemini.user_title_prefixes"
+GEMINI_UNKNOWN_TITLE_PREFIX_WARNING_KEY = "runtime.google_gemini.title_prefix_unrecognized"
 
 
 def get_manifest() -> dict:
@@ -140,13 +142,23 @@ def _to_epoch_ms(value: Any) -> int | None:
     return None
 
 
-def extract_user_text(title: Any) -> str:
+def load_gemini_user_title_prefixes(locale: str | None = None) -> list[str]:
+    return get_resource_list(GEMINI_USER_TITLE_PREFIXES_RESOURCE_KEY, locale=locale)
+
+
+def normalize_gemini_title(title: str, prefixes: list[str]) -> tuple[str, bool]:
+    for prefix in prefixes:
+        if title.startswith(prefix):
+            return title[len(prefix):], True
+    return title, False
+
+
+def extract_user_text(title: Any, *, prefixes: list[str] | None = None) -> str:
     if not isinstance(title, str):
         return ""
-    text = title
-    if text.startswith(USER_TITLE_PREFIX):
-        text = text[len(USER_TITLE_PREFIX):]
-    return text.strip()
+    active_prefixes = prefixes if prefixes is not None else load_gemini_user_title_prefixes()
+    text, _ = normalize_gemini_title(title, active_prefixes)
+    return text
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -293,7 +305,25 @@ def expand_input_records(raw: Any) -> list[dict]:
     return events
 
 
-def adapter(record: Any, *, source: str | None = None) -> list[dict]:
+def _warn_unrecognized_title_prefix_once(
+    logger: logging.Logger | None,
+    warning_state: dict[str, bool] | None,
+) -> None:
+    if logger is None or warning_state is None:
+        return
+    if warning_state.get("gemini_title_prefix_unrecognized"):
+        return
+    logger.warning(_(GEMINI_UNKNOWN_TITLE_PREFIX_WARNING_KEY))
+    warning_state["gemini_title_prefix_unrecognized"] = True
+
+
+def adapter(
+    record: Any,
+    *,
+    source: str | None = None,
+    logger: logging.Logger | None = None,
+    warning_state: dict[str, bool] | None = None,
+) -> list[dict]:
     del source
 
     if not _is_gemini_activity_record(record):
@@ -303,7 +333,14 @@ def adapter(record: Any, *, source: str | None = None) -> list[dict]:
     if ts is None:
         return []
 
-    user_text = extract_user_text(record.get("title"))
+    prefixes = load_gemini_user_title_prefixes()
+    raw_title = record.get("title")
+    user_text = ""
+    stripped = False
+    if isinstance(raw_title, str):
+        user_text, stripped = normalize_gemini_title(raw_title, prefixes)
+    if not stripped and prefixes:
+        _warn_unrecognized_title_prefix_once(logger, warning_state)
     assistant_text = extract_assistant_text(record.get("safeHtmlItem"))
     if not user_text and not assistant_text:
         return []
@@ -330,6 +367,7 @@ def adapter(record: Any, *, source: str | None = None) -> list[dict]:
                 "conv_id": conversation_id,
                 "message_id": user_message_id,
                 "id": user_message_id,
+                "parent_id": None,
                 "role": "user",
                 "ts": ts,
                 "created_at": created_at,
@@ -346,6 +384,7 @@ def adapter(record: Any, *, source: str | None = None) -> list[dict]:
             "conv_id": conversation_id,
             "message_id": assistant_message_id,
             "id": assistant_message_id,
+            "parent_id": None,
             "role": "assistant",
             "ts": ts,
             "created_at": created_at,
@@ -364,7 +403,12 @@ def adapter(record: Any, *, source: str | None = None) -> list[dict]:
 
 
 def get_adapter():
-    return adapter
+    warning_state = {"gemini_title_prefix_unrecognized": False}
+
+    def _adapter(record: Any, *, source: str | None = None, logger: logging.Logger | None = None):
+        return adapter(record, source=source, logger=logger, warning_state=warning_state)
+
+    return _adapter
 
 
 def get_input_records():

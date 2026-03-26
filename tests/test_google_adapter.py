@@ -1,7 +1,9 @@
 import json
+import logging
 from pathlib import Path
 
 from llm_logparser.core.exporter import export_thread_md
+from llm_logparser.core.i18n import _, set_locale
 from llm_logparser.core.parser import parse_to_jsonl
 from llm_logparser.core.providers.google.gemini_activity.adapter import (
     adapter as google_adapter,
@@ -10,6 +12,8 @@ from llm_logparser.core.providers.google.gemini_activity.adapter import (
     extract_user_text,
     html_to_text,
     is_gemini_activity_export,
+    load_gemini_user_title_prefixes,
+    normalize_gemini_title,
     synthetic_conversation_id,
     synthetic_message_id,
 )
@@ -61,9 +65,38 @@ def test_google_gemini_activity_detection_rejects_unrelated_json():
 
 
 def test_google_gemini_user_text_extraction_from_title():
+    set_locale("ja-JP")
+
     assert extract_user_text("送信したメッセージ: 小春？チャンク（Chunk）って何？") == (
         "小春？チャンク（Chunk）って何？"
     )
+
+
+def test_google_gemini_title_normalization_keeps_original_when_no_prefix_matches():
+    text, stripped = normalize_gemini_title(
+        "prefixless title",
+        ["送信したメッセージ: "],
+    )
+
+    assert text == "prefixless title"
+    assert stripped is False
+
+
+def test_google_gemini_title_normalization_uses_first_matching_prefix():
+    text, stripped = normalize_gemini_title(
+        "送信: 短い別表記",
+        ["送信したメッセージ: ", "送信: "],
+    )
+
+    assert text == "短い別表記"
+    assert stripped is True
+
+
+def test_google_gemini_title_prefix_loader_returns_empty_for_unknown_locale():
+    set_locale("fr-FR")
+
+    assert load_gemini_user_title_prefixes() == []
+    assert extract_user_text("送信したメッセージ: 残す") == "送信したメッセージ: 残す"
 
 
 def test_google_gemini_assistant_text_extraction_from_safe_html_items():
@@ -99,6 +132,8 @@ def test_google_gemini_synthetic_ids_are_deterministic():
 
 
 def test_google_gemini_adapter_handles_user_only_record():
+    set_locale("ja-JP")
+
     record = _record(
         title="送信したメッセージ: 明日の予定を整理して",
         time="2026-03-23T07:20:00.000Z",
@@ -113,6 +148,8 @@ def test_google_gemini_adapter_handles_user_only_record():
 
 
 def test_google_gemini_adapter_handles_assistant_only_record():
+    set_locale("ja-JP")
+
     record = _record(
         title="送信したメッセージ: ",
         time="2026-03-23T07:21:00.000Z",
@@ -127,7 +164,24 @@ def test_google_gemini_adapter_handles_assistant_only_record():
     assert messages[0]["text"] == "こちらが要約です。"
 
 
+def test_google_gemini_adapter_never_drops_user_message_when_prefix_is_unknown():
+    set_locale("ja-JP")
+
+    record = _record(
+        title="未知の接頭辞: 元のメッセージを保持する",
+        time="2026-03-23T07:21:00.000Z",
+    )
+
+    messages = google_adapter(record)
+
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert messages[0]["text"] == "未知の接頭辞: 元のメッセージを保持する"
+
+
 def test_google_gemini_adapter_builds_mini_thread_from_single_event():
+    set_locale("ja-JP")
+
     record = _record(
         title="送信したメッセージ: 旅行プランを考えて",
         time="2026-03-23T07:18:42.981Z",
@@ -146,6 +200,8 @@ def test_google_gemini_adapter_builds_mini_thread_from_single_event():
 
 
 def test_google_gemini_record_expander_sorts_events_by_timestamp_then_synthetic_id():
+    set_locale("ja-JP")
+
     later = _record(
         title="送信したメッセージ: later",
         time="2026-03-23T07:19:00.000Z",
@@ -169,6 +225,8 @@ def test_google_gemini_record_expander_sorts_events_by_timestamp_then_synthetic_
 
 
 def test_parse_to_jsonl_supports_google_gemini_activity_as_event_scoped_threads(tmp_path):
+    set_locale("ja-JP")
+
     fixture = Path("tests/fixtures/google_gemini_activity.json")
     raw = json.loads(fixture.read_text(encoding="utf-8"))
 
@@ -195,6 +253,8 @@ def test_parse_to_jsonl_supports_google_gemini_activity_as_event_scoped_threads(
 
 
 def test_parse_to_jsonl_supports_google_gemini_activity_directory_input(tmp_path):
+    set_locale("ja-JP")
+
     input_dir = tmp_path / "takeout"
     input_dir.mkdir()
     fixture = Path("tests/fixtures/google_gemini_activity.json").read_text(encoding="utf-8")
@@ -211,6 +271,8 @@ def test_parse_to_jsonl_supports_google_gemini_activity_directory_input(tmp_path
 
 
 def test_e2e_google_gemini_parse_export_smoke(tmp_path):
+    set_locale("ja-JP")
+
     fixture = Path("tests/fixtures/google_gemini_activity.json")
     raw = json.loads(fixture.read_text(encoding="utf-8"))
 
@@ -229,3 +291,43 @@ def test_e2e_google_gemini_parse_export_smoke(tmp_path):
     assert "provider: google" in md
     assert "小春？チャンク（Chunk）って何？" in md
     assert "Chunk はモデルが処理する単位です。" in md
+
+
+def test_google_gemini_parse_warns_once_when_prefix_is_unrecognized(tmp_path, caplog):
+    set_locale("ja-JP")
+
+    fixture = tmp_path / "google_gemini_unknown_prefix.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                _record(
+                    title="未知の接頭辞: 一件目",
+                    time="2026-03-23T07:18:42.981Z",
+                    safe_html_item=[],
+                ),
+                _record(
+                    title="別の未知接頭辞: 二件目",
+                    time="2026-03-23T07:19:42.981Z",
+                    safe_html_item=[],
+                ),
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    logger = logging.getLogger("llm_logparser.test.google")
+    caplog.set_level(logging.WARNING, logger=logger.name)
+
+    stats = parse_to_jsonl("google", fixture, tmp_path / "artifacts", logger=logger, dry_run=False)
+
+    expected_warning = _("runtime.google_gemini.title_prefix_unrecognized")
+    warnings = [
+        record.message
+        for record in caplog.records
+        if record.message == expected_warning
+    ]
+
+    assert stats["threads"] == 2
+    assert stats["messages"] == 2
+    assert len(warnings) == 1

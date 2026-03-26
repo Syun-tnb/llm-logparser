@@ -223,6 +223,7 @@ messages:
   runtime.openai_extract.custom_mask_patterns: "[extract] custom sanitize mask_patterns configured; built-in email/phone masking is not active"
   runtime.openai_extract.dry_run_skip: "[extract] dry-run: matched conversation={conversation_id}; skip writing {path}"
   runtime.openai_extract.wrote: "[extract] wrote {path}"
+  runtime.google_gemini.title_prefix_unrecognized: "Gemini user title prefix not recognized for current locale; message left unnormalized. Semantic analysis quality may be affected."
   runtime.analyze_tokens.unsupported_encoding: "unsupported --encoding for analyze tokens: {encoding}"
   runtime.analyze_tokens.unsupported_model: "unsupported --model for analyze tokens: {model}"
   runtime.analyze_tokens.unsupported_provider: "unsupported provider for analyze tokens: {provider}. Use --encoding to override tokenizer resolution."

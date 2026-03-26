@@ -276,17 +276,25 @@ def write_message_windows_artifact(
     tmp.replace(artifact_path)
 
 
-def _invoke_adapter(adapter_func, raw: dict, *, source: str) -> list[dict]:
+def _invoke_adapter(
+    adapter_func,
+    raw: dict,
+    *,
+    source: str,
+    logger: logging.Logger | None = None,
+) -> list[dict]:
     """Call provider adapter with optional source context and TypeError fallback."""
     try:
         try:
             params = signature(adapter_func).parameters
         except Exception:
             params = {}
+        adapter_kwargs: dict[str, Any] = {}
         if "source" in params:
-            recs_iter = adapter_func(raw, source=source)
-        else:
-            recs_iter = adapter_func(raw)
+            adapter_kwargs["source"] = source
+        if "logger" in params:
+            adapter_kwargs["logger"] = logger
+        recs_iter = adapter_func(raw, **adapter_kwargs)
     except TypeError:
         recs_iter = adapter_func(raw)
     return list(recs_iter)
@@ -388,6 +396,7 @@ def parse_to_jsonl(
                     adapter_func,
                     expanded_raw,
                     source=raw_source,
+                    logger=log,
                 )
                 if not recs:
                     continue
