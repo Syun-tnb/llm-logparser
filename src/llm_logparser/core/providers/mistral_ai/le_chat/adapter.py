@@ -209,7 +209,6 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
                 "conv_id": short_conversation_id,
                 "message_id": short_message_id,
                 "id": short_message_id,
-                "parent_id": None,
                 "role": _normalize_role(message.get("role")),
                 "ts": ts,
                 "created_at": created_at,

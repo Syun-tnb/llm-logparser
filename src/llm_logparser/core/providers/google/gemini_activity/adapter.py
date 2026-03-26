@@ -330,7 +330,6 @@ def adapter(record: Any, *, source: str | None = None) -> list[dict]:
                 "conv_id": conversation_id,
                 "message_id": user_message_id,
                 "id": user_message_id,
-                "parent_id": None,
                 "role": "user",
                 "ts": ts,
                 "created_at": created_at,
@@ -342,24 +341,24 @@ def adapter(record: Any, *, source: str | None = None) -> list[dict]:
 
     if assistant_text:
         assistant_message_id = synthetic_message_id(record, "assistant")
-        out.append(
-            {
-                "conversation_id": conversation_id,
-                "conv_id": conversation_id,
-                "message_id": assistant_message_id,
-                "id": assistant_message_id,
-                "parent_id": user_message_id,
-                "role": "assistant",
-                "ts": ts,
-                "created_at": created_at,
-                "content": {
-                    "content_type": "text",
-                    "parts": [assistant_text],
-                },
-                "text": assistant_text,
-                "meta": meta,
-            }
-        )
+        assistant_doc = {
+            "conversation_id": conversation_id,
+            "conv_id": conversation_id,
+            "message_id": assistant_message_id,
+            "id": assistant_message_id,
+            "role": "assistant",
+            "ts": ts,
+            "created_at": created_at,
+            "content": {
+                "content_type": "text",
+                "parts": [assistant_text],
+            },
+            "text": assistant_text,
+            "meta": meta,
+        }
+        if user_message_id is not None:
+            assistant_doc["parent_id"] = user_message_id
+        out.append(assistant_doc)
 
     return out
 
