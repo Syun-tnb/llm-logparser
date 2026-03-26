@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from llm_logparser.core.embedding_backend import SUPPORTED_EMBEDDING_BACKENDS
 from llm_logparser.core.i18n import _
 
 
@@ -350,7 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze_semantic_prototype_cmd.add_argument(
         "--backend",
-        choices=["deterministic-hash", "ollama"],
+        choices=list(SUPPORTED_EMBEDDING_BACKENDS),
         default="deterministic-hash",
         help=_("cli.analyze.semantic_prototype.opt.backend.help"),
     )

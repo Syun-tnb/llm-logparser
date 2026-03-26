@@ -24,6 +24,7 @@ from llm_logparser.core.embedding_backend import (
     OllamaEmbeddingBackend,
     aggregate_embeddings,
     chunk_text_for_embedding,
+    create_embedding_backend,
     resolve_embedding_model_settings,
 )
 from llm_logparser.core.schema_validation import (
@@ -436,14 +437,36 @@ def test_default_backend_resolves_to_deterministic_hash():
     assert backend.model_id.startswith("deterministic/hash-bow-v1")
 
 
-def test_known_model_preset_and_unknown_model_fallback():
-    nomic = resolve_embedding_model_settings("nomic-embed-text-v2-moe")
-    unknown = resolve_embedding_model_settings("unknown-local-model")
+def test_known_model_compatibility_fallback_and_safe_default_fallback():
+    nomic = resolve_embedding_model_settings(model="nomic-embed-text-v2-moe")
+    unknown = resolve_embedding_model_settings(model="unknown-local-model")
 
     assert nomic.max_input_bytes == 512
     assert nomic.chunk_overlap_bytes == 64
     assert nomic.aggregate == "mean"
     assert unknown == DEFAULT_EMBEDDING_SETTINGS
+
+
+def test_create_embedding_backend_returns_correct_backend_implementations():
+    deterministic = create_embedding_backend(backend_name="deterministic-hash")
+    ollama = create_embedding_backend(
+        backend_name="ollama",
+        model="embeddinggemma",
+        settings=resolve_embedding_model_settings(
+            max_input_bytes=2048,
+            chunk_overlap_bytes=128,
+            aggregate="mean",
+        ),
+        backend_options={
+            "base_url": "http://localhost:22434",
+            "timeout_seconds": 12.5,
+        },
+    )
+
+    assert isinstance(deterministic, DeterministicHashEmbeddingBackend)
+    assert isinstance(ollama, OllamaEmbeddingBackend)
+    assert ollama.base_url == "http://localhost:22434"
+    assert ollama.timeout_seconds == 12.5
 
 
 def test_chunk_text_for_embedding_is_deterministic_and_aggregate_is_mean():
@@ -675,6 +698,9 @@ def test_semantic_prototype_reads_config_profile_settings(tmp_path, monkeypatch)
                 "        backend: ollama",
                 "        model: nomic-embed-text-v2-moe",
                 "        top_k: 1",
+                "        backend_options:",
+                "          base_url: http://localhost:22434",
+                "          timeout_seconds: 12.5",
                 "        embedding:",
                 "          max_input_bytes: 4",
                 "          chunk_overlap_bytes: 1",
@@ -687,6 +713,8 @@ def test_semantic_prototype_reads_config_profile_settings(tmp_path, monkeypatch)
 
     def _fake_urlopen(request, timeout):
         body = json.loads(request.data.decode("utf-8"))
+        assert request.full_url == "http://localhost:22434/api/embed"
+        assert timeout == 12.5
         assert body["model"] == "nomic-embed-text-v2-moe"
         assert body["input"] in (["abcd", "defg", "gh"], ["ijkl", "lmno", "op"])
         return _FakeHTTPResponse({"embeddings": [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]]})
@@ -712,6 +740,76 @@ def test_semantic_prototype_reads_config_profile_settings(tmp_path, monkeypatch)
         if line.strip()
     ]
     assert embedding_rows[0]["embedding_model"] == "ollama/nomic-embed-text-v2-moe"
+
+
+def test_semantic_prototype_uses_safe_defaults_when_config_omits_embedding_overrides(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "artifacts" / "openai" / "thread-conv-a" / "message_windows.jsonl"
+    _write_jsonl(
+        root,
+        [
+            _window_row("openai", "conv-a", "window-0001", "alpha beta", ts_start=1, ts_end=2),
+        ],
+    )
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: local",
+                "profiles:",
+                "  local:",
+                "    input:",
+                f"      path: {tmp_path / 'artifacts'}",
+                "    analyze:",
+                "      semantic_prototype:",
+                "        backend: ollama",
+                "        model: custom-local-embedder",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured_requests: list[dict[str, object]] = []
+
+    def _fake_urlopen(request, timeout):
+        captured_requests.append(
+            {
+                "url": request.full_url,
+                "timeout": timeout,
+                "body": json.loads(request.data.decode("utf-8")),
+            }
+        )
+        return _FakeHTTPResponse({"embeddings": [[1.0, 0.0]]})
+
+    monkeypatch.setattr(
+        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
+        _fake_urlopen,
+    )
+
+    main(
+        [
+            "--config",
+            str(config_path),
+            "analyze",
+            "semantic-prototype",
+            "--overwrite",
+        ]
+    )
+
+    assert captured_requests == [
+        {
+            "url": "http://localhost:11434/api/embed",
+            "timeout": 30.0,
+            "body": {
+                "model": "custom-local-embedder",
+                "input": ["alpha beta"],
+            },
+        }
+    ]
 
 
 def test_semantic_prototype_cli_overrides_config(tmp_path, monkeypatch):

@@ -271,30 +271,35 @@ config:
 analyze:
   semantic_prototype:
     backend: ollama
-    model: nomic-embed-text-v2-moe
+    model: embeddinggemma
     top_k: 5
+    backend_options:
+      base_url: http://localhost:11434
+      timeout_seconds: 30.0
 ```
 
 CLI flags still override config values. `input.path` remains the default source
 path for `analyze semantic-prototype` when `--input` is omitted.
 
-For known Ollama models, built-in presets are applied automatically when
-`embedding` overrides are omitted:
+`backend` and `model` are separate concerns:
 
-* `nomic-embed-text-v2-moe`
-  * `max_input_bytes: 512`
-  * `chunk_overlap_bytes: 64`
-  * `aggregate: mean`
-* `embeddinggemma`
-  * `max_input_bytes: 2048`
-  * `chunk_overlap_bytes: 128`
-  * `aggregate: mean`
-* unknown Ollama models
-  * `max_input_bytes: 256`
-  * `chunk_overlap_bytes: 32`
-  * `aggregate: mean`
+* `backend` selects the runtime binding implemented in code
+* `model` selects the embedding model identifier used by that backend
+* `backend_options` carries transport/runtime options such as Ollama base URL
+* `embedding` carries chunking and aggregation controls
 
-Advanced override example for custom or unknown models:
+Safe built-in fallback embedding settings remain conservative when `embedding`
+overrides are omitted:
+
+* `max_input_bytes: 256`
+* `chunk_overlap_bytes: 32`
+* `aggregate: mean`
+
+There is still a small compatibility fallback for a couple of historic Ollama
+model IDs, but it is intentionally not the primary configuration surface.
+Recommended tuning should be declared explicitly in config.
+
+Example with explicit tuning:
 
 ```yaml
 analyze:

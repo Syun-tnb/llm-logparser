@@ -4,10 +4,11 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Protocol
 from urllib import error as urllib_error
 from urllib import request as urllib_request
-from typing import Protocol
 
 
 class EmbeddingBackend(Protocol):
@@ -30,7 +31,11 @@ DEFAULT_EMBEDDING_SETTINGS = EmbeddingModelSettings(
     aggregate="mean",
 )
 
-OLLAMA_MODEL_PRESETS: dict[str, EmbeddingModelSettings] = {
+SUPPORTED_EMBEDDING_BACKENDS = ("deterministic-hash", "ollama")
+
+# Compatibility fallback only. Normal user-facing model tuning belongs in
+# config/docs rather than this registry.
+OLLAMA_MODEL_COMPATIBILITY_FALLBACKS: dict[str, EmbeddingModelSettings] = {
     "nomic-embed-text-v2-moe": EmbeddingModelSettings(
         max_input_bytes=512,
         chunk_overlap_bytes=64,
@@ -42,6 +47,12 @@ OLLAMA_MODEL_PRESETS: dict[str, EmbeddingModelSettings] = {
         aggregate="mean",
     ),
 }
+
+
+@dataclass(frozen=True)
+class OllamaBackendOptions:
+    base_url: str = "http://localhost:11434"
+    timeout_seconds: float = 30.0
 
 
 class DeterministicHashEmbeddingBackend:
@@ -87,7 +98,7 @@ class OllamaEmbeddingBackend:
         if not isinstance(model, str) or not model.strip():
             raise ValueError("ollama embedding model must be a non-empty string")
         self.model = model.strip()
-        self.settings = settings or resolve_embedding_model_settings(self.model)
+        self.settings = settings or resolve_embedding_model_settings(model=self.model)
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.model_id = f"ollama/{self.model}"
@@ -196,21 +207,30 @@ def _decode_error_body(exc: urllib_error.HTTPError) -> str:
 
 
 def resolve_embedding_model_settings(
-    model: str,
+    model: str | None = None,
     *,
     max_input_bytes: int | None = None,
     chunk_overlap_bytes: int | None = None,
     aggregate: str | None = None,
+    default_settings: EmbeddingModelSettings | None = None,
 ) -> EmbeddingModelSettings:
-    preset = OLLAMA_MODEL_PRESETS.get(model, DEFAULT_EMBEDDING_SETTINGS)
+    baseline = default_settings
+    if baseline is None and model:
+        baseline = OLLAMA_MODEL_COMPATIBILITY_FALLBACKS.get(model)
+    if baseline is None:
+        baseline = DEFAULT_EMBEDDING_SETTINGS
     resolved = EmbeddingModelSettings(
-        max_input_bytes=max_input_bytes or preset.max_input_bytes,
+        max_input_bytes=(
+            max_input_bytes
+            if max_input_bytes is not None
+            else baseline.max_input_bytes
+        ),
         chunk_overlap_bytes=(
             chunk_overlap_bytes
             if chunk_overlap_bytes is not None
-            else preset.chunk_overlap_bytes
+            else baseline.chunk_overlap_bytes
         ),
-        aggregate=aggregate or preset.aggregate,
+        aggregate=aggregate or baseline.aggregate,
     )
     if resolved.max_input_bytes <= 0:
         raise ValueError("max_input_bytes must be > 0")
@@ -221,6 +241,68 @@ def resolve_embedding_model_settings(
     if resolved.aggregate != "mean":
         raise ValueError("aggregate must be 'mean'")
     return resolved
+
+
+def resolve_ollama_backend_options(
+    *,
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+    default_options: OllamaBackendOptions | None = None,
+) -> OllamaBackendOptions:
+    baseline = default_options or OllamaBackendOptions()
+    resolved = OllamaBackendOptions(
+        base_url=(base_url or baseline.base_url).strip(),
+        timeout_seconds=(
+            timeout_seconds
+            if timeout_seconds is not None
+            else baseline.timeout_seconds
+        ),
+    )
+    if not resolved.base_url:
+        raise ValueError("ollama base_url must be a non-empty string")
+    if resolved.timeout_seconds <= 0:
+        raise ValueError("ollama timeout_seconds must be > 0")
+    return resolved
+
+
+def create_embedding_backend(
+    *,
+    backend_name: str,
+    model: str | None = None,
+    settings: EmbeddingModelSettings | None = None,
+    backend_options: Mapping[str, object] | OllamaBackendOptions | None = None,
+) -> EmbeddingBackend:
+    if backend_name == "deterministic-hash":
+        return DeterministicHashEmbeddingBackend()
+
+    if backend_name != "ollama":
+        raise ValueError(f"unsupported embedding backend: {backend_name}")
+
+    if not model:
+        raise ValueError("--backend ollama requires --model <ollama-embedding-model>")
+
+    if isinstance(backend_options, OllamaBackendOptions):
+        resolved_options = resolve_ollama_backend_options(
+            base_url=backend_options.base_url,
+            timeout_seconds=backend_options.timeout_seconds,
+        )
+    elif backend_options is None:
+        resolved_options = resolve_ollama_backend_options()
+    elif isinstance(backend_options, Mapping):
+        resolved_options = resolve_ollama_backend_options(
+            base_url=_mapping_string(backend_options, "base_url"),
+            timeout_seconds=_mapping_number(backend_options, "timeout_seconds"),
+        )
+    else:
+        raise ValueError("backend_options must be a mapping when provided")
+
+    resolved_settings = settings or resolve_embedding_model_settings(model=model)
+    return OllamaEmbeddingBackend(
+        model=model,
+        settings=resolved_settings,
+        base_url=resolved_options.base_url,
+        timeout_seconds=resolved_options.timeout_seconds,
+    )
 
 
 def chunk_text_for_embedding(
@@ -299,3 +381,22 @@ def _estimate_text_budget(text: str) -> int:
     # The embedding prototype uses UTF-8 byte length as its deterministic
     # chunk-size estimate. This is deliberate and not tokenizer-accurate.
     return max(1, len(text.encode("utf-8")))
+
+
+def _mapping_string(mapping: Mapping[str, object], key: str) -> str | None:
+    value = mapping.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"ollama backend option '{key}' must be a string")
+    stripped = value.strip()
+    return stripped or None
+
+
+def _mapping_number(mapping: Mapping[str, object], key: str) -> float | None:
+    value = mapping.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"ollama backend option '{key}' must be a number")
+    return float(value)

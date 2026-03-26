@@ -303,6 +303,13 @@ def apply_profile_defaults(
         _set_if_not_cli(
             args,
             explicit_flags,
+            "backend_options",
+            (),
+            semantic.backend_options.to_dict() or None,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
             "max_input_bytes",
             ("--max-input-bytes",),
             semantic.embedding.max_input_bytes,

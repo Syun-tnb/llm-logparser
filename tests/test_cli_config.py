@@ -376,6 +376,39 @@ def test_semantic_embedding_byte_keys_are_normalized_in_config(tmp_path):
     }
 
 
+def test_semantic_backend_options_are_loaded_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    analyze:",
+                "      semantic_prototype:",
+                "        backend: ollama",
+                "        model: embeddinggemma",
+                "        backend_options:",
+                "          base_url: http://localhost:22434",
+                "          timeout_seconds: 12.5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+    backend_options = config.profiles["default"].analyze.semantic_prototype.backend_options
+
+    assert backend_options.base_url == "http://localhost:22434"
+    assert backend_options.timeout_seconds == 12.5
+    assert config.to_dict()["profiles"]["default"]["analyze"]["semantic_prototype"][
+        "backend_options"
+    ] == {
+        "base_url": "http://localhost:22434",
+        "timeout_seconds": 12.5,
+    }
+
+
 def test_legacy_semantic_embedding_token_keys_emit_deprecation_warnings(tmp_path, caplog):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

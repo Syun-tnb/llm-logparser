@@ -494,15 +494,33 @@ These outputs are:
 Current Ollama chunking behavior is deterministic and UTF-8 byte-based. It is
 intentionally not tokenizer-accurate token budgeting.
 
-Automatic Ollama preset behavior:
+Backend and model are separate:
 
-* `nomic-embed-text-v2-moe` → `max_input_bytes=512`, `chunk_overlap_bytes=64`
-* `embeddinggemma` → `max_input_bytes=2048`, `chunk_overlap_bytes=128`
-* unknown Ollama models fall back to `max_input_bytes=256`,
-  `chunk_overlap_bytes=32`
+* `backend` selects the runtime binding such as `deterministic-hash` or `ollama`
+* `model` selects the embedding model identifier for that backend
 
-These presets are automatically applied when you do not override them. The
-semantic layer is not yet positioned as a stable topic system.
+The primary configuration surface is CLI/config, not Python constants. Safe
+built-in fallback embedding settings remain conservative at
+`max_input_bytes=256`, `chunk_overlap_bytes=32`, `aggregate=mean`. A small
+compatibility fallback still exists for a couple of historic Ollama model IDs
+when users omit explicit embedding tuning, but recommended settings should be
+declared explicitly in config.
+
+```yaml
+analyze:
+  semantic_prototype:
+    backend: ollama
+    model: embeddinggemma
+    backend_options:
+      base_url: http://localhost:11434
+      timeout_seconds: 30.0
+    embedding:
+      max_input_bytes: 2048
+      chunk_overlap_bytes: 128
+      aggregate: mean
+```
+
+The semantic layer is not yet positioned as a stable topic system.
 
 ### Analyze Semantic Preview
 

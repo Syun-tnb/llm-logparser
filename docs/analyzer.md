@@ -521,8 +521,7 @@ deterministic and model-derived capabilities.
   reads deterministic `message_windows.jsonl`, writes rebuildable embedding and
   neighbor artifacts, and does not perform topic labeling or clustering
   It supports a default `deterministic-hash` backend for local plumbing/tests
-  and an `ollama` backend for real local embeddings via a local Ollama model
-  such as `nomic-embed-text-v2-moe` or `embeddinggemma`.
+  and an `ollama` backend for real local embeddings via a local Ollama model.
   For Ollama-backed runs, oversized window text is chunked automatically with a
   deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
   one final embedding per window.
@@ -530,13 +529,12 @@ deterministic and model-derived capabilities.
   Python-level all-pairs math, and long-running phases emit lightweight
   progress logs while windows load, embeddings generate, neighbors build, and
   artifacts are written.
-  Built-in Ollama presets are applied automatically when users do not override
-  them:
-  `nomic-embed-text-v2-moe` uses `max_input_bytes=512`,
-  `chunk_overlap_bytes=64`, `aggregate=mean`; `embeddinggemma` uses
-  `max_input_bytes=2048`, `chunk_overlap_bytes=128`, `aggregate=mean`; and
-  unknown models fall back to `max_input_bytes=256`,
-  `chunk_overlap_bytes=32`, `aggregate=mean`.
+  Backend/model selection is config- or CLI-owned: `backend` selects the
+  runtime binding, `model` selects the embedding model identifier, and
+  embedding chunking settings can be declared explicitly in config. Code keeps
+  conservative fallback settings and a small compatibility shim for older
+  Ollama model IDs, but model recommendations are documented rather than being
+  source-of-truth Python presets.
 
 - `semantic-preview` is a read-only companion to `semantic-prototype`: it
   reads stored `window_neighbors.jsonl` plus `message_windows.jsonl` and renders

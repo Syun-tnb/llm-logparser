@@ -483,10 +483,38 @@ class SemanticPrototypeEmbeddingConfig:
 
 
 @dataclass(frozen=True)
+class SemanticPrototypeBackendOptionsConfig:
+    base_url: str | None = None
+    timeout_seconds: float | int | None = None
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> SemanticPrototypeBackendOptionsConfig:
+        data = _optional_mapping(raw, context)
+        return cls(
+            base_url=_optional_string(data.get("base_url"), f"{context}.base_url"),
+            timeout_seconds=_optional_number(
+                data.get("timeout_seconds"),
+                f"{context}.timeout_seconds",
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "base_url": self.base_url,
+                "timeout_seconds": self.timeout_seconds,
+            }
+        )
+
+
+@dataclass(frozen=True)
 class SemanticPrototypeConfig:
     backend: str | None = None
     model: str | None = None
     top_k: int | None = None
+    backend_options: SemanticPrototypeBackendOptionsConfig = field(
+        default_factory=SemanticPrototypeBackendOptionsConfig
+    )
     embedding: SemanticPrototypeEmbeddingConfig = field(
         default_factory=SemanticPrototypeEmbeddingConfig
     )
@@ -498,6 +526,10 @@ class SemanticPrototypeConfig:
             backend=_optional_string(data.get("backend"), f"{context}.backend"),
             model=_optional_string(data.get("model"), f"{context}.model"),
             top_k=_optional_int(data.get("top_k"), f"{context}.top_k"),
+            backend_options=SemanticPrototypeBackendOptionsConfig.from_raw(
+                data.get("backend_options"),
+                context=f"{context}.backend_options",
+            ),
             embedding=SemanticPrototypeEmbeddingConfig.from_raw(
                 data.get("embedding"),
                 context=f"{context}.embedding",
@@ -510,6 +542,7 @@ class SemanticPrototypeConfig:
                 "backend": self.backend,
                 "model": self.model,
                 "top_k": self.top_k,
+                "backend_options": self.backend_options.to_dict(),
                 "embedding": self.embedding.to_dict(),
             }
         )

@@ -57,7 +57,7 @@ messages:
   cli.analyze.semantic_prototype.help: message_windows.jsonl から実験的な window_embeddings.jsonl と window_neighbors.jsonl を生成する
   cli.analyze.semantic_prototype.opt.input.help: message_windows.jsonl ファイル、または message_windows.jsonl を含むディレクトリへのパス
   cli.analyze.semantic_prototype.opt.backend.help: "使用する埋め込みバックエンド (`deterministic-hash` または `ollama`)"
-  cli.analyze.semantic_prototype.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須 (例: `nomic-embed-text-v2-moe`, `embeddinggemma`)"
+  cli.analyze.semantic_prototype.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須です。"
   cli.analyze.semantic_prototype.opt.top_k.help: 各ウィンドウごとに保持する近傍数
   cli.analyze.semantic_prototype.opt.max_input_bytes.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な UTF-8 バイト予算
   cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算

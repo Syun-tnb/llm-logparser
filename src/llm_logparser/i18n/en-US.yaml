@@ -53,7 +53,7 @@ messages:
   cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl and window_neighbors.jsonl artifacts from message_windows.jsonl
   cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl file or a directory containing message_windows.jsonl files
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
-  cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama` (for example: `nomic-embed-text-v2-moe` or `embeddinggemma`)"
+  cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
   cli.analyze.semantic_prototype.opt.max_input_bytes.help: Safe UTF-8 byte budget for one embedding request before deterministic chunking is applied
   cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks

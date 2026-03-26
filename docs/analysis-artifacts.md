@@ -747,13 +747,10 @@ Experimental prototype note:
   final embedding per source window
 - neighbor construction now uses vectorized cosine similarity and emits
   lightweight progress logs for long-running phases
-- built-in Ollama presets are automatically applied when users do not override
-  them:
-  `nomic-embed-text-v2-moe` uses `max_input_bytes=512`,
-  `chunk_overlap_bytes=64`, `aggregate=mean`; `embeddinggemma` uses
-  `max_input_bytes=2048`, `chunk_overlap_bytes=128`, `aggregate=mean`; and
-  unknown models fall back to `max_input_bytes=256`,
-  `chunk_overlap_bytes=32`, `aggregate=mean`
+- backend/model selection is config- or CLI-owned; code keeps conservative
+  fallback embedding settings (`max_input_bytes=256`,
+  `chunk_overlap_bytes=32`, `aggregate=mean`) plus a small compatibility shim
+  for a couple of historic Ollama model IDs
 - those outputs are non-canonical and intentionally limited to embeddings plus
   nearest-neighbor structure
 - this prototype does not perform topic labeling, clustering, or timeline

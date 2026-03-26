@@ -184,6 +184,7 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
             max_input_bytes=args.max_input_bytes,
             chunk_overlap_bytes=args.chunk_overlap_bytes,
             aggregate=args.aggregate,
+            backend_options=getattr(args, "backend_options", None),
             progress=logger.info,
         )
     except SemanticPrototypeError as exc:

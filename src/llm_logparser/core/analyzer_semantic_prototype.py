@@ -10,9 +10,8 @@ from typing import Any
 import numpy as np
 
 from .embedding_backend import (
-    DeterministicHashEmbeddingBackend,
     EmbeddingBackend,
-    OllamaEmbeddingBackend,
+    create_embedding_backend,
     resolve_embedding_model_settings,
 )
 from .i18n import _
@@ -321,6 +320,7 @@ def analyze_semantic_prototype(
     max_input_bytes: int | None = None,
     chunk_overlap_bytes: int | None = None,
     aggregate: str | None = None,
+    backend_options: dict[str, Any] | None = None,
     backend: EmbeddingBackend | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
@@ -345,6 +345,7 @@ def analyze_semantic_prototype(
             max_input_bytes=max_input_bytes,
             chunk_overlap_bytes=chunk_overlap_bytes,
             aggregate=aggregate,
+            backend_options=backend_options,
         )
 
     _emit_progress(progress, "runtime.analyze.semantic_prototype.loading_windows")
@@ -417,22 +418,22 @@ def resolve_embedding_backend(
     max_input_bytes: int | None = None,
     chunk_overlap_bytes: int | None = None,
     aggregate: str | None = None,
+    backend_options: dict[str, Any] | None = None,
 ) -> EmbeddingBackend:
-    if backend_name == "deterministic-hash":
-        return DeterministicHashEmbeddingBackend()
-    if backend_name == "ollama":
-        if not model:
-            raise SemanticPrototypeError(
-                "--backend ollama requires --model <ollama-embedding-model>"
-            )
-        try:
+    try:
+        settings = None
+        if backend_name == "ollama":
             settings = resolve_embedding_model_settings(
-                model,
+                model=model,
                 max_input_bytes=max_input_bytes,
                 chunk_overlap_bytes=chunk_overlap_bytes,
                 aggregate=aggregate,
             )
-            return OllamaEmbeddingBackend(model=model, settings=settings)
-        except ValueError as exc:
-            raise SemanticPrototypeError(str(exc)) from exc
-    raise SemanticPrototypeError(f"unsupported embedding backend: {backend_name}")
+        return create_embedding_backend(
+            backend_name=backend_name,
+            model=model,
+            settings=settings,
+            backend_options=backend_options,
+        )
+    except ValueError as exc:
+        raise SemanticPrototypeError(str(exc)) from exc
