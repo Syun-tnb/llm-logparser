@@ -35,7 +35,7 @@ def _to_local_human(ts: float | int | None, tz=timezone.utc) -> str:
     return dt.strftime("%Y-%m-%d %H:%M")
 
 def _as_yaml_list(items: Iterable[str]) -> str:
-    # YAMLの安全な配列形式（クォート付与）
+    # Safe YAML array format (quoting)
     return "[" + ", ".join(f'"{s}"' for s in items) + "]"
 
 @dataclass
@@ -45,10 +45,10 @@ class ExportPolicy:
 
 def _render_message_text(raw: str, policy: ExportPolicy) -> str:
     """
-    軽量整形:
-    - 連続空行を 1 行に圧縮
-    - コードブロック (```...) を未閉鎖なら自動クローズ
-    - Markdown構文（**bold** など）は極力そのまま保持
+    Light formatting:
+    - Compress consecutive empty lines into one line
+    - Auto-close unclosed code blocks (```...)
+    - Maintain Markdown syntax (like **bold**) as much as possible
     """
     if policy.formatting == "none":
         return raw
@@ -61,7 +61,7 @@ def _render_message_text(raw: str, policy: ExportPolicy) -> str:
     for line in lines:
         current = line.rstrip("\n")
 
-        # コードフェンス検出（インデントありも許容）
+        # Code fence detection (allows indentation)
         if current.lstrip().startswith("```"):
             in_code = not in_code
             out.append(current)
@@ -70,7 +70,7 @@ def _render_message_text(raw: str, policy: ExportPolicy) -> str:
 
         if not in_code:
             if current.strip() == "":
-                # 連続空行は 1 行まで
+                # Allow up to 1 consecutive empty line
                 if blank_streak == 0:
                     out.append("")
                 blank_streak += 1
@@ -78,14 +78,14 @@ def _render_message_text(raw: str, policy: ExportPolicy) -> str:
                 out.append(current)
                 blank_streak = 0
         else:
-            # コードブロック内はそのまま
+            # Leave code blocks unchanged
             out.append(current)
 
-    # 開きっぱなしの ``` があれば自動クローズ
+    # Auto-close unclosed ``` code blocks
     if in_code:
         out.append("```")
 
-    # 末尾の余計な空行は削る
+    # Strip trailing empty lines
     while out and out[-1] == "":
         out.pop()
 
@@ -122,17 +122,17 @@ def _resolve_split(opts: Dict[str, Any]) -> Dict[str, Any]:
 
 def export_thread_md(
     parsed_path: Path,
-    out_path: Path,           # 単一出力時のファイルパス（分割時はディレクトリ基準）
+    out_path: Path,           # File path for single output (directory-based when split)
     tz=timezone.utc,
     *,
     formatting: str = "light",
     **opts: Any
 ) -> List[Path]:
     """
-    parsed.jsonl → Markdown（分割対応）
-    - 分割なし: 従来どおり out_path に1ファイル
-    - 分割あり: out_path.parent に thread-<cid>__partXX.md を複数出力
-    戻り値: 生成したファイルの List[Path]
+    parsed.jsonl → Markdown (with split support)
+    - No split: Write a single file to out_path as before
+    - With split: Output multiple thread-<cid>__partXX.md files in out_path.parent
+    Returns: List[Path] of generated files
     """
     logger = logging.getLogger("exporter")
     policy = ExportPolicy(formatting="none" if formatting is None else formatting)
@@ -151,7 +151,7 @@ def export_thread_md(
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:
-                # 壊れ行はスキップ（将来: logger.warning へ）
+                # Skip broken lines (future: move to logger.warning)
                 continue
 
             rt = row.get("record_type")
@@ -172,13 +172,13 @@ def export_thread_md(
     if not thread_meta:
         raise RuntimeError("parsed.jsonl missing thread record_type on first row.")
 
-    # 念のためts昇順ソート（Noneは末尾）
+    # Sort by ts in ascending order just in case (None at the end)
     messages.sort(key=lambda r: (r.get("ts") is None, r.get("ts")))
 
     conv_id = thread_meta.get("conversation_id", "unknown")
     provider = thread_meta.get("provider_id", "unknown")
 
-    # 本文ブロックを先に作る（二重レンダ回避）
+    # Create the body block first (avoid double rendering)
     body_blocks: List[str] = []
     for m in messages:
         role = m.get("role", "unknown")
@@ -206,10 +206,10 @@ def export_thread_md(
         block = f"## [{role}] {ts_human}\n{meta}{text}\n\n"
         body_blocks.append(block)
 
-    # 分割設定
+    # Split configuration
     split_conf = _resolve_split(opts)
 
-    # プレビュー（総バイト概算）
+    # Preview (approximate total bytes)
     total_preview = len("".join(body_blocks).encode("utf-8"))
     if split_conf["preview"]:
         logger.info(
@@ -225,7 +225,7 @@ def export_thread_md(
             logger.info(_("runtime.exporter.preview_estimated_parts", parts=est))
         return []
 
-    # 分割なし（既存互換）
+    # No split (backward compatibility)
     if not split_conf["mode"]:
         fm_lines = [
             "---",
@@ -233,7 +233,7 @@ def export_thread_md(
             f"provider: {provider}",
             f"messages: {len(messages)}",
             f"models: {_as_yaml_list(sorted(models))}",
-            f"range: {_to_iso_utc(ts_min)} 〜 {_to_iso_utc(ts_max)}",
+            f"range: {_to_iso_utc(ts_min)} ~ {_to_iso_utc(ts_max)}",
             "---",
             "",
         ]
@@ -250,16 +250,16 @@ def export_thread_md(
         )
         return [out_path]
 
-    # 分割あり
+    # With split
     size_limit = split_conf.get("size_limit")
     count_limit = split_conf.get("count_limit")
 
-    # autoは size=4M & count=1500
+    # auto applies size=4M & count=1500
     if split_conf["mode"] == "auto":
         size_limit = size_limit or parse_size_expr("4M")
         count_limit = count_limit or 1500
 
-    fm_overhead_approx = 1024  # 近似。--split-hard時は仮レンダで厳密計測
+    fm_overhead_approx = 1024  # Approximation. Uses strict measurement by temporary rendering when --split-hard is specified
     parts: List[List[str]] = []
     buf_blocks: List[str] = []
     buf_bytes_body = 0
@@ -281,14 +281,14 @@ def export_thread_md(
         if not size_limit:
             return False
         if split_conf["hard"]:
-            # front-matter込みで仮レンダして厳密長を判定
+            # Determine strict length by temporary rendering including front-matter
             fm = [
                 "---",
                 f"thread: {conv_id}",
                 f"provider: {provider}",
                 f"models: {_as_yaml_list(sorted(models))}",
                 f"message_count: {len(buf_blocks) + 1}",
-                f"range: {_to_iso_utc(ts_min)} 〜 {_to_iso_utc(ts_max)}",
+                f"range: {_to_iso_utc(ts_min)} ~ {_to_iso_utc(ts_max)}",
                 f"part_index: {idx + 1}",
                 f"part_total: 0",
                 f"generated_at_utc: {datetime.now(timezone.utc).isoformat()}",
@@ -303,7 +303,7 @@ def export_thread_md(
 
     for i, block in enumerate(body_blocks):
         bsz = len(block.encode("utf-8"))
-        # size優先 → count補助
+        # Prioritize size → auxiliary count
         over_size = bool(size_limit) and hard_will_overflow(block)
         over_count = (not over_size) and bool(count_limit) and (len(buf_blocks) >= int(count_limit))
 
@@ -321,7 +321,7 @@ def export_thread_md(
     flush()
 
     part_total = len(parts)
-    if part_total == 0:  # 念のため
+    if part_total == 0:  # Just in case
         parts = [body_blocks]
         part_total = 1
 
@@ -337,7 +337,7 @@ def export_thread_md(
             f"provider: {provider}",
             f"models: {_as_yaml_list(sorted(models))}",
             f"message_count: {len(blocks)}",
-            f"range: {_to_iso_utc(ts_min)} 〜 {_to_iso_utc(ts_max)}",
+            f"range: {_to_iso_utc(ts_min)} ~ {_to_iso_utc(ts_max)}",
             f"part_index: {pidx}",
             f"part_total: {part_total}",
             f"generated_at_utc: {datetime.now(timezone.utc).isoformat()}",

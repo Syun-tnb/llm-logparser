@@ -129,11 +129,11 @@ def resolve_locale(
     env_locale: str | None = None,
 ) -> str:
     """
-    ロケール決定ロジック（MVP版）
+    Locale resolution logic (MVP version)
 
-    優先度:
-      1. CLI引数 --locale
-      2. 環境変数 LLP_LOCALE
+    Priority:
+      1. CLI argument --locale
+      2. Environment variable LLP_LOCALE
       3. config profile locale
       4. DEFAULT_LOCALE ("en-US")
     """
@@ -150,9 +150,9 @@ def resolve_locale(
     return FALLBACK_LOCALE
 def t(key: str, locale: str, **params: Any) -> str:
     """
-    翻訳関数。
-    - locale -> key で文字列を引き、
-    - 見つからなければ fallback locale / key を返す。
+    Translation function.
+    - Looks up the string by locale -> key,
+    - Falls back to fallback locale / key if not found.
     """
     catalog = _MESSAGES.get(locale) or _MESSAGES.get(FALLBACK_LOCALE, {})
     template = catalog.get(key)

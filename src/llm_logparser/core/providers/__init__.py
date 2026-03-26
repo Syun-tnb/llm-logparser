@@ -3,8 +3,8 @@ from typing import Callable, Any, Dict, Iterable
 
 def get_provider(name: str) -> Callable[[Dict[str, Any]], Iterable[Dict[str, Any]]]:
     """
-    providers.<name>.adapter から adapter/get_adapter を取得して返す。
-    ここでは動的importのみ（レガシー互換なし）。
+    Retrieves and returns adapter/get_adapter from providers.<name>.adapter.
+    Only dynamic import is supported here (no legacy compatibility).
     """
     key = (name or "openai").lower()
     mod = import_module(f"{__name__}.{key}.adapter")

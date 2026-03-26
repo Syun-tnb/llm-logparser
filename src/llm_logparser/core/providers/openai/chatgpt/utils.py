@@ -44,7 +44,7 @@ def sanitize_text(s: t.Optional[t.Any]) -> str:
         return ""
     if isinstance(s, (dict, list)):
         try:
-            # Decimal などを安全な形に変換してから JSON 文字列化
+            # Safely convert Decimal etc. to a safe format before JSON stringification
             from .utils import json_safe
             s = json.dumps(json_safe(s), ensure_ascii=False)
         except Exception:

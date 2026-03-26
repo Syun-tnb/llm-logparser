@@ -43,7 +43,7 @@ class LLPWriteError(LLPError):
 # ============================================================
 
 def load_adapter(provider: str):
-    """動的に provider adapter をロードする。"""
+    """Dynamically load the provider adapter."""
     mod = importlib.import_module(f"llm_logparser.core.providers.{provider}.adapter")
     get_adapter = getattr(mod, "get_adapter", None)
     if not get_adapter:
@@ -67,7 +67,7 @@ def load_adapter(provider: str):
 
 
 def load_extractor(provider: str):
-    """動的に provider extractor をロードする。"""
+    """Dynamically load the provider extractor."""
     mod = importlib.import_module(f"llm_logparser.core.providers.{provider}.extractor")
     get_extractor = getattr(mod, "get_extractor", None)
     if not get_extractor:
@@ -81,10 +81,10 @@ def load_extractor(provider: str):
 
 def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str, Any], None, None]:
     """
-    巨大JSON/JSONLをストリーム的に読み込む。
-    - JSON配列: ijson（あれば）で逐次読み取り
-    - JSONオブジェクト: json.load で1件として読み取り
-    - JSONL/NDJSON: 行単位で処理
+    Stream and read large JSON/JSONL files.
+    - JSON arrays: sequential read with ijson (if available)
+    - JSON objects: read as single item with json.load
+    - JSONL/NDJSON: process line by line
     """
     try:
         with path.open("r", encoding="utf-8-sig") as f:
@@ -171,7 +171,7 @@ def iter_input_records(
 # ============================================================
 
 def validate_message(msg: dict, *, fail_fast=False):
-    """基本的なスキーマ検証。"""
+    """Basic schema validation."""
     required_str = ["conversation_id", "message_id", "role"]
     for k in required_str:
         if not isinstance(msg.get(k), str) or not msg.get(k):
@@ -215,7 +215,7 @@ def validate_message(msg: dict, *, fail_fast=False):
 
 
 def load_manifest_if_exists(provider_dir: Path) -> dict:
-    """既存manifestをロードしてキャッシュに利用。"""
+    """Load existing manifest to use as cache."""
     man_path = provider_dir / "manifest.json"
     if not man_path.exists():
         return {}
@@ -226,7 +226,7 @@ def load_manifest_if_exists(provider_dir: Path) -> dict:
 
 
 def should_skip_thread(conv_id: str, msgs: list, manifest_old: dict) -> bool:
-    """update_timeなどで差分スキップを判定。"""
+    """Determine differential skipping by update_time, etc."""
     try:
         index = manifest_old.get("index", {}).get("threads", [])
         old = next((t for t in index if t["conversation_id"] == conv_id), None)
@@ -338,8 +338,8 @@ def parse_to_jsonl(
     schema_validator: "MessageSchemaValidator" | None = None,
 ) -> Dict[str, Any]:
     """
-    各プロバイダのエクスポートJSONを解析し、スレッド単位のJSONLファイルを生成する。
-    fail_fast=True の場合は一定数エラーで停止。
+    Parse the exported JSON for each provider and generate thread-level JSONL files.
+    Stop on a certain number of errors if fail_fast=True.
     """
     log = logger or logging.getLogger("llm_logparser.parser")
     log.info(
@@ -501,7 +501,7 @@ def parse_to_jsonl(
                 if fail_fast and errors > 3:
                     raise LLPAdapterError(f"too many adapter errors ({errors})")
 
-    # manifest出力
+    # Output manifest
     if not dry_run:
         manifest_path = provider_dir / "manifest.json"
         manifest_obj = {
@@ -536,7 +536,7 @@ def extract_to_json(
     sanitize_policy: Any | None = None,
     logger: Optional[logging.Logger] = None,
 ) -> Dict[str, Any]:
-    """指定 conversation_id の生会話を抽出し、Gemini-compat JSON を出力する。"""
+    """Extract raw conversation by conversation_id and output Gemini-compatible JSON."""
     log = logger or logging.getLogger("llm_logparser.parser")
     log.info(
         _(
