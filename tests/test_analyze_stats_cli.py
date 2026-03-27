@@ -39,9 +39,11 @@ def _write_parsed_jsonl(
                 row["role"] = message["role"]
             if "ts" in message:
                 row["ts"] = message["ts"]
+            if "content" in message:
+                row["content"] = message["content"]
             if "text" in message:
                 row["text"] = text
-                if isinstance(text, str):
+                if "content" not in message and isinstance(text, str):
                     row["content"]["parts"] = [text]
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
 
@@ -50,6 +52,16 @@ def _run_cli(monkeypatch, capsys, argv: list[str]) -> str:
     monkeypatch.setattr(sys, "argv", argv)
     main()
     return capsys.readouterr().out
+
+
+def _iter_keys(value):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            yield key
+            yield from _iter_keys(nested)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_keys(item)
 
 
 def _build_threads_fixture(root: Path) -> None:
@@ -124,6 +136,11 @@ def test_analyze_stats_single_file_text_output(tmp_path, monkeypatch, capsys):
     assert "  min: 3" in out
     assert "  max: 3" in out
     assert "  avg: 3.00" in out
+    assert "Research Summary:" in out
+    assert "  Temporal:" in out
+    assert "  Turn-taking:" in out
+    assert "  Safety:" in out
+    assert "  Structure:" in out
     assert "Per-thread:" not in out
     assert "Other role breakdown:" not in out
 
@@ -324,6 +341,7 @@ def test_analyze_stats_json_includes_enriched_threads_and_role_breakdown(
         "tool": 1,
         "unknown": 1,
     }
+    assert "research_summary" in payload
     assert [detail["conversation_id"] for detail in payload["threads_detail"]] == [
         "conv-a",
         "conv-b",
@@ -444,3 +462,284 @@ def test_analyze_stats_json_out_writes_json_file(tmp_path, monkeypatch, capsys):
     assert payload["threads_detail"][0]["conversation_id"] == "conv-1"
     assert payload["threads_detail"][0]["first_timestamp"] == "2024-01-01T00:00:00Z"
     assert payload["threads_detail"][0]["last_timestamp"] == "2024-01-01T00:00:30Z"
+
+
+def test_analyze_stats_json_output_is_deterministic(tmp_path, monkeypatch, capsys):
+    parsed = tmp_path / "thread-conv-deterministic" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-deterministic",
+        [
+            {"message_id": "m1", "role": "user", "ts": 1704067200000, "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "ts": 1704067260000, "text": "world"},
+            {"message_id": "m3", "role": "tool", "ts": 1704067290000, "text": ""},
+        ],
+    )
+
+    argv = [
+        "llm-logparser",
+        "analyze",
+        "stats",
+        "--input",
+        str(parsed),
+        "--json",
+        "--sort",
+        "conversation_id",
+    ]
+    first = json.loads(_run_cli(monkeypatch, capsys, argv))
+    second = json.loads(_run_cli(monkeypatch, capsys, argv))
+
+    assert first == second
+
+    keys = set(_iter_keys(first))
+    assert "generated_at" not in keys
+    assert "exported_at" not in keys
+    assert "random" not in keys
+    assert "seed" not in keys
+
+
+def test_analyze_stats_research_summary_temporal_aggregates_valid_durations(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "ts": 0, "text": "a"},
+            {"message_id": "m2", "role": "assistant", "ts": 3600, "text": "b"},
+        ],
+    )
+    _write_parsed_jsonl(
+        root / "b" / "thread-conv-b" / "parsed.jsonl",
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "ts": 10, "text": "a"},
+            {"message_id": "m2", "role": "assistant", "ts": 90010, "text": "b"},
+        ],
+    )
+
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "en-US", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(out)
+    temporal = payload["research_summary"]["temporal"]
+
+    assert temporal == {
+        "avg_thread_duration_seconds": 46800,
+        "median_thread_duration_seconds": 46800,
+        "multi_day_thread_count": 1,
+    }
+
+
+def test_analyze_stats_research_summary_excludes_missing_timestamps(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "a"},
+            {"message_id": "m2", "role": "assistant", "text": "b"},
+        ],
+    )
+    _write_parsed_jsonl(
+        root / "b" / "thread-conv-b" / "parsed.jsonl",
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "ts": 100, "text": "a"},
+            {"message_id": "m2", "role": "assistant", "ts": 130, "text": "b"},
+        ],
+    )
+
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "en-US", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(out)
+    temporal = payload["research_summary"]["temporal"]
+
+    assert temporal == {
+        "avg_thread_duration_seconds": 30,
+        "median_thread_duration_seconds": 30,
+        "multi_day_thread_count": 0,
+    }
+
+
+def test_analyze_stats_research_summary_turn_taking_excludes_zero_denominator(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "abcdefghij"},
+            {"message_id": "m2", "role": "assistant", "text": "abcde"},
+        ],
+    )
+    _write_parsed_jsonl(
+        root / "b" / "thread-conv-b" / "parsed.jsonl",
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "text": "abc"},
+            {"message_id": "m2", "role": "assistant", "text": "abcdef"},
+        ],
+    )
+    _write_parsed_jsonl(
+        root / "c" / "thread-conv-c" / "parsed.jsonl",
+        "conv-c",
+        [
+            {"message_id": "m1", "role": "user", "text": "abcd"},
+            {"message_id": "m2", "role": "system", "text": "noop"},
+        ],
+    )
+
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(out)
+    turn_taking = payload["research_summary"]["turn_taking"]
+
+    assert turn_taking == {
+        "mean_char_ratio_user_vs_assistant": 1.25,
+        "median_char_ratio_user_vs_assistant": 1.25,
+    }
+
+
+def test_analyze_stats_research_summary_counts_safety_from_metrics_sidecars(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    parsed_a = root / "a" / "thread-conv-a" / "parsed.jsonl"
+    parsed_b = root / "b" / "thread-conv-b" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_a,
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "I can't help with that request."},
+        ],
+    )
+    _write_parsed_jsonl(
+        parsed_b,
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "Be careful when sharing personal data."},
+        ],
+    )
+    parsed_a.with_name("metrics.json").write_text(
+        json.dumps(
+            {
+                "safety": {
+                    "refusal_count": 1,
+                    "intervention_count": 1,
+                }
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+    parsed_b.with_name("metrics.json").write_text(
+        json.dumps(
+            {
+                "safety": {
+                    "refusal_count": 0,
+                    "intervention_count": 1,
+                }
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(out)
+    safety = payload["research_summary"]["safety"]
+
+    assert safety == {
+        "threads_with_refusal": 1,
+        "threads_with_intervention": 2,
+    }
+
+
+def test_analyze_stats_research_summary_falls_back_without_metrics_sidecars(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "I can't help with that request."},
+        ],
+    )
+    _write_parsed_jsonl(
+        root / "b" / "thread-conv-b" / "parsed.jsonl",
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "It's important to note that you should verify the source."},
+        ],
+    )
+
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "en-US", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(out)
+    safety = payload["research_summary"]["safety"]
+
+    assert safety == {
+        "threads_with_refusal": 1,
+        "threads_with_intervention": 2,
+    }
+
+
+def test_analyze_stats_research_summary_structural_metrics_are_deterministic(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {
+                "message_id": "m1",
+                "role": "assistant",
+                "text": "```python\nprint('hi')\n```",
+                "content": {
+                    "content_type": "text",
+                    "parts": ["```python", "print('hi')\n```"],
+                },
+            },
+            {"message_id": "m2", "role": "user", "text": "thanks"},
+        ],
+    )
+
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(out)
+    structure = payload["research_summary"]["structure"]
+
+    assert structure == {
+        "avg_blocks_per_message": 1.5,
+        "threads_with_code_blocks": 1,
+        "code_block_message_ratio": 0.5,
+    }

@@ -1,0 +1,67 @@
+{
+  "artifact_type": "metrics",
+  "characters": {
+    "assistant": 31,
+    "avg_per_message": 41.33,
+    "avg_per_turn": 62.0,
+    "total": 124,
+    "user": 93
+  },
+  "conversation_id": "conv-metrics-contract",
+  "distribution": {
+    "message_assistant": 1,
+    "message_total": 3,
+    "message_user": 2,
+    "messages_per_turn": 1.5
+  },
+  "diversity": {
+    "type_token_ratio": 0.88,
+    "unique_token_ratio": 0.88
+  },
+  "interaction": {
+    "clarification_count": 1,
+    "clarification_rate": 0.5,
+    "correction_count": 0,
+    "correction_rate": 0.0,
+    "retry_count": 0,
+    "retry_rate": 0.0,
+    "revision_count": 1,
+    "revision_rate": 0.5
+  },
+  "provider_id": "openai",
+  "ratios": {
+    "assistant_to_user_ratio": 0.5,
+    "prompt_response_ratio_chars": 3.0,
+    "prompt_response_ratio_tokens": 2.5714
+  },
+  "safety": {
+    "refusal_count": 1,
+    "refusal_rate": 1.0,
+    "intervention_count": 1,
+    "intervention_rate": 1.0,
+    "trigger_types": {
+      "caveat": 0,
+      "refusal": 1
+    }
+  },
+  "schema_version": "1.0",
+  "tokens": {
+    "avg_per_message": 8.33,
+    "avg_per_turn": 12.5,
+    "total": 25
+  },
+  "user_effort": {
+    "human_read_time": {
+      "avg_seconds": 0,
+      "excluded_long_gaps": 0,
+      "max_seconds": 0,
+      "median_seconds": 0,
+      "min_seconds": 0,
+      "sample_count": 1,
+      "session_gap_seconds": 3600
+    },
+    "negative_deltas": 0,
+    "rapid_revisions": 1,
+    "response_length_ratio": 0.3333
+  }
+}

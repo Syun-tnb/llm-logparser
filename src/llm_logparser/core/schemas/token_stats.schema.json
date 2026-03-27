@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/token_stats.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "tokenizer",
+    "summary",
+    "by_role",
+    "messages"
+  ],
+  "properties": {
+    "artifact_type": { "const": "token_stats" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "tokenizer": {
+      "type": "object",
+      "required": [
+        "family",
+        "library",
+        "library_version",
+        "resolved_encoding",
+        "resolution_source",
+        "text_policy",
+        "special_token_policy"
+      ],
+      "properties": {
+        "family": { "type": "string", "minLength": 1 },
+        "library": { "type": "string", "minLength": 1 },
+        "library_version": { "type": "string", "minLength": 1 },
+        "resolved_model": { "type": ["string", "null"] },
+        "resolved_encoding": { "type": "string", "minLength": 1 },
+        "resolution_source": { "type": "string", "minLength": 1 },
+        "text_policy": { "type": "string", "minLength": 1 },
+        "special_token_policy": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "message_count",
+        "turn_count",
+        "tokens_total",
+        "tokens_user",
+        "tokens_assistant",
+        "avg_tokens_per_message",
+        "avg_tokens_per_turn",
+        "fallback_text_from_parts",
+        "empty_text_messages"
+      ],
+      "properties": {
+        "message_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "turn_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "tokens_total": { "$ref": "#/$defs/nonNegativeInteger" },
+        "tokens_user": { "$ref": "#/$defs/nonNegativeInteger" },
+        "tokens_assistant": { "$ref": "#/$defs/nonNegativeInteger" },
+        "avg_tokens_per_message": { "$ref": "#/$defs/nonNegativeNumber" },
+        "avg_tokens_per_turn": { "$ref": "#/$defs/nonNegativeNumber" },
+        "fallback_text_from_parts": { "$ref": "#/$defs/nonNegativeInteger" },
+        "empty_text_messages": { "$ref": "#/$defs/nonNegativeInteger" }
+      },
+      "additionalProperties": true
+    },
+    "by_role": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/roleStats" }
+    },
+    "messages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/messageTokenStats" }
+    }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "roleStats": {
+      "type": "object",
+      "required": ["messages", "tokens"],
+      "properties": {
+        "messages": { "$ref": "#/$defs/nonNegativeInteger" },
+        "tokens": { "$ref": "#/$defs/nonNegativeInteger" }
+      },
+      "additionalProperties": true
+    },
+    "messageTokenStats": {
+      "type": "object",
+      "required": ["message_id", "role", "token_count", "text_source"],
+      "properties": {
+        "message_id": { "type": "string" },
+        "role": { "type": "string", "minLength": 1 },
+        "token_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "text_source": {
+          "type": "string",
+          "enum": ["text", "content.parts", "empty"]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

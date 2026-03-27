@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/thread_stats.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "message_count",
+    "character_count",
+    "first_timestamp",
+    "last_timestamp",
+    "conversation_span_seconds",
+    "user_messages",
+    "assistant_messages",
+    "other_roles",
+    "characters_user",
+    "characters_assistant",
+    "other_role_breakdown"
+  ],
+  "properties": {
+    "artifact_type": { "const": "thread_stats" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "message_count": { "$ref": "#/$defs/nonNegativeInteger" },
+    "character_count": { "$ref": "#/$defs/nonNegativeInteger" },
+    "first_timestamp": { "$ref": "#/$defs/isoTimestampOrNull" },
+    "last_timestamp": { "$ref": "#/$defs/isoTimestampOrNull" },
+    "conversation_span_seconds": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
+    "user_messages": { "$ref": "#/$defs/nonNegativeInteger" },
+    "assistant_messages": { "$ref": "#/$defs/nonNegativeInteger" },
+    "other_roles": { "$ref": "#/$defs/nonNegativeInteger" },
+    "characters_user": { "$ref": "#/$defs/nonNegativeInteger" },
+    "characters_assistant": { "$ref": "#/$defs/nonNegativeInteger" },
+    "other_role_breakdown": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/nonNegativeInteger" }
+    }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeIntegerOrNull": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "isoTimestampOrNull": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "string",
+          "minLength": 1,
+          "format": "date-time"
+        }
+      ]
+    }
+  },
+  "additionalProperties": true
+}

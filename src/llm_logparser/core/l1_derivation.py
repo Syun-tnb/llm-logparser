@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+ROLE_ORDER = ("user", "assistant", "system", "tool")
+UNKNOWN_ROLE = "unknown"
+
 
 def discover_parsed_jsonl(input_path: Path) -> list[Path]:
     """Return canonical parsed JSONL files from a file or directory input."""
@@ -88,7 +91,28 @@ def message_character_count(row: dict[str, Any]) -> int:
     return len(message_text(row))
 
 
+def normalize_role_value(value: Any) -> str:
+    """Return the canonical analyzer role label.
+
+    Analyzer artifacts normalize the small standard role set to lowercase and
+    collapse everything else, including empty/missing values, to `unknown`.
+    Some L1 consumers still need the raw provider role string for display or
+    pass-through indexing, so that path stays separate in `message_role()`.
+    """
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ROLE_ORDER:
+            return normalized
+    return UNKNOWN_ROLE
+
+
 def message_role(row: dict[str, Any]) -> str | None:
+    """Return the raw provider role string when present.
+
+    This is intentionally distinct from `normalize_role_value()`. Raw access is
+    still used by thread stats, timeline text, and SQLite/message-window
+    sidecars where preserving the provider-emitted role label is desirable.
+    """
     role = row.get("role")
     return role if isinstance(role, str) and role else None
 
@@ -205,6 +229,7 @@ def build_thread_stats_artifact(
     artifact.update(
         {
             "artifact_type": "thread_stats",
+            "schema_version": "1.0",
             "provider_id": provider_id,
             "other_role_breakdown": dict(sorted((metrics.other_role_breakdown or {}).items())),
         }

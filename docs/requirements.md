@@ -130,27 +130,34 @@ The CLI provides the following subcommands:
 
 * `extract`
   Extract a single conversation by `--conversation-id` and output it as Gemini-compatible JSON.
-  Applies automatic PII sanitization: email addresses, phone numbers, and sensitive keys
-  (`SECRET`, `TOKEN`, `API_KEY`, `AUTHORIZATION`, `COOKIE`, `PASSWORD`) are redacted.
+  Applies config-driven sanitization, enabled by default for compatibility.
+  The sanitize policy controls replacement text, scope, custom field-name keywords,
+  and regex-based masking.
 
 * `chain`
   Convenience command that runs **parse → export** for all threads in one shot.
   This is implemented as a separate subcommand, not as a `--chain` option.
   Supports `--validate-schema` to validate during the parse phase.
 
-Two additional subcommands are reserved for future work:
+* `analyze`
+  Deterministic analysis on canonical thread artifacts.
+  Current modes include `stats`, `timeline`, `tokens`, `metrics`, and `sqlite-build`.
+  `tokens` writes `token_stats.json`.
+  `metrics` writes `metrics.json` and includes heuristic refusal / revision sections.
+
+One additional subcommand is reserved for future work:
 
 * `viewer` (placeholder)
   Reserved for a future lightweight HTML/Markdown viewer.
   The current implementation only logs a TODO warning.
 
-* `config` (placeholder)
-  Reserved for runtime configuration helpers.
-  The current implementation only logs a TODO warning.
+* `config`
+  Lightweight runtime configuration helpers.
+  Supports `config path`, `config show`, and `config validate`.
 
 Global options:
 
-* `--locale` / `--lang` to control CLI message localization.
+* `--locale` / `--lang` to control CLI/help/runtime localization.
 * `--log-level` to adjust verbosity (DEBUG / INFO / WARNING / ERROR / CRITICAL).
 
 ---
@@ -172,24 +179,80 @@ Cache is JSON, local only.
 
 ## 8. Internationalization (i18n)
 
-CLI user-facing messages and Markdown headers are localized via a dedicated i18n layer.
+Current i18n behavior is split between scalar UI/runtime messages and structured
+analyzer phrase resources:
 
-- All CLI messages MUST go through the i18n layer.
-  - No user-facing strings are hard-coded with a fixed language in source code.
-- The only required locale is `en-US`.
-  - Other locales (e.g. `ja-JP`) are best-effort and may be partially translated.
-- When a translation for the selected locale is missing, the message MUST fall back to `en-US`.
-- `--locale` and `--timezone` are applied consistently across CLI and exporters.
-- If both `--locale` and `--lang` are supplied, `--locale` takes precedence
-  (`--lang` exists for compatibility and may be removed in future versions).
+- i18n is best-effort, not strict.
+- Translation completeness is not required.
+- Missing locale sections and keys are acceptable.
+- Fallback behavior is expected design, not an error condition.
+- Locale files are user-extensible and must not break execution when partial.
+- Locale files live under `src/llm_logparser/i18n/`.
+- Locale files are best-effort YAML mappings and may contain `messages:` and/or
+  `analysis:`.
+- Localized surfaces are:
+  CLI/help/runtime/error messages from `messages:` and analyzer heuristic
+  resources from `analysis:`.
+- Not localized by design are:
+  `analyze stats` / `analyze timeline` text summaries, stable
+  machine-readable artifacts and schema keys, and argparse built-ins
+  (`usage:`, parser-generated errors, built-in help boilerplate).
+- The canonical fallback locale is `en-US`.
+- Scalar message lookup falls back as:
+  selected locale → `en-US` → raw key.
+- Analyzer resource lookup falls back as:
+  selected locale → `en-US`.
+- Short language aliases are auto-derived from discovered locale filenames when
+  the language prefix is unambiguous.
+- Locale precedence is:
+  `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`.
+- Unknown or unsupported locales resolve to `en-US`.
+- Parser/help output can pick up CLI locale before full parser construction via
+  raw argv scanning.
+- Profile locale is applied only after config/profile resolution and must not
+  override CLI or environment locale.
+- `analyze` follows the same locale precedence as the other runtime commands.
+- Argparse built-ins (`usage:`, parser-generated errors, built-in help boilerplate)
+  are not localized.
+- There is no top-level config `locale` and no system-locale fallback.
+- Locale selection affects CLI/help/runtime text and analyzer YAML resources.
+  Stable machine-readable artifacts are not localized by default.
+
+### Deferred / Non-Goals (i18n)
+
+The following items are intentionally out of scope for the current i18n design.
+They may be revisited in the future, but are not required for correctness,
+stability, or extensibility of the system.
+
+* System locale fallback (`LANG`, `LC_ALL`)
+* Development-time warnings for missing translation keys
+* Structured error code system for i18n (e.g., LP6xxx)
+* Localization of argparse built-in messages (`usage:`, parser errors, etc.)
+
+Rationale:
+
+The current i18n model prioritizes:
+
+* deterministic behavior
+* safe fallback to `en-US` or raw keys
+* minimal maintenance overhead
+* YAML-driven, community-friendly extensibility
+
+These items improve completeness or developer experience,
+but do not provide sufficient value relative to their complexity
+for the current phase.
+
+Status: deferred / non-blocking
 
 ---
 
 ## 9. Security & Privacy
 
-MVP runs **fully offline**:
+MVP is **offline-first**, with one current caveat:
 
-* no network access unless explicitly enabled
+* parse/export and most analysis flows run locally
+* `analyze tokens` / `analyze metrics` rely on `tiktoken`, which may fetch
+  encoding assets on first use and then use a local cache afterward
 * logs stay local
 * optional masking rules for sensitive text
 
@@ -244,4 +307,4 @@ MVP = **reliable CLI pipeline**:
 
 > Export JSON → Normalize JSONL → Export Markdown
 
-Stable schema, offline-first, and clear separation of responsibilities make the tool easy to extend without rewriting core logic.
+Stable schema, local-first analysis, and clear separation of responsibilities make the tool easy to extend without rewriting core logic.

@@ -18,22 +18,22 @@ def _import_jsonschema_components():
         from jsonschema.validators import validator_for
     except ImportError as exc:
         raise RuntimeError(
-            "jsonschema が見つかりませんでした。"
-            "  pyproject.toml の dependencies に `jsonschema` を追加してください。"
+            "jsonschema was not found. "
+            "Please add `jsonschema` to the dependencies in pyproject.toml."
         ) from exc
     return jsonschema, ValidationError, validator_for
 
 
 # ---------------------------------------------------------------------------
-# パス解決
+# Path resolution
 # ---------------------------------------------------------------------------
 
 def _default_schemas_root() -> Path:
     """
-    開発環境 / インストール環境の両方をある程度ケアしつつ、
-    schemas ディレクトリを推測するヘルパー。
+    Helper to infer the schemas directory,
+    accounting for both development and installed environments.
 
-    想定レイアウト:
+    Expected layout:
         repo_root/
           schemas/
             message.schema.json
@@ -41,11 +41,11 @@ def _default_schemas_root() -> Path:
           src/
             llm_logparser/
               core/
-                schema_validation.py  (このファイル)
+                schema_validation.py  (this file)
     """
     here = Path(__file__).resolve()
 
-    # repo_root/schemas を探す
+    # Look for repo_root/schemas
     # .../src/llm_logparser/core/schema_validation.py
     # parents[0] core
     # parents[1] llm_logparser
@@ -53,34 +53,40 @@ def _default_schemas_root() -> Path:
     # parents[3] repo_root
     candidates = [
         here.parents[0] / "schemas",       # src/llm_logparser/core/schemas
-        here.parents[3] / "schemas",       # 開発時: repo_root/schemas
-        here.parents[1] / "schemas",       # インストール時: llm_logparser/schemas
+        here.parents[3] / "schemas",       # Development: repo_root/schemas
+        here.parents[1] / "schemas",       # Installation: llm_logparser/schemas
     ]
     for path in candidates:
         if path.is_dir():
             return path
 
-    # ダメだったら一番最初をそのまま返してエラーに任せる
+    # If not found, return the first candidate and leave it to error out
     return candidates[0]
 
 
 SCHEMAS_ROOT: Path = _default_schemas_root()
 MESSAGE_SCHEMA_NAME = "message.schema.json"
 MANIFEST_SCHEMA_NAME = "manifest.schema.json"
+TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
+METRICS_SCHEMA_NAME = "metrics.schema.json"
+THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
+MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
+WINDOW_EMBEDDING_SCHEMA_NAME = "window_embedding.schema.json"
+WINDOW_NEIGHBORS_SCHEMA_NAME = "window_neighbors.schema.json"
 
 
 # ---------------------------------------------------------------------------
-# 型 / 結果オブジェクト
+# Types / Result objects
 # ---------------------------------------------------------------------------
 
 @dataclass
 class SchemaViolation:
-    """単一オブジェクト（1行 or 1ファイル）に対するバリデーションエラー情報"""
+    """Validation error information for a single object (1 line or 1 file)"""
 
     path: Path
-    location: Optional[str]  # 例: "line=12", "item=0"
+    location: Optional[str]  # Example: "line=12", "item=0"
     message: str
-    field_path: str  # JSON Pointer 風: "messages[3].role" など
+    field_path: str  # JSON Pointer style: e.g. "messages[3].role"
 
     @classmethod
     def from_jsonschema_error(
@@ -90,7 +96,7 @@ class SchemaViolation:
         *,
         location: Optional[str] = None,
     ) -> "SchemaViolation":
-        # jsonschema の error.path は ["messages", 3, "role"] のような iterable
+        # jsonschema's error.path is an iterable like ["messages", 3, "role"]
         parts = []
         for p in error.path:
             if isinstance(p, int):
@@ -111,7 +117,7 @@ class SchemaViolation:
 
 @dataclass
 class ValidationSummary:
-    """1つのファイルに対するバリデーション結果"""
+    """Validation result for a single file"""
 
     path: Path
     ok: bool
@@ -128,7 +134,7 @@ class ValidationSummary:
 
 
 class SchemaValidationError(RuntimeError):
-    """まとめて扱うための例外"""
+    """Exception for bulk handling"""
 
     def __init__(self, msg: str, *, summary: ValidationSummary):
         super().__init__(msg)
@@ -136,7 +142,7 @@ class SchemaValidationError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Validator 準備
+# Validator preparation
 # ---------------------------------------------------------------------------
 
 def _load_json(path: Path) -> dict:
@@ -156,12 +162,12 @@ def load_message_validator(
     schema_path: Optional[Path] = None,
 ):
     """
-    message.schema.json 用の validator を返す。
+    Returns a validator for message.schema.json.
 
     Parameters
     ----------
     schema_path:
-        None の場合は SCHEMAS_ROOT / MESSAGE_SCHEMA_NAME を使う。
+        If None, SCHEMAS_ROOT / MESSAGE_SCHEMA_NAME is used.
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / MESSAGE_SCHEMA_NAME
@@ -172,10 +178,76 @@ def load_manifest_validator(
     schema_path: Optional[Path] = None,
 ):
     """
-    manifest.schema.json 用の validator を返す。
+    Returns a validator for manifest.schema.json.
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / MANIFEST_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_token_stats_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for token_stats.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / TOKEN_STATS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_metrics_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for metrics.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / METRICS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_thread_stats_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for thread_stats.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / THREAD_STATS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_message_windows_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for message_windows.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / MESSAGE_WINDOWS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_window_embedding_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for window_embedding.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / WINDOW_EMBEDDING_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_window_neighbors_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for window_neighbors.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / WINDOW_NEIGHBORS_SCHEMA_NAME
     return _make_validator(schema_path)
 
 
@@ -235,13 +307,13 @@ class ManifestSchemaValidator:
 
 
 # ---------------------------------------------------------------------------
-# parsed.jsonl の検証
+# parsed.jsonl validation
 # ---------------------------------------------------------------------------
 
 def _iter_json_lines(path: Path) -> Iterator[tuple[int, dict]]:
     """
-    JSON Lines (JSONL) / NDJSON を 1 行ずつ読み、(行番号, オブジェクト) を yield する。
-    行番号は 1 始まり。
+    Reads JSON Lines (JSONL) / NDJSON line by line, yielding (line_number, object).
+    Line numbers are 1-indexed.
     """
     with path.open("r", encoding="utf-8") as f:
         for idx, line in enumerate(f, start=1):
@@ -262,19 +334,19 @@ def validate_parsed_jsonl(
     stop_on_first_error: bool = False,
 ) -> ValidationSummary:
     """
-    parsed.jsonl を message.schema.json で検証する。
+    Validates parsed.jsonl using message.schema.json.
 
     Parameters
     ----------
     path:
-        parsed.jsonl のパス
+        Path to parsed.jsonl
     validator:
-        事前に load_message_validator() したものを渡す場合。
-        None のときは schema_path から自動ロード。
+        If passing an already loaded validator from load_message_validator().
+        If None, automatically loaded from schema_path.
     schema_path:
-        validator が None のときに使うスキーマパス。
+        Schema path to use when validator is None.
     stop_on_first_error:
-        True の場合、最初の違反で即座に中断する。
+        If True, immediately aborts on the first violation.
 
     Returns
     -------
@@ -303,7 +375,7 @@ def validate_parsed_jsonl(
 
 
 # ---------------------------------------------------------------------------
-# manifest.json / meta.json の検証
+# manifest.json / meta.json validation
 # ---------------------------------------------------------------------------
 
 def validate_json_file(
@@ -313,8 +385,8 @@ def validate_json_file(
     location: Optional[str] = None,
 ) -> ValidationSummary:
     """
-    一般的な「単一 JSON オブジェクト」ファイルの検証。
-    manifest.json / meta.json など共通で使える。
+    Validation of a general "single JSON object" file.
+    Can be used commonly for manifest.json / meta.json etc.
     """
     obj = _load_json(path)
     violations: list[SchemaViolation] = []
@@ -336,10 +408,10 @@ def validate_manifest_file(
     *,
     validator=None,
     schema_path: Optional[Path] = None,
-    stop_on_first_error: bool = False,  # 互換用ダミー（今は使わない）
+    stop_on_first_error: bool = False,  # Compatibility dummy (currently unused)
 ) -> ValidationSummary:
     """
-    manifest.json を manifest.schema.json で検証するヘルパー。
+    Helper to validate manifest.json using manifest.schema.json.
     """
     if validator is None:
         validator = load_manifest_validator(schema_path)

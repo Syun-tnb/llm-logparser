@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/window_neighbors.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "window_id",
+    "embedding_model",
+    "neighbor_count",
+    "neighbors"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "window_neighbors" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "window_id": { "type": "string", "minLength": 1 },
+    "embedding_model": { "type": "string", "minLength": 1 },
+    "neighbor_count": { "$ref": "#/$defs/nonNegativeInteger" },
+    "neighbors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/neighbor" }
+    }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "neighbor": {
+      "type": "object",
+      "required": [
+        "provider_id",
+        "conversation_id",
+        "window_id",
+        "score"
+      ],
+      "properties": {
+        "provider_id": { "type": "string", "minLength": 1 },
+        "conversation_id": { "type": "string", "minLength": 1 },
+        "window_id": { "type": "string", "minLength": 1 },
+        "score": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 1.0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

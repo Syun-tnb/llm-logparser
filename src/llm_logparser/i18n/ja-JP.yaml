@@ -1,0 +1,154 @@
+messages:
+  cli.description: LLM Log Parser 用のCLIインターフェース（MVP）
+  cli.option.lang.help: "CLI 表示の言語/ロケール (--locale、旧 --lang。例: en, ja)"
+  cli.option.log_level.help: ログレベルを指定 (DEBUG|INFO|WARNING|ERROR|CRITICAL)。環境変数 LLM_LOGPARSER_LOGLEVEL を上書き
+  cli.option.config.help: config.yaml へのパス
+  cli.option.profile.help: 使用するプロファイル名
+  cli.option.non_interactive.help: 対話プロンプトを無効にし、必要な値が不足している場合は失敗する
+  cli.option.timezone.help: "IANA タイムゾーン (例: Asia/Tokyo)"
+  cli.option.formatting.help: 最小限の Markdown 整形を適用する (none|light)。
+  cli.option.split.help: size=<4M|512KiB|...> または count=<N> または auto (auto = size=4M & count=1500)
+  cli.option.tiny_tail_threshold.help: 末尾結合のしきい値 (メッセージ数)
+  cli.parse.help: プロバイダのエクスポートJSONを正規化JSONLスレッドに変換する
+  cli.export.help: parsedログをMarkdownに出力する
+  cli.extract.help: 1つの会話を Gemini 互換 JSON として抽出する
+  cli.analyze.help: 正規化済み parsed JSONL スレッドを解析する
+  cli.chain.help: 生エクスポートを解析し、全スレッドをMarkdownに出力する
+  cli.viewer.help: （プレースホルダ）簡易HTMLビューアを起動する
+  cli.config.help: ランタイム設定を確認・検証する
+  cli.config.path.help: 解決された設定ファイルのパスを表示する
+  cli.config.show.help: 正規化済み設定または選択したプロファイルを表示する
+  cli.config.validate.help: 現在の設定を検証して終了する
+  cli.parse.provider: "プロバイダ: {provider}"
+  cli.parse.input: "入力ファイル: {path}"
+  cli.parse.outdir: "出力ディレクトリ: {path}"
+  cli.parse.done: "✅ {threads} スレッド（{messages} メッセージ）をパースしました"
+  cli.parse.opt.provider.help: "プロバイダ ID (例: openai)"
+  cli.parse.opt.input.help: 入力 JSON/JSONL パス
+  cli.parse.opt.outdir.help: 出力ルートディレクトリ (provider 配下は自動作成)
+  cli.parse.opt.dry_run.help: ファイルを書き込まずに parse を実行する (統計/ログのみ)。
+  cli.parse.opt.fail_fast.help: 継続せず、最初のエラーで parse を停止する。
+  cli.parse.opt.validate_schema.help: 正規化済みメッセージを message.schema.json で検証する
+  cli.export.opt.input.help: スレッド parsed.jsonl へのパス
+  cli.export.opt.out.help: 出力 Markdown パス
+  cli.extract.opt.conversation_id.help: 抽出する会話 ID
+  cli.extract.opt.outdir.help: 出力ルートディレクトリ
+  cli.analyze.opt.input.help: parsed.jsonl ファイル、または parsed.jsonl を含むディレクトリへのパス
+  cli.analyze.opt.json.help: 人間向けテキストではなく JSON を出力する
+  cli.analyze.opt.out.help: 描画結果をファイルに書き込む
+  cli.analyze.opt.skip_existing.help: 既存のサイドカーがあるスレッドをスキップする。既定では既存サイドカーを再生成して上書きする。
+  cli.analyze.opt.dry_run.help: ファイルを書き込まずにサイドカー生成をプレビューする
+  cli.analyze.stats.help: parsed JSONL から決定的な会話統計を計算する
+  cli.analyze.stats.opt.per_thread.help: 人間向け出力にスレッドごとの行を含める
+  cli.analyze.stats.opt.top.help: ソート後にスレッドごとの行数を制限する
+  cli.analyze.stats.opt.sort.help: スレッドごとの行のソート項目
+  cli.analyze.stats.opt.include_role_breakdown.help: user / assistant 以外のロール内訳を含める
+  cli.analyze.datasheet.help: 正規化済み成果物から付録向けの決定的なデータセット要約を生成する
+  cli.analyze.timeline.help: 時刻付きメッセージの活動を時間軸で集計する
+  cli.analyze.timeline.opt.bucket.help: タイムライン集計のバケット幅
+  cli.analyze.tokens.help: 正規化済み parsed JSONL から決定的な token_stats.json を生成する。既存サイドカーは既定で再生成して上書きする。
+  cli.analyze.tokens.opt.model.help: トークナイザ解決用の任意モデル名 (主に OpenAI 向け)
+  cli.analyze.tokens.opt.encoding.help: provider/model 解決より優先される明示的な tiktoken エンコーディング名
+  cli.analyze.metrics.help: parsed.jsonl と token_stats.json から決定的な metrics.json を生成する。先に `analyze tokens` を実行する。既存サイドカーは既定で再生成して上書きする。
+  cli.analyze.sqlite_build.help: 正規化済みスレッド成果物から任意の SQLite アクセラレータを構築する
+  cli.analyze.sqlite_build.opt.input.help: provider ごとの成果物ディレクトリを含むルートディレクトリ
+  cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"
+  cli.analyze.sqlite_build.opt.overwrite.help: 既存の analysis.db を削除して再構築する
+  cli.analyze.semantic_prototype.help: message_windows.jsonl から実験的な window_embeddings.jsonl と window_neighbors.jsonl を生成する
+  cli.analyze.semantic_prototype.opt.input.help: message_windows.jsonl ファイル、または message_windows.jsonl を含むディレクトリへのパス
+  cli.analyze.semantic_prototype.opt.backend.help: "使用する埋め込みバックエンド (`deterministic-hash` または `ollama`)"
+  cli.analyze.semantic_prototype.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須です。"
+  cli.analyze.semantic_prototype.opt.top_k.help: 各ウィンドウごとに保持する近傍数
+  cli.analyze.semantic_prototype.opt.max_input_bytes.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な UTF-8 バイト予算
+  cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算
+  cli.analyze.semantic_prototype.opt.aggregate.help: chunk 埋め込みの集約方式
+  cli.analyze.semantic_prototype.opt.overwrite.help: 既存の window_embeddings.jsonl と window_neighbors.jsonl を上書きする
+  cli.analyze.semantic_preview.help: 1 つの semantic window と保存済み近傍を人間向けにプレビューする
+  cli.analyze.semantic_preview.opt.input.help: message_windows.jsonl と window_neighbors.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_preview.opt.thread.help: プレビュー対象の会話 / スレッド ID
+  cli.analyze.semantic_preview.opt.window.help: プレビュー対象の window ID
+  cli.analyze.semantic_preview.opt.top_k.help: 表示する近傍数を制限する。未指定時は保存済み近傍リストをそのまま使う
+  cli.analyze.semantic_preview.opt.include_text.help: プレビューに復元テキストを含める (`--no-include-text` で無効化)
+  cli.analyze.semantic_preview.opt.max_chars.help: 各 window で切り詰める前に表示する最大文字数
+  cli.analyze.semantic_preview.opt.show_meta.help: プレビューにメタデータブロックを含める (`--no-show-meta` で無効化)
+  cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/output/<provider>/... 配下になる
+  cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む
+  cli.chain.opt.parsed_root.help: 既に parsed スレッド (…/thread-*/parsed.jsonl) を含む任意のルートディレクトリ。指定した場合は parse フェーズをスキップする
+  cli.chain.opt.fail_fast.help: 最初の export エラーで chain 処理を停止する。既定では継続する。
+  cli.chain.opt.validate_schema.help: parse フェーズ中に正規化済みメッセージを検証する
+  cli.error.path: "パスエラー: {detail}"
+  cli.error.permission: "アクセス権限エラー: {detail}"
+  cli.error.unexpected: "予期しないエラー: {detail}"
+  error.path: "パスエラー: {detail}"
+  error.permission: "アクセス権限エラー: {detail}"
+  error.unexpected: "予期しないエラー: {detail}"
+  runtime.error.with_code: "[{code}] {detail}"
+  runtime.analyze.metrics.missing_token_stats: |-
+    parsed.jsonl の隣に token_stats.json が見つかりません: {path}
+    `analyze metrics` を実行する前に `analyze tokens` を実行してください。
+  runtime.analyze.dry_run.preview: "[dry-run] {artifact_name} 生成をプレビューしています"
+  runtime.analyze.dry_run.detected_threads: "検出したスレッド数: {count}"
+  runtime.analyze.dry_run.existing_sidecars: "既存サイドカー数: {count}"
+  runtime.analyze.dry_run.new_sidecars: "新規作成予定のサイドカー数: {count}"
+  runtime.analyze.dry_run.rebuild_sidecars: "再生成予定の既存サイドカー数: {count}"
+  runtime.analyze.dry_run.skipped_sidecars: "スキップした既存サイドカー数: {count}"
+  runtime.analyze.dry_run.no_writes: "ファイルは書き込まれていません。"
+  runtime.analyze.semantic_prototype.loading_windows: "semantic prototype: ウィンドウを読み込んでいます"
+  runtime.analyze.semantic_prototype.loaded_windows: "semantic prototype: {windows} 件のウィンドウを読み込みました"
+  runtime.analyze.semantic_prototype.generating_embeddings: "semantic prototype: 埋め込みを生成しています"
+  runtime.analyze.semantic_prototype.embeddings_complete: "semantic prototype: 埋め込み生成完了 ({windows} ウィンドウ)"
+  runtime.analyze.semantic_prototype.building_neighbors: "semantic prototype: 近傍を構築しています"
+  runtime.analyze.semantic_prototype.neighbor_progress: "semantic prototype: 近傍 {count} / {total}"
+  runtime.analyze.semantic_prototype.writing_artifacts: "semantic prototype: 成果物を書き込んでいます"
+  runtime.analyze.semantic_prototype_written: "semantic prototype 成果物を書き込みました: {threads} スレッド / {windows} ウィンドウ (model={model})"
+  runtime.config.deprecated_semantic_embedding_key: "非推奨の設定キー {context}.{legacy_key} は引き続き受け付けますが、今後は {context}.{replacement} を使用してください。"
+  runtime.google_gemini.title_prefix_unrecognized: "現在のロケールでは Gemini のユーザー title 接頭辞を認識できなかったため、メッセージは未正規化のまま保持しました。意味解析の品質に影響する可能性があります。"
+  error.path_not_found: "指定されたパスが存在しません: {path}"
+  error.path_expected_file: "ファイルパスを指定してください: {path}"
+  error.path_expected_dir: "ディレクトリパスを指定してください: {path}"
+  error.missing_required: "'{command}' に必要なオプションが不足しています:"
+  error.missing_required_hint.provider: "--provider / config: provider"
+  error.missing_required_hint.input: "--input / config: input.path, input.paths, input.parsed(export)"
+  error.missing_required_hint.conversation_id: "--conversation-id / config: extract.conversation_id"
+  error.missing_required_hint.generic: CLI オプションまたは設定値
+parsing:
+  google_gemini:
+    user_title_prefixes:
+      - "送信したメッセージ: "
+analysis:
+  refusal:
+    indicators:
+      - "お手伝いできません"
+      - "対応できません"
+      - "お答えできません"
+      - "ポリシー"
+      - "ガイドライン"
+  safety:
+    intervention_indicators:
+      - "重要なのは"
+      - "注意してください"
+      - "安全な代替案"
+      - "気をつけてください"
+  correction:
+    cues:
+      - "違う"
+      - "そうじゃなくて"
+      - "違います"
+      - "その意味じゃない"
+  revision:
+    cues:
+      - "違う"
+      - "そうじゃなくて"
+      - "いや"
+      - "つまり"
+      - "要するに"
+      - "言い換えると"
+      - "というか"
+      - "言いたいのは"
+  clarification:
+    cues:
+      - "つまり"
+      - "要するに"
+      - "言い換えると"
+      - "言いたいのは"
+      - "補足すると"

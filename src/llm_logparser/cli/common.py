@@ -8,6 +8,8 @@ from pathlib import Path
 
 from zoneinfo import ZoneInfo
 
+from llm_logparser.core.i18n import _
+
 
 def setup_logger(level: str | None = None) -> logging.Logger:
     """Configure the shared CLI logger once."""
@@ -32,11 +34,11 @@ def validate_path(
     """Validate input and output paths."""
     target = path.expanduser()
     if must_exist and not target.exists():
-        raise FileNotFoundError(f"指定されたパスが存在しません: {target}")
+        raise FileNotFoundError(_("error.path_not_found", path=target))
     if expect_file and target.is_dir():
-        raise IsADirectoryError(f"ファイルパスを指定してください: {target}")
+        raise IsADirectoryError(_("error.path_expected_file", path=target))
     if expect_dir and not target.is_dir():
-        raise NotADirectoryError(f"ディレクトリパスを指定してください: {target}")
+        raise NotADirectoryError(_("error.path_expected_dir", path=target))
     return target
 
 
@@ -49,21 +51,21 @@ def validate_split_option(raw: str | None) -> str | None:
     lowered = normalized.lower()
     if lowered == "auto" or lowered.startswith("size=") or lowered.startswith("count="):
         return normalized
-    raise SystemExit(f"invalid --split: {raw}")
+    raise SystemExit(_("runtime.split_invalid", raw=raw))
 
 
 def resolve_timezone(timezone_name: str, logger: logging.Logger):
     try:
         return ZoneInfo(timezone_name)
     except Exception:
-        logger.warning(f"Unknown timezone '{timezone_name}', fallback to UTC")
+        logger.warning(_("runtime.timezone_unknown", timezone_name=timezone_name))
         return _dt_timezone.utc
 
 
 def write_or_print(rendered: str, out: Path | None) -> None:
     if out:
         if out.exists() and out.is_dir():
-            raise IsADirectoryError(f"ファイルパスを指定してください: {out}")
+            raise IsADirectoryError(_("error.path_expected_file", path=out))
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(f"{rendered}\n", encoding="utf-8")
     else:

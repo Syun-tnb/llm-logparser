@@ -1,0 +1,33 @@
+[
+  {
+    "header": "Gemini アプリ",
+    "title": "送信したメッセージ: 小春？チャンク（Chunk）って何？",
+    "time": "2026-03-23T07:18:42.981Z",
+    "products": ["Gemini アプリ"],
+    "activityControls": ["Gemini アプリ アクティビティ"],
+    "safeHtmlItem": [
+      {
+        "html": "<p>Chunk はモデルが処理する単位です。</p><p>文脈を分割するときによく使います。</p>"
+      }
+    ]
+  },
+  {
+    "header": "Gemini アプリ",
+    "title": "送信したメッセージ: 明日の買い物リストを作って",
+    "time": "2026-03-23T07:20:00.000Z",
+    "products": ["Gemini アプリ"],
+    "activityControls": ["Gemini アプリ アクティビティ"]
+  },
+  {
+    "header": "Gemini アプリ",
+    "title": "送信したメッセージ: ",
+    "time": "2026-03-23T07:21:00.000Z",
+    "products": ["Gemini アプリ"],
+    "activityControls": ["Gemini アプリ アクティビティ"],
+    "safeHtmlItem": [
+      {
+        "html": "<p>こちらが要約です。</p><ul><li>要点A</li><li>要点B</li></ul>"
+      }
+    ]
+  }
+]

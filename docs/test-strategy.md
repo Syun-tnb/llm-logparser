@@ -7,6 +7,28 @@ uv sync --extra dev
 uv run pytest
 ```
 
+## Suite Categories
+
+The pytest suite is grouped with lightweight markers so contributors can choose
+the right confidence level for local work and releases:
+
+* `unit`: isolated logic and helper coverage
+* `cli`: parser/handler/command-path coverage
+* `contract`: machine-readable artifact/schema coverage
+* `integration`: deterministic end-to-end or subsystem pipeline coverage
+
+Recommended commands:
+
+```bash
+uv run pytest
+uv run pytest -m integration
+```
+
+Release gate:
+
+* run `uv run pytest -m integration` for the focused end-to-end pipeline checks
+* run `uv run pytest` before cutting a release for the full suite
+
 ## Golden Tests
 
 * Provider adapter samples → expected normalized JSONL output.
@@ -24,17 +46,22 @@ uv run pytest
 
 ## i18n
 
-* Per-locale snapshots; lint for missing message keys (fallback = English with WARN).
-* Unknown locales must gracefully fall back without crashing.
+* Focused tests should cover scalar `messages:` lookup and structured `analysis:` lookup.
+* Fallback rules should be verified explicitly:
+  selected locale → `en-US` → raw key for scalar messages.
+* Analyzer resource fallback should be verified as:
+  selected locale → `en-US`.
+* Locale precedence should be covered explicitly:
+  CLI `--locale` / `--lang` → `LLP_LOCALE` → selected profile locale → `en-US`.
+* Unknown locales must gracefully resolve to `en-US` without crashing.
+* Help/bootstrap locale behavior should be tested separately from post-config runtime locale updates.
 
 ## Config
 
-* Load/merge, schema mismatch, locking/atomic writes, backup/restore.
-* Priority order is respected: CLI > environment > profile > defaults.
-
-> [!NOTE]
-> Config file loading is **not yet implemented**. These tests are planned for when
-> the configuration layer is built.
+* Typed config loading, schema mismatch, profile resolution, and CLI override precedence.
+* Priority order is respected for config-backed options: CLI > selected profile > defaults.
+* `config path`, `config show`, and `config validate` get smoke coverage.
+* Config write-back, locking/atomic writes, and backup/restore remain future work.
 
 ## Network Prohibition
 

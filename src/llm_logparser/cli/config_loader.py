@@ -2,37 +2,42 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+
+from llm_logparser.cli.config_model import AppConfig
+from llm_logparser.core.i18n import _
 
 CONFIG_ENV_VAR = "LLM_LOGPARSER_CONFIG"
 
 
-def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+def _load_yaml_mapping(path: Path) -> dict[str, object]:
     try:
         import yaml
     except ImportError as e:
-        raise SystemExit(
-            "PyYAML is required for config support. Install dependency 'PyYAML'."
-        ) from e
+        raise SystemExit(_("runtime.config.yaml_required")) from e
 
     try:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     except Exception as e:
-        raise SystemExit(f"Failed to load config YAML '{path}': {e}") from e
+        raise SystemExit(_("runtime.config.load_failed", path=path, detail=e)) from e
 
     if not isinstance(loaded, dict):
-        raise SystemExit(f"Config YAML must be a mapping at top level: {path}")
+        raise SystemExit(_("runtime.config.mapping_required", path=path))
     return loaded
 
 
-def load_config_file(path: Path, *, missing_hint: str = "") -> dict[str, Any]:
+def resolve_explicit_config_path(path: Path, *, missing_hint: str = "") -> Path:
     target = path.expanduser()
     if not target.exists():
         hint = f" ({missing_hint})" if missing_hint else ""
-        raise SystemExit(f"Config file not found: {target}{hint}")
+        raise SystemExit(_("runtime.config.file_not_found", path=target, hint=hint))
     if target.is_dir():
-        raise SystemExit(f"Config path must be a file: {target}")
-    return _load_yaml_mapping(target)
+        raise SystemExit(_("runtime.config.path_must_be_file", path=target))
+    return target
+
+
+def load_config_file(path: Path, *, missing_hint: str = "") -> AppConfig:
+    target = resolve_explicit_config_path(path, missing_hint=missing_hint)
+    return AppConfig.from_mapping(_load_yaml_mapping(target))
 
 
 def discover_config_path(cwd: Path | None = None) -> Path | None:
@@ -43,11 +48,12 @@ def discover_config_path(cwd: Path | None = None) -> Path | None:
         env_path = Path(from_env).expanduser()
         if not env_path.exists():
             raise SystemExit(
-                f"{CONFIG_ENV_VAR} points to a missing file: {env_path}. "
-                "Fix the path or unset the environment variable."
+                _("runtime.config.env_missing", env_var=CONFIG_ENV_VAR, path=env_path)
             )
         if env_path.is_dir():
-            raise SystemExit(f"{CONFIG_ENV_VAR} must point to a file: {env_path}")
+            raise SystemExit(
+                _("runtime.config.env_must_be_file", env_var=CONFIG_ENV_VAR, path=env_path)
+            )
         return env_path
 
     local_cfg = start / "config.yaml"
@@ -74,10 +80,13 @@ def load_config_with_discovery(
     explicit_path: Path | None,
     *,
     cwd: Path | None = None,
-) -> tuple[dict[str, Any] | None, Path | None]:
+) -> tuple[AppConfig | None, Path | None]:
     if explicit_path is not None:
-        path = explicit_path.expanduser()
-        return load_config_file(path, missing_hint="passed via --config"), path
+        path = resolve_explicit_config_path(
+            explicit_path,
+            missing_hint=_("runtime.config.hint_passed_via_config"),
+        )
+        return load_config_file(path), path
 
     discovered = discover_config_path(cwd=cwd)
     if discovered is None:

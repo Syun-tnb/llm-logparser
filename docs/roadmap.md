@@ -1,47 +1,54 @@
 # Roadmap
 
-* [x] CLI MVP — Markdown export, deduplication, thread splitting
-* [ ] Minimal HTML Viewer — index + simple search
-* [ ] Multi-provider adapters (Claude, Gemini, etc.)
-* [ ] Apps SDK integration (experimental)
-* [ ] Full GUI (desktop, later stage)
+The roadmap stays intentionally conservative:
+
+* canonical parsing remains the foundation
+* deterministic L1/L2 analysis remains the stable base
+* semantic-layer work remains experimental, local-first, additive, rebuildable,
+  and non-canonical
 
 ---
 
-## MVP Roadmap — llm-logparser
+## Current Focus
 
-The roadmap is intentionally incremental: stabilize the pipeline first, then iterate on usability and integrations.
-
-### 🎯 Phase 1: Core Stability
-
-| Priority | Item                | Status         | Notes                                              |
-| -------: | ------------------- | -------------- | -------------------------------------------------- |
-|      ⭐⭐⭐ | Harden Parser       | 🔧 In progress | Streaming, error isolation, fail-fast behavior     |
-|       ⭐⭐ | Exporter (Markdown) | ✅ Done         | Front-matter, formatting, GFM output, thread splitting |
-|       ⭐⭐ | CLI chain execution | ✅ Done         | Reliable `parse → export` end-to-end               |
-|        ⭐ | Split policies      | ✅ Done         | size / count / auto, soft-overflow, hard, tail-merge |
+| Priority | Item | Status | Notes |
+| -------: | ---- | ------ | ----- |
+| ⭐⭐⭐ | Canonical parser stability | In progress | Keep provider normalization and schema contracts predictable |
+| ⭐⭐⭐ | Deterministic analyzer contracts | In progress | Preserve stable L1/L2 sidecars and rebuildability |
+| ⭐⭐ | Experimental semantic layer | In progress | Window embeddings, semantic neighbors, and preview remain additive only |
+| ⭐ | Viewer and usability improvements | Planned | Read-only inspection workflows over existing artifacts |
 
 ---
 
-### ⚙️ Phase 2: Operation & Resilience
+## Experimental Semantic Layer
 
-| Priority | Item                                | Status             | Notes                                     |
-| -------: | ----------------------------------- | ------------------ | ----------------------------------------- |
-|      ⭐⭐⭐ | Differential cache by `update_time` | 🔧 Partial          | `load_manifest_if_exists` / `should_skip_thread` implemented |
-|       ⭐⭐ | Unified error handling              | 🔧 In progress      | Log levels implemented; structured JSON error output not yet |
-|        ⭐ | Locale / timezone sanitation        | 🕓 Planned          | Safe file names, robust ZoneInfo handling |
+Current implemented scope:
+
+| Priority | Item | Status | Notes |
+| -------: | ---- | ------ | ----- |
+| ⭐⭐ | Window embeddings | Done | Experimental sidecars built from `message_windows.jsonl` |
+| ⭐⭐ | Semantic neighbors | Done | Experimental nearest-neighbor structure over embedded windows |
+| ⭐ | `analyze semantic-preview` | Done | Read-only CLI renderer for one window and its stored neighbors |
+| ⭐ | Interactive semantic preview | Exploratory | Future CLI exploration only; default-off by design |
+
+Positioning rules:
+
+* semantic outputs are not canonical truth
+* semantic outputs must remain safe to delete and rebuild
+* local-first execution remains the default assumption
+* higher-level topic clustering, labeling, and timeline tracking remain future work
 
 ---
 
-### 🌐 Phase 3: Output & Viewer
+## Near-Term Follow-Ups
 
-| Priority | Item                        | Status     | Notes                                          |
-| -------: | --------------------------- | ---------- | ---------------------------------------------- |
-|       ⭐⭐ | Minimal HTML viewer         | 🕓 Planned | `index + list + detail`, read-only             |
-|        ⭐ | i18n dictionary             | ✅ Done     | Structure exists; translations added gradually |
-|        ⭐ | Quickstart & README refresh | 🕓 Planned | Practical CLI examples + output samples        |
+| Priority | Item | Status | Notes |
+| -------: | ---- | ------ | ----- |
+| ⭐⭐ | README and docs alignment | In progress | Keep semantic-layer wording consistent across user-facing docs |
+| ⭐ | Minimal HTML viewer | Planned | Read-only inspection layer, separate from canonical generation |
+| ⭐ | Additional semantic evaluation fixtures | Planned | Small deterministic fixtures to validate preview and neighbor quality |
 
 ---
 
-> Roadmap items may shift as we gain more real-world usage feedback.
-> Breaking changes will follow semantic versioning and be documented before release.
+Roadmap items may shift with real-world usage feedback. Breaking changes will
+continue to follow semantic versioning and be documented before release.

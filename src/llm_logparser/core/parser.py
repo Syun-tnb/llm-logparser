@@ -14,6 +14,8 @@ except Exception:  # pragma: no cover
     ijson = None
 
 from .l1_derivation import ThreadMetrics, build_thread_stats_artifact
+from .i18n import _
+from .message_windows import render_message_windows_jsonl
 
 # ============================================================
 # 1. Error Classes
@@ -41,18 +43,31 @@ class LLPWriteError(LLPError):
 # ============================================================
 
 def load_adapter(provider: str):
-    """動的に provider adapter をロードする。"""
+    """Dynamically load the provider adapter."""
     mod = importlib.import_module(f"llm_logparser.core.providers.{provider}.adapter")
     get_adapter = getattr(mod, "get_adapter", None)
     if not get_adapter:
         raise LLPAdapterError(f"adapter missing for provider={provider}")
+    adapter = get_adapter()
+    get_record_expander = getattr(mod, "get_record_expander", None)
+    if callable(get_record_expander):
+        try:
+            setattr(adapter, "__llp_record_expander__", get_record_expander())
+        except Exception:
+            pass
+    get_input_records = getattr(mod, "get_input_records", None)
+    if callable(get_input_records):
+        try:
+            setattr(adapter, "__llp_input_records__", get_input_records())
+        except Exception:
+            pass
     manifest = getattr(mod, "get_manifest", lambda: {})()
     policy = getattr(mod, "get_policy", lambda: {})()
-    return get_adapter(), manifest, policy
+    return adapter, manifest, policy
 
 
 def load_extractor(provider: str):
-    """動的に provider extractor をロードする。"""
+    """Dynamically load the provider extractor."""
     mod = importlib.import_module(f"llm_logparser.core.providers.{provider}.extractor")
     get_extractor = getattr(mod, "get_extractor", None)
     if not get_extractor:
@@ -66,10 +81,10 @@ def load_extractor(provider: str):
 
 def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str, Any], None, None]:
     """
-    巨大JSON/JSONLをストリーム的に読み込む。
-    - JSON配列: ijson（あれば）で逐次読み取り
-    - JSONオブジェクト: json.load で1件として読み取り
-    - JSONL/NDJSON: 行単位で処理
+    Stream and read large JSON/JSONL files.
+    - JSON arrays: sequential read with ijson (if available)
+    - JSON objects: read as single item with json.load
+    - JSONL/NDJSON: process line by line
     """
     try:
         with path.open("r", encoding="utf-8-sig") as f:
@@ -92,7 +107,9 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                     try:
                         yield json.loads(line)
                     except json.JSONDecodeError as e:
-                        logger.warning(f"skip invalid JSON line ({i}): {e}")
+                        logger.warning(
+                            _("runtime.parser.skip_invalid_json_line", index=i, detail=e)
+                        )
                         continue
                 return
 
@@ -101,7 +118,7 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                 if ijson is not None:
                     for i, item in enumerate(ijson.items(f, "item"), start=1):
                         if not isinstance(item, dict):
-                            logger.warning(f"skip invalid element ({i})")
+                            logger.warning(_("runtime.parser.skip_invalid_element", index=i))
                             continue
                         yield item
                     return
@@ -111,7 +128,7 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
                     raise LLPInputError("expected JSON array")
                 for i, item in enumerate(data, start=1):
                     if not isinstance(item, dict):
-                        logger.warning(f"skip invalid element ({i})")
+                        logger.warning(_("runtime.parser.skip_invalid_element", index=i))
                         continue
                     yield item
                 return
@@ -131,12 +148,30 @@ def iter_json_records(path: Path, logger: logging.Logger) -> Generator[Dict[str,
         raise LLPInputError(f"reader error: {e}")
 
 
+def iter_input_records(
+    path: Path,
+    logger: logging.Logger,
+) -> Generator[tuple[Any, str], None, None]:
+    """Yield provider input records with their concrete source path."""
+    target = path.expanduser()
+    if target.is_dir():
+        for child in sorted(
+            candidate for candidate in target.rglob("*.json") if candidate.is_file()
+        ):
+            for record in iter_json_records(child, logger):
+                yield record, str(child)
+        return
+
+    for record in iter_json_records(target, logger):
+        yield record, str(target)
+
+
 # ============================================================
 # 4. Validation / Cache Utilities
 # ============================================================
 
 def validate_message(msg: dict, *, fail_fast=False):
-    """基本的なスキーマ検証。"""
+    """Basic schema validation."""
     required_str = ["conversation_id", "message_id", "role"]
     for k in required_str:
         if not isinstance(msg.get(k), str) or not msg.get(k):
@@ -180,7 +215,7 @@ def validate_message(msg: dict, *, fail_fast=False):
 
 
 def load_manifest_if_exists(provider_dir: Path) -> dict:
-    """既存manifestをロードしてキャッシュに利用。"""
+    """Load existing manifest to use as cache."""
     man_path = provider_dir / "manifest.json"
     if not man_path.exists():
         return {}
@@ -191,7 +226,7 @@ def load_manifest_if_exists(provider_dir: Path) -> dict:
 
 
 def should_skip_thread(conv_id: str, msgs: list, manifest_old: dict) -> bool:
-    """update_timeなどで差分スキップを判定。"""
+    """Determine differential skipping by update_time, etc."""
     try:
         index = manifest_old.get("index", {}).get("threads", [])
         old = next((t for t in index if t["conversation_id"] == conv_id), None)
@@ -226,6 +261,74 @@ def write_thread_stats_artifact(
     tmp.replace(artifact_path)
 
 
+def write_message_windows_artifact(
+    outdir_thread: Path,
+    *,
+    canonical_rows: list[dict[str, Any]],
+) -> None:
+    """Persist deterministic message windows from canonical message rows."""
+    artifact_path = outdir_thread / "message_windows.jsonl"
+    tmp = artifact_path.with_suffix(".tmp")
+    tmp.write_text(
+        render_message_windows_jsonl(canonical_rows),
+        encoding="utf-8",
+    )
+    tmp.replace(artifact_path)
+
+
+def _invoke_adapter(
+    adapter_func,
+    raw: dict,
+    *,
+    source: str,
+    logger: logging.Logger | None = None,
+) -> list[dict]:
+    """Call provider adapter with optional source context and TypeError fallback."""
+    try:
+        try:
+            params = signature(adapter_func).parameters
+        except Exception:
+            params = {}
+        adapter_kwargs: dict[str, Any] = {}
+        if "source" in params:
+            adapter_kwargs["source"] = source
+        if "logger" in params:
+            adapter_kwargs["logger"] = logger
+        recs_iter = adapter_func(raw, **adapter_kwargs)
+    except TypeError:
+        recs_iter = adapter_func(raw)
+    return list(recs_iter)
+
+
+def _iter_provider_input_records(adapter_func, input_path: Path, logger: logging.Logger):
+    """Call provider input iterator with TypeError fallback and normalize tuples."""
+    input_records_func = getattr(adapter_func, "__llp_input_records__", None)
+    if not callable(input_records_func):
+        input_records_func = iter_input_records
+
+    try:
+        try:
+            params = signature(input_records_func).parameters
+        except Exception:
+            params = {}
+        if "logger" in params or len(params) >= 2:
+            records_iter = input_records_func(input_path, logger)
+        else:
+            records_iter = input_records_func(input_path)
+    except TypeError:
+        records_iter = input_records_func(input_path)
+
+    for item in records_iter:
+        if (
+            isinstance(item, tuple)
+            and len(item) == 2
+            and isinstance(item[1], str)
+        ):
+            yield item[0], item[1]
+        else:
+            yield item, str(input_path)
+
+
 # ============================================================
 # 5. Main Parser
 # ============================================================
@@ -243,11 +346,13 @@ def parse_to_jsonl(
     schema_validator: "MessageSchemaValidator" | None = None,
 ) -> Dict[str, Any]:
     """
-    各プロバイダのエクスポートJSONを解析し、スレッド単位のJSONLファイルを生成する。
-    fail_fast=True の場合は一定数エラーで停止。
+    Parse the exported JSON for each provider and generate thread-level JSONL files.
+    Stop on a certain number of errors if fail_fast=True.
     """
     log = logger or logging.getLogger("llm_logparser.parser")
-    log.info(f"Starting parse for provider={provider} (dry-run={dry_run}, fail-fast={fail_fast})")
+    log.info(
+        _("runtime.parser.start_parse", provider=provider, dry_run=dry_run, fail_fast=fail_fast)
+    )
 
     adapter_func, manifest, policy = load_adapter(provider)
     provider_dir = outdir / provider
@@ -268,127 +373,144 @@ def parse_to_jsonl(
     sample_errors: list[str] = []
     stats = {"threads": 0, "messages": 0}
     manifest_index = []
+    record_expander = getattr(adapter_func, "__llp_record_expander__", None)
+    if not callable(record_expander):
+        record_expander = lambda raw: [raw]
 
-    for raw in iter_json_records(input_path, log):
+    for raw, raw_source in _iter_provider_input_records(adapter_func, input_path, log):
         try:
-            # adapter may optionally accept source context (e.g., filename)
-            try:
-                try:
-                    params = signature(adapter_func).parameters
-                except Exception:
-                    params = {}
-                if "source" in params:
-                    recs_iter = adapter_func(raw, source=str(input_path))
-                else:
-                    recs_iter = adapter_func(raw)
-            except TypeError:
-                recs_iter = adapter_func(raw)
-
-            recs = list(recs_iter)
-            if not recs:
-                continue
-
-            cid = recs[0].get("conversation_id")
-            if not cid:
-                skipped += len(recs)
-                continue
-
-            count += len(recs)
-            if count % progress_interval == 0:
-                log.info(f"processed {count} messages...")
-
-            recs.sort(key=lambda r: (r.get("ts") is None, r.get("ts"), r.get("message_id") or ""))
-
-            if should_skip_thread(cid, recs, manifest_old):
-                skipped += 1
-                log.info(f"SKIP thread {cid} (unchanged)")
-                continue
-
-            ts_values = [m.get("ts") for m in recs if isinstance(m.get("ts"), (int, float))]
-            ts_min = min(ts_values) if ts_values else None
-            ts_max = max(ts_values) if ts_values else None
-
-            outdir_thread = provider_dir / f"thread-{cid}"
-            outdir_thread.mkdir(parents=True, exist_ok=True)
-            outpath = outdir_thread / "parsed.jsonl"
-
-            if not dry_run:
-                tmp = outpath.with_suffix(".tmp")
-                thread_metrics = ThreadMetrics(conversation_id=cid)
-                try:
-                    with tmp.open("w", encoding="utf-8") as f:
-                        thread_meta = {
-                            "record_type": "thread",
-                            "provider_id": provider,
-                            "conversation_id": cid,
-                            "message_count": len(recs),
-                        }
-                        f.write(json.dumps(thread_meta, ensure_ascii=True) + "\n")
-                        for m in recs:
-                            if schema_validator:
-                                try:
-                                    schema_validator.validate_message(m)
-                                except message_validation_error_cls as verr:
-                                    idx = m.get("message_id") or "<unknown>"
-                                    log.warning(
-                                        f"schema validation failed for "
-                                        f"{cid}/{idx}: {verr}"
-                                    )
-                                    skipped += 1
-                                    if fail_fast:
-                                        raise LLPAdapterError(
-                                            "message schema validation failed"
-                                        ) from verr
-                                    continue
-
-                            if not validate_message(m, fail_fast=fail_fast):
-                                skipped += 1
-                                continue
-                            canonical_row = {
-                                "record_type": "message",
-                                "provider_id": provider,
-                                **m,
-                            }
-                            # Keep parse-time derivation tied to the canonical rows we write.
-                            thread_metrics.add_message(canonical_row)
-                            f.write(
-                                json.dumps(
-                                    canonical_row,
-                                    ensure_ascii=True,
-                                )
-                                + "\n"
-                            )
-                    write_thread_stats_artifact(
-                        outdir_thread,
-                        provider=provider,
-                        metrics=thread_metrics,
-                    )
-                except Exception as e:
-                    raise LLPWriteError(f"write error: {e}")
-                tmp.replace(outpath)
-
-            stats["threads"] += 1
-            stats["messages"] += len(recs)
-
-            manifest_index.append(
-                {
-                    "conversation_id": cid,
-                    "path": f"thread-{cid}/parsed.jsonl",
-                    "count": len(recs),
-                    "ts_min": ts_min,
-                    "ts_max": ts_max,
-                }
-            )
+            expanded_records = list(record_expander(raw))
         except Exception as e:
-            msg = f"adapter error: {e}"
+            msg = _("runtime.parser.adapter_error", detail=e)
             log.warning(msg)
             errors += 1
             if len(sample_errors) < 5:
                 sample_errors.append(msg)
             if fail_fast and errors > 3:
                 raise LLPAdapterError(f"too many adapter errors ({errors})")
+            continue
 
-    # manifest出力
+        for expanded_raw in expanded_records:
+            try:
+                recs = _invoke_adapter(
+                    adapter_func,
+                    expanded_raw,
+                    source=raw_source,
+                    logger=log,
+                )
+                if not recs:
+                    continue
+
+                cid = recs[0].get("conversation_id")
+                if not cid:
+                    skipped += len(recs)
+                    continue
+
+                count += len(recs)
+                if count % progress_interval == 0:
+                    log.info(_("runtime.parser.processed_messages", count=count))
+
+                recs.sort(key=lambda r: (r.get("ts") is None, r.get("ts")))
+
+                if should_skip_thread(cid, recs, manifest_old):
+                    skipped += 1
+                    log.info(_("runtime.parser.skip_thread_unchanged", conversation_id=cid))
+                    continue
+
+                ts_values = [m.get("ts") for m in recs if isinstance(m.get("ts"), (int, float))]
+                ts_min = min(ts_values) if ts_values else None
+                ts_max = max(ts_values) if ts_values else None
+
+                outdir_thread = provider_dir / f"thread-{cid}"
+                outdir_thread.mkdir(parents=True, exist_ok=True)
+                outpath = outdir_thread / "parsed.jsonl"
+
+                if not dry_run:
+                    tmp = outpath.with_suffix(".tmp")
+                    thread_metrics = ThreadMetrics(conversation_id=cid)
+                    canonical_rows: list[dict[str, Any]] = []
+                    try:
+                        with tmp.open("w", encoding="utf-8") as f:
+                            thread_meta = {
+                                "record_type": "thread",
+                                "provider_id": provider,
+                                "conversation_id": cid,
+                                "message_count": len(recs),
+                            }
+                            f.write(json.dumps(thread_meta, ensure_ascii=True) + "\n")
+                            for m in recs:
+                                if not validate_message(m, fail_fast=fail_fast):
+                                    skipped += 1
+                                    continue
+                                canonical_row = {
+                                    "record_type": "message",
+                                    "provider_id": provider,
+                                    **m,
+                                }
+                                if schema_validator:
+                                    try:
+                                        schema_validator.validate_message(canonical_row)
+                                    except message_validation_error_cls as verr:
+                                        idx = canonical_row.get("message_id") or "<unknown>"
+                                        log.warning(
+                                            _(
+                                                "runtime.parser.schema_validation_failed",
+                                                conversation_id=cid,
+                                                message_id=idx,
+                                                detail=verr,
+                                            )
+                                        )
+                                        skipped += 1
+                                        if fail_fast:
+                                            raise LLPAdapterError(
+                                                "message schema validation failed"
+                                            ) from verr
+                                        continue
+                                # Keep derived artifacts tied to the exact canonical rows we write.
+                                canonical_rows.append(canonical_row)
+                                thread_metrics.add_message(canonical_row)
+                                f.write(
+                                    json.dumps(
+                                        canonical_row,
+                                        ensure_ascii=True,
+                                    )
+                                    + "\n"
+                                )
+                        write_thread_stats_artifact(
+                            outdir_thread,
+                            provider=provider,
+                            metrics=thread_metrics,
+                        )
+                        write_message_windows_artifact(
+                            outdir_thread,
+                            canonical_rows=canonical_rows,
+                        )
+                    except Exception as e:
+                        raise LLPWriteError(f"write error: {e}")
+                    tmp.replace(outpath)
+
+                stats["threads"] += 1
+                stats["messages"] += len(recs)
+
+                manifest_index.append(
+                    {
+                        "conversation_id": cid,
+                        "path": f"thread-{cid}/parsed.jsonl",
+                        "count": len(recs),
+                        "ts_min": ts_min,
+                        "ts_max": ts_max,
+                    }
+                )
+            except Exception as e:
+                msg = _("runtime.parser.adapter_error", detail=e)
+                log.warning(msg)
+                errors += 1
+                if len(sample_errors) < 5:
+                    sample_errors.append(msg)
+                if fail_fast and errors > 3:
+                    raise LLPAdapterError(f"too many adapter errors ({errors})")
+
+    # Output manifest
     if not dry_run:
         manifest_path = provider_dir / "manifest.json"
         manifest_obj = {
@@ -399,10 +521,16 @@ def parse_to_jsonl(
             "index": {"threads": manifest_index},
         }
         manifest_path.write_text(json.dumps(manifest_obj, ensure_ascii=True, indent=2), encoding="utf-8")
-        log.info(f"manifest saved: {manifest_path}")
+        log.info(_("runtime.parser.manifest_saved", path=manifest_path))
 
     log.info(
-        f"SUMMARY: threads={stats['threads']} messages={stats['messages']} errors={errors} skipped={skipped}"
+        _(
+            "runtime.parser.summary",
+            threads=stats["threads"],
+            messages=stats["messages"],
+            errors=errors,
+            skipped=skipped,
+        )
     )
     return {**stats, "errors": errors, "skipped": skipped, "samples": sample_errors}
 
@@ -414,22 +542,36 @@ def extract_to_json(
     conversation_id: str,
     *,
     dry_run: bool = False,
+    sanitize_policy: Any | None = None,
     logger: Optional[logging.Logger] = None,
 ) -> Dict[str, Any]:
-    """指定 conversation_id の生会話を抽出し、Gemini-compat JSON を出力する。"""
+    """Extract raw conversation by conversation_id and output Gemini-compatible JSON."""
     log = logger or logging.getLogger("llm_logparser.parser")
     log.info(
-        f"Starting extract for provider={provider}, conversation_id={conversation_id} (dry-run={dry_run})"
+        _(
+            "runtime.parser.start_extract",
+            provider=provider,
+            conversation_id=conversation_id,
+            dry_run=dry_run,
+        )
     )
     extractor = load_extractor(provider)
-    result = extractor(
-        input_path=input_path,
-        outdir=outdir,
-        provider=provider,
-        conversation_id=conversation_id,
-        dry_run=dry_run,
-        logger=log,
-    )
+    extractor_kwargs: dict[str, Any] = {
+        "input_path": input_path,
+        "outdir": outdir,
+        "provider": provider,
+        "conversation_id": conversation_id,
+        "dry_run": dry_run,
+        "logger": log,
+    }
+    if "sanitize_policy" in signature(extractor).parameters:
+        extractor_kwargs["sanitize_policy"] = sanitize_policy
+    elif sanitize_policy is not None:
+        log.debug(
+            "Extractor for provider=%s does not accept sanitize_policy; using extractor defaults",
+            provider,
+        )
+    result = extractor(**extractor_kwargs)
     if not isinstance(result, dict):
         raise LLPAdapterError("extractor returned invalid result")
     return result

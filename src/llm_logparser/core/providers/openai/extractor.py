@@ -2,60 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Any
 
+from llm_logparser.core.i18n import _
 from llm_logparser.core.parser import LLPInputError, iter_json_records
 from llm_logparser.core.providers.openai.chatgpt.utils import json_safe
-
-_REDACTED = "REDACTED"
-_SENSITIVE_KEYWORDS = (
-    "SECRET",
-    "TOKEN",
-    "API_KEY",
-    "AUTHORIZATION",
-    "COOKIE",
-    "PASSWORD",
-)
-_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-_PHONE_RE = re.compile(r"\b(?:\+?\d[\d().\s-]{7,}\d)\b")
-
-
-def _is_sensitive_key(key: str) -> bool:
-    upper_key = key.upper()
-    return any(keyword in upper_key for keyword in _SENSITIVE_KEYWORDS)
-
-
-def _sanitize_text_part(value: str) -> str:
-    sanitized = _EMAIL_RE.sub("[REDACTED_EMAIL]", value)
-    sanitized = _PHONE_RE.sub("[REDACTED_PHONE]", sanitized)
-    return sanitized
-
-
-def _sanitize_value(value: Any, *, path: tuple[str, ...] = ()) -> Any:
-    if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for key, child in value.items():
-            if _is_sensitive_key(key):
-                out[key] = _REDACTED
-                continue
-            out[key] = _sanitize_value(child, path=(*path, key))
-        return out
-
-    if isinstance(value, list):
-        # only sanitize text content inside `content.parts: list[str]`
-        if len(path) >= 2 and path[-2] == "content" and path[-1] == "parts":
-            out_parts: list[Any] = []
-            for item in value:
-                if isinstance(item, str):
-                    out_parts.append(_sanitize_text_part(item))
-                else:
-                    out_parts.append(item)
-            return out_parts
-        return [_sanitize_value(item, path=path) for item in value]
-
-    return value
+from llm_logparser.core.sanitize import SanitizePolicy, sanitize_value
 
 
 def _conversation_id_of(record: dict[str, Any]) -> str | None:
@@ -74,9 +27,13 @@ def get_extractor():
         provider: str,
         conversation_id: str,
         dry_run: bool = False,
+        sanitize_policy: SanitizePolicy | None = None,
         logger: logging.Logger | None = None,
     ) -> dict[str, Any]:
         log = logger or logging.getLogger("llm_logparser.extractor")
+        policy = sanitize_policy or SanitizePolicy.defaults()
+        if policy.enabled and policy.custom_mask_patterns:
+            log.info(_("runtime.openai_extract.custom_mask_patterns"))
 
         matched_record: dict[str, Any] | None = None
         scanned = 0
@@ -91,16 +48,28 @@ def get_extractor():
         if matched_record is None:
             raise LLPInputError(f"conversation not found: {conversation_id}")
 
-        sanitized = json_safe(_sanitize_value(matched_record))
+        sanitized = json_safe(sanitize_value(matched_record, policy))
         thread_dir = outdir / provider / f"thread-{conversation_id}"
         out_path = thread_dir / "extract.json"
+        meta_path = thread_dir / "extract.meta.json"
+        sanitize_meta = policy.summary()
+        metadata = {
+            "provider": provider,
+            "conversation_id": conversation_id,
+            "records_scanned": scanned,
+            "sanitize": sanitize_meta,
+        }
 
         if dry_run:
-            log.info(f"[extract] dry-run: matched conversation={conversation_id}; skip writing {out_path}")
+            log.info(
+                _("runtime.openai_extract.dry_run_skip", conversation_id=conversation_id, path=out_path)
+            )
             return {
                 "conversation_id": conversation_id,
                 "records_scanned": scanned,
                 "path": str(out_path),
+                "meta_path": str(meta_path),
+                "sanitize": sanitize_meta,
                 "written": False,
             }
 
@@ -108,11 +77,17 @@ def get_extractor():
         with out_path.open("w", encoding="utf-8") as f:
             json.dump([sanitized], f, ensure_ascii=False, indent=2)
             f.write("\n")
-        log.info(f"[extract] wrote {out_path}")
+        meta_path.write_text(
+            json.dumps(metadata, ensure_ascii=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        log.info(_("runtime.openai_extract.wrote", path=out_path))
         return {
             "conversation_id": conversation_id,
             "records_scanned": scanned,
             "path": str(out_path),
+            "meta_path": str(meta_path),
+            "sanitize": sanitize_meta,
             "written": True,
         }
 

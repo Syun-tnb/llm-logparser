@@ -9,11 +9,13 @@ and future Apps SDK. It supersedes the legacy `v1.0` draft (Oct 2025).
 
 Rules for each rendered message block:
 
-- Heading pattern: `## [<role or name>] <localized datetime>`
+- Heading pattern: `## [<role or name>] <local datetime>`
 - Supported roles: `system`, `user`, `assistant`, `tool`
 - Message content is emitted **verbatim** (code blocks, links, images preserved)
 - Line endings MUST be `\n` (LF)
 - Markdown MUST comply with **GFM (GitHub Flavored Markdown)**
+- Current datetime rendering is timezone-aware, but not locale-formatted:
+  `YYYY-MM-DD HH:MM`
 
 ---
 
@@ -70,18 +72,42 @@ It will be generated when `--with-meta` is set.
 
 ## 🌐 i18n and Locale Behavior
 
-* Controlled via CLI: `--locale <lang-REGION>` and `--timezone <IANA zone>`
-* Translations are currently resolved through an **in-code dictionary** in `src/llm_logparser/core/i18n.py`
-  (future: external `{locale}.yaml` files)
-* Dates are rendered using locale-aware formats (UTC internally)
-* Missing keys fall back to English (`en-US`) — warnings may be logged in some cases
+Current i18n behavior is narrower than a fully localized exporter:
 
-Example localized dates:
+* i18n is best-effort, non-blocking, and intentionally limited in scope
+* missing locale sections or keys are acceptable; fallback behavior is the design
+* for the canonical project-wide model, see `docs/requirements.md`
 
-| Locale | Example                |
-| ------ | ---------------------- |
-| ja-JP  | 2025年10月18日 10:15      |
-| en-US  | Oct 18, 2025, 10:15 AM |
+* `--locale` / `--lang` control CLI/help/runtime message localization and analyzer
+  locale-backed phrase resources
+* `--timezone` controls exporter timestamp conversion
+* Locale resolution lives in `src/llm_logparser/core/i18n.py`
+* Locale files live under `src/llm_logparser/i18n/`
+* Locale files are best-effort YAML mappings and may contain:
+  * `messages:` for scalar CLI/help/runtime/error text
+  * `analysis:` for structured analyzer phrase resources
+* Missing sections and missing keys are allowed; fallback behavior handles partial locale files safely
+* Scalar message lookup falls back as:
+  selected locale → `en-US` → raw key
+* Analyzer resources fall back as:
+  selected locale → `en-US`
+* Short aliases such as `en` and `ja` are derived from discovered locale filenames when the language prefix is unambiguous
+* Locale precedence is:
+  `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`
+* Unknown locales resolve to `en-US`
+* Parser/help output can pick up CLI locale before parser construction via raw argv scanning
+* Config locale is applied only after config/profile resolution and does not override
+  CLI or environment locale
+* `analyze` follows the same locale precedence as the other runtime commands
+* Argparse built-ins (`usage:`, parser-generated errors, built-in help boilerplate)
+  are not localized
+
+Output-contract caution:
+
+* Human-readable CLI/help/runtime text is localized
+* `analyze stats` / `analyze timeline` text summaries are intentionally English-only
+* Human-readable Markdown timestamps are timezone-aware but not locale-formatted
+* Stable machine-readable artifacts and field names remain English
 
 ---
 
@@ -119,7 +145,7 @@ The Exporter follows Parser cache guidance (`§8.1` of requirements):
 | `parsed.jsonl`        | JSONL    | ✔        | Parser output (thread + messages) |
 | `thread-*.md`         | Markdown | ✔        | Human-readable log, GFM format    |
 | `meta.json`           | JSON     | planned  | Viewer metadata (not yet implemented) |
-| `locale` / `timezone` | string   | optional | For localized rendering           |
+| `locale` / `timezone` | CLI settings | optional | Locale selects CLI/runtime text and analyzer resources; timezone affects human-readable timestamp rendering |
 | `checksum`            | string   | planned  | SHA1 for diff detection (not yet implemented) |
 
 Exporter output must remain **deterministic** under identical inputs and locale settings.
@@ -214,11 +240,13 @@ Two record types exist:
 * Messages are sorted **chronologically**
   (`ts`, then `message_id` as a tie-breaker)
 
-* `text` is always present and equals:
+* `text` is part of the canonical normalized message contract and is expected to equal:
 
   ```
   "\n".join(content.parts)
   ```
+
+* adapters/parser own producing this normalized field in `parsed.jsonl`
 
 * Additional / unknown fields MAY appear
   (tools MUST ignore what they don’t understand)
@@ -230,6 +258,14 @@ Two record types exist:
 
 This schema is intentionally minimal and stable.
 Future fields may be added **without breaking compatibility** as long as these rules hold.
+
+> [!NOTE]
+> The Exporter includes a defensive fallback that reconstructs text from
+> `content.parts` when a malformed or incomplete normalized row is encountered.
+> This is a resilience measure only. It does not redefine the canonical JSONL
+> contract, does not create a second authoritative text-generation path, and
+> does not shift responsibility away from adapters/parser for emitting normalized
+> `text`.
 
 ---
 

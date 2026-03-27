@@ -9,13 +9,13 @@ _IEC_WORDS = {"KIB": "K", "MIB": "M", "GIB": "G"}
 
 def parse_size_expr(expr: str) -> int:
     """
-    例: "4M", "512K", "1G", "4096", "4MB", "4MiB", "512KiB", "512KB"
-    大文字小文字は不問。
+    Example: "4M", "512K", "1G", "4096", "4MB", "4MiB", "512KiB", "512KB"
+    Case-insensitive.
     """
     s = expr.strip().upper()
     m = re.match(r"^\s*(\d+)\s*([KMG]?)(I?B)?\s*$", s)
     if not m:
-        # "4MB"/"4MiB" など別表記の救済
+        # Fallback for alternative notations like "4MB"/"4MiB"
         m2 = re.match(r"^\s*(\d+)\s*([KMG])(I?B)\s*$", s)
         if not m2:
             raise ValueError(f"Invalid size: {expr}")
@@ -40,9 +40,9 @@ def format_bytes(n: int) -> str:
     return f"{v:.1f}{units[i]}"
 
 def sanitize_filename(name: str, max_len: int = 120) -> str:
-    # Windows禁則 + 制御文字
+    # Windows forbidden + control characters
     name = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", name)
-    # 連続空白の整理
+    # Cleanup consecutive whitespaces
     name = re.sub(r"\s+", " ", name).strip()
     if len(name) > max_len:
         root, ext = (name, "")

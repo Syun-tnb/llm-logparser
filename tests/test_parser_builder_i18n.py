@@ -1,0 +1,106 @@
+import pytest
+
+from llm_logparser.cli.parser_builder import build_parser
+from llm_logparser.core.i18n import _, set_locale
+
+
+def test_top_level_parser_help_uses_i18n_strings():
+    set_locale("ja-JP")
+
+    help_text = build_parser().format_help()
+
+    assert _("cli.description") in help_text
+    assert _("cli.option.config.help") in help_text
+    assert _("cli.option.profile.help") in help_text
+    assert _("cli.option.non_interactive.help") in help_text
+    assert _("cli.export.help") in help_text
+    assert _("cli.chain.help") in help_text
+
+
+def test_parse_help_uses_i18n_strings(capsys):
+    set_locale("ja-JP")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["parse", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert _("cli.parse.opt.input.help") in help_text
+    assert _("cli.parse.opt.validate_schema.help") in help_text
+
+
+def test_unknown_locale_falls_back_to_english_for_parser_help():
+    set_locale("fr-FR")
+
+    help_text = build_parser().format_help()
+
+    assert _("cli.description") == "CLI interface for LLM Log Parser (MVP)"
+    assert _("cli.option.config.help") == "Path to config.yaml"
+    assert _("cli.analyze.help") == "Analyze canonical parsed JSONL threads"
+    assert "CLI interface for LLM Log Parser (MVP)" in help_text
+    assert "Path to config.yaml" in help_text
+    assert "Analyze canonical parsed JSONL threads" in help_text
+
+
+def test_analyze_metrics_help_mentions_token_stats_dependency(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "metrics", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "metrics.json" in help_text
+    assert "token_stats.json" in help_text
+    assert "Run `analyze tokens` first." in help_text
+    assert "--skip-existing" in help_text
+    assert "--dry-run" in help_text
+    assert "rebuilt and overwritten" in help_text
+
+
+def test_analyze_tokens_help_mentions_skip_existing_policy(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "tokens", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--skip-existing" in help_text
+    assert "--dry-run" in help_text
+    assert "rebuilt and overwritten" in help_text
+
+
+def test_analyze_semantic_prototype_help_mentions_backend_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-prototype", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--backend" in help_text
+    assert "--model" in help_text
+    assert "--max-input-bytes" in help_text
+    assert "--chunk-overlap-bytes" in help_text
+    assert "deterministic-hash" in help_text
+    assert "ollama" in help_text
+
+
+def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-preview", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--thread" in help_text
+    assert "--window" in help_text
+    assert "--top-k" in help_text
+    assert "--max-chars" in help_text
