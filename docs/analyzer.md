@@ -682,6 +682,12 @@ Key `semantic-topic-explore` flags:
   over its windows
 - `--message-id`: reverse lookup one message into one or more topics
 - `--conversation-id`: show all topics that appear in one conversation
+- `--hide-single-window`: suppress browse-time singleton topics when
+  `quality_signals.single_window` is available
+- `--min-window-count`: suppress browse-time topics smaller than the requested
+  window count
+- `--min-conversation-count`: suppress browse-time topics with narrower
+  conversation coverage
 - `--json`: emit structured machine-readable output instead of pretty text
 
 Parse-time windowing controls:

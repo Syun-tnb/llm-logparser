@@ -107,6 +107,9 @@ messages:
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する
   cli.analyze.semantic_topic_explore.opt.message_id.help: 1 件の message_id を含む topic を逆引きする
   cli.analyze.semantic_topic_explore.opt.conversation_id.help: 1 件の conversation / thread に現れる topic を表示する (`--thread` でも指定可能)
+  cli.analyze.semantic_topic_explore.opt.hide_single_window.help: browse view で quality_signals.single_window が true の topic を非表示にする
+  cli.analyze.semantic_topic_explore.opt.min_window_count.help: browse view で window_count がこの値未満の topic を非表示にする
+  cli.analyze.semantic_topic_explore.opt.min_conversation_count.help: browse view で conversation 数がこの値未満の topic を非表示にする
   cli.analyze.semantic_topic_explore.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/output/<provider>/... 配下になる
   cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む

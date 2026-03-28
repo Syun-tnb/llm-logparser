@@ -371,6 +371,42 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             }
                         ],
                     },
+                    {
+                        "topic_id": "topic-delta",
+                        "provider_id": "openai",
+                        "label": "Delta",
+                        "summary": "Singleton topic.",
+                        "keywords": [],
+                        "confidence": None,
+                        "state": None,
+                        "cluster_ids": ["cluster-delta"],
+                        "conversation_ids": ["conv-c"],
+                        "window_refs": [
+                            {"conversation_id": "conv-c", "window_id": "window-0001"},
+                        ],
+                        "message_refs": [
+                            {"conversation_id": "conv-c", "message_id": "c-1"},
+                        ],
+                        "cluster_count": 1,
+                        "window_count": 1,
+                        "message_count": 1,
+                        "quality_signals": {
+                            "cluster_size": 1,
+                            "conversation_count": 1,
+                            "avg_intra_cluster_score": None,
+                            "max_intra_cluster_score": None,
+                            "single_window": True,
+                        },
+                        "first_seen": 120,
+                        "last_seen": 121,
+                        "representative_windows": [
+                            {
+                                "conversation_id": "conv-c",
+                                "window_id": "window-0001",
+                                "excerpt": "user: gamma lunch planning",
+                            }
+                        ],
+                    },
                 ],
             },
             ensure_ascii=False,
@@ -433,6 +469,17 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                 "membership_type": "message",
                 "conversation_id": "conv-c",
                 "cluster_id": "cluster-beta",
+                "window_id": "window-0001",
+                "message_id": "c-1",
+            },
+            {
+                "record_type": "topic_membership",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "topic_id": "topic-delta",
+                "membership_type": "message",
+                "conversation_id": "conv-c",
+                "cluster_id": "cluster-delta",
                 "window_id": "window-0001",
                 "message_id": "c-1",
             },
@@ -591,9 +638,113 @@ def test_semantic_topic_explore_topic_list_refined_ordering_and_null_score_handl
         "topic-zeta",
         "topic-alpha",
         "topic-beta",
+        "topic-delta",
     ]
     assert payload["topics"][1]["quality_signals"]["avg_intra_cluster_score"] == 0.9
     assert payload["topics"][2]["quality_signals"]["avg_intra_cluster_score"] is None
+
+
+def test_semantic_topic_explore_hide_single_window_filters_browse_lists(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    payload = build_semantic_topic_explore_payload(
+        input_root=root,
+        hide_single_window=True,
+    )
+
+    assert [row["topic_id"] for row in payload["topics"]] == [
+        "topic-zeta",
+        "topic-alpha",
+        "topic-beta",
+    ]
+
+
+def test_semantic_topic_explore_min_window_count_filters_small_topics(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    payload = build_semantic_topic_explore_payload(
+        input_root=root,
+        min_window_count=3,
+    )
+
+    assert [row["topic_id"] for row in payload["topics"]] == ["topic-zeta"]
+
+
+def test_semantic_topic_explore_combined_filters_are_deterministic(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    payload = build_semantic_topic_explore_payload(
+        input_root=root,
+        hide_single_window=True,
+        min_conversation_count=2,
+    )
+
+    assert [row["topic_id"] for row in payload["topics"]] == [
+        "topic-alpha",
+        "topic-beta",
+    ]
+
+
+def test_semantic_topic_explore_json_topic_list_honors_filters(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        hide_single_window=True,
+        min_window_count=2,
+        json_output=True,
+    )
+    payload = json.loads(rendered)
+
+    assert payload["view"] == "topic-list"
+    assert [row["topic_id"] for row in payload["topics"]] == [
+        "topic-zeta",
+        "topic-alpha",
+        "topic-beta",
+    ]
+    assert all("quality_signals" in row for row in payload["topics"])
+
+
+def test_semantic_topic_explore_conversation_view_honors_filters(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    payload = build_semantic_topic_explore_payload(
+        input_root=root,
+        conversation_id="conv-c",
+        hide_single_window=True,
+    )
+
+    assert payload["view"] == "conversation"
+    assert [row["topic_id"] for row in payload["topics"]] == ["topic-beta"]
+
+
+def test_semantic_topic_explore_direct_lookup_bypasses_browse_filters(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    topic_payload = build_semantic_topic_explore_payload(
+        input_root=root,
+        topic_id="topic-delta",
+        hide_single_window=True,
+        min_window_count=3,
+        min_conversation_count=2,
+    )
+    message_payload = build_semantic_topic_explore_payload(
+        input_root=root,
+        message_id="c-1",
+        hide_single_window=True,
+        min_window_count=3,
+        min_conversation_count=2,
+    )
+
+    assert topic_payload["view"] == "topic-detail"
+    assert topic_payload["topic"]["topic_id"] == "topic-delta"
+    assert any(row["topic_id"] == "topic-delta" for row in message_payload["topics"])
 
 
 def test_semantic_topic_explore_topic_list_rendering_surfaces_preview_and_quality(tmp_path):

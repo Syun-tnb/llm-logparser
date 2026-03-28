@@ -684,7 +684,10 @@ Conversation-centric view:
 ```bash
 uv run llm-logparser analyze semantic-topic-explore \
   --input <artifact-root> \
-  --conversation-id <conversation_id>
+  --conversation-id <conversation_id> \
+  [--hide-single-window] \
+  [--min-window-count <N>] \
+  [--min-conversation-count <N>]
 ```
 
 `semantic-topic-explore` reads `topics.json`, `topic_membership.jsonl`, and
@@ -697,7 +700,10 @@ uv run llm-logparser analyze semantic-topic-explore \
 Its default topic list is tuned for scanning rather than exhaustiveness: it
 surfaces larger topics first, then broader conversation coverage, then higher
 observed intra-cluster scores when available, and shows one representative
-window preview plus lightweight quality hints in the text view.
+window preview plus lightweight quality hints in the text view. Runtime-only
+filters such as `--hide-single-window`, `--min-window-count`, and
+`--min-conversation-count` can suppress obvious browsing noise without
+rewriting topic artifacts.
 
 ### Analyze Semantic Topic
 

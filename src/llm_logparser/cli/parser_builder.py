@@ -660,6 +660,26 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topic_explore.opt.conversation_id.help"),
     )
     analyze_semantic_topic_explore_cmd.add_argument(
+        "--hide-single-window",
+        dest="hide_single_window",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic_explore.opt.hide_single_window.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--min-window-count",
+        dest="min_window_count",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topic_explore.opt.min_window_count.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--min-conversation-count",
+        dest="min_conversation_count",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topic_explore.opt.min_conversation_count.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
         "--json",
         dest="json_output",
         action="store_true",

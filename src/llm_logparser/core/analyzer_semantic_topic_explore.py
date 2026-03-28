@@ -85,6 +85,45 @@ def _format_score(value: float | None) -> str:
     return f"{float(value):.2f}"
 
 
+def _topic_conversation_count(topic: dict[str, Any]) -> int:
+    quality_signals = topic.get("quality_signals")
+    if isinstance(quality_signals, dict):
+        value = quality_signals.get("conversation_count")
+        if isinstance(value, int):
+            return value
+    conversation_ids = topic.get("conversation_ids", [])
+    if isinstance(conversation_ids, list):
+        return len(conversation_ids)
+    return 0
+
+
+def _topic_is_single_window(topic: dict[str, Any]) -> bool:
+    quality_signals = topic.get("quality_signals")
+    if not isinstance(quality_signals, dict):
+        return False
+    return quality_signals.get("single_window") is True
+
+
+def _topic_matches_browse_filters(
+    topic: dict[str, Any],
+    *,
+    hide_single_window: bool,
+    min_window_count: int,
+    min_conversation_count: int,
+) -> bool:
+    if hide_single_window and _topic_is_single_window(topic):
+        return False
+
+    window_count = topic.get("window_count", len(topic.get("window_refs", [])))
+    if int(window_count or 0) < min_window_count:
+        return False
+
+    if _topic_conversation_count(topic) < min_conversation_count:
+        return False
+
+    return True
+
+
 def load_topics_index(input_root: Path) -> dict[str, dict[str, Any]]:
     validator = load_topics_validator()
     topics: dict[str, dict[str, Any]] = {}
@@ -198,9 +237,22 @@ def build_topic_explore_index(input_root: Path) -> TopicExploreIndex:
     )
 
 
-def _topic_list_rows(index: TopicExploreIndex) -> list[dict[str, Any]]:
+def _topic_list_rows(
+    index: TopicExploreIndex,
+    *,
+    hide_single_window: bool,
+    min_window_count: int,
+    min_conversation_count: int,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for topic in index.topics_by_id.values():
+        if not _topic_matches_browse_filters(
+            topic,
+            hide_single_window=hide_single_window,
+            min_window_count=min_window_count,
+            min_conversation_count=min_conversation_count,
+        ):
+            continue
         quality_signals = topic.get("quality_signals")
         representative_windows = topic.get("representative_windows", [])
         representative_window = (
@@ -329,7 +381,14 @@ def _message_lookup_payload(index: TopicExploreIndex, message_id: str) -> dict[s
     }
 
 
-def _conversation_payload(index: TopicExploreIndex, conversation_id: str) -> dict[str, Any]:
+def _conversation_payload(
+    index: TopicExploreIndex,
+    conversation_id: str,
+    *,
+    hide_single_window: bool,
+    min_window_count: int,
+    min_conversation_count: int,
+) -> dict[str, Any]:
     topic_ids = index.topic_ids_by_conversation.get(conversation_id, [])
     if not topic_ids:
         raise SemanticTopicExploreError(
@@ -340,6 +399,13 @@ def _conversation_payload(index: TopicExploreIndex, conversation_id: str) -> dic
     for topic_id in topic_ids:
         topic = index.topics_by_id.get(topic_id)
         if topic is None:
+            continue
+        if not _topic_matches_browse_filters(
+            topic,
+            hide_single_window=hide_single_window,
+            min_window_count=min_window_count,
+            min_conversation_count=min_conversation_count,
+        ):
             continue
         rows = [
             row
@@ -382,7 +448,14 @@ def build_semantic_topic_explore_payload(
     topic_id: str | None = None,
     message_id: str | None = None,
     conversation_id: str | None = None,
+    hide_single_window: bool = False,
+    min_window_count: int = 1,
+    min_conversation_count: int = 1,
 ) -> dict[str, Any]:
+    if min_window_count <= 0:
+        raise SemanticTopicExploreError("--min-window-count must be > 0")
+    if min_conversation_count <= 0:
+        raise SemanticTopicExploreError("--min-conversation-count must be > 0")
     selected = [value is not None for value in (topic_id, message_id, conversation_id)]
     if sum(selected) > 1:
         raise SemanticTopicExploreError(
@@ -395,10 +468,21 @@ def build_semantic_topic_explore_payload(
     if message_id is not None:
         return _message_lookup_payload(index, message_id)
     if conversation_id is not None:
-        return _conversation_payload(index, conversation_id)
+        return _conversation_payload(
+            index,
+            conversation_id,
+            hide_single_window=hide_single_window,
+            min_window_count=min_window_count,
+            min_conversation_count=min_conversation_count,
+        )
     return {
         "view": "topic-list",
-        "topics": _topic_list_rows(index),
+        "topics": _topic_list_rows(
+            index,
+            hide_single_window=hide_single_window,
+            min_window_count=min_window_count,
+            min_conversation_count=min_conversation_count,
+        ),
     }
 
 
@@ -497,6 +581,9 @@ def render_semantic_topic_explore(
     topic_id: str | None = None,
     message_id: str | None = None,
     conversation_id: str | None = None,
+    hide_single_window: bool = False,
+    min_window_count: int = 1,
+    min_conversation_count: int = 1,
     json_output: bool = False,
 ) -> str:
     payload = build_semantic_topic_explore_payload(
@@ -504,6 +591,9 @@ def render_semantic_topic_explore(
         topic_id=topic_id,
         message_id=message_id,
         conversation_id=conversation_id,
+        hide_single_window=hide_single_window,
+        min_window_count=min_window_count,
+        min_conversation_count=min_conversation_count,
     )
     if json_output:
         return json.dumps(payload, ensure_ascii=False, indent=2)
