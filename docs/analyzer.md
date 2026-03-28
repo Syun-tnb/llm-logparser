@@ -518,17 +518,25 @@ deterministic and model-derived capabilities.
   are deterministic, rebuildable, and safe for local-first workflows
 
 - `semantic-prototype` is an experimental bridge into future L3 work: it
-  reads deterministic `message_windows.jsonl`, writes rebuildable embedding and
-  neighbor artifacts, and does not perform topic labeling or clustering
+  reads deterministic `message_windows.jsonl`, writes rebuildable embedding,
+  neighbor, and minimal cluster artifacts, and does not perform topic labeling
   It supports a default `deterministic-hash` backend for local plumbing/tests
   and an `ollama` backend for real local embeddings via a local Ollama model.
   For Ollama-backed runs, oversized window text is chunked automatically with a
   deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
   one final embedding per window.
-  Neighbor construction now uses vectorized cosine similarity instead of
-  Python-level all-pairs math, and long-running phases emit lightweight
-  progress logs while windows load, embeddings generate, neighbors build, and
-  artifacts are written.
+  Neighbor construction supports `--min-score` thresholding so weak links are
+  not emitted unconditionally.
+  When `--sqlite-db` is provided, candidate generation uses L2
+  `analysis.db` filters (`ts_start`, candidate window size, thread-level
+  assistant ratio, and same-thread policy) before cosine scoring instead of
+  computing a global dense `N×N` similarity matrix for that run.
+  Long-running phases emit lightweight progress logs while windows load,
+  embeddings generate, neighbors build, clusters build, and artifacts are
+  written.
+  Cluster construction is intentionally minimal: it converts retained mutual
+  neighbor links into undirected edges and writes connected-component
+  membership to `window_clusters.jsonl`.
   Backend/model selection is config- or CLI-owned: `backend` selects the
   runtime binding, `model` selects the embedding model identifier, and
   embedding chunking settings can be declared explicitly in config. Code keeps
@@ -540,6 +548,28 @@ deterministic and model-derived capabilities.
   reads stored `window_neighbors.jsonl` plus `message_windows.jsonl` and renders
   one target window with its nearest-neighbor text side by side for quick human
   inspection. It does not recompute embeddings or modify artifacts.
+
+Current limitations remain explicit:
+
+- semantic clusters are not canonical topics
+- no topic labels are generated
+- no lifecycle state is inferred
+- no summaries are produced
+
+Key `semantic-prototype` flags:
+
+- `--min-score`: filters out neighbors whose cosine similarity is below the
+  threshold; `top_k` still applies after filtering
+- `--sqlite-db`: enables SQLite-assisted candidate generation using
+  `analysis.db`; omitting it preserves the full embedded-window fallback path
+- `--candidate-window-days`: bounds candidate retrieval by `ts_start` around
+  each target window
+- `--candidate-min-chars`: excludes short candidate windows before scoring
+- `--candidate-min-assistant-ratio`: excludes source threads whose
+  `assistant_messages / message_count` ratio is below the threshold
+- `--candidate-same-thread`: controls whether same-thread candidates are
+  allowed, preferred on tie-breaks, restricted to only same-thread windows, or
+  excluded
 
 - L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
   are conceptual future extensions and remain opt-in, model-dependent, and

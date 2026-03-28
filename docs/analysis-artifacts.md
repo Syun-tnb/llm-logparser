@@ -739,22 +739,30 @@ Experimental prototype note:
 - `analyze semantic-prototype` is an experimental higher-layer bridge built on
   `message_windows.jsonl`
 - it currently writes rebuildable `window_embeddings.jsonl` and
-  `window_neighbors.jsonl` artifacts next to each thread's window artifact
+  `window_neighbors.jsonl` artifacts plus a minimal `window_clusters.jsonl`
+  membership artifact next to each thread's window artifact
 - it supports a default `deterministic-hash` backend plus an `ollama` backend
   for local embedding models served by Ollama
 - Ollama-backed runs automatically chunk oversized window text with a
   deterministic UTF-8 byte budget and aggregate chunk embeddings back into one
   final embedding per source window
-- neighbor construction now uses vectorized cosine similarity and emits
+- neighbor construction now supports `--min-score` thresholding and emits
   lightweight progress logs for long-running phases
+- when `--sqlite-db` is provided, candidate retrieval uses L2 `analysis.db`
+  filters before similarity scoring instead of a global dense comparison
 - backend/model selection is config- or CLI-owned; code keeps conservative
   fallback embedding settings (`max_input_bytes=256`,
   `chunk_overlap_bytes=32`, `aggregate=mean`) plus a small compatibility shim
   for a couple of historic Ollama model IDs
-- those outputs are non-canonical and intentionally limited to embeddings plus
-  nearest-neighbor structure
-- this prototype does not perform topic labeling, clustering, or timeline
-  reconstruction yet
+- those outputs are non-canonical and intentionally limited to embeddings,
+  thresholded nearest-neighbor structure, and minimal connected-component
+  grouping over retained mutual links
+- `window_clusters.jsonl` rows use
+  `src/llm_logparser/core/schemas/window_clusters.schema.json` and currently
+  emit one deterministic membership row per source window with
+  `cluster_id`, `cluster_size`, and `edge_policy`
+- `window_clusters.jsonl` is not a topic summary artifact: it does not add
+  labels, summaries, lifecycle state, or canonical meaning
 - `analyze semantic-preview` is a read-only renderer for those same prototype
   artifacts; it reads `window_neighbors.jsonl` plus `message_windows.jsonl`
   and prints a human-readable target-window-versus-neighbors comparison

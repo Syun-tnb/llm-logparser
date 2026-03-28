@@ -512,6 +512,12 @@ class SemanticPrototypeConfig:
     backend: str | None = None
     model: str | None = None
     top_k: int | None = None
+    min_score: float | int | None = None
+    sqlite_db: str | None = None
+    candidate_window_days: int | None = None
+    candidate_min_chars: int | None = None
+    candidate_min_assistant_ratio: float | int | None = None
+    candidate_same_thread: str | None = None
     backend_options: SemanticPrototypeBackendOptionsConfig = field(
         default_factory=SemanticPrototypeBackendOptionsConfig
     )
@@ -526,6 +532,24 @@ class SemanticPrototypeConfig:
             backend=_optional_string(data.get("backend"), f"{context}.backend"),
             model=_optional_string(data.get("model"), f"{context}.model"),
             top_k=_optional_int(data.get("top_k"), f"{context}.top_k"),
+            min_score=_optional_number(data.get("min_score"), f"{context}.min_score"),
+            sqlite_db=_optional_string(data.get("sqlite_db"), f"{context}.sqlite_db"),
+            candidate_window_days=_optional_int(
+                data.get("candidate_window_days"),
+                f"{context}.candidate_window_days",
+            ),
+            candidate_min_chars=_optional_int(
+                data.get("candidate_min_chars"),
+                f"{context}.candidate_min_chars",
+            ),
+            candidate_min_assistant_ratio=_optional_number(
+                data.get("candidate_min_assistant_ratio"),
+                f"{context}.candidate_min_assistant_ratio",
+            ),
+            candidate_same_thread=_optional_string(
+                data.get("candidate_same_thread"),
+                f"{context}.candidate_same_thread",
+            ),
             backend_options=SemanticPrototypeBackendOptionsConfig.from_raw(
                 data.get("backend_options"),
                 context=f"{context}.backend_options",
@@ -542,6 +566,12 @@ class SemanticPrototypeConfig:
                 "backend": self.backend,
                 "model": self.model,
                 "top_k": self.top_k,
+                "min_score": self.min_score,
+                "sqlite_db": self.sqlite_db,
+                "candidate_window_days": self.candidate_window_days,
+                "candidate_min_chars": self.candidate_min_chars,
+                "candidate_min_assistant_ratio": self.candidate_min_assistant_ratio,
+                "candidate_same_thread": self.candidate_same_thread,
                 "backend_options": self.backend_options.to_dict(),
                 "embedding": self.embedding.to_dict(),
             }

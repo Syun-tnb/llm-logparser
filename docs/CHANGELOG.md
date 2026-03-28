@@ -10,15 +10,17 @@
   * added formal JSON Schema for `message_windows.jsonl` rows
 * Added experimental `analyze semantic-prototype`:
   * reads `message_windows.jsonl`
-  * writes rebuildable `window_embeddings.jsonl` and `window_neighbors.jsonl`
+  * writes rebuildable `window_embeddings.jsonl`, `window_neighbors.jsonl`, and `window_clusters.jsonl`
   * uses a deterministic local hash backend by default
   * now also supports a local `ollama` embedding backend via `--backend ollama --model <name>`
   * supports profile-backed `analyze.semantic_prototype` embedding settings
   * uses deterministic UTF-8 byte-based chunking controls (`max_input_bytes`, `chunk_overlap_bytes`)
   * automatically applies built-in Ollama presets for known models and conservative fallback defaults for unknown models
   * automatically chunks oversized Ollama embedding inputs and aggregates them into one final embedding per window
-  * now uses vectorized neighbor construction and phase-level progress logging for longer runs
-  * does not perform topic labeling or clustering
+  * now supports `--min-score` thresholding so weak semantic links are not emitted unconditionally
+  * can optionally use `analysis.db` for L2-backed candidate generation before similarity scoring
+  * emits minimal mutual-link connected components as `window_clusters.jsonl`
+  * still does not perform topic labeling, lifecycle modeling, or summarization
 * Added experimental `analyze semantic-preview`:
   * reads stored `window_neighbors.jsonl` plus `message_windows.jsonl`
   * renders one target window and its nearest neighbors as human-readable text

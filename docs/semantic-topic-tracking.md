@@ -19,6 +19,28 @@ L3 builds on top of those layers without modifying them. It is an additive
 semantic interpretation layer whose goal is to reconstruct **topic continuity**
 rather than only **thread continuity**.
 
+Current implementation status in `llm-logparser` is intentionally narrower than
+the full conceptual design in this document.
+
+Implemented today:
+
+- thresholded semantic neighbor generation from `message_windows.jsonl`
+- optional L2-backed candidate generation via `analysis.db`
+- minimal connected-component clustering over retained mutual neighbor links
+
+Not implemented today:
+
+- topic labels
+- lifecycle states (`active`, `dormant`, `resolved`)
+- summaries
+- decision extraction
+- open-question extraction
+- next-action extraction
+
+The currently shipped L3 prototype should therefore be interpreted as an
+experimental semantic grouping foundation, not as a complete topic tracking
+system.
+
 ---
 
 # 1. Purpose and Scope
@@ -164,7 +186,7 @@ threads.
 
 ---
 
-# 5. Topic Lifecycle
+# 5. Topic Lifecycle (Future)
 
 Each topic should expose a lifecycle so users can understand not only what the
 topic is, but also whether it is still active.
@@ -192,7 +214,7 @@ State assignment is interpretive rather than canonical. A topic can move from
 
 ---
 
-# 6. Topic Metadata
+# 6. Topic Metadata (Future)
 
 Each topic artifact should capture both structural references and high-level
 semantic summaries.

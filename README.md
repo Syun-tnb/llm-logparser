@@ -277,7 +277,7 @@ llm-logparser analyze sqlite-build \
 | `analyze datasheet` | Generate a research-ready dataset summary |
 | `analyze timeline` | See when you were most active |
 | `analyze sqlite-build` | Query large datasets with SQL (optional) |
-| `analyze semantic-prototype` | Build experimental window embeddings and semantic neighbors |
+| `analyze semantic-prototype` | Build experimental window embeddings, thresholded semantic neighbors, and minimal semantic clusters |
 | `analyze semantic-preview` | Read one semantic window and its nearest neighbors in terminal |
 
 ---
@@ -475,6 +475,12 @@ uv run llm-logparser analyze semantic-prototype \
   [--backend deterministic-hash|ollama] \
   [--model <local-embedding-model>] \
   [--top-k <N>] \
+  [--min-score <float>] \
+  [--sqlite-db <path/to/analysis.db>] \
+  [--candidate-window-days <N>] \
+  [--candidate-min-chars <N>] \
+  [--candidate-min-assistant-ratio <float>] \
+  [--candidate-same-thread allow|prefer|only|exclude] \
   [--overwrite]
 ```
 
@@ -482,6 +488,7 @@ This command currently produces:
 
 * `window_embeddings.jsonl`
 * `window_neighbors.jsonl`
+* `window_clusters.jsonl`
 
 These outputs are:
 
@@ -521,6 +528,15 @@ analyze:
 ```
 
 The semantic layer is not yet positioned as a stable topic system.
+
+Current L3 prototype behavior is intentionally limited:
+
+* `window_neighbors.jsonl` still stores nearest-neighbor links, but those links are now filtered by `--min-score` before emission
+* when `--sqlite-db` is provided, candidate windows are narrowed with `analysis.db` before similarity scoring instead of using a global dense comparison for every pair
+* `window_clusters.jsonl` groups windows by connected components over retained mutual neighbor links
+* clusters are structural groupings only; they are not canonical topics, do not carry labels, and do not model lifecycle state or summaries
+
+If `--sqlite-db` is omitted, `semantic-prototype` keeps its original all-windows fallback path and computes neighbors directly from the full embedded window set.
 
 ### Analyze Semantic Preview
 

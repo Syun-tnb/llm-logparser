@@ -50,15 +50,21 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: Root directory containing per-provider artifact directories
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
-  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl and window_neighbors.jsonl artifacts from message_windows.jsonl
+  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl
   cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl file or a directory containing message_windows.jsonl files
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
+  cli.analyze.semantic_prototype.opt.min_score.help: Minimum cosine similarity score required before a neighbor is emitted
   cli.analyze.semantic_prototype.opt.max_input_bytes.help: Safe UTF-8 byte budget for one embedding request before deterministic chunking is applied
   cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks
   cli.analyze.semantic_prototype.opt.aggregate.help: Aggregation method for chunk embeddings
-  cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl and window_neighbors.jsonl artifacts
+  cli.analyze.semantic_prototype.opt.sqlite_db.help: Optional path to analysis.db for SQLite-assisted candidate generation
+  cli.analyze.semantic_prototype.opt.candidate_window_days.help: Candidate retrieval window in days around each target window timestamp when SQLite mode is active
+  cli.analyze.semantic_prototype.opt.candidate_min_chars.help: Minimum candidate window character count when SQLite mode is active
+  cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help: Minimum assistant_messages / message_count ratio for candidate source threads in SQLite mode
+  cli.analyze.semantic_prototype.opt.candidate_same_thread.help: Same-thread candidate policy in SQLite mode (allow, prefer, only, exclude)
+  cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts
   cli.analyze.semantic_preview.help: Render a human-readable preview for one semantic window and its stored neighbors
   cli.analyze.semantic_preview.opt.input.help: Provider artifact root containing message_windows.jsonl and window_neighbors.jsonl files
   cli.analyze.semantic_preview.opt.thread.help: Conversation/thread ID to preview
@@ -169,6 +175,7 @@ messages:
   runtime.analyze.semantic_prototype.generating_embeddings: "semantic prototype: generating embeddings"
   runtime.analyze.semantic_prototype.embeddings_complete: "semantic prototype: embeddings complete ({windows} windows)"
   runtime.analyze.semantic_prototype.building_neighbors: "semantic prototype: building neighbors"
+  runtime.analyze.semantic_prototype.building_clusters: "semantic prototype: building clusters"
   runtime.analyze.semantic_prototype.neighbor_progress: "semantic prototype: neighbors {count} / {total}"
   runtime.analyze.semantic_prototype.writing_artifacts: "semantic prototype: writing artifacts"
   runtime.analyze.semantic_prototype_written: "semantic prototype artifacts written for {threads} thread(s) ({windows} windows, model={model})"

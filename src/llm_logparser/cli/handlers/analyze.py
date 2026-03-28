@@ -178,12 +178,18 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
         result = analyze_semantic_prototype(
             input_path,
             top_k=args.top_k,
+            min_score=args.min_score,
             overwrite=args.overwrite,
             backend_name=args.backend,
             model=args.model,
             max_input_bytes=args.max_input_bytes,
             chunk_overlap_bytes=args.chunk_overlap_bytes,
             aggregate=args.aggregate,
+            sqlite_db=args.sqlite_db,
+            candidate_window_days=args.candidate_window_days,
+            candidate_min_chars=args.candidate_min_chars,
+            candidate_min_assistant_ratio=args.candidate_min_assistant_ratio,
+            candidate_same_thread=args.candidate_same_thread,
             backend_options=getattr(args, "backend_options", None),
             progress=logger.info,
         )

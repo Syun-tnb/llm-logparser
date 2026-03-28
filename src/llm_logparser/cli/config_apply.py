@@ -303,6 +303,49 @@ def apply_profile_defaults(
         _set_if_not_cli(
             args,
             explicit_flags,
+            "min_score",
+            ("--min-score",),
+            semantic.min_score,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "sqlite_db",
+            ("--sqlite-db",),
+            semantic.sqlite_db,
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_window_days",
+            ("--candidate-window-days",),
+            semantic.candidate_window_days,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_min_chars",
+            ("--candidate-min-chars",),
+            semantic.candidate_min_chars,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_min_assistant_ratio",
+            ("--candidate-min-assistant-ratio",),
+            semantic.candidate_min_assistant_ratio,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_same_thread",
+            ("--candidate-same-thread",),
+            semantic.candidate_same_thread,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
             "backend_options",
             (),
             semantic.backend_options.to_dict() or None,

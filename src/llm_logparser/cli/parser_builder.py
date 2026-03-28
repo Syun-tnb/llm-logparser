@@ -368,6 +368,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.top_k.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
+        "--min-score",
+        dest="min_score",
+        type=float,
+        default=0.0,
+        help=_("cli.analyze.semantic_prototype.opt.min_score.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
         "--max-input-bytes",
         dest="max_input_bytes",
         type=int,
@@ -383,6 +390,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--aggregate",
         choices=["mean"],
         help=_("cli.analyze.semantic_prototype.opt.aggregate.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--sqlite-db",
+        dest="sqlite_db",
+        type=Path,
+        help=_("cli.analyze.semantic_prototype.opt.sqlite_db.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-window-days",
+        dest="candidate_window_days",
+        type=int,
+        default=30,
+        help=_("cli.analyze.semantic_prototype.opt.candidate_window_days.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-min-chars",
+        dest="candidate_min_chars",
+        type=int,
+        default=0,
+        help=_("cli.analyze.semantic_prototype.opt.candidate_min_chars.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-min-assistant-ratio",
+        dest="candidate_min_assistant_ratio",
+        type=float,
+        default=0.0,
+        help=_("cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-same-thread",
+        dest="candidate_same_thread",
+        choices=["allow", "prefer", "only", "exclude"],
+        default="allow",
+        help=_("cli.analyze.semantic_prototype.opt.candidate_same_thread.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
         "--overwrite",

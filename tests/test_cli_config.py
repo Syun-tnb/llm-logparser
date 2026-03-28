@@ -440,6 +440,47 @@ def test_legacy_semantic_embedding_token_keys_emit_deprecation_warnings(tmp_path
     assert "use profiles.default.analyze.semantic_prototype.embedding.chunk_overlap_bytes instead" in caplog.text
 
 
+def test_semantic_candidate_generation_keys_are_loaded_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    analyze:",
+                "      semantic_prototype:",
+                "        min_score: 0.75",
+                "        sqlite_db: artifacts/openai/analysis.db",
+                "        candidate_window_days: 14",
+                "        candidate_min_chars: 120",
+                "        candidate_min_assistant_ratio: 0.4",
+                "        candidate_same_thread: prefer",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+    semantic = config.profiles["default"].analyze.semantic_prototype
+
+    assert semantic.min_score == 0.75
+    assert semantic.sqlite_db == "artifacts/openai/analysis.db"
+    assert semantic.candidate_window_days == 14
+    assert semantic.candidate_min_chars == 120
+    assert semantic.candidate_min_assistant_ratio == 0.4
+    assert semantic.candidate_same_thread == "prefer"
+    assert config.to_dict()["profiles"]["default"]["analyze"]["semantic_prototype"] == {
+        "min_score": 0.75,
+        "sqlite_db": "artifacts/openai/analysis.db",
+        "candidate_window_days": 14,
+        "candidate_min_chars": 120,
+        "candidate_min_assistant_ratio": 0.4,
+        "candidate_same_thread": "prefer",
+    }
+
+
 def test_unsupported_config_schema_version_exits(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

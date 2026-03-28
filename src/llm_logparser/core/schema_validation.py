@@ -73,6 +73,7 @@ THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
 MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
 WINDOW_EMBEDDING_SCHEMA_NAME = "window_embedding.schema.json"
 WINDOW_NEIGHBORS_SCHEMA_NAME = "window_neighbors.schema.json"
+WINDOW_CLUSTERS_SCHEMA_NAME = "window_clusters.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +249,17 @@ def load_window_neighbors_validator(
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / WINDOW_NEIGHBORS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_window_clusters_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for window_clusters.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / WINDOW_CLUSTERS_SCHEMA_NAME
     return _make_validator(schema_path)
 
 
