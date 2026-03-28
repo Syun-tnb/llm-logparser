@@ -80,6 +80,16 @@ messages:
   cli.analyze.semantic_preview.opt.include_text.help: Include reconstructed window text in the preview (use --no-include-text to disable)
   cli.analyze.semantic_preview.opt.max_chars.help: Maximum number of characters to show per window before truncation
   cli.analyze.semantic_preview.opt.show_meta.help: Include metadata blocks in the preview (use --no-show-meta to disable)
+  cli.analyze.semantic_topic.help: Generate experimental L4 topic labels and summaries from stored L3 clusters using a local Ollama model
+  cli.analyze.semantic_topic.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
+  cli.analyze.semantic_topic.opt.model.help: Local Ollama generation model identifier
+  cli.analyze.semantic_topic.opt.cluster_id.help: Generate one topic for the specified cluster only
+  cli.analyze.semantic_topic.opt.top_clusters.help: Number of clusters to label when --cluster-id is not provided
+  cli.analyze.semantic_topic.opt.min_cluster_size.help: Minimum cluster size to include before prompting the local model
+  cli.analyze.semantic_topic.opt.cross_thread_only.help: Restrict topic generation to clusters spanning more than one conversation
+  cli.analyze.semantic_topic.opt.base_url.help: Base URL for the local Ollama server
+  cli.analyze.semantic_topic.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds
+  cli.analyze.semantic_topic.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.

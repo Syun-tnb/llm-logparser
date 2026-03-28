@@ -792,6 +792,16 @@ Experimental prototype note:
   a default cluster list, one cluster in detail, one conversation's cluster
   participation, or the older single-window neighbor preview, all without
   writing new files
+- `analyze semantic-topic` is a read-only L4 consumer of the same L3
+  artifacts; it reads `message_windows.jsonl` and `window_clusters.jsonl`,
+  selects representative windows from each cluster, and asks a local Ollama
+  model for a label, short summary, and keywords
+- `semantic-topic` does not create a new artifact format under `artifacts/`;
+  topic output is ephemeral CLI output only, so canonical artifact truth
+  remains in the deterministic lower layers plus the minimal L3 cluster rows
+- the current production topic prompt was selected from the repository's
+  prompt experiment harness under `./tmp`; runtime does not depend on those
+  tmp files and instead uses the fixed winning settings directly
 
 This separation ensures that:
 

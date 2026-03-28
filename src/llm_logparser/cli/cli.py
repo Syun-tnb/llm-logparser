@@ -23,6 +23,7 @@ from llm_logparser.cli.handlers import (
     run_analyze_metrics,
     run_analyze_semantic_preview,
     run_analyze_semantic_prototype,
+    run_analyze_semantic_topic,
     run_analyze_sqlite_build,
     run_analyze_stats,
     run_analyze_tokens,
@@ -184,6 +185,7 @@ def _prompt_missing_required(
             "sqlite-build",
             "semantic-prototype",
             "semantic-preview",
+            "semantic-topic",
         }
     ):
         if args.input is None:
@@ -231,6 +233,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_semantic_prototype(args, logger)
         elif args.analyze_command == "semantic-preview":
             run_analyze_semantic_preview(args, logger)
+        elif args.analyze_command == "semantic-topic":
+            run_analyze_semantic_topic(args, logger)
     elif args.command == "chain":
         run_chain(args, logger)
     elif args.command == "viewer":

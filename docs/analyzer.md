@@ -571,12 +571,22 @@ deterministic and model-derived capabilities.
   `--conversation-id` and `--window` are supplied together. `--json` switches
   any of those modes to machine-readable output for downstream tooling.
 
+- `semantic-topic` is an experimental L4 read-only layer on top of stored L3
+  cluster artifacts: it reads `message_windows.jsonl` plus
+  `window_clusters.jsonl`, selects representative windows per cluster, and
+  sends them to a local Ollama generation model for a short label, summary,
+  and keywords. Production keeps the prompt/template fixed from the repository
+  prompt-selection experiment under `./tmp`: Prompt B, an 8-window cap per
+  cluster, and 300-character normalized window excerpts. It does not write any
+  new artifacts and does not alter L3 clustering.
+
 Current limitations remain explicit:
 
 - semantic clusters are not canonical topics
-- no topic labels are generated
+- `semantic-topic` labels and summaries are ephemeral CLI output, not stored
+  artifact truth
 - no lifecycle state is inferred
-- no summaries are produced
+- no cross-cluster topic reasoning is performed
 
 Key `semantic-prototype` flags:
 
@@ -605,6 +615,18 @@ Key `semantic-preview` flags:
   with `--window`, switches to the older single-window neighbor preview
 - `--json`: emits structured machine-readable output instead of pretty text
 
+Key `semantic-topic` flags:
+
+- `--model`: required local Ollama generation model
+- `--cluster-id`: generate a topic for one cluster only
+- `--top-clusters`: limit the number of clusters processed when not targeting a
+  single cluster
+- `--min-cluster-size`: skip very small clusters before prompting the local
+  model
+- `--cross-thread-only`: limit topic generation to clusters spanning multiple
+  conversations
+- `--json`: emit structured machine-readable output instead of pretty text
+
 Parse-time windowing controls:
 
 - `parse.message_windows.size` / `chain.message_windows.size`: number of
@@ -613,9 +635,9 @@ Parse-time windowing controls:
   between emitted windows; omitting it preserves the legacy non-overlapping
   behavior by reusing the window size
 
-- L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
-  are conceptual future extensions and remain opt-in, model-dependent, and
-  potentially non-deterministic
+- broader lifecycle-oriented L4 commands (`semantic-topics`, `topic-summary`,
+  `topic-timeline`, `llm`) remain conceptual future extensions beyond the
+  current read-only `semantic-topic` experiment
 
 Design constraints:
 

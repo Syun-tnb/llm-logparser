@@ -234,3 +234,29 @@ def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
         raise SystemExit(2) from None
 
     write_or_print(rendered, None)
+
+
+def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_topic import (
+        SemanticTopicError,
+        render_semantic_topic,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        rendered = render_semantic_topic(
+            input_root=input_root,
+            model=args.model,
+            cluster_id=args.cluster_id,
+            top_clusters=args.top_clusters,
+            min_cluster_size=args.min_cluster_size,
+            cross_thread_only=args.cross_thread_only,
+            base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
+            json_output=args.json_output,
+        )
+    except SemanticTopicError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    write_or_print(rendered, None)

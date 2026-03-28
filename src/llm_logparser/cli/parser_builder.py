@@ -526,6 +526,66 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_preview.opt.show_meta.help"),
     )
 
+    analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
+        "semantic-topic",
+        help=_("cli.analyze.semantic_topic.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_topic.opt.input.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--model",
+        required=True,
+        help=_("cli.analyze.semantic_topic.opt.model.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--cluster-id",
+        dest="cluster_id",
+        help=_("cli.analyze.semantic_topic.opt.cluster_id.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--top-clusters",
+        dest="top_clusters",
+        type=int,
+        default=20,
+        help=_("cli.analyze.semantic_topic.opt.top_clusters.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--min-cluster-size",
+        dest="min_cluster_size",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topic.opt.min_cluster_size.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--cross-thread-only",
+        dest="cross_thread_only",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic.opt.cross_thread_only.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.semantic_topic.opt.base_url.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.semantic_topic.opt.timeout_seconds.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic.opt.json.help"),
+    )
+
     chain_cmd = subparsers.add_parser(
         "chain",
         help=_("cli.chain.help"),

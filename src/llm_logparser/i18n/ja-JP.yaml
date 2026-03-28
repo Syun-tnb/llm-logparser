@@ -84,6 +84,16 @@ messages:
   cli.analyze.semantic_preview.opt.include_text.help: プレビューに復元テキストを含める (`--no-include-text` で無効化)
   cli.analyze.semantic_preview.opt.max_chars.help: 各 window で切り詰める前に表示する最大文字数
   cli.analyze.semantic_preview.opt.show_meta.help: プレビューにメタデータブロックを含める (`--no-show-meta` で無効化)
+  cli.analyze.semantic_topic.help: 保存済み L3 cluster からローカル Ollama モデルで実験的な L4 topic label / summary を生成する
+  cli.analyze.semantic_topic.opt.input.help: message_windows.jsonl と window_clusters.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_topic.opt.model.help: 使用するローカル Ollama 生成モデル ID
+  cli.analyze.semantic_topic.opt.cluster_id.help: 指定した cluster 1 件だけ topic を生成する
+  cli.analyze.semantic_topic.opt.top_clusters.help: --cluster-id 未指定時に label 生成する cluster 数
+  cli.analyze.semantic_topic.opt.min_cluster_size.help: ローカルモデルに渡す前に含める最小 cluster サイズ
+  cli.analyze.semantic_topic.opt.cross_thread_only.help: 複数 conversation にまたがる cluster のみに topic 生成を制限する
+  cli.analyze.semantic_topic.opt.base_url.help: ローカル Ollama サーバーの base URL
+  cli.analyze.semantic_topic.opt.timeout_seconds.help: cluster ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.semantic_topic.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/output/<provider>/... 配下になる
   cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む
   cli.chain.opt.parsed_root.help: 既に parsed スレッド (…/thread-*/parsed.jsonl) を含む任意のルートディレクトリ。指定した場合は parse フェーズをスキップする

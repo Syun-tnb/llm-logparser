@@ -12,9 +12,11 @@ read, search, and analyze — without sending anything to the cloud.
 3. **Analyze** your conversations: message counts, token usage, safety metrics, timelines, and more
 
 Experimental higher-layer analysis is also available as an additive, local-first
-preview path: window embeddings, semantic neighbors, and a read-only
-`semantic-preview` renderer. These semantic features are non-canonical,
-rebuildable, and still intentionally conservative in scope.
+preview path: window embeddings, semantic neighbors, a read-only
+`semantic-preview` renderer, and an experimental `semantic-topic` layer that
+asks a local Ollama model for cluster labels and summaries. These semantic
+features are non-canonical, rebuildable, and still intentionally conservative
+in scope.
 
 Everything runs locally. No cloud. No telemetry. Your data stays on your machine.
 
@@ -278,7 +280,8 @@ llm-logparser analyze sqlite-build \
 | `analyze timeline` | See when you were most active |
 | `analyze sqlite-build` | Query large datasets with SQL (optional) |
 | `analyze semantic-prototype` | Build experimental window embeddings, thresholded semantic neighbors, and minimal semantic clusters |
-| `analyze semantic-preview` | Read one semantic window and its nearest neighbors in terminal |
+| `analyze semantic-preview` | Inspect stored semantic clusters, conversations, and windows in terminal |
+| `analyze semantic-topic` | Generate experimental topic labels and summaries from stored semantic clusters with a local Ollama model |
 
 ---
 
@@ -608,6 +611,35 @@ uv run llm-logparser analyze semantic-preview \
 `window_clusters.jsonl`, and optional `window_neighbors.jsonl`; it does not
 recompute embeddings or write new files. `--json` emits machine-readable output
 for downstream tooling.
+
+### Analyze Semantic Topic
+
+Generate experimental L4 topic labels and summaries from stored L3 clusters:
+
+```bash
+uv run llm-logparser analyze semantic-topic \
+  --input <provider-artifact-root> \
+  --model <ollama-model> \
+  [--top-clusters <N>] \
+  [--min-cluster-size <N>] \
+  [--cross-thread-only]
+```
+
+One cluster only:
+
+```bash
+uv run llm-logparser analyze semantic-topic \
+  --input <provider-artifact-root> \
+  --model <ollama-model> \
+  --cluster-id <cluster_id>
+```
+
+`semantic-topic` is read-only. It requires stored `message_windows.jsonl` and
+`window_clusters.jsonl`, does not recompute embeddings, and does not write any
+new artifacts. The current production prompt is fixed from the repository's
+tmp-based prompt experiment winner: Prompt B with an 8-window per-cluster cap
+and 300-character per-window truncation. `--json` emits the same result in a
+machine-readable form.
 
 ---
 

@@ -110,3 +110,22 @@ def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
     assert "--json" in help_text
     assert "--top-k" in help_text
     assert "--max-chars" in help_text
+
+
+def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-topic", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--model" in help_text
+    assert "--cluster-id" in help_text
+    assert "--top-clusters" in help_text
+    assert "--min-cluster-size" in help_text
+    assert "--cross-thread-only" in help_text
+    assert "--base-url" in help_text
+    assert "--timeout-seconds" in help_text
+    assert "--json" in help_text
