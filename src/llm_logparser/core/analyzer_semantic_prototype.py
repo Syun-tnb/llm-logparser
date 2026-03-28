@@ -4,7 +4,7 @@ import json
 import math
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ SUPPORTED_SAME_THREAD_POLICIES = frozenset(
     {"allow", "prefer", "only", "exclude"}
 )
 CLUSTER_EDGE_POLICY = "mutual-only"
+DEFAULT_MAX_SAME_THREAD_SHARED_MESSAGES = 1
 
 
 class SemanticPrototypeError(RuntimeError):
@@ -48,6 +49,7 @@ class MessageWindowRecord:
     ts_start: int | None
     ts_end: int | None
     text: str
+    message_ids: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class WindowEmbeddingRecord:
     embedding_model: str
     text_char_count: int
     embedding: tuple[float, ...]
+    message_ids: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,11 @@ def load_message_window_records(windows_path: Path) -> list[MessageWindowRecord]
                     provider_id=row["provider_id"],
                     conversation_id=row["conversation_id"],
                     window_id=row["window_id"],
+                    message_ids=tuple(
+                        str(message_id)
+                        for message_id in row.get("message_ids", [])
+                        if message_id is not None
+                    ),
                     ts_start=row.get("ts_start"),
                     ts_end=row.get("ts_end"),
                     text=row["text"],
@@ -166,6 +174,7 @@ def build_window_embedding_records(
                 provider_id=window.provider_id,
                 conversation_id=window.conversation_id,
                 window_id=window.window_id,
+                message_ids=window.message_ids,
                 ts_start=window.ts_start,
                 ts_end=window.ts_end,
                 embedding_model=backend.model_id,
@@ -640,6 +649,7 @@ def build_window_cluster_rows(
 
     nodes = [_window_key(record) for record in embeddings]
     node_set = set(nodes)
+    record_by_key = {_window_key(record): record for record in embeddings}
     neighbor_map: dict[WindowKey, set[WindowKey]] = {node: set() for node in nodes}
     for row in neighbor_rows:
         source = (row["provider_id"], row["conversation_id"], row["window_id"])
@@ -656,6 +666,10 @@ def build_window_cluster_rows(
     for source in nodes:
         for target in sorted(neighbor_map[source]):
             if source in neighbor_map.get(target, set()):
+                source_record = record_by_key[source]
+                target_record = record_by_key[target]
+                if not _cluster_edge_allowed(source_record, target_record):
+                    continue
                 adjacency[source].add(target)
                 adjacency[target].add(source)
 
@@ -694,6 +708,22 @@ def build_window_cluster_rows(
             }
 
     return [cluster_rows_by_key[_window_key(record)] for record in embeddings]
+
+
+def _cluster_edge_allowed(
+    source: WindowEmbeddingRecord,
+    target: WindowEmbeddingRecord,
+    *,
+    max_same_thread_shared_messages: int = DEFAULT_MAX_SAME_THREAD_SHARED_MESSAGES,
+) -> bool:
+    if source.conversation_id != target.conversation_id:
+        return True
+    if max_same_thread_shared_messages < 0:
+        return True
+    if not source.message_ids or not target.message_ids:
+        return True
+    shared_messages = len(set(source.message_ids) & set(target.message_ids))
+    return shared_messages <= max_same_thread_shared_messages
 
 
 def _write_jsonl_rows(path: Path, rows: list[dict[str, Any]]) -> Path:

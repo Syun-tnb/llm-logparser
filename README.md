@@ -540,7 +540,7 @@ Current L3 prototype behavior is intentionally limited:
 
 * `window_neighbors.jsonl` still stores nearest-neighbor links, but those links are now filtered by `--min-score` before emission
 * when `--sqlite-db` is provided, candidate windows are first narrowed with `analysis.db`, then compared symmetrically inside each deduplicated local candidate pool instead of using a global dense comparison for every pair
-* `window_clusters.jsonl` groups windows by connected components over retained mutual neighbor links
+* `window_clusters.jsonl` groups windows by connected components over retained mutual neighbor links; same-thread mutual edges are suppressed when the two windows share more than one underlying message
 * clusters are structural groupings only; they are not canonical topics, do not carry labels, and do not model lifecycle state or summaries
 
 If `--sqlite-db` is omitted, `semantic-prototype` keeps its original all-windows fallback path and computes neighbors directly from the full embedded window set.

@@ -22,6 +22,7 @@
   * can optionally use `analysis.db` for L2-backed candidate generation before similarity scoring
   * SQLite-assisted mode now performs symmetric all-pairs comparison inside each narrowed candidate pool
   * emits minimal mutual-link connected components as `window_clusters.jsonl`
+  * cluster construction now suppresses same-thread mutual edges when paired windows share more than one source message; the default was chosen from the repository artifact corpus because it sharply reduced sliding-window megaclusters without the extra fragmentation of a stricter zero-overlap rule
   * still does not perform topic labeling, lifecycle modeling, or summarization
 * Added experimental `analyze semantic-preview`:
   * reads stored `window_neighbors.jsonl` plus `message_windows.jsonl`

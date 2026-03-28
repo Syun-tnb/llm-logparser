@@ -231,6 +231,7 @@ def test_discover_and_load_message_window_records(tmp_path):
             ts_start=1,
             ts_end=2,
             text="alpha beta",
+            message_ids=("window-0001-m1",),
         ),
         MessageWindowRecord(
             source_path=windows_path,
@@ -240,6 +241,7 @@ def test_discover_and_load_message_window_records(tmp_path):
             ts_start=3,
             ts_end=4,
             text="beta gamma",
+            message_ids=("window-0002-m1",),
         ),
     ]
 
@@ -1208,6 +1210,237 @@ def test_build_window_cluster_rows_are_deterministic_and_mutual_only():
         ("conv-b", "cluster_000002", 1),
         ("conv-c", "cluster_000003", 1),
     ]
+
+
+def test_build_window_cluster_rows_suppresses_same_thread_edges_when_windows_share_multiple_messages():
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            ts_start=1,
+            ts_end=2,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("m1", "m2", "m3", "m4"),
+        ),
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0002",
+            ts_start=3,
+            ts_end=4,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("m3", "m4", "m5", "m6"),
+        ),
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-b",
+            window_id="window-0001",
+            ts_start=5,
+            ts_end=6,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("n1", "n2", "n3", "n4"),
+        ),
+    ]
+    neighbor_rows = [
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0001",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0002",
+                    "score": 0.99,
+                }
+            ],
+        },
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0002",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0001",
+                    "score": 0.99,
+                }
+            ],
+        },
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-b",
+            "window_id": "window-0001",
+            "embedding_model": "local/test",
+            "neighbor_count": 0,
+            "neighbors": [],
+        },
+    ]
+
+    rows = build_window_cluster_rows(embeddings, neighbor_rows)
+
+    assert [(row["conversation_id"], row["cluster_size"]) for row in rows] == [
+        ("conv-a", 1),
+        ("conv-a", 1),
+        ("conv-b", 1),
+    ]
+
+
+def test_build_window_cluster_rows_preserves_same_thread_edges_with_one_shared_message():
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0003",
+            ts_start=1,
+            ts_end=2,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("m1", "m2", "m3"),
+        ),
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0004",
+            ts_start=3,
+            ts_end=4,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("m3", "m4"),
+        ),
+    ]
+    neighbor_rows = [
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0003",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0004",
+                    "score": 0.98,
+                }
+            ],
+        },
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0004",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0003",
+                    "score": 0.98,
+                }
+            ],
+        },
+    ]
+
+    rows = build_window_cluster_rows(embeddings, neighbor_rows)
+
+    assert [row["cluster_size"] for row in rows] == [2, 2]
+
+
+def test_build_window_cluster_rows_falls_back_to_legacy_behavior_without_message_ids():
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            ts_start=1,
+            ts_end=2,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+        ),
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0002",
+            ts_start=3,
+            ts_end=4,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+        ),
+    ]
+    neighbor_rows = [
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0001",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0002",
+                    "score": 0.95,
+                }
+            ],
+        },
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0002",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0001",
+                    "score": 0.95,
+                }
+            ],
+        },
+    ]
+
+    rows = build_window_cluster_rows(embeddings, neighbor_rows)
+
+    assert [row["cluster_size"] for row in rows] == [2, 2]
 
 
 def test_analyze_semantic_prototype_cli_happy_path(tmp_path):

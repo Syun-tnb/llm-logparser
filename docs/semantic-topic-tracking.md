@@ -28,7 +28,9 @@ Implemented today:
 - opt-in sliding-window generation for `message_windows.jsonl`
 - optional L2-backed candidate generation via `analysis.db`
 - symmetric all-pairs comparison inside narrowed SQLite candidate pools
-- minimal connected-component clustering over retained mutual neighbor links
+- minimal connected-component clustering over retained mutual neighbor links,
+  with same-thread mutual edges suppressed when paired windows share more than
+  one source message
 
 Not implemented today:
 

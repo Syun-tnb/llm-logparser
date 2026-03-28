@@ -767,6 +767,11 @@ Experimental prototype note:
 - those outputs are non-canonical and intentionally limited to embeddings,
   thresholded nearest-neighbor structure, and minimal connected-component
   grouping over retained mutual links
+- cluster edge eligibility remains mutual-only, but same-thread mutual edges
+  are dropped when the paired windows share more than one source message; that
+  default was selected from the repository artifact corpus to reduce
+  sliding-window chaining while preserving slightly more useful links than a
+  stricter zero-overlap rule
 - `window_clusters.jsonl` rows use
   `src/llm_logparser/core/schemas/window_clusters.schema.json` and currently
   emit one deterministic membership row per source window with

@@ -543,8 +543,11 @@ deterministic and model-derived capabilities.
   embeddings generate, neighbors build, clusters build, and artifacts are
   written.
   Cluster construction is intentionally minimal: it converts retained mutual
-  neighbor links into undirected edges and writes connected-component
-  membership to `window_clusters.jsonl`.
+  neighbor links into undirected edges, suppresses same-thread mutual edges
+  when the paired windows share more than one source message, and writes
+  connected-component membership to `window_clusters.jsonl`. That overlap cap
+  was selected from the real artifact corpus because it reduced sliding-window
+  chaining without the extra fragmentation of a stricter zero-overlap rule.
   Backend/model selection is config- or CLI-owned: `backend` selects the
   runtime binding, `model` selects the embedding model identifier, and
   embedding chunking settings can be declared explicitly in config. Code keeps
