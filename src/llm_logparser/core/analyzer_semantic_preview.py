@@ -22,8 +22,11 @@ class WindowPreviewRecord:
     provider_id: str
     conversation_id: str
     window_id: str
+    message_ids: tuple[str, ...]
     message_count: int
     char_count: int
+    ts_start: int | None
+    ts_end: int | None
     roles: tuple[str, ...]
     text: str
 
@@ -94,8 +97,11 @@ def load_window_preview_index(input_root: Path) -> dict[WindowRef, WindowPreview
                 provider_id=row["provider_id"],
                 conversation_id=row["conversation_id"],
                 window_id=row["window_id"],
+                message_ids=tuple(row.get("message_ids", [])),
                 message_count=row["message_count"],
                 char_count=row["char_count"],
+                ts_start=row.get("ts_start"),
+                ts_end=row.get("ts_end"),
                 roles=tuple(row["roles"]),
                 text=row["text"],
             )
@@ -521,6 +527,19 @@ def _build_window_view_payload(
     if top_k is not None:
         neighbor_refs = neighbor_refs[:top_k]
 
+    empty_record = WindowPreviewRecord(
+        provider_id="",
+        conversation_id="",
+        window_id="",
+        message_ids=(),
+        message_count=0,
+        char_count=0,
+        ts_start=None,
+        ts_end=None,
+        roles=(),
+        text="",
+    )
+
     return {
         "view": "window",
         "target": {
@@ -540,11 +559,11 @@ def _build_window_view_payload(
                 "similarity_label": _similarity_label(neighbor.score),
                 "message_count": windows.get(
                     (neighbor.conversation_id, neighbor.window_id),
-                    WindowPreviewRecord("", "", "", 0, 0, (), ""),
+                    empty_record,
                 ).message_count,
                 "char_count": windows.get(
                     (neighbor.conversation_id, neighbor.window_id),
-                    WindowPreviewRecord("", "", "", 0, 0, (), ""),
+                    empty_record,
                 ).char_count,
                 "turn_count": (
                     estimate_turn_count(windows[(neighbor.conversation_id, neighbor.window_id)])

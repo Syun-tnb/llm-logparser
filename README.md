@@ -13,10 +13,10 @@ read, search, and analyze — without sending anything to the cloud.
 
 Experimental higher-layer analysis is also available as an additive, local-first
 preview path: window embeddings, semantic neighbors, a read-only
-`semantic-preview` renderer, and an experimental `semantic-topic` layer that
-asks a local Ollama model for cluster labels and summaries. These semantic
-features are non-canonical, rebuildable, and still intentionally conservative
-in scope.
+`semantic-preview` renderer, a formal `semantic-topics` artifact builder, and
+an experimental `semantic-topic` renderer that asks a local Ollama model for
+cluster labels and summaries. These semantic features are non-canonical,
+rebuildable, and still intentionally conservative in scope.
 
 Everything runs locally. No cloud. No telemetry. Your data stays on your machine.
 
@@ -281,6 +281,8 @@ llm-logparser analyze sqlite-build \
 | `analyze sqlite-build` | Query large datasets with SQL (optional) |
 | `analyze semantic-prototype` | Build experimental window embeddings, thresholded semantic neighbors, and minimal semantic clusters |
 | `analyze semantic-preview` | Inspect stored semantic clusters, conversations, and windows in terminal |
+| `analyze semantic-topics` | Build formal topic artifacts and explicit reverse-lookup membership rows from semantic clusters |
+| `analyze semantic-topic-explore` | Browse topic lists, topic timelines, reverse message lookup, and conversation/topic coverage |
 | `analyze semantic-topic` | Generate experimental topic labels and summaries from stored semantic clusters with a local Ollama model |
 
 ---
@@ -612,9 +614,81 @@ uv run llm-logparser analyze semantic-preview \
 recompute embeddings or write new files. `--json` emits machine-readable output
 for downstream tooling.
 
+### Analyze Semantic Topics
+
+Build formal topic artifacts under `<provider-artifact-root>/l3/semantic-topics/`:
+
+```bash
+uv run llm-logparser analyze semantic-topics \
+  --input <provider-artifact-root> \
+  [--model <ollama-model>] \
+  [--min-cluster-size <N>] \
+  [--cross-thread-only]
+```
+
+Target one cluster only:
+
+```bash
+uv run llm-logparser analyze semantic-topics \
+  --input <provider-artifact-root> \
+  --cluster-id <cluster_id> \
+  [--model <ollama-model>]
+```
+
+`semantic-topics` writes:
+
+- `topics.json`: forward topic index with topic metadata plus cluster/window/message references
+- `topic_membership.jsonl`: reverse lookup rows for `cluster -> topic`, `window -> topic`, and `message -> topic`
+
+Structural fields such as `topic_id`, `cluster_ids`, `window_refs`,
+`message_refs`, `conversation_ids`, `first_seen`, and `last_seen` are built
+from stored L3 artifacts. If `--model` is omitted, labels and summaries remain
+empty and the command still writes structural-only artifacts.
+
+### Analyze Semantic Topic Explore
+
+Browse the semantic topic index without any model calls:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root>
+```
+
+Topic detail:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --topic-id <topic_id>
+```
+
+Reverse lookup from one message:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --message-id <message_id>
+```
+
+Conversation-centric view:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --conversation-id <conversation_id>
+```
+
+`semantic-topic-explore` reads `topics.json`, `topic_membership.jsonl`, and
+`message_windows.jsonl`, builds in-memory indexes, and lets you navigate:
+
+- `topic -> conversations / windows / messages`
+- `message -> topic`
+- `topic -> timeline`
+
 ### Analyze Semantic Topic
 
-Generate experimental L4 topic labels and summaries from stored L3 clusters:
+Render experimental topic labels and summaries from stored L3 clusters without
+writing artifacts:
 
 ```bash
 uv run llm-logparser analyze semantic-topic \
@@ -639,7 +713,8 @@ uv run llm-logparser analyze semantic-topic \
 new artifacts. The current production prompt is fixed from the repository's
 tmp-based prompt experiment winner: Prompt B with an 8-window per-cluster cap
 and 300-character per-window truncation. `--json` emits the same result in a
-machine-readable form.
+machine-readable form. Use `semantic-topics` when you need durable topic
+artifacts and reverse lookup.
 
 ---
 

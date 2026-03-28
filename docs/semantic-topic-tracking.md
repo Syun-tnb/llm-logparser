@@ -32,15 +32,18 @@ Implemented today:
   with same-thread mutual edges suppressed when paired windows share more than
   one source message and cross-thread mutual edges kept only when they meet
   the current run's P75 cross-thread mutual score
+- formal topic artifacts under `l3/semantic-topics/`:
+  - `topics.json`
+  - `topic_membership.jsonl`
+- read-only topic rendering via `analyze semantic-topic`
 
 Not implemented today:
 
-- topic labels
 - lifecycle states (`active`, `dormant`, `resolved`)
-- summaries
 - decision extraction
 - open-question extraction
 - next-action extraction
+- cross-cluster topic merge logic
 
 The currently shipped L3 prototype should therefore be interpreted as an
 experimental semantic grouping foundation, not as a complete topic tracking
@@ -123,8 +126,7 @@ Recommended layout:
     l3/
       semantic-topics/
         topics.json
-        topic_summaries.md
-        topic_timeline.jsonl
+        topic_membership.jsonl
 ```
 
 ---
@@ -219,26 +221,26 @@ State assignment is interpretive rather than canonical. A topic can move from
 
 ---
 
-# 6. Topic Metadata (Future)
+# 6. Topic Metadata
 
 Each topic artifact should capture both structural references and high-level
 semantic summaries.
 
-Recommended fields:
+Current formal fields:
 
 | Field | Description |
 | --- | --- |
 | `topic_id` | Synthetic topic identifier; deterministic when feasible under the same inputs and configuration |
-| `summary` | Short human-readable description of the topic |
-| `state` | `active`, `dormant`, or `resolved` |
+| `label` | Optional short human-readable label |
+| `summary` | Optional short human-readable description of the topic |
 | `first_seen` | Earliest associated timestamp |
 | `last_seen` | Latest associated timestamp |
-| `related_messages` | Canonical message identifiers or stable analyzer-generated row keys |
-| `related_threads` | Set of thread or conversation identifiers touched by the topic |
-| `decisions_made` | Short extracted list of conclusions or accepted choices |
-| `open_questions` | Outstanding questions, uncertainties, or blockers |
-| `next_actions` | Follow-up work implied or stated in the messages |
-| `last_updated` | Timestamp when the topic artifact was last regenerated |
+| `cluster_ids` | Source L3 cluster identifiers |
+| `window_refs` | Source window references |
+| `message_refs` | Source message references |
+| `conversation_ids` | Set of conversations touched by the topic |
+| `keywords` | Optional local-model keyword list |
+| `confidence` | Optional model confidence |
 
 Additional implementation metadata is also recommended:
 
@@ -250,6 +252,15 @@ Additional implementation metadata is also recommended:
 | `source_inputs` | Canonical or lower-layer inputs used to build the topic |
 | `schema_version` | Version of the topic artifact schema |
 | `reproducibility_note` | Brief note describing best-effort, non-deterministic behavior |
+
+Current production contract uses:
+
+- `membership_mode = cluster-is-topic-v1`
+- one current topic record per L3 cluster
+- deterministic `topic_id` derived from provider ID plus sorted window anchors
+
+This keeps the first formal topic artifact pass reversible without adding
+speculative cross-cluster merge logic.
 
 ## Topic Identifier Guidance
 
@@ -271,30 +282,27 @@ thresholds, or clustering parameters change.
 ```json
 {
   "topic_id": "topic_7f2c9e4b",
-  "summary": "Semantic Topic Tracking documentation and L3 architecture design",
-  "state": "active",
+  "label": "Semantic Topic Tracking",
+  "summary": "Documentation and architecture design work for the L3 semantic topic layer.",
   "first_seen": "2026-03-14T02:18:11Z",
   "last_seen": "2026-03-24T08:42:05Z",
-  "related_messages": [
-    "msg_00192",
-    "msg_00201",
-    "msg_00444"
+  "cluster_ids": [
+    "cluster_000123"
   ],
-  "related_threads": [
+  "message_refs": [
+    { "conversation_id": "thread-a1b2", "message_id": "msg_00192" },
+    { "conversation_id": "thread-a1b2", "message_id": "msg_00201" },
+    { "conversation_id": "thread-c9d0", "message_id": "msg_00444" }
+  ],
+  "conversation_ids": [
     "thread-a1b2",
     "thread-c9d0"
   ],
-  "decisions_made": [
-    "L3 will remain additive and non-canonical",
-    "Primary outputs will be dataset-scoped"
-  ],
-  "open_questions": [
-    "How should topic state aging thresholds be configured?"
-  ],
-  "next_actions": [
-    "Finalize the public documentation page"
-  ],
-  "last_updated": "2026-03-24T09:10:00Z"
+  "keywords": [
+    "L3",
+    "semantic topics",
+    "artifact design"
+  ]
 }
 ```
 
@@ -455,51 +463,45 @@ when users need it.
 
 Semantic Topic Tracking should produce separate derived artifacts.
 
-Recommended outputs:
+Current implemented outputs:
 
 ## 9.1 `topics.json`
 
 Primary structured artifact containing the current topic set and associated
-metadata.
+metadata. This is the forward index.
 
-Typical contents:
+Current contents:
 
-- topic records
-- lifecycle fields
-- related message and thread references
-- derived summaries
-- provenance metadata
+- deterministic `topic_id`
+- source `cluster_ids`
+- source `window_refs`
+- source `message_refs`
+- `conversation_ids`
+- structural time bounds (`first_seen`, `last_seen`)
+- optional local-model fields (`label`, `summary`, `keywords`, `confidence`)
+- generation metadata explaining whether the run was structural-only or
+  model-enriched
 
-## 9.2 `topic_summaries.md`
+## 9.2 `topic_membership.jsonl`
 
-Human-readable overview of the tracked topics.
+Normalized reverse-lookup artifact.
 
-Typical contents:
+Current contents:
 
-- one section per topic
-- short summary
-- state
-- latest activity
-- decisions made
-- open questions
-- next actions
+- one row per `cluster`, `window`, or `message` membership edge
+- `topic_id`
+- `provider_id`
+- `conversation_id`
+- `cluster_id`
+- `window_id`
+- `message_id`
 
-This artifact is intended for inspection, review, and repository-friendly
-documentation workflows.
+This makes all of these explicit:
 
-## 9.3 `topic_timeline.jsonl`
-
-Chronological event stream for topic evolution.
-
-Typical contents:
-
-- topic created or first detected
-- topic resumed
-- topic state changed
-- topic merged or split
-- topic resolved
-
-This artifact is intended for downstream analysis, visualization, or GUI use.
+- `topic -> clusters / windows / messages` via `topics.json`
+- `cluster -> topic` via `membership_type=cluster`
+- `window -> topic` via `membership_type=window`
+- `message -> topic` via `membership_type=message`
 
 ---
 
@@ -507,12 +509,11 @@ This artifact is intended for downstream analysis, visualization, or GUI use.
 
 L3 commands should remain clearly separated from deterministic L1/L2 commands.
 
-Conceptual commands:
+Current implemented commands:
 
 ```text
 llm-logparser analyze semantic-topics <input>
-llm-logparser analyze topic-summary <topics.json>
-llm-logparser analyze topic-timeline <topics.json>
+llm-logparser analyze semantic-topic <input>
 ```
 
 Example usage:
@@ -521,19 +522,16 @@ Example usage:
 llm-logparser analyze semantic-topics ./out/openai
 ```
 
-```bash
-llm-logparser analyze topic-summary ./out/openai/l3/semantic-topics/topics.json
-```
-
-```bash
-llm-logparser analyze topic-timeline ./out/openai/l3/semantic-topics/topics.json
-```
-
 Command design expectations:
 
 - `semantic-topics` builds or refreshes the topic artifact set
-- `topic-summary` renders a readable summary view from existing L3 artifacts
-- `topic-timeline` renders or exports a topic-level temporal view
+- `semantic-topic` renders a readable label/summary view from existing L3
+  cluster artifacts without writing topic artifacts
+
+Still future:
+
+- `topic-summary`
+- `topic-timeline`
 
 The exact flag set is intentionally left open. The important boundary is that
 L3 commands remain opt-in and do not alter deterministic artifacts.
@@ -595,9 +593,15 @@ truth about why every message exists.
 # 13. Summary
 
 Semantic Topic Tracking (L3) introduces a higher-level semantic view of
-conversation history. It groups related messages across threads, tracks topic
-lifecycle over time, and surfaces decisions, unresolved questions, and next
-actions that thread-based analysis alone cannot reliably recover.
+conversation history. The current shipped boundary now includes formal
+reversible topic artifacts:
+
+- `topics.json` for forward topic lookup
+- `topic_membership.jsonl` for reverse lookup
+
+Current production stops short of lifecycle modeling, decision extraction, and
+cross-cluster topic merging, but it already makes topic membership readable,
+queryable, rebuildable, and reversible.
 
 It is intentionally optional, additive, non-canonical, and best-effort. Its
 role is to make fragmented conversation data operationally useful without

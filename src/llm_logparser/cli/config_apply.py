@@ -159,7 +159,13 @@ def apply_profile_defaults(
         or (
             args.command == "analyze"
             and getattr(args, "analyze_command", None)
-            in {"semantic-prototype", "semantic-preview", "semantic-topic"}
+            in {
+                "semantic-prototype",
+                "semantic-preview",
+                "semantic-topic",
+                "semantic-topics",
+                "semantic-topic-explore",
+            }
         )
     ) and not cli_provided(explicit_flags, "--input"):
         candidates = _input_candidates(profile, args.command, base_dir)

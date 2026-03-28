@@ -90,6 +90,20 @@ messages:
   cli.analyze.semantic_topic.opt.base_url.help: Base URL for the local Ollama server
   cli.analyze.semantic_topic.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds
   cli.analyze.semantic_topic.opt.json.help: Emit machine-readable JSON instead of pretty text
+  cli.analyze.semantic_topics.help: Build formal semantic topic artifacts with forward and reverse lookup from stored L3 clusters
+  cli.analyze.semantic_topics.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
+  cli.analyze.semantic_topics.opt.model.help: Optional local Ollama generation model. Omit for structural-only topic artifacts.
+  cli.analyze.semantic_topics.opt.cluster_id.help: Build artifacts for one cluster only
+  cli.analyze.semantic_topics.opt.min_cluster_size.help: Minimum cluster size to include in the generated topic set
+  cli.analyze.semantic_topics.opt.cross_thread_only.help: Restrict the generated topic set to clusters spanning more than one conversation
+  cli.analyze.semantic_topics.opt.base_url.help: Base URL for the local Ollama server
+  cli.analyze.semantic_topics.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds when --model is used
+  cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
+  cli.analyze.semantic_topic_explore.opt.input.help: Artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl
+  cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline
+  cli.analyze.semantic_topic_explore.opt.message_id.help: Reverse lookup the topic or topics containing one message ID
+  cli.analyze.semantic_topic_explore.opt.conversation_id.help: Show topics that appear in one conversation/thread (also accepted as --thread)
+  cli.analyze.semantic_topic_explore.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.

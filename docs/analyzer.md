@@ -444,7 +444,7 @@ thread-<conversation_id>/
 <provider>/
     analysis.db
     l3/
-      semantic-topics/  # future cross-thread semantic topic artifacts
+      semantic-topics/  # current cross-thread semantic topic artifacts
     l4/   # future API-derived outputs
     gui/  # future GUI-oriented cache or index artifacts
 ```
@@ -452,7 +452,7 @@ thread-<conversation_id>/
 In this model:
 
 - the thread directory root remains for deterministic artifacts
-- provider-root `l3/semantic-topics/` is the intended place for future
+- provider-root `l3/semantic-topics/` is the current place for formal
   cross-thread semantic topic artifacts
 - `l4/` is the intended place for future API-derived outputs
 - provider-root `gui/` is the intended place for GUI-specific cache/index data
@@ -476,12 +476,14 @@ llm-logparser analyze metrics ...
 llm-logparser analyze sqlite-build ...
 llm-logparser analyze semantic-prototype ...
 llm-logparser analyze semantic-preview ...
+llm-logparser analyze semantic-topics ...
+llm-logparser analyze semantic-topic ...
+llm-logparser analyze semantic-topic-explore ...
 ```
 
 Conceptual future modes:
 
 ```
-llm-logparser analyze semantic-topics ...
 llm-logparser analyze topic-summary ...
 llm-logparser analyze topic-timeline ...
 llm-logparser analyze llm ...
@@ -498,7 +500,9 @@ Possible modes:
 | sqlite-build | L2 |
 | semantic-prototype | L3 prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
-| semantic-topics | L3 (conceptual / future) |
+| semantic-topics | L3 topic artifact builder (experimental) |
+| semantic-topic | L3/L4 topic renderer (experimental) |
+| semantic-topic-explore | L3/L4 topic navigation UX (experimental) |
 | topic-summary | L3 (conceptual / future) |
 | topic-timeline | L3 (conceptual / future) |
 | llm | L4 (conceptual / future) |
@@ -580,11 +584,27 @@ deterministic and model-derived capabilities.
   cluster, and 300-character normalized window excerpts. It does not write any
   new artifacts and does not alter L3 clustering.
 
+- `semantic-topics` is the formal L3/L4 boundary artifact builder: it reads
+  stored `message_windows.jsonl` plus `window_clusters.jsonl` and writes
+  provider-scoped artifacts under `l3/semantic-topics/`:
+  `topics.json` as the forward topic index and `topic_membership.jsonl` as the
+  reverse lookup index. Current membership is intentionally conservative:
+  one topic per L3 cluster (`cluster-is-topic-v1`). Structural fields are
+  always written; model-derived fields are added only when `--model` is
+  supplied.
+
+- `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
+  it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`
+  and builds in-memory indexes for:
+  `topic -> members`, `message -> topic`, and `conversation -> topics`.
+  It supports a default topic list, topic detail with timeline, reverse lookup
+  from `message_id`, and conversation-centric topic grouping.
+
 Current limitations remain explicit:
 
 - semantic clusters are not canonical topics
-- `semantic-topic` labels and summaries are ephemeral CLI output, not stored
-  artifact truth
+- topic membership is currently `1 topic = 1 L3 cluster`; no cross-cluster
+  merge logic is applied yet
 - no lifecycle state is inferred
 - no cross-cluster topic reasoning is performed
 
@@ -627,6 +647,25 @@ Key `semantic-topic` flags:
   conversations
 - `--json`: emit structured machine-readable output instead of pretty text
 
+Key `semantic-topics` flags:
+
+- `--model`: optional local Ollama generation model; omit it to write
+  structural-only artifacts
+- `--cluster-id`: build artifacts for one cluster only
+- `--min-cluster-size`: skip very small clusters before artifact generation
+- `--cross-thread-only`: limit artifact generation to multi-conversation
+  clusters
+- `--base-url` / `--timeout-seconds`: control the local Ollama endpoint when
+  `--model` is used
+
+Key `semantic-topic-explore` flags:
+
+- `--topic-id`: show one topic in detail, including a chronological timeline
+  over its windows
+- `--message-id`: reverse lookup one message into one or more topics
+- `--conversation-id`: show all topics that appear in one conversation
+- `--json`: emit structured machine-readable output instead of pretty text
+
 Parse-time windowing controls:
 
 - `parse.message_windows.size` / `chain.message_windows.size`: number of
@@ -635,9 +674,9 @@ Parse-time windowing controls:
   between emitted windows; omitting it preserves the legacy non-overlapping
   behavior by reusing the window size
 
-- broader lifecycle-oriented L4 commands (`semantic-topics`, `topic-summary`,
-  `topic-timeline`, `llm`) remain conceptual future extensions beyond the
-  current read-only `semantic-topic` experiment
+- broader lifecycle-oriented follow-ups (`topic-summary`, `topic-timeline`,
+  `llm`) remain conceptual future extensions beyond the current
+  `semantic-topics` artifact builder and `semantic-topic` renderer
 
 Design constraints:
 

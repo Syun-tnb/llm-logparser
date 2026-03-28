@@ -796,9 +796,28 @@ Experimental prototype note:
   artifacts; it reads `message_windows.jsonl` and `window_clusters.jsonl`,
   selects representative windows from each cluster, and asks a local Ollama
   model for a label, short summary, and keywords
-- `semantic-topic` does not create a new artifact format under `artifacts/`;
-  topic output is ephemeral CLI output only, so canonical artifact truth
-  remains in the deterministic lower layers plus the minimal L3 cluster rows
+- `analyze semantic-topics` is the formal topic artifact builder for that same
+  boundary; it writes provider-scoped artifacts under
+  `<provider-root>/l3/semantic-topics/`
+- `topics.json` is the forward topic index: one current topic record per L3
+  cluster, with deterministic `topic_id`, structural references back to
+  clusters/windows/messages, conversation coverage, time bounds, and optional
+  model-derived label / summary / keywords
+- `topic_membership.jsonl` is the reverse lookup index: it emits explicit
+  `membership_type=cluster|window|message` rows so `cluster -> topic`,
+  `window -> topic`, and `message -> topic` are all direct lookups rather than
+  implied joins
+- `analyze semantic-topic-explore` is the read-only consumer of that reverse
+  index; it loads `topics.json`, `topic_membership.jsonl`, and
+  `message_windows.jsonl`, then builds:
+  `topic_id -> members`, `message_id -> topic_id`, and
+  `conversation_id -> topic_id` indexes in memory for navigation
+- because `message_windows.jsonl` carries `message_ids`, timestamps, and text,
+  the explorer can join reverse membership rows back to excerpts and temporal
+  order without touching clustering logic or making any LLM calls
+- model-derived fields remain additive only; if `semantic-topics` runs without
+  `--model`, it still writes the structural topic index and reverse membership
+  rows with label/summary fields left empty
 - the current production topic prompt was selected from the repository's
   prompt experiment harness under `./tmp`; runtime does not depend on those
   tmp files and instead uses the fixed winning settings directly

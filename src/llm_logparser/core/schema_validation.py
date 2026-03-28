@@ -74,6 +74,8 @@ MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
 WINDOW_EMBEDDING_SCHEMA_NAME = "window_embedding.schema.json"
 WINDOW_NEIGHBORS_SCHEMA_NAME = "window_neighbors.schema.json"
 WINDOW_CLUSTERS_SCHEMA_NAME = "window_clusters.schema.json"
+TOPICS_SCHEMA_NAME = "topics.schema.json"
+TOPIC_MEMBERSHIP_SCHEMA_NAME = "topic_membership.schema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +262,28 @@ def load_window_clusters_validator(
     """
     if schema_path is None:
         schema_path = SCHEMAS_ROOT / WINDOW_CLUSTERS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_topics_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for topics.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / TOPICS_SCHEMA_NAME
+    return _make_validator(schema_path)
+
+
+def load_topic_membership_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for topic_membership.schema.json.
+    """
+    if schema_path is None:
+        schema_path = SCHEMAS_ROOT / TOPIC_MEMBERSHIP_SCHEMA_NAME
     return _make_validator(schema_path)
 
 

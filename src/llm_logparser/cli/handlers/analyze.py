@@ -260,3 +260,53 @@ def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
         raise SystemExit(2) from None
 
     write_or_print(rendered, None)
+
+
+def run_analyze_semantic_topics(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_topics import (
+        SemanticTopicsError,
+        write_semantic_topics_artifacts,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_semantic_topics_artifacts(
+            input_root,
+            model=args.model,
+            cluster_id=args.cluster_id,
+            min_cluster_size=args.min_cluster_size,
+            cross_thread_only=args.cross_thread_only,
+            base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
+        )
+    except SemanticTopicsError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "semantic topics artifacts written: "
+        f"{result['topic_count']} topic(s) -> {result['topics_path']} "
+        f"and {result['membership_path']} ({result['label_mode']})"
+    )
+
+
+def run_analyze_semantic_topic_explore(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_topic_explore import (
+        SemanticTopicExploreError,
+        render_semantic_topic_explore,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        rendered = render_semantic_topic_explore(
+            input_root=input_root,
+            topic_id=args.topic_id,
+            message_id=args.message_id,
+            conversation_id=args.conversation_id,
+            json_output=args.json_output,
+        )
+    except SemanticTopicExploreError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    write_or_print(rendered, None)

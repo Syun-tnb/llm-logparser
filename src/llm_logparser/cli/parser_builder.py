@@ -586,6 +586,86 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topic.opt.json.help"),
     )
 
+    analyze_semantic_topics_cmd = analyze_subparsers.add_parser(
+        "semantic-topics",
+        help=_("cli.analyze.semantic_topics.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_topics.opt.input.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--model",
+        required=False,
+        help=_("cli.analyze.semantic_topics.opt.model.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--cluster-id",
+        dest="cluster_id",
+        help=_("cli.analyze.semantic_topics.opt.cluster_id.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--min-cluster-size",
+        dest="min_cluster_size",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topics.opt.min_cluster_size.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--cross-thread-only",
+        dest="cross_thread_only",
+        action="store_true",
+        help=_("cli.analyze.semantic_topics.opt.cross_thread_only.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.semantic_topics.opt.base_url.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.semantic_topics.opt.timeout_seconds.help"),
+    )
+
+    analyze_semantic_topic_explore_cmd = analyze_subparsers.add_parser(
+        "semantic-topic-explore",
+        help=_("cli.analyze.semantic_topic_explore.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_topic_explore.opt.input.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--topic-id",
+        dest="topic_id",
+        help=_("cli.analyze.semantic_topic_explore.opt.topic_id.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--message-id",
+        dest="message_id",
+        help=_("cli.analyze.semantic_topic_explore.opt.message_id.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--conversation-id",
+        "--thread",
+        dest="conversation_id",
+        help=_("cli.analyze.semantic_topic_explore.opt.conversation_id.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic_explore.opt.json.help"),
+    )
+
     chain_cmd = subparsers.add_parser(
         "chain",
         help=_("cli.chain.help"),

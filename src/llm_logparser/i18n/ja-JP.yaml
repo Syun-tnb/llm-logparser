@@ -94,6 +94,20 @@ messages:
   cli.analyze.semantic_topic.opt.base_url.help: ローカル Ollama サーバーの base URL
   cli.analyze.semantic_topic.opt.timeout_seconds.help: cluster ごとの Ollama リクエスト timeout 秒数
   cli.analyze.semantic_topic.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
+  cli.analyze.semantic_topics.help: 保存済み L3 cluster から forward / reverse lookup 可能な formal topic artifact を構築する
+  cli.analyze.semantic_topics.opt.input.help: message_windows.jsonl と window_clusters.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_topics.opt.model.help: 任意のローカル Ollama 生成モデル。省略すると構造情報だけの topic artifact を生成する
+  cli.analyze.semantic_topics.opt.cluster_id.help: 指定した cluster 1 件だけで artifact を構築する
+  cli.analyze.semantic_topics.opt.min_cluster_size.help: 生成する topic 集合に含める最小 cluster サイズ
+  cli.analyze.semantic_topics.opt.cross_thread_only.help: 複数 conversation にまたがる cluster のみに生成対象を制限する
+  cli.analyze.semantic_topics.opt.base_url.help: ローカル Ollama サーバーの base URL
+  cli.analyze.semantic_topics.opt.timeout_seconds.help: --model 使用時の cluster ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
+  cli.analyze.semantic_topic_explore.opt.input.help: topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート
+  cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する
+  cli.analyze.semantic_topic_explore.opt.message_id.help: 1 件の message_id を含む topic を逆引きする
+  cli.analyze.semantic_topic_explore.opt.conversation_id.help: 1 件の conversation / thread に現れる topic を表示する (`--thread` でも指定可能)
+  cli.analyze.semantic_topic_explore.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/output/<provider>/... 配下になる
   cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む
   cli.chain.opt.parsed_root.help: 既に parsed スレッド (…/thread-*/parsed.jsonl) を含む任意のルートディレクトリ。指定した場合は parse フェーズをスキップする

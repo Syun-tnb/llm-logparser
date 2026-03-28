@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/topic_membership.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "topic_id",
+    "membership_type",
+    "conversation_id",
+    "cluster_id",
+    "window_id",
+    "message_id"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "topic_membership" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "topic_id": { "type": "string", "minLength": 1 },
+    "membership_type": {
+      "type": "string",
+      "enum": ["cluster", "window", "message"]
+    },
+    "conversation_id": { "type": ["string", "null"], "minLength": 1 },
+    "cluster_id": { "type": ["string", "null"], "minLength": 1 },
+    "window_id": { "type": ["string", "null"], "minLength": 1 },
+    "message_id": { "type": ["string", "null"], "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "membership_type": { "const": "cluster" }
+        }
+      },
+      "then": {
+        "properties": {
+          "conversation_id": { "type": "null" },
+          "cluster_id": { "type": "string", "minLength": 1 },
+          "window_id": { "type": "null" },
+          "message_id": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "membership_type": { "const": "window" }
+        }
+      },
+      "then": {
+        "properties": {
+          "conversation_id": { "type": "string", "minLength": 1 },
+          "cluster_id": { "type": "string", "minLength": 1 },
+          "window_id": { "type": "string", "minLength": 1 },
+          "message_id": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "membership_type": { "const": "message" }
+        }
+      },
+      "then": {
+        "properties": {
+          "conversation_id": { "type": "string", "minLength": 1 },
+          "cluster_id": { "type": "string", "minLength": 1 },
+          "window_id": { "type": "string", "minLength": 1 },
+          "message_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}
