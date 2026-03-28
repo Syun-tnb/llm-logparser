@@ -837,6 +837,9 @@ Experimental prototype note:
   larger topics first, then broader conversation coverage, then higher
   observed intra-cluster scores when present, with representative previews and
   lightweight quality hints surfaced in the text view
+- browse-time filters such as singleton suppression or minimum topic size are
+  runtime-only UX controls; they improve navigation but do not rewrite
+  `topics.json` or `topic_membership.jsonl`
 - because `message_windows.jsonl` carries `message_ids`, timestamps, and text,
   the explorer can join reverse membership rows back to excerpts and temporal
   order without touching clustering logic or making any LLM calls

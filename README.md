@@ -705,6 +705,41 @@ filters such as `--hide-single-window`, `--min-window-count`, and
 `--min-conversation-count` can suppress obvious browsing noise without
 rewriting topic artifacts.
 
+Practical starting points from the current real-data validation pass on a
+staged `openai` subset:
+
+- What should I run first?
+  Start with singleton suppression for everyday browsing:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --hide-single-window
+```
+
+- How do I focus on cross-thread continuity?
+  Use conversation coverage as the browse filter:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --min-conversation-count 2
+```
+
+- How do I do a stricter deep-inspection pass?
+  Raise the minimum topic size:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --min-window-count 3
+```
+
+These are current usage recommendations, not hard defaults. On the validated
+subset, `--min-window-count 5` was too aggressive for general browsing and
+removed too many smaller useful topics, so it is not the recommended starting
+point.
+
 ### Analyze Semantic Topic
 
 Render experimental topic labels and summaries from stored L3 clusters without

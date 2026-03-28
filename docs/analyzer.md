@@ -690,6 +690,24 @@ Key `semantic-topic-explore` flags:
   conversation coverage
 - `--json`: emit structured machine-readable output instead of pretty text
 
+Practical browsing guidance:
+
+- Default browse behavior is intentionally inclusive. It is useful for full
+  inspection, but on real data it can be noisy because many topics are
+  single-window fragments.
+- Use `--hide-single-window` first for everyday browsing. In the current
+  validated subset, it removed most browse noise without losing the observed
+  cross-thread topics.
+- Use `--min-conversation-count 2` when the goal is cross-thread continuity
+  rather than topic exhaustiveness. This is the clearest “show me ongoing work
+  across conversations” mode.
+- Use `--min-window-count 3` for a stricter deep-inspection pass when you want
+  to focus on somewhat larger topic groups.
+- Be careful with over-filtering. In the current validated subset,
+  `--min-window-count 5` was already too aggressive for general browsing and
+  removed too many smaller useful topics. These recommendations come from one
+  real-data subset and may evolve as more corpus validation is done.
+
 Parse-time windowing controls:
 
 - `parse.message_windows.size` / `chain.message_windows.size`: number of
