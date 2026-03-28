@@ -60,6 +60,209 @@ def _window_neighbors_row(
     }
 
 
+def _window_cluster_row(
+    conversation_id: str,
+    window_id: str,
+    *,
+    cluster_id: str,
+    cluster_size: int,
+) -> dict:
+    return {
+        "record_type": "window_cluster_member",
+        "schema_version": "0.1",
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "window_id": window_id,
+        "cluster_id": cluster_id,
+        "cluster_size": cluster_size,
+        "edge_policy": "mutual-only",
+    }
+
+
+def _write_cluster_fixture(root: Path) -> None:
+    thread_a = root / "thread-conv-a"
+    thread_b = root / "thread-conv-b"
+    thread_c = root / "thread-conv-c"
+
+    _write_jsonl(
+        thread_a / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-a",
+                "window-0001",
+                roles=["user"],
+                text="user: Draft migration runbook for the production rollout",
+            ),
+            _message_window_row(
+                "conv-a",
+                "window-0002",
+                roles=["assistant"],
+                text="assistant: Summarize the risk checklist for launch readiness",
+            ),
+            _message_window_row(
+                "conv-a",
+                "window-0003",
+                roles=["user"],
+                text="user: Completely unrelated singleton note about lunch plans",
+            ),
+        ],
+    )
+    _write_jsonl(
+        thread_b / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-b",
+                "window-0001",
+                roles=["assistant"],
+                text="assistant: Build rollback steps and migration safety checks",
+            ),
+            _message_window_row(
+                "conv-b",
+                "window-0002",
+                roles=["user"],
+                text="user: Another isolated note that should stay outside the large cluster",
+            ),
+        ],
+    )
+    _write_jsonl(
+        thread_c / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-c",
+                "window-0001",
+                roles=["user"],
+                text="user: Capture launch checklist follow-ups and audit reminders",
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_a / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-a",
+                "window-0001",
+                cluster_id="cluster_000001",
+                cluster_size=4,
+            ),
+            _window_cluster_row(
+                "conv-a",
+                "window-0002",
+                cluster_id="cluster_000001",
+                cluster_size=4,
+            ),
+            _window_cluster_row(
+                "conv-a",
+                "window-0003",
+                cluster_id="cluster_000002",
+                cluster_size=1,
+            ),
+        ],
+    )
+    _write_jsonl(
+        thread_b / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-b",
+                "window-0001",
+                cluster_id="cluster_000001",
+                cluster_size=4,
+            ),
+            _window_cluster_row(
+                "conv-b",
+                "window-0002",
+                cluster_id="cluster_000003",
+                cluster_size=1,
+            ),
+        ],
+    )
+    _write_jsonl(
+        thread_c / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-c",
+                "window-0001",
+                cluster_id="cluster_000001",
+                cluster_size=4,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_a / "window_neighbors.jsonl",
+        [
+            _window_neighbors_row(
+                "conv-a",
+                "window-0001",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-b",
+                        "window_id": "window-0001",
+                        "score": 0.91,
+                    },
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-a",
+                        "window_id": "window-0002",
+                        "score": 0.89,
+                    },
+                ],
+            ),
+            _window_neighbors_row(
+                "conv-a",
+                "window-0002",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-c",
+                        "window_id": "window-0001",
+                        "score": 0.88,
+                    }
+                ],
+            ),
+        ],
+    )
+    _write_jsonl(
+        thread_b / "window_neighbors.jsonl",
+        [
+            _window_neighbors_row(
+                "conv-b",
+                "window-0001",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-a",
+                        "window_id": "window-0001",
+                        "score": 0.91,
+                    },
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-c",
+                        "window_id": "window-0001",
+                        "score": 0.87,
+                    },
+                ],
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_c / "window_neighbors.jsonl",
+        [
+            _window_neighbors_row(
+                "conv-c",
+                "window-0001",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-b",
+                        "window_id": "window-0001",
+                        "score": 0.87,
+                    }
+                ],
+            )
+        ],
+    )
+
+
 def test_render_semantic_preview_cli_happy_path(tmp_path, capsys):
     root = tmp_path / "artifacts" / "output" / "openai"
     thread_a = root / "thread-conv-a"
@@ -278,6 +481,117 @@ def test_render_semantic_preview_turn_grouping_and_similarity_labels(tmp_path):
     assert rendered.rstrip().endswith(
         "NEXT\nthread: conv-b\nwindow: window-0002"
     )
+
+
+def test_render_semantic_preview_cluster_list_view(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_cluster_fixture(root)
+
+    rendered = render_semantic_preview(input_root=root)
+
+    assert "Cluster cluster_000001" in rendered
+    assert "size: 4" in rendered
+    assert "threads: 3" in rendered
+    assert "cross-thread: yes" in rendered
+    assert "Representative:" in rendered
+    assert '[conv-a / window-0001] "user: Draft migration runbook for the production rollout"' in rendered
+    assert '[conv-b / window-0001] "assistant: Build rollback steps and migration safety checks"' in rendered
+    assert '[conv-c / window-0001] "user: Capture launch checklist follow-ups and audit reminders"' in rendered
+
+
+def test_render_semantic_preview_cli_cluster_list_default_view(tmp_path, capsys):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_cluster_fixture(root)
+
+    main(
+        [
+            "--locale",
+            "en-US",
+            "analyze",
+            "semantic-preview",
+            "--input",
+            str(root),
+            "--top-clusters",
+            "1",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "Cluster cluster_000001" in output
+    assert "threads: 3" in output
+
+
+def test_render_semantic_preview_cluster_detail_view_with_neighbors(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_cluster_fixture(root)
+
+    rendered = render_semantic_preview(
+        input_root=root,
+        cluster_id="cluster_000001",
+        top_k=2,
+    )
+
+    assert "Cluster cluster_000001" in rendered
+    assert "Members:" in rendered
+    assert "cluster-neighbors: 2 (same-thread 1, cross-thread 1)" in rendered
+    assert "neighbor-scores:" in rendered
+    assert "[conv-b / window-0001] 0.91 (cross-thread)" in rendered
+    assert "[conv-a / window-0002] 0.89 (same-thread)" in rendered
+
+
+def test_render_semantic_preview_conversation_view_and_filters(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_cluster_fixture(root)
+
+    rendered = render_semantic_preview(
+        input_root=root,
+        conversation_id="conv-a",
+        min_cluster_size=2,
+        cross_thread_only=True,
+    )
+
+    assert "Conversation conv-a" in rendered
+    assert "clusters: 1" in rendered
+    assert "Cluster cluster_000001" in rendered
+    assert "Cross-thread connections:" in rendered
+    assert "- conv-b: 1 links, strongest 0.91" in rendered
+    assert "- conv-c: 1 links, strongest 0.88" in rendered
+    assert "cluster_000002" not in rendered
+
+
+def test_render_semantic_preview_cluster_detail_without_optional_neighbors(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_cluster_fixture(root)
+    for path in root.rglob("window_neighbors.jsonl"):
+        path.unlink()
+
+    rendered = render_semantic_preview(
+        input_root=root,
+        cluster_id="cluster_000001",
+    )
+
+    assert "Cluster cluster_000001" in rendered
+    assert "Members:" in rendered
+    assert "neighbor-scores:" not in rendered
+    assert "cluster-neighbors:" not in rendered
+
+
+def test_render_semantic_preview_json_output(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_cluster_fixture(root)
+
+    rendered = render_semantic_preview(
+        input_root=root,
+        json_output=True,
+        top_clusters=1,
+    )
+    payload = json.loads(rendered)
+
+    assert payload["view"] == "cluster_list"
+    assert len(payload["clusters"]) == 1
+    assert payload["clusters"][0]["cluster_id"] == "cluster_000001"
+    assert payload["clusters"][0]["cross_thread"] is True
+    assert payload["clusters"][0]["distinct_conversations"] == 3
 
 
 def test_semantic_preview_cli_errors_when_window_missing(tmp_path, caplog):

@@ -71,11 +71,16 @@ messages:
   cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help: SQLite モードで candidate 元スレッドに要求する assistant_messages / message_count の最小比率
   cli.analyze.semantic_prototype.opt.candidate_same_thread.help: SQLite モードでの same-thread candidate ポリシー (allow, prefer, only, exclude)
   cli.analyze.semantic_prototype.opt.overwrite.help: 既存の window_embeddings.jsonl、window_neighbors.jsonl、window_clusters.jsonl を上書きする
-  cli.analyze.semantic_preview.help: 1 つの semantic window と保存済み近傍を人間向けにプレビューする
-  cli.analyze.semantic_preview.opt.input.help: message_windows.jsonl と window_neighbors.jsonl を含む provider 成果物ルート
-  cli.analyze.semantic_preview.opt.thread.help: プレビュー対象の会話 / スレッド ID
-  cli.analyze.semantic_preview.opt.window.help: プレビュー対象の window ID
-  cli.analyze.semantic_preview.opt.top_k.help: 表示する近傍数を制限する。未指定時は保存済み近傍リストをそのまま使う
+  cli.analyze.semantic_preview.help: 保存済み L3 semantic prototype 成果物から cluster、conversation、window を閲覧する
+  cli.analyze.semantic_preview.opt.input.help: message_windows.jsonl、window_clusters.jsonl、任意の window_neighbors.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_preview.opt.cluster_id.help: 1 つの cluster を詳細表示する
+  cli.analyze.semantic_preview.opt.conversation_id.help: 調べる会話 / スレッド ID (`--thread` でも指定可能)
+  cli.analyze.semantic_preview.opt.window.help: 調べる window ID。window ビューでは --conversation-id / --thread と併用する
+  cli.analyze.semantic_preview.opt.top_clusters.help: 既定の cluster 一覧ビューで表示する cluster 数
+  cli.analyze.semantic_preview.opt.min_cluster_size.help: 一覧ビューまたは conversation ビューに含める最小 cluster サイズ
+  cli.analyze.semantic_preview.opt.cross_thread_only.help: 一覧ビューまたは conversation ビューを複数 conversation にまたがる cluster のみに制限する
+  cli.analyze.semantic_preview.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
+  cli.analyze.semantic_preview.opt.top_k.help: 詳細ビューで表示する近傍関係数を制限する。window ビューでは保存済み近傍の表示数を制限する
   cli.analyze.semantic_preview.opt.include_text.help: プレビューに復元テキストを含める (`--no-include-text` で無効化)
   cli.analyze.semantic_preview.opt.max_chars.help: 各 window で切り詰める前に表示する最大文字数
   cli.analyze.semantic_preview.opt.show_meta.help: プレビューにメタデータブロックを含める (`--no-show-meta` で無効化)

@@ -787,9 +787,11 @@ Experimental prototype note:
 - `window_clusters.jsonl` is not a topic summary artifact: it does not add
   labels, summaries, lifecycle state, or canonical meaning
 - `analyze semantic-preview` is a read-only renderer for those same prototype
-  artifacts; it reads `window_neighbors.jsonl` plus `message_windows.jsonl`
-  and prints a human-readable target-window-versus-neighbors comparison
-  without writing new files
+  artifacts; it reads `message_windows.jsonl`, `window_clusters.jsonl`, and
+  optional `window_neighbors.jsonl` and can print:
+  a default cluster list, one cluster in detail, one conversation's cluster
+  participation, or the older single-window neighbor preview, all without
+  writing new files
 
 This separation ensures that:
 

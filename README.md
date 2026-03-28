@@ -564,20 +564,50 @@ chain:
 
 ### Analyze Semantic Preview
 
-Render one window and its stored nearest neighbors in a readable terminal view:
+Browse stored L3 semantic clusters in a readable terminal view. By default the
+command lists the largest clusters from `window_clusters.jsonl`:
 
 ```bash
 uv run llm-logparser analyze semantic-preview \
   --input <provider-artifact-root> \
-  --thread <conversation_id> \
+  [--top-clusters <N>] \
+  [--min-cluster-size <N>] \
+  [--cross-thread-only]
+```
+
+Cluster detail:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --cluster-id <cluster_id> \
+  [--top-k <N>]
+```
+
+Conversation-centric view:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --conversation-id <conversation_id> \
+  [--cross-thread-only]
+```
+
+Legacy single-window lookup is still available:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --conversation-id <conversation_id> \
   --window <window_id> \
   [--top-k <N>] \
   [--max-chars <N>]
 ```
 
-`semantic-preview` is read-only. It reuses stored semantic neighbor artifacts
-plus `message_windows.jsonl`; it does not recompute embeddings or write new
-files.
+`semantic-preview` is read-only. It reuses stored `message_windows.jsonl`,
+`window_clusters.jsonl`, and optional `window_neighbors.jsonl`; it does not
+recompute embeddings or write new files. `--json` emits machine-readable output
+for downstream tooling.
 
 ---
 

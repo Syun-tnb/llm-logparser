@@ -562,9 +562,14 @@ deterministic and model-derived capabilities.
   source-of-truth Python presets.
 
 - `semantic-preview` is a read-only companion to `semantic-prototype`: it
-  reads stored `window_neighbors.jsonl` plus `message_windows.jsonl` and renders
-  one target window with its nearest-neighbor text side by side for quick human
-  inspection. It does not recompute embeddings or modify artifacts.
+  reads stored `message_windows.jsonl`, `window_clusters.jsonl`, and optional
+  `window_neighbors.jsonl` and provides three inspection modes without
+  recomputing embeddings or modifying artifacts:
+  cluster list view by default, cluster detail via `--cluster-id`, and
+  conversation-centric lookup via `--conversation-id`. The older
+  conversation-plus-window neighbor preview remains available when
+  `--conversation-id` and `--window` are supplied together. `--json` switches
+  any of those modes to machine-readable output for downstream tooling.
 
 Current limitations remain explicit:
 
@@ -587,6 +592,18 @@ Key `semantic-prototype` flags:
 - `--candidate-same-thread`: controls whether same-thread candidates are
   allowed, preferred on tie-breaks, restricted to only same-thread windows, or
   excluded
+
+Key `semantic-preview` flags:
+
+- `--top-clusters`: limits the default cluster-list view
+- `--min-cluster-size`: filters small clusters out of list and conversation
+  views
+- `--cross-thread-only`: hides single-conversation clusters in list and
+  conversation views
+- `--cluster-id`: switches to detailed inspection for one cluster
+- `--conversation-id`: switches to conversation-centric inspection; when paired
+  with `--window`, switches to the older single-window neighbor preview
+- `--json`: emits structured machine-readable output instead of pretty text
 
 Parse-time windowing controls:
 

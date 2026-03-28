@@ -451,21 +451,52 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_preview.help"),
     )
     analyze_semantic_preview_cmd.add_argument(
+        "--cluster-id",
+        dest="cluster_id",
+        help=_("cli.analyze.semantic_preview.opt.cluster_id.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--conversation-id",
+        "--thread",
+        dest="conversation_id",
+        help=_("cli.analyze.semantic_preview.opt.conversation_id.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--window",
+        dest="window_id",
+        help=_("cli.analyze.semantic_preview.opt.window.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--top-clusters",
+        dest="top_clusters",
+        type=int,
+        default=20,
+        help=_("cli.analyze.semantic_preview.opt.top_clusters.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--min-cluster-size",
+        dest="min_cluster_size",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_preview.opt.min_cluster_size.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--cross-thread-only",
+        dest="cross_thread_only",
+        action="store_true",
+        help=_("cli.analyze.semantic_preview.opt.cross_thread_only.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_preview.opt.json.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
         help=_("cli.analyze.semantic_preview.opt.input.help"),
-    )
-    analyze_semantic_preview_cmd.add_argument(
-        "--thread",
-        dest="thread_id",
-        required=True,
-        help=_("cli.analyze.semantic_preview.opt.thread.help"),
-    )
-    analyze_semantic_preview_cmd.add_argument(
-        "--window",
-        required=True,
-        help=_("cli.analyze.semantic_preview.opt.window.help"),
     )
     analyze_semantic_preview_cmd.add_argument(
         "--top-k",

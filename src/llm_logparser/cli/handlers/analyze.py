@@ -217,8 +217,13 @@ def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
     try:
         rendered = render_semantic_preview(
             input_root=input_root,
-            conversation_id=args.thread_id,
-            window_id=args.window,
+            cluster_id=args.cluster_id,
+            conversation_id=args.conversation_id,
+            window_id=args.window_id,
+            top_clusters=args.top_clusters,
+            min_cluster_size=args.min_cluster_size,
+            cross_thread_only=args.cross_thread_only,
+            json_output=args.json_output,
             top_k=args.top_k,
             include_text=args.include_text,
             max_chars=args.max_chars,
