@@ -72,6 +72,12 @@ def _prompt_hash() -> str:
     return f"sha256:{hashlib.sha256(TOPIC_PROMPT_TEMPLATE.encode('utf-8')).hexdigest()}"
 
 
+def _labeling_prompt_provenance(model: str | None) -> tuple[str | None, str | None]:
+    if model is None:
+        return None, None
+    return DEFAULT_TOPIC_PROMPT_VARIANT, _prompt_hash()
+
+
 def _discover_artifacts(root: Path, name: str) -> list[Path]:
     return sorted(root.rglob(name))
 
@@ -395,6 +401,8 @@ def build_semantic_topics_artifact(
     )
 
     provider_id = next(iter(windows.values())).provider_id
+    normalized_model = model.strip() if isinstance(model, str) else None
+    prompt_variant, prompt_hash = _labeling_prompt_provenance(normalized_model)
     embedding_model, neighbor_k, has_neighbors = _semantic_neighbor_provenance(input_root)
     edge_policies = sorted({member.edge_policy for _cluster_id, members in items for member in members})
     topics: list[dict[str, Any]] = []
@@ -412,7 +420,7 @@ def build_semantic_topics_artifact(
         first_seen, last_seen = _time_bounds(members, windows)
         topic_id = _topic_id(provider_id, members)
         topic_fields = _topic_model_fields(
-            model=model.strip() if isinstance(model, str) else None,
+            model=normalized_model,
             cluster_id=item_cluster_id,
             members=members,
             prompt_windows=prompt_windows,
@@ -509,11 +517,11 @@ def build_semantic_topics_artifact(
         "provenance": {
             "pipeline_version": _pipeline_version(),
             "membership_mode": TOPIC_MEMBERSHIP_MODE,
-            "label_mode": "model-enriched" if model else "structural-only",
+            "label_mode": "model-enriched" if normalized_model else "structural-only",
             "embedding_model": embedding_model,
-            "labeling_model": f"ollama/{model.strip()}" if model else None,
-            "prompt_hash": _prompt_hash(),
-            "prompt_variant": DEFAULT_TOPIC_PROMPT_VARIANT,
+            "labeling_model": f"ollama/{normalized_model}" if normalized_model else None,
+            "prompt_hash": prompt_hash,
+            "prompt_variant": prompt_variant,
             "window_cap": DEFAULT_TOPIC_WINDOW_CAP,
             "max_window_chars": DEFAULT_TOPIC_MAX_WINDOW_CHARS,
             "clustering": {

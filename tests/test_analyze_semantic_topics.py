@@ -373,6 +373,8 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
     assert topic_a["keywords"] == []
     assert topic_a["state"] is None
     assert artifact_a["provenance"]["prompt_hash"] == artifact_b["provenance"]["prompt_hash"]
+    assert artifact_a["provenance"]["prompt_hash"] is None
+    assert artifact_a["provenance"]["prompt_variant"] is None
 
     cluster_rows = [
         row
@@ -411,6 +413,8 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     assert result["label_mode"] == "structural-only"
     assert topics_payload["provenance"]["label_mode"] == "structural-only"
     assert topics_payload["provenance"]["labeling_model"] is None
+    assert topics_payload["provenance"]["prompt_variant"] is None
+    assert topics_payload["provenance"]["prompt_hash"] is None
     assert topics_payload["provenance"]["embedding_model"] is None
     assert topics_payload["provenance"]["clustering"]["neighbor_k"] is None
     assert all(topic["label"] is None for topic in topics_payload["topics"])

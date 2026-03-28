@@ -484,6 +484,8 @@ Current contents:
 - provenance explaining both whether the run was structural-only or
   model-enriched and which upstream L3 clustering policy produced the source
   cluster anchors
+- prompt provenance is execution-based: if no labeling model runs, then
+  `labeling_model`, `prompt_variant`, and `prompt_hash` remain `null`
 
 ## 9.2 `topic_membership.jsonl`
 

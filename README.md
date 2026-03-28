@@ -650,7 +650,9 @@ forward artifact also carries `state`, which is currently emitted as `null` for
 every topic. If `--model` is omitted, labels and summaries remain empty and the
 command still writes structural-only artifacts. `provenance` records both the
 topic-labeling settings and the upstream L3 clustering basis so the artifact
-stays additive, rebuildable, and non-canonical.
+stays additive, rebuildable, and non-canonical. In structural-only runs,
+`provenance.labeling_model`, `provenance.prompt_variant`, and
+`provenance.prompt_hash` remain `null` because no labeling prompt was executed.
 
 ### Analyze Semantic Topic Explore
 

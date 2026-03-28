@@ -807,6 +807,10 @@ Experimental prototype note:
   `generated_at`, `source_inputs`, and `provenance`; provenance records the
   topic builder mode plus the upstream clustering policy used to produce the
   source L3 clusters
+- prompt provenance is execution-based rather than capability-based:
+  structural-only runs keep `labeling_model`, `prompt_variant`, and
+  `prompt_hash` as `null`; model-enriched runs populate them from the actual
+  labeling invocation
 - each topic record now includes `state`; current production emits `null` as a
   lifecycle placeholder rather than inferring lifecycle heuristics
 - `topic_membership.jsonl` is the reverse lookup index: it emits explicit

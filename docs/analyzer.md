@@ -595,7 +595,10 @@ deterministic and model-derived capabilities.
   `generated_at`, `source_inputs`, and `provenance`. Per-topic records keep
   `cluster_ids` as the primary anchor, derive `window_refs` and `message_refs`
   from cluster membership, and include `state`, which is currently emitted as
-  `null` for every topic.
+  `null` for every topic. Provenance is execution-oriented: structural-only
+  runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
+  while model-enriched runs populate them from the actually used local labeling
+  prompt.
 
 - `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
   it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`

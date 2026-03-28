@@ -34,6 +34,7 @@
   * top-level fields now include `generated_at`, `source_inputs`, and `provenance`
   * topic records now include `state` and keep `cluster_ids` as the primary membership anchor
   * provenance now records prompt hash, labeling mode, optional embedding/labeling models, and upstream clustering policy metadata
+  * structural-only runs now leave `labeling_model`, `prompt_variant`, and `prompt_hash` as `null` so provenance reflects executed labeling work only
 
 ---
 

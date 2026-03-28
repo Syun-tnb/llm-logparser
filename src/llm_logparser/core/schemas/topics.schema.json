@@ -109,10 +109,10 @@
         "embedding_model": { "type": ["string", "null"] },
         "labeling_model": { "type": ["string", "null"] },
         "prompt_hash": {
-          "type": "string",
+          "type": ["string", "null"],
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "prompt_variant": { "type": "string", "minLength": 1 },
+        "prompt_variant": { "type": ["string", "null"], "minLength": 1 },
         "window_cap": { "type": "integer", "minimum": 1 },
         "max_window_chars": { "type": "integer", "minimum": 1 },
         "clustering": { "$ref": "#/$defs/clusteringProvenance" },
