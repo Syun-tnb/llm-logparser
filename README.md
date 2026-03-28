@@ -543,7 +543,7 @@ The semantic layer is not yet positioned as a stable topic system.
 
 Current L3 prototype behavior is intentionally limited:
 
-* `window_neighbors.jsonl` still stores nearest-neighbor links, but those links are now filtered by `--min-score` before emission
+* `window_neighbors.jsonl` still stores nearest-neighbor links, but those links are now filtered by `--min-score` before emission; the current default is `0.62`, selected from repeated real-data subset validation as the best current tradeoff between broad noisy cross-thread clusters and over-fragmentation
 * when `--sqlite-db` is provided, candidate windows are first narrowed with `analysis.db`, then compared symmetrically inside each deduplicated local candidate pool instead of using a global dense comparison for every pair
 * `window_clusters.jsonl` groups windows by connected components over retained mutual neighbor links; same-thread mutual edges are suppressed when the two windows share more than one underlying message, while cross-thread mutual edges must also meet a stricter runtime threshold equal to the current corpus P75 of cross-thread mutual scores
 * if cross-thread mutual scores are unavailable in older neighbor rows, cluster construction falls back to the legacy mutual-only behavior for those edges instead of failing

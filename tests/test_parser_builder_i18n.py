@@ -91,6 +91,16 @@ def test_analyze_semantic_prototype_help_mentions_backend_options(capsys):
     assert "ollama" in help_text
 
 
+def test_analyze_semantic_prototype_parser_uses_current_default_min_score():
+    set_locale("en-US")
+    parser = build_parser()
+
+    args = parser.parse_args(["analyze", "semantic-prototype"])
+
+    assert args.min_score == 0.62
+    assert args.top_k == 5
+
+
 def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
     set_locale("en-US")
     parser = build_parser()

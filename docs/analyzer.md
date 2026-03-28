@@ -618,7 +618,9 @@ Current limitations remain explicit:
 Key `semantic-prototype` flags:
 
 - `--min-score`: filters out neighbors whose cosine similarity is below the
-  threshold; `top_k` still applies after filtering
+  threshold; `top_k` still applies after filtering. The current default is
+  `0.62`, promoted from repeated real-data subset validation as the best
+  current tradeoff between broad cross-thread noise and extra fragmentation.
 - `--sqlite-db`: enables SQLite-assisted candidate generation using
   `analysis.db`; omitting it preserves the full embedded-window fallback path
 - `--candidate-window-days`: bounds candidate retrieval by `ts_start` around

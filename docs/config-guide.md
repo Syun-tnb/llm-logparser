@@ -320,6 +320,9 @@ Behavior notes:
 * chunk embeddings are aggregated into one final embedding per original window
 * outputs remain rebuildable, non-canonical prototype artifacts
 * `deterministic-hash` remains the default backend for plumbing and tests
+* the current built-in `min_score` default is `0.62`, selected from repeated
+  real-data subset validation as the best current tradeoff between broad
+  cross-thread noise and extra fragmentation
 
 Current limitations:
 

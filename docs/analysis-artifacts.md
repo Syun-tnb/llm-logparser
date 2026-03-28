@@ -755,6 +755,10 @@ Experimental prototype note:
   final embedding per source window
 - neighbor construction now supports `--min-score` thresholding and emits
   lightweight progress logs for long-running phases
+- the current default `--min-score` is `0.62`; that default was selected from
+  repeated real-data subset validation because it reduced broad noisy
+  cross-thread clusters more effectively than the old permissive default
+  without the extra fragmentation seen at stricter nearby thresholds
 - when `--sqlite-db` is provided, candidate retrieval uses L2 `analysis.db`
   filters before similarity scoring instead of a global dense comparison
 - SQLite-assisted runs now compare windows symmetrically inside each narrowed

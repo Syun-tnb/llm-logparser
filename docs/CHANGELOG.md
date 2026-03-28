@@ -19,6 +19,7 @@
   * automatically applies built-in Ollama presets for known models and conservative fallback defaults for unknown models
   * automatically chunks oversized Ollama embedding inputs and aggregates them into one final embedding per window
   * now supports `--min-score` thresholding so weak semantic links are not emitted unconditionally
+  * the default `--min-score` is now `0.62`, promoted from repeated real-data subset validation as the best current tradeoff between broad cross-thread noise and extra fragmentation
   * can optionally use `analysis.db` for L2-backed candidate generation before similarity scoring
   * SQLite-assisted mode now performs symmetric all-pairs comparison inside each narrowed candidate pool
   * emits minimal mutual-link connected components as `window_clusters.jsonl`

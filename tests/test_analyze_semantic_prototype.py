@@ -318,7 +318,7 @@ def test_cosine_similarity_and_neighbor_ranking():
         ),
     )
 
-    rows = build_window_neighbor_rows(embeddings, top_k=2)
+    rows = build_window_neighbor_rows(embeddings, top_k=2, min_score=0.0)
 
     assert rows[0]["window_id"] == "window-0001"
     assert rows[0]["neighbor_count"] == 2
@@ -367,7 +367,7 @@ def test_neighbor_rows_exclude_self_and_use_deterministic_tie_breaks():
         ),
     )
 
-    rows = build_window_neighbor_rows(embeddings, top_k=2)
+    rows = build_window_neighbor_rows(embeddings, top_k=2, min_score=0.0)
 
     assert rows[1]["neighbors"][0]["window_id"] == "window-0003"
     assert rows[1]["neighbors"][1]["window_id"] == "window-0002"
@@ -1639,6 +1639,8 @@ def test_analyze_semantic_prototype_cli_happy_path(tmp_path):
             str(tmp_path / "artifacts"),
             "--top-k",
             "1",
+            "--min-score",
+            "0.0",
         ]
     )
 

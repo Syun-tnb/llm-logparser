@@ -385,7 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-score",
         dest="min_score",
         type=float,
-        default=0.0,
+        default=0.62,
         help=_("cli.analyze.semantic_prototype.opt.min_score.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
