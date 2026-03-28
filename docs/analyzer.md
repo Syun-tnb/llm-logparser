@@ -591,7 +591,11 @@ deterministic and model-derived capabilities.
   reverse lookup index. Current membership is intentionally conservative:
   one topic per L3 cluster (`cluster-is-topic-v1`). Structural fields are
   always written; model-derived fields are added only when `--model` is
-  supplied.
+  supplied. `topics.json` now emits `schema_version: "1.0"` with top-level
+  `generated_at`, `source_inputs`, and `provenance`. Per-topic records keep
+  `cluster_ids` as the primary anchor, derive `window_refs` and `message_refs`
+  from cluster membership, and include `state`, which is currently emitted as
+  `null` for every topic.
 
 - `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
   it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`

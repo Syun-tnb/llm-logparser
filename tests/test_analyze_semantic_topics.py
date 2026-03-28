@@ -69,6 +69,25 @@ def _window_cluster_row(
     }
 
 
+def _window_neighbor_row(
+    conversation_id: str,
+    window_id: str,
+    *,
+    embedding_model: str,
+    neighbors: list[dict],
+) -> dict:
+    return {
+        "record_type": "window_neighbors",
+        "schema_version": "0.1",
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "window_id": window_id,
+        "embedding_model": embedding_model,
+        "neighbor_count": len(neighbors),
+        "neighbors": neighbors,
+    }
+
+
 class _FakeHTTPResponse:
     def __init__(self, payload: dict):
         self._body = json.dumps(payload).encode("utf-8")
@@ -205,6 +224,43 @@ def _write_topics_fixture(root: Path) -> None:
 def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)
+    _write_jsonl(
+        root / "thread-conv-a" / "window_neighbors.jsonl",
+        [
+            _window_neighbor_row(
+                "conv-a",
+                "window-0001",
+                embedding_model="ollama/nomic-embed-text-v2-moe",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-a",
+                        "window_id": "window-0002",
+                        "score": 0.91,
+                    },
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-b",
+                        "window_id": "window-0001",
+                        "score": 0.89,
+                    },
+                ],
+            ),
+            _window_neighbor_row(
+                "conv-a",
+                "window-0002",
+                embedding_model="ollama/nomic-embed-text-v2-moe",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-a",
+                        "window_id": "window-0001",
+                        "score": 0.91,
+                    }
+                ],
+            ),
+        ],
+    )
 
     monkeypatch.setattr(
         "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
@@ -238,7 +294,41 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
 
     assert result["topic_count"] == 1
     assert result["label_mode"] == "model-enriched"
-    assert topics_payload["generation"]["label_mode"] == "model-enriched"
+    assert topics_payload["artifact_type"] == "semantic_topics"
+    assert topics_payload["schema_version"] == "1.0"
+    assert topics_payload["generated_at"].endswith("Z")
+    assert topics_payload["provenance"]["label_mode"] == "model-enriched"
+    assert topics_payload["provenance"]["pipeline_version"]
+    assert topics_payload["provenance"]["membership_mode"] == "cluster-is-topic-v1"
+    assert (
+        topics_payload["provenance"]["embedding_model"]
+        == "ollama/nomic-embed-text-v2-moe"
+    )
+    assert topics_payload["provenance"]["labeling_model"] == "ollama/llama3.1:latest"
+    assert topics_payload["provenance"]["prompt_variant"] == "prompt_b"
+    assert topics_payload["provenance"]["window_cap"] == 8
+    assert topics_payload["provenance"]["max_window_chars"] == 300
+    assert topics_payload["provenance"]["prompt_hash"].startswith("sha256:")
+    assert len(topics_payload["provenance"]["prompt_hash"]) == 71
+    assert topics_payload["provenance"]["clustering"] == {
+        "method": "connected-components",
+        "edge_policy": "mutual-only",
+        "neighbor_k": 2,
+        "score_threshold_policy": (
+            "same-thread-shared-messages<=1;"
+            "cross-thread-mutual-score>=runtime-p75"
+        ),
+    }
+    assert topics_payload["provenance"]["filters"] == {
+        "cluster_id": "cluster_000001",
+        "min_cluster_size": 1,
+        "cross_thread_only": False,
+    }
+    assert topics_payload["source_inputs"] == [
+        "message_windows.jsonl",
+        "window_clusters.jsonl",
+        "window_neighbors.jsonl",
+    ]
     assert topics_payload["topics"][0]["label"] == "Launch Readiness"
     assert topics_payload["topics"][0]["summary"] == (
         "Deployment readiness and rollback planning dominate the topic."
@@ -248,6 +338,7 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
         "rollback",
         "monitoring",
     ]
+    assert topics_payload["topics"][0]["state"] is None
     assert topics_payload["topics"][0]["cluster_ids"] == ["cluster_000001"]
     assert topics_payload["topics"][0]["first_seen"] == 100
     assert topics_payload["topics"][0]["last_seen"] == 170
@@ -280,6 +371,8 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
     assert topic_a["label"] is None
     assert topic_a["summary"] is None
     assert topic_a["keywords"] == []
+    assert topic_a["state"] is None
+    assert artifact_a["provenance"]["prompt_hash"] == artifact_b["provenance"]["prompt_hash"]
 
     cluster_rows = [
         row
@@ -316,11 +409,14 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     topics_payload = json.loads(Path(result["topics_path"]).read_text(encoding="utf-8"))
 
     assert result["label_mode"] == "structural-only"
-    assert topics_payload["generation"]["label_mode"] == "structural-only"
-    assert topics_payload["generation"]["model"] is None
+    assert topics_payload["provenance"]["label_mode"] == "structural-only"
+    assert topics_payload["provenance"]["labeling_model"] is None
+    assert topics_payload["provenance"]["embedding_model"] is None
+    assert topics_payload["provenance"]["clustering"]["neighbor_k"] is None
     assert all(topic["label"] is None for topic in topics_payload["topics"])
     assert all(topic["summary"] is None for topic in topics_payload["topics"])
     assert all(topic["keywords"] == [] for topic in topics_payload["topics"])
+    assert all(topic["state"] is None for topic in topics_payload["topics"])
 
 
 def test_analyze_semantic_topics_cli_happy_path(tmp_path, caplog):

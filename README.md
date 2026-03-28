@@ -637,13 +637,20 @@ uv run llm-logparser analyze semantic-topics \
 
 `semantic-topics` writes:
 
-- `topics.json`: forward topic index with topic metadata plus cluster/window/message references
+- `topics.json`: forward topic index in `schema_version: "1.0"` with top-level
+  `generated_at`, `source_inputs`, and `provenance`, plus per-topic
+  cluster/window/message references
 - `topic_membership.jsonl`: reverse lookup rows for `cluster -> topic`, `window -> topic`, and `message -> topic`
 
 Structural fields such as `topic_id`, `cluster_ids`, `window_refs`,
 `message_refs`, `conversation_ids`, `first_seen`, and `last_seen` are built
-from stored L3 artifacts. If `--model` is omitted, labels and summaries remain
-empty and the command still writes structural-only artifacts.
+from stored L3 artifacts. `cluster_ids` remain the primary L3-native anchor;
+`window_refs` and `message_refs` are derived from cluster membership. The
+forward artifact also carries `state`, which is currently emitted as `null` for
+every topic. If `--model` is omitted, labels and summaries remain empty and the
+command still writes structural-only artifacts. `provenance` records both the
+topic-labeling settings and the upstream L3 clustering basis so the artifact
+stays additive, rebuildable, and non-canonical.
 
 ### Analyze Semantic Topic Explore
 

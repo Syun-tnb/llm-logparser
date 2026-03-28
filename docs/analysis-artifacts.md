@@ -803,6 +803,12 @@ Experimental prototype note:
   cluster, with deterministic `topic_id`, structural references back to
   clusters/windows/messages, conversation coverage, time bounds, and optional
   model-derived label / summary / keywords
+- `topics.json` now uses `schema_version: "1.0"` and carries top-level
+  `generated_at`, `source_inputs`, and `provenance`; provenance records the
+  topic builder mode plus the upstream clustering policy used to produce the
+  source L3 clusters
+- each topic record now includes `state`; current production emits `null` as a
+  lifecycle placeholder rather than inferring lifecycle heuristics
 - `topic_membership.jsonl` is the reverse lookup index: it emits explicit
   `membership_type=cluster|window|message` rows so `cluster -> topic`,
   `window -> topic`, and `message -> topic` are all direct lookups rather than

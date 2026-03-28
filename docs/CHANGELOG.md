@@ -29,6 +29,11 @@
   * reads stored `window_neighbors.jsonl` plus `message_windows.jsonl`
   * renders one target window and its nearest neighbors as human-readable text
   * does not recompute embeddings or write new sidecar artifacts
+* Upgraded `analyze semantic-topics` forward artifacts:
+  * `topics.json` now emits `schema_version: "1.0"`
+  * top-level fields now include `generated_at`, `source_inputs`, and `provenance`
+  * topic records now include `state` and keep `cluster_ids` as the primary membership anchor
+  * provenance now records prompt hash, labeling mode, optional embedding/labeling models, and upstream clustering policy metadata
 
 ---
 

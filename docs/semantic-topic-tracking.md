@@ -479,8 +479,11 @@ Current contents:
 - `conversation_ids`
 - structural time bounds (`first_seen`, `last_seen`)
 - optional local-model fields (`label`, `summary`, `keywords`, `confidence`)
-- generation metadata explaining whether the run was structural-only or
-  model-enriched
+- `state` (currently emitted as `null` for MVP lifecycle compatibility)
+- top-level `generated_at`, `source_inputs`, and `provenance`
+- provenance explaining both whether the run was structural-only or
+  model-enriched and which upstream L3 clustering policy produced the source
+  cluster anchors
 
 ## 9.2 `topic_membership.jsonl`
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +28,17 @@ from .analyzer_semantic_topic import (
 from .schema_validation import (
     load_topic_membership_validator,
     load_topics_validator,
+    load_window_neighbors_validator,
 )
 
 WindowRef = tuple[str, str]
+TOPICS_SCHEMA_VERSION = "1.0"
+TOPIC_MEMBERSHIP_SCHEMA_VERSION = "0.1"
+TOPIC_MEMBERSHIP_MODE = "cluster-is-topic-v1"
+TOPIC_CLUSTERING_METHOD = "connected-components"
+TOPIC_CLUSTERING_SCORE_POLICY = (
+    "same-thread-shared-messages<=1;cross-thread-mutual-score>=runtime-p75"
+)
 
 
 class SemanticTopicsError(RuntimeError):
@@ -40,6 +50,78 @@ def _normalize_text(text: str, *, max_chars: int) -> str:
     if len(compact) <= max_chars:
         return compact
     return compact[: max_chars - 3] + "..."
+
+
+def _utc_now_isoformat() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _pipeline_version() -> str:
+    try:
+        return package_version("llm-logparser")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _prompt_hash() -> str:
+    return f"sha256:{hashlib.sha256(TOPIC_PROMPT_TEMPLATE.encode('utf-8')).hexdigest()}"
+
+
+def _discover_artifacts(root: Path, name: str) -> list[Path]:
+    return sorted(root.rglob(name))
+
+
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, raw_line in enumerate(handle, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise SemanticTopicsError(
+                    f"invalid JSON in {path}:{line_no}: {exc.msg}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise SemanticTopicsError(
+                    f"invalid record in {path}:{line_no}: expected object"
+                )
+            rows.append(row)
+    return rows
+
+
+def _semantic_neighbor_provenance(input_root: Path) -> tuple[str | None, int | None, bool]:
+    validator = load_window_neighbors_validator()
+    embedding_models: set[str] = set()
+    neighbor_k: int | None = None
+    found = False
+
+    for path in _discover_artifacts(input_root, "window_neighbors.jsonl"):
+        for line_no, row in enumerate(_load_jsonl(path), start=1):
+            errors = list(validator.iter_errors(row))
+            if errors:
+                raise SemanticTopicsError(
+                    f"window neighbor schema validation failed for "
+                    f"{path}:{line_no}: {errors[0].message}"
+                )
+            found = True
+            embedding_models.add(row["embedding_model"])
+            row_neighbor_count = int(row.get("neighbor_count", len(row.get("neighbors", []))))
+            neighbor_k = (
+                row_neighbor_count
+                if neighbor_k is None
+                else max(neighbor_k, row_neighbor_count)
+            )
+
+    embedding_model = next(iter(sorted(embedding_models))) if len(embedding_models) == 1 else None
+    return embedding_model, neighbor_k, found
 
 
 def _selected_cluster_items(
@@ -169,6 +251,25 @@ def _time_bounds(
     return min(values), max(values)
 
 
+def _write_json_artifact(path: Path, payload: dict[str, Any]) -> Path:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+    return path
+
+
+def _write_jsonl_artifact(path: Path, rows: list[dict[str, Any]]) -> Path:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    tmp.replace(path)
+    return path
+
+
 def _topic_prompt(
     *,
     cluster_id: str,
@@ -294,6 +395,8 @@ def build_semantic_topics_artifact(
     )
 
     provider_id = next(iter(windows.values())).provider_id
+    embedding_model, neighbor_k, has_neighbors = _semantic_neighbor_provenance(input_root)
+    edge_policies = sorted({member.edge_policy for _cluster_id, members in items for member in members})
     topics: list[dict[str, Any]] = []
     membership_rows: list[dict[str, Any]] = []
     for item_cluster_id, members in items:
@@ -319,6 +422,11 @@ def build_semantic_topics_artifact(
         topic = {
             "topic_id": topic_id,
             "provider_id": provider_id,
+            "label": topic_fields["label"],
+            "summary": topic_fields["summary"],
+            "keywords": topic_fields["keywords"],
+            "confidence": topic_fields["confidence"],
+            "state": None,
             "cluster_ids": [item_cluster_id],
             "conversation_ids": sorted({member.conversation_id for member in members}),
             "window_refs": _window_refs(members),
@@ -332,17 +440,13 @@ def build_semantic_topics_artifact(
             ),
             "first_seen": first_seen,
             "last_seen": last_seen,
-            "label": topic_fields["label"],
-            "summary": topic_fields["summary"],
-            "keywords": topic_fields["keywords"],
-            "confidence": topic_fields["confidence"],
             "representative_windows": prompt_windows[:3],
         }
         topics.append(topic)
         membership_rows.append(
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": TOPIC_MEMBERSHIP_SCHEMA_VERSION,
                 "provider_id": provider_id,
                 "topic_id": topic_id,
                 "membership_type": "cluster",
@@ -356,7 +460,7 @@ def build_semantic_topics_artifact(
             membership_rows.append(
                 {
                     "record_type": "topic_membership",
-                    "schema_version": "0.1",
+                    "schema_version": TOPIC_MEMBERSHIP_SCHEMA_VERSION,
                     "provider_id": provider_id,
                     "topic_id": topic_id,
                     "membership_type": "window",
@@ -373,7 +477,7 @@ def build_semantic_topics_artifact(
                 membership_rows.append(
                     {
                         "record_type": "topic_membership",
-                        "schema_version": "0.1",
+                        "schema_version": TOPIC_MEMBERSHIP_SCHEMA_VERSION,
                         "provider_id": provider_id,
                         "topic_id": topic_id,
                         "membership_type": "message",
@@ -389,20 +493,35 @@ def build_semantic_topics_artifact(
 
     artifact = {
         "artifact_type": "semantic_topics",
-        "schema_version": "0.1",
+        "schema_version": TOPICS_SCHEMA_VERSION,
         "provider_id": provider_id,
         "topic_count": len(topics),
+        "generated_at": _utc_now_isoformat(),
         "source_inputs": [
             "message_windows.jsonl",
             "window_clusters.jsonl",
+            *(
+                ["window_neighbors.jsonl"]
+                if has_neighbors
+                else []
+            ),
         ],
-        "generation": {
-            "membership_mode": "cluster-is-topic-v1",
+        "provenance": {
+            "pipeline_version": _pipeline_version(),
+            "membership_mode": TOPIC_MEMBERSHIP_MODE,
             "label_mode": "model-enriched" if model else "structural-only",
-            "prompt_variant": DEFAULT_TOPIC_PROMPT_VARIANT if model else None,
+            "embedding_model": embedding_model,
+            "labeling_model": f"ollama/{model.strip()}" if model else None,
+            "prompt_hash": _prompt_hash(),
+            "prompt_variant": DEFAULT_TOPIC_PROMPT_VARIANT,
             "window_cap": DEFAULT_TOPIC_WINDOW_CAP,
             "max_window_chars": DEFAULT_TOPIC_MAX_WINDOW_CHARS,
-            "model": f"ollama/{model.strip()}" if model else None,
+            "clustering": {
+                "method": TOPIC_CLUSTERING_METHOD,
+                "edge_policy": edge_policies[0] if len(edge_policies) == 1 else "mixed",
+                "neighbor_k": neighbor_k,
+                "score_threshold_policy": TOPIC_CLUSTERING_SCORE_POLICY,
+            },
             "filters": {
                 "cluster_id": cluster_id,
                 "min_cluster_size": min_cluster_size,
@@ -455,18 +574,13 @@ def write_semantic_topics_artifacts(
     topics_path = output_dir / "topics.json"
     membership_path = output_dir / "topic_membership.jsonl"
 
-    topics_path.write_text(
-        json.dumps(artifact, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    with membership_path.open("w", encoding="utf-8") as handle:
-        for row in membership_rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    _write_json_artifact(topics_path, artifact)
+    _write_jsonl_artifact(membership_path, membership_rows)
 
     return {
         "provider_id": artifact["provider_id"],
         "topic_count": artifact["topic_count"],
         "topics_path": str(topics_path),
         "membership_path": str(membership_path),
-        "label_mode": artifact["generation"]["label_mode"],
+        "label_mode": artifact["provenance"]["label_mode"],
     }
