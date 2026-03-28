@@ -221,6 +221,182 @@ def _write_topics_fixture(root: Path) -> None:
     )
 
 
+def _write_representative_selection_fixture(root: Path) -> None:
+    thread_a = root / "thread-conv-a"
+    thread_b = root / "thread-conv-b"
+    thread_c = root / "thread-conv-c"
+    thread_d = root / "thread-conv-d"
+
+    _write_jsonl(
+        thread_a / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-a",
+                "window-0001",
+                message_ids=["a-1"],
+                roles=["user"],
+                text="user: quick note about release prep",
+                ts_start=10,
+                ts_end=12,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_b / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-b",
+                "window-0001",
+                message_ids=["b-1"],
+                roles=["assistant"],
+                text=(
+                    "assistant: long noisy aside about launch context, related ideas, "
+                    "and extra prose that is less central to the rollout checklist"
+                ),
+                ts_start=20,
+                ts_end=22,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_c / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-c",
+                "window-0001",
+                message_ids=["c-1", "c-2"],
+                roles=["user", "assistant"],
+                text=(
+                    "user: finalize rollout checklist and rollback guardrails\n\n"
+                    "assistant: confirm monitoring gates and deployment checks"
+                ),
+                ts_start=30,
+                ts_end=35,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_d / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-d",
+                "window-0001",
+                message_ids=["d-1"],
+                roles=["user"],
+                text="user: standalone checkpoint note",
+                ts_start=40,
+                ts_end=41,
+            )
+        ],
+    )
+
+    _write_jsonl(
+        thread_a / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-a",
+                "window-0001",
+                cluster_id="cluster_000010",
+                cluster_size=3,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_b / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-b",
+                "window-0001",
+                cluster_id="cluster_000010",
+                cluster_size=3,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_c / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-c",
+                "window-0001",
+                cluster_id="cluster_000010",
+                cluster_size=3,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_d / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-d",
+                "window-0001",
+                cluster_id="cluster_000020",
+                cluster_size=1,
+            )
+        ],
+    )
+
+    _write_jsonl(
+        thread_a / "window_neighbors.jsonl",
+        [
+            _window_neighbor_row(
+                "conv-a",
+                "window-0001",
+                embedding_model="ollama/nomic-embed-text-v2-moe",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-c",
+                        "window_id": "window-0001",
+                        "score": 0.88,
+                    }
+                ],
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_b / "window_neighbors.jsonl",
+        [
+            _window_neighbor_row(
+                "conv-b",
+                "window-0001",
+                embedding_model="ollama/nomic-embed-text-v2-moe",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-c",
+                        "window_id": "window-0001",
+                        "score": 0.75,
+                    }
+                ],
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_c / "window_neighbors.jsonl",
+        [
+            _window_neighbor_row(
+                "conv-c",
+                "window-0001",
+                embedding_model="ollama/nomic-embed-text-v2-moe",
+                neighbors=[
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-a",
+                        "window_id": "window-0001",
+                        "score": 0.88,
+                    },
+                    {
+                        "provider_id": "openai",
+                        "conversation_id": "conv-b",
+                        "window_id": "window-0001",
+                        "score": 0.75,
+                    },
+                ],
+            )
+        ],
+    )
+
+
 def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)
@@ -401,6 +577,59 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
     assert len(message_rows) == 1
     assert message_rows[0]["topic_id"] == topic_a["topic_id"]
     assert membership_rows_a == membership_rows_b
+
+
+def test_semantic_topics_representative_window_selection_is_deterministic(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_representative_selection_fixture(root)
+
+    artifact_a, _membership_rows_a = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000010",
+    )
+    artifact_b, _membership_rows_b = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000010",
+    )
+
+    assert (
+        artifact_a["topics"][0]["representative_windows"]
+        == artifact_b["topics"][0]["representative_windows"]
+    )
+
+
+def test_semantic_topics_representative_windows_prefer_central_members(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_representative_selection_fixture(root)
+
+    artifact, _membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000010",
+    )
+
+    representative = artifact["topics"][0]["representative_windows"][0]
+
+    assert representative["conversation_id"] == "conv-c"
+    assert representative["window_id"] == "window-0001"
+    assert "rollout checklist" in representative["excerpt"]
+
+
+def test_semantic_topics_single_window_cluster_uses_its_only_window(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_representative_selection_fixture(root)
+
+    artifact, _membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000020",
+    )
+
+    assert artifact["topics"][0]["representative_windows"] == [
+        {
+            "conversation_id": "conv-d",
+            "window_id": "window-0001",
+            "excerpt": "user: standalone checkpoint note",
+        }
+    ]
 
 
 def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp_path):

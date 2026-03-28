@@ -12,7 +12,9 @@ from .analyzer_semantic_preview import (
     WindowClusterMember,
     WindowPreviewRecord,
     load_window_cluster_index,
+    load_window_neighbor_index,
     load_window_preview_index,
+    select_representative_cluster_windows,
 )
 from .analyzer_semantic_topic import (
     DEFAULT_OLLAMA_BASE_URL,
@@ -43,13 +45,6 @@ TOPIC_CLUSTERING_SCORE_POLICY = (
 
 class SemanticTopicsError(RuntimeError):
     pass
-
-
-def _normalize_text(text: str, *, max_chars: int) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= max_chars:
-        return compact
-    return compact[: max_chars - 3] + "..."
 
 
 def _utc_now_isoformat() -> str:
@@ -168,46 +163,6 @@ def _topic_id(provider_id: str, members: list[WindowClusterMember]) -> str:
         f"{provider_id}|{'|'.join(anchors)}".encode("utf-8")
     ).hexdigest()
     return f"topic_{digest[:12]}"
-
-
-def _prompt_windows(
-    *,
-    members: list[WindowClusterMember],
-    windows: dict[WindowRef, WindowPreviewRecord],
-    window_cap: int,
-    max_window_chars: int,
-) -> list[dict[str, str]]:
-    candidates: list[tuple[int, str, str, str]] = []
-    for member in members:
-        record = windows.get((member.conversation_id, member.window_id))
-        if record is None:
-            continue
-        candidates.append(
-            (
-                -record.char_count,
-                member.conversation_id,
-                member.window_id,
-                _normalize_text(record.text, max_chars=max_window_chars),
-            )
-        )
-
-    selected: list[dict[str, str]] = []
-    seen_hashes: set[str] = set()
-    for _neg_char_count, conversation_id, window_id, text in sorted(candidates):
-        text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        if text_hash in seen_hashes:
-            continue
-        seen_hashes.add(text_hash)
-        selected.append(
-            {
-                "conversation_id": conversation_id,
-                "window_id": window_id,
-                "excerpt": text,
-            }
-        )
-        if len(selected) == window_cap:
-            break
-    return selected
 
 
 def _message_refs(
@@ -387,6 +342,7 @@ def build_semantic_topics_artifact(
 
     try:
         windows = load_window_preview_index(input_root)
+        neighbor_index = load_window_neighbor_index(input_root)
         clusters, _cluster_by_window = load_window_cluster_index(input_root)
     except SemanticPreviewError as exc:
         raise SemanticTopicsError(str(exc)) from exc
@@ -408,12 +364,20 @@ def build_semantic_topics_artifact(
     topics: list[dict[str, Any]] = []
     membership_rows: list[dict[str, Any]] = []
     for item_cluster_id, members in items:
-        prompt_windows = _prompt_windows(
-            members=members,
-            windows=windows,
-            window_cap=DEFAULT_TOPIC_WINDOW_CAP,
-            max_window_chars=DEFAULT_TOPIC_MAX_WINDOW_CHARS,
-        )
+        prompt_windows = [
+            {
+                "conversation_id": row["conversation_id"],
+                "window_id": row["window_id"],
+                "excerpt": row["text"],
+            }
+            for row in select_representative_cluster_windows(
+                members=members,
+                windows=windows,
+                neighbor_index=neighbor_index,
+                window_cap=DEFAULT_TOPIC_WINDOW_CAP,
+                max_window_chars=DEFAULT_TOPIC_MAX_WINDOW_CHARS,
+            )
+        ]
         if not prompt_windows:
             continue
 

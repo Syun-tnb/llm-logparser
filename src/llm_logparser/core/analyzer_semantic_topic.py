@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -12,12 +11,11 @@ from urllib import request as urllib_request
 from .analyzer_semantic_preview import (
     SemanticPreviewError,
     WindowClusterMember,
-    WindowPreviewRecord,
     load_window_cluster_index,
+    load_window_neighbor_index,
     load_window_preview_index,
+    select_representative_cluster_windows,
 )
-
-WindowRef = tuple[str, str]
 
 DEFAULT_TOPIC_PROMPT_VARIANT = "prompt_b"
 DEFAULT_TOPIC_TOP_CLUSTERS = 20
@@ -57,13 +55,6 @@ class TopicClusterInput:
     windows: tuple[dict[str, str], ...]
 
 
-def _normalize_text(text: str, *, max_chars: int) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= max_chars:
-        return compact
-    return compact[: max_chars - 3] + "..."
-
-
 def _filtered_cluster_items(
     *,
     clusters: dict[str, list[WindowClusterMember]],
@@ -95,47 +86,6 @@ def _filtered_cluster_items(
     return filtered
 
 
-def _cluster_windows(
-    *,
-    members: list[WindowClusterMember],
-    windows: dict[WindowRef, WindowPreviewRecord],
-    window_cap: int,
-    max_window_chars: int,
-) -> tuple[dict[str, str], ...]:
-    candidates: list[tuple[int, str, str, str]] = []
-    for member in members:
-        key = (member.conversation_id, member.window_id)
-        record = windows.get(key)
-        if record is None:
-            continue
-        candidates.append(
-            (
-                -record.char_count,
-                member.conversation_id,
-                member.window_id,
-                _normalize_text(record.text, max_chars=max_window_chars),
-            )
-        )
-
-    deduped: list[dict[str, str]] = []
-    seen_hashes: set[str] = set()
-    for _neg_char_count, conversation_id, window_id, text in sorted(candidates):
-        text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        if text_hash in seen_hashes:
-            continue
-        seen_hashes.add(text_hash)
-        deduped.append(
-            {
-                "conversation_id": conversation_id,
-                "window_id": window_id,
-                "text": text,
-            }
-        )
-        if len(deduped) == window_cap:
-            break
-    return tuple(deduped)
-
-
 def _build_topic_clusters(
     *,
     input_root: Path,
@@ -148,6 +98,7 @@ def _build_topic_clusters(
 ) -> list[TopicClusterInput]:
     try:
         windows = load_window_preview_index(input_root)
+        neighbor_index = load_window_neighbor_index(input_root)
         clusters, _cluster_by_window = load_window_cluster_index(input_root)
     except SemanticPreviewError as exc:
         raise SemanticTopicError(str(exc)) from exc
@@ -163,9 +114,10 @@ def _build_topic_clusters(
 
     topic_clusters: list[TopicClusterInput] = []
     for item_cluster_id, members in items:
-        topic_windows = _cluster_windows(
+        topic_windows = select_representative_cluster_windows(
             members=members,
             windows=windows,
+            neighbor_index=neighbor_index,
             window_cap=window_cap,
             max_window_chars=max_window_chars,
         )

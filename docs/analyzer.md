@@ -581,8 +581,11 @@ deterministic and model-derived capabilities.
   sends them to a local Ollama generation model for a short label, summary,
   and keywords. Production keeps the prompt/template fixed from the repository
   prompt-selection experiment under `./tmp`: Prompt B, an 8-window cap per
-  cluster, and 300-character normalized window excerpts. It does not write any
-  new artifacts and does not alter L3 clustering.
+  cluster, and 300-character normalized window excerpts. Representative
+  windows are chosen deterministically by preferring stronger retained
+  intra-cluster connectedness first, then larger message/character footprints
+  as lightweight tie-breaks. It does not write any new artifacts and does not
+  alter L3 clustering.
 
 - `semantic-topics` is the formal L3/L4 boundary artifact builder: it reads
   stored `message_windows.jsonl` plus `window_clusters.jsonl` and writes
@@ -598,7 +601,8 @@ deterministic and model-derived capabilities.
   `null` for every topic. Provenance is execution-oriented: structural-only
   runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
   while model-enriched runs populate them from the actually used local labeling
-  prompt.
+  prompt. Representative windows in `topics.json` use the same deterministic
+  intra-cluster connectedness-first ranking as `semantic-topic`.
 
 - `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
   it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`

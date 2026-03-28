@@ -188,6 +188,84 @@ def truncate_text(text: str, *, max_chars: int) -> str:
     return text[: max_chars - 3] + "..."
 
 
+def select_representative_cluster_windows(
+    *,
+    members: list[WindowClusterMember],
+    windows: dict[WindowRef, WindowPreviewRecord],
+    neighbor_index: dict[WindowRef, list[WindowNeighborReference]] | None,
+    window_cap: int,
+    max_window_chars: int,
+) -> tuple[dict[str, str], ...]:
+    if window_cap <= 0:
+        raise ValueError("window_cap must be > 0")
+    if max_window_chars <= 0:
+        raise ValueError("max_window_chars must be > 0")
+
+    cluster_keys = {
+        (member.conversation_id, member.window_id)
+        for member in members
+    }
+    neighbor_index = neighbor_index or {}
+    candidates: list[tuple[int, float, int, int, str, str, str]] = []
+
+    for member in members:
+        key = (member.conversation_id, member.window_id)
+        record = windows.get(key)
+        if record is None:
+            continue
+
+        intra_cluster_neighbors = [
+            neighbor
+            for neighbor in neighbor_index.get(key, [])
+            if (neighbor.conversation_id, neighbor.window_id) in cluster_keys
+        ]
+        link_count = len(intra_cluster_neighbors)
+        average_score = (
+            sum(neighbor.score for neighbor in intra_cluster_neighbors) / link_count
+            if link_count > 0
+            else 0.0
+        )
+        compact_text = " ".join(record.text.split())
+        candidates.append(
+            (
+                -link_count,
+                -average_score,
+                -record.message_count,
+                -record.char_count,
+                member.conversation_id,
+                member.window_id,
+                truncate_text(compact_text, max_chars=max_window_chars),
+            )
+        )
+
+    deduped: list[dict[str, str]] = []
+    seen_hashes: set[str] = set()
+    for (
+        _neg_link_count,
+        _neg_average_score,
+        _neg_message_count,
+        _neg_char_count,
+        conversation_id,
+        window_id,
+        text,
+    ) in sorted(candidates):
+        text_hash = json.dumps(text, ensure_ascii=False)
+        if text_hash in seen_hashes:
+            continue
+        seen_hashes.add(text_hash)
+        deduped.append(
+            {
+                "conversation_id": conversation_id,
+                "window_id": window_id,
+                "text": text,
+            }
+        )
+        if len(deduped) == window_cap:
+            break
+
+    return tuple(deduped)
+
+
 def _display_turn_role(role: str) -> str:
     lowered = role.strip().lower()
     if lowered == "user":

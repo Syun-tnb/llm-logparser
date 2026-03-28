@@ -800,6 +800,10 @@ Experimental prototype note:
   artifacts; it reads `message_windows.jsonl` and `window_clusters.jsonl`,
   selects representative windows from each cluster, and asks a local Ollama
   model for a label, short summary, and keywords
+- representative-window selection is deterministic and lightweight: it prefers
+  windows with more retained intra-cluster neighbor links first, then higher
+  average retained intra-cluster scores, then larger message/character
+  footprints when centrality signals tie or are unavailable
 - `analyze semantic-topics` is the formal topic artifact builder for that same
   boundary; it writes provider-scoped artifacts under
   `<provider-root>/l3/semantic-topics/`
