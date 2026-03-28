@@ -182,6 +182,20 @@ def apply_profile_defaults(
             value = getattr(profile.parse, attr)
             if value is not None:
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_size",
+            ("--message-window-size",),
+            profile.parse.message_windows.size,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_stride",
+            ("--message-window-stride",),
+            profile.parse.message_windows.stride,
+        )
 
     elif args.command == "export":
         _set_if_not_cli(
@@ -255,6 +269,20 @@ def apply_profile_defaults(
             value = getattr(profile.chain, attr) if attr in {"dry_run", "fail_fast", "validate_schema"} else getattr(profile.output, attr)
             if value is not None:
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_size",
+            ("--message-window-size",),
+            profile.chain.message_windows.size,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_stride",
+            ("--message-window-stride",),
+            profile.chain.message_windows.stride,
+        )
 
     elif args.command == "extract":
         _set_if_not_cli(

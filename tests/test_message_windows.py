@@ -5,6 +5,7 @@ from llm_logparser.core import parser as parser_module
 from llm_logparser.core.message_windows import (
     build_message_window_artifact,
     iter_message_windows_from_rows,
+    resolve_message_window_stride,
 )
 from llm_logparser.core.schema_validation import load_message_windows_validator
 
@@ -89,16 +90,86 @@ def test_iter_message_windows_from_rows_is_deterministic_and_role_aware():
 
     assert first == second
     assert first == [
-        build_message_window_artifact(rows[:3], window_index=1),
-        build_message_window_artifact(rows[3:], window_index=2),
+        build_message_window_artifact(
+            rows[:3],
+            window_index=1,
+            window_size=3,
+            window_stride=3,
+        ),
+        build_message_window_artifact(
+            rows[3:],
+            window_index=2,
+            window_size=3,
+            window_stride=3,
+        ),
     ]
     assert first[0]["message_ids"] == ["m1", "m2", "m3"]
     assert first[0]["roles"] == ["user", "system", "assistant"]
     assert first[1]["message_ids"] == ["m4", "m5"]
     assert first[1]["roles"] == ["tool", "unknown"]
+    assert first[0]["window_size"] == 3
+    assert first[0]["window_stride"] == 3
     assert "system: second" in first[0]["text"]
     assert "tool: tool-output" in first[1]["text"]
     assert "unknown: fifth" in first[1]["text"]
+
+
+def test_iter_message_windows_from_rows_supports_sliding_stride():
+    rows = [
+        _canonical_message("conv-1", "m1", "user", 1, "one"),
+        _canonical_message("conv-1", "m2", "assistant", 2, "two"),
+        _canonical_message("conv-1", "m3", "user", 3, "three"),
+        _canonical_message("conv-1", "m4", "assistant", 4, "four"),
+        _canonical_message("conv-1", "m5", "user", 5, "five"),
+    ]
+
+    windows = list(
+        iter_message_windows_from_rows(
+            rows,
+            window_size=3,
+            window_stride=2,
+        )
+    )
+
+    assert [window["window_id"] for window in windows] == [
+        "window-0001",
+        "window-0002",
+        "window-0003",
+    ]
+    assert [window["message_ids"] for window in windows] == [
+        ["m1", "m2", "m3"],
+        ["m3", "m4", "m5"],
+        ["m5"],
+    ]
+    assert [window["roles"] for window in windows] == [
+        ["user", "assistant", "user"],
+        ["user", "assistant", "user"],
+        ["user"],
+    ]
+    assert all(window["window_size"] == 3 for window in windows)
+    assert all(window["window_stride"] == 2 for window in windows)
+
+
+def test_iter_message_windows_counts_change_with_size_and_stride():
+    rows = [
+        _canonical_message("conv-1", f"m{index}", "user", index, f"text-{index}")
+        for index in range(1, 7)
+    ]
+
+    non_overlapping = list(
+        iter_message_windows_from_rows(rows, window_size=4, window_stride=4)
+    )
+    sliding = list(iter_message_windows_from_rows(rows, window_size=4, window_stride=2))
+    fine_stride = list(iter_message_windows_from_rows(rows, window_size=4, window_stride=1))
+
+    assert len(non_overlapping) == 2
+    assert len(sliding) == 3
+    assert len(fine_stride) == 6
+
+
+def test_resolve_message_window_stride_defaults_to_window_size():
+    assert resolve_message_window_stride(window_size=4, window_stride=None) == 4
+    assert resolve_message_window_stride(window_size=4, window_stride=2) == 2
 
 
 def test_message_window_artifact_matches_schema():
@@ -107,7 +178,12 @@ def test_message_window_artifact_matches_schema():
         _canonical_message("conv-1", "m2", "assistant", 1704067202000, "second"),
     ]
 
-    artifact = build_message_window_artifact(rows, window_index=1)
+    artifact = build_message_window_artifact(
+        rows,
+        window_index=1,
+        window_size=2,
+        window_stride=2,
+    )
     validator = load_message_windows_validator()
 
     assert list(validator.iter_errors(artifact)) == []
@@ -121,7 +197,12 @@ def test_message_window_schema_rejects_malformed_row():
         _canonical_message("conv-1", "m2", "assistant", 1704067202000, "second"),
     ]
 
-    artifact = build_message_window_artifact(rows, window_index=1)
+    artifact = build_message_window_artifact(
+        rows,
+        window_index=1,
+        window_size=2,
+        window_stride=2,
+    )
     artifact["message_ids"] = "m1,m2"
 
     validator = load_message_windows_validator()
@@ -166,6 +247,8 @@ def test_parse_writes_message_windows_jsonl_next_to_parsed_jsonl(monkeypatch, tm
     assert windows[0]["message_ids"] == ["m1", "m2", "m3", "m4"]
     assert windows[0]["roles"] == ["user", "system", "assistant", "tool"]
     assert windows[0]["schema_version"] == "1.0"
+    assert windows[0]["window_size"] == 4
+    assert windows[0]["window_stride"] == 4
     assert windows[1]["message_ids"] == ["m5"]
     assert windows[1]["roles"] == ["assistant"]
     assert windows[0]["ts_start"] == 1704067201000
@@ -179,6 +262,44 @@ def test_parse_writes_message_windows_jsonl_next_to_parsed_jsonl(monkeypatch, tm
         _canonical_message("conv-1", "m5", "assistant", 1704067205000, "fifth"),
     ]
     assert windows == list(iter_message_windows_from_rows(canonical_rows))
+
+
+def test_parse_writes_sliding_message_windows_when_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        parser_module,
+        "load_adapter",
+        lambda provider: (_fake_adapter, {}, {}),
+    )
+    input_path = tmp_path / "input.json"
+    input_path.write_text('{"source":"fixture"}\n', encoding="utf-8")
+
+    parser_module.parse_to_jsonl(
+        "fake",
+        input_path,
+        tmp_path,
+        dry_run=False,
+        fail_fast=True,
+        message_window_size=4,
+        message_window_stride=2,
+    )
+
+    windows_path = tmp_path / "fake" / "thread-conv-1" / "message_windows.jsonl"
+    windows = [
+        json.loads(line)
+        for line in windows_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert [window["message_ids"] for window in windows] == [
+        ["m1", "m2", "m3", "m4"],
+        ["m3", "m4", "m5"],
+        ["m5"],
+    ]
+    assert [window["window_id"] for window in windows] == [
+        "window-0001",
+        "window-0002",
+        "window-0003",
+    ]
 
 
 def test_parse_dry_run_does_not_write_message_windows_jsonl(monkeypatch, tmp_path):

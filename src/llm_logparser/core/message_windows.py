@@ -12,6 +12,7 @@ from .l1_derivation import (
 )
 
 DEFAULT_MESSAGE_WINDOW_SIZE = 4
+DEFAULT_MESSAGE_WINDOW_STRIDE: int | None = None
 
 
 def _message_timestamp(row: dict[str, Any]) -> int | float | None:
@@ -34,6 +35,8 @@ def build_message_window_artifact(
     rows: list[dict[str, Any]],
     *,
     window_index: int,
+    window_size: int,
+    window_stride: int,
 ) -> dict[str, Any]:
     """Build a deterministic message window artifact from canonical message rows."""
     if not rows:
@@ -55,47 +58,67 @@ def build_message_window_artifact(
         "char_count": sum(message_character_count(row) for row in rows),
         "ts_start": min(timestamps) if timestamps else None,
         "ts_end": max(timestamps) if timestamps else None,
+        "window_size": window_size,
+        "window_stride": window_stride,
         "text": _window_text(rows),
     }
+
+
+def resolve_message_window_stride(
+    *,
+    window_size: int,
+    window_stride: int | None = DEFAULT_MESSAGE_WINDOW_STRIDE,
+) -> int:
+    if window_size <= 0:
+        raise ValueError("window_size must be > 0")
+    stride = window_size if window_stride is None else window_stride
+    if stride <= 0:
+        raise ValueError("window_stride must be > 0")
+    return stride
 
 
 def iter_message_windows_from_rows(
     rows: Iterable[dict[str, Any]],
     *,
     window_size: int = DEFAULT_MESSAGE_WINDOW_SIZE,
+    window_stride: int | None = DEFAULT_MESSAGE_WINDOW_STRIDE,
 ) -> Iterator[dict[str, Any]]:
-    """Yield fixed-size contiguous windows from canonical message rows."""
-    if window_size <= 0:
-        raise ValueError("window_size must be > 0")
+    """Yield deterministic contiguous windows from canonical message rows."""
+    stride = resolve_message_window_stride(
+        window_size=window_size,
+        window_stride=window_stride,
+    )
+    message_rows = [
+        row for row in rows if row.get("record_type") == "message"
+    ]
+    if not message_rows:
+        return
 
-    buffer: list[dict[str, Any]] = []
     window_index = 1
-
-    for row in rows:
-        if row.get("record_type") != "message":
+    for start in range(0, len(message_rows), stride):
+        chunk = message_rows[start : start + window_size]
+        if not chunk:
             continue
-
-        buffer.append(row)
-        if len(buffer) < window_size:
-            continue
-
-        yield build_message_window_artifact(buffer, window_index=window_index)
+        yield build_message_window_artifact(
+            chunk,
+            window_index=window_index,
+            window_size=window_size,
+            window_stride=stride,
+        )
         window_index += 1
-        buffer = []
-
-    if buffer:
-        yield build_message_window_artifact(buffer, window_index=window_index)
 
 
 def iter_message_windows(
     parsed_path: Path,
     *,
     window_size: int = DEFAULT_MESSAGE_WINDOW_SIZE,
+    window_stride: int | None = DEFAULT_MESSAGE_WINDOW_STRIDE,
 ) -> Iterator[dict[str, Any]]:
     """Yield deterministic message windows from canonical parsed.jsonl records."""
     yield from iter_message_windows_from_rows(
         iter_message_records(parsed_path),
         window_size=window_size,
+        window_stride=window_stride,
     )
 
 
@@ -103,10 +126,15 @@ def render_message_windows_jsonl(
     rows: Iterable[dict[str, Any]],
     *,
     window_size: int = DEFAULT_MESSAGE_WINDOW_SIZE,
+    window_stride: int | None = DEFAULT_MESSAGE_WINDOW_STRIDE,
 ) -> str:
     """Render message windows as JSONL."""
     lines = [
         json.dumps(window, ensure_ascii=True)
-        for window in iter_message_windows_from_rows(rows, window_size=window_size)
+        for window in iter_message_windows_from_rows(
+            rows,
+            window_size=window_size,
+            window_stride=window_stride,
+        )
     ]
     return "\n".join(lines) + ("\n" if lines else "")

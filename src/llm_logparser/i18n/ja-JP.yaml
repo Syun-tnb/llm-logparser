@@ -29,6 +29,8 @@ messages:
   cli.parse.opt.dry_run.help: ファイルを書き込まずに parse を実行する (統計/ログのみ)。
   cli.parse.opt.fail_fast.help: 継続せず、最初のエラーで parse を停止する。
   cli.parse.opt.validate_schema.help: 正規化済みメッセージを message.schema.json で検証する
+  cli.parse.opt.message_window_size.help: 生成する message window ごとの canonical message 数
+  cli.parse.opt.message_window_stride.help: 生成する message window 間の進み幅。未指定時は window size と同じになります。
   cli.export.opt.input.help: スレッド parsed.jsonl へのパス
   cli.export.opt.out.help: 出力 Markdown パス
   cli.extract.opt.conversation_id.help: 抽出する会話 ID
@@ -82,6 +84,8 @@ messages:
   cli.chain.opt.parsed_root.help: 既に parsed スレッド (…/thread-*/parsed.jsonl) を含む任意のルートディレクトリ。指定した場合は parse フェーズをスキップする
   cli.chain.opt.fail_fast.help: 最初の export エラーで chain 処理を停止する。既定では継続する。
   cli.chain.opt.validate_schema.help: parse フェーズ中に正規化済みメッセージを検証する
+  cli.chain.opt.message_window_size.help: parse フェーズで生成する message window ごとの canonical message 数
+  cli.chain.opt.message_window_stride.help: parse フェーズで生成する message window 間の進み幅。未指定時は window size と同じになります。
   cli.error.path: "パスエラー: {detail}"
   cli.error.permission: "アクセス権限エラー: {detail}"
   cli.error.unexpected: "予期しないエラー: {detail}"

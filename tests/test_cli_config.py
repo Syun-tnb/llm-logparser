@@ -481,6 +481,36 @@ def test_semantic_candidate_generation_keys_are_loaded_from_config(tmp_path):
     }
 
 
+def test_parse_message_window_keys_are_loaded_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "profiles:",
+                "  default:",
+                "    parse:",
+                "      message_windows:",
+                "        size: 4",
+                "        stride: 2",
+                "    chain:",
+                "      message_windows:",
+                "        size: 5",
+                "        stride: 3",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+
+    assert config.profiles["default"].parse.message_windows.size == 4
+    assert config.profiles["default"].parse.message_windows.stride == 2
+    assert config.profiles["default"].chain.message_windows.size == 5
+    assert config.profiles["default"].chain.message_windows.stride == 3
+
+
 def test_unsupported_config_schema_version_exits(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

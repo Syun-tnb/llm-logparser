@@ -36,12 +36,18 @@
     "char_count": { "$ref": "#/$defs/nonNegativeInteger" },
     "ts_start": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
     "ts_end": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
+    "window_size": { "$ref": "#/$defs/positiveInteger" },
+    "window_stride": { "$ref": "#/$defs/positiveInteger" },
     "text": { "type": "string" }
   },
   "$defs": {
     "nonNegativeInteger": {
       "type": "integer",
       "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
     },
     "nonNegativeIntegerOrNull": {
       "type": ["integer", "null"],

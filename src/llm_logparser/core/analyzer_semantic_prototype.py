@@ -472,6 +472,82 @@ def _candidate_query(
     return query, params
 
 
+def _candidate_indices_for_record(
+    conn: sqlite3.Connection,
+    *,
+    record: WindowEmbeddingRecord,
+    record_index: int,
+    config: SqliteCandidateConfig,
+    index_by_key: dict[WindowKey, int],
+) -> list[int]:
+    query, params = _candidate_query(record, config=config)
+    candidate_indices: list[int] = []
+    for row in conn.execute(query, params):
+        key = (row["provider_id"], row["conversation_id"], row["window_id"])
+        candidate_index = index_by_key.get(key)
+        if candidate_index is None or candidate_index == record_index:
+            continue
+        candidate_indices.append(candidate_index)
+    return sorted(set(candidate_indices))
+
+
+def build_sqlite_candidate_pools(
+    embeddings: list[WindowEmbeddingRecord],
+    *,
+    candidate_config: SqliteCandidateConfig,
+) -> list[tuple[int, ...]]:
+    if not embeddings:
+        return []
+
+    db_path = _validate_sqlite_candidate_config(candidate_config)
+    index_by_key, _ = _embedding_lookup(embeddings)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        pools: list[tuple[int, ...]] = []
+        for index, record in enumerate(embeddings):
+            candidate_indices = _candidate_indices_for_record(
+                conn,
+                record=record,
+                record_index=index,
+                config=candidate_config,
+                index_by_key=index_by_key,
+            )
+            pools.append(tuple(sorted({index, *candidate_indices})))
+        return pools
+    finally:
+        conn.close()
+
+
+def _build_pool_score_lookup(
+    normalized: np.ndarray,
+    candidate_pools: list[tuple[int, ...]],
+) -> dict[int, dict[int, float]]:
+    compared_scores: dict[int, dict[int, float]] = {
+        index: {} for pool in candidate_pools for index in pool
+    }
+    if not candidate_pools:
+        return compared_scores
+
+    for pool in sorted(set(candidate_pools)):
+        if len(pool) <= 1:
+            compared_scores.setdefault(pool[0], {})
+            continue
+        local_indices = np.asarray(pool, dtype=np.int64)
+        local_similarity = normalized[local_indices] @ normalized[local_indices].T
+        np.fill_diagonal(local_similarity, -np.inf)
+        for row_offset, source_index in enumerate(local_indices):
+            source_scores = compared_scores.setdefault(int(source_index), {})
+            for col_offset, target_index in enumerate(local_indices):
+                if row_offset == col_offset:
+                    continue
+                source_scores[int(target_index)] = float(
+                    local_similarity[row_offset, col_offset]
+                )
+
+    return compared_scores
+
+
 def build_window_neighbor_rows_with_sqlite_candidates(
     embeddings: list[WindowEmbeddingRecord],
     *,
@@ -489,71 +565,56 @@ def build_window_neighbor_rows_with_sqlite_candidates(
     if not embeddings:
         return []
 
-    db_path = _validate_sqlite_candidate_config(candidate_config)
-    index_by_key, normalized = _embedding_lookup(embeddings)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        rows: list[dict[str, Any]] = []
-        total = len(embeddings)
-        effective_top_k = min(top_k, max(0, total - 1))
-        prefer_same_thread = candidate_config.candidate_same_thread == "prefer"
+    candidate_pools = build_sqlite_candidate_pools(
+        embeddings,
+        candidate_config=candidate_config,
+    )
+    _, normalized = _embedding_lookup(embeddings)
+    compared_scores = _build_pool_score_lookup(normalized, candidate_pools)
 
-        for index, record in enumerate(embeddings):
-            ordered_indices: list[int] = []
-            score_lookup: dict[int, float] = {}
-            if effective_top_k > 0:
-                query, params = _candidate_query(record, config=candidate_config)
-                candidate_indices: list[int] = []
-                for row in conn.execute(query, params):
-                    key = (row["provider_id"], row["conversation_id"], row["window_id"])
-                    candidate_index = index_by_key.get(key)
-                    if candidate_index is None or candidate_index == index:
-                        continue
-                    candidate_indices.append(candidate_index)
+    rows: list[dict[str, Any]] = []
+    total = len(embeddings)
+    effective_top_k = min(top_k, max(0, total - 1))
+    prefer_same_thread = candidate_config.candidate_same_thread == "prefer"
 
-                if candidate_indices:
-                    candidate_index_array = np.asarray(candidate_indices, dtype=np.int64)
-                    candidate_scores = normalized[candidate_index_array] @ normalized[index]
-                    score_lookup = {
-                        int(candidate_index): float(score)
-                        for candidate_index, score in zip(
-                            candidate_index_array,
-                            candidate_scores,
-                            strict=True,
-                        )
-                    }
-                    ordered_indices = _ordered_neighbor_indices(
-                        candidate_index_array,
-                        candidate_scores,
-                        embeddings,
-                        top_k=effective_top_k,
-                        min_score=min_score,
-                        target_conversation_id=record.conversation_id,
-                        prefer_same_thread=prefer_same_thread,
-                    )
-
-            rows.append(
-                _neighbor_row_from_indices(
-                    record,
-                    embeddings,
-                    ordered_indices,
-                    score_lookup,
-                )
+    for index, record in enumerate(embeddings):
+        score_lookup = compared_scores.get(index, {})
+        ordered_indices: list[int] = []
+        if effective_top_k > 0 and score_lookup:
+            candidate_index_array = np.asarray(sorted(score_lookup.keys()), dtype=np.int64)
+            candidate_scores = np.asarray(
+                [score_lookup[int(candidate_index)] for candidate_index in candidate_index_array],
+                dtype=np.float64,
             )
-            if progress_every is not None and (
-                (index + 1) % progress_every == 0 or index + 1 == total
-            ):
-                _emit_progress(
-                    progress,
-                    "runtime.analyze.semantic_prototype.neighbor_progress",
-                    count=index + 1,
-                    total=total,
-                )
+            ordered_indices = _ordered_neighbor_indices(
+                candidate_index_array,
+                candidate_scores,
+                embeddings,
+                top_k=effective_top_k,
+                min_score=min_score,
+                target_conversation_id=record.conversation_id,
+                prefer_same_thread=prefer_same_thread,
+            )
 
-        return rows
-    finally:
-        conn.close()
+        rows.append(
+            _neighbor_row_from_indices(
+                record,
+                embeddings,
+                ordered_indices,
+                score_lookup,
+            )
+        )
+        if progress_every is not None and (
+            (index + 1) % progress_every == 0 or index + 1 == total
+        ):
+            _emit_progress(
+                progress,
+                "runtime.analyze.semantic_prototype.neighbor_progress",
+                count=index + 1,
+                total=total,
+            )
+
+    return rows
 
 
 def window_embeddings_artifact_path(windows_path: Path) -> Path:

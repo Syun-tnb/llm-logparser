@@ -346,11 +346,34 @@ class SanitizeConfig:
 
 
 @dataclass(frozen=True)
+class MessageWindowsConfig:
+    size: int | None = None
+    stride: int | None = None
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> MessageWindowsConfig:
+        data = _optional_mapping(raw, context)
+        return cls(
+            size=_optional_int(data.get("size"), f"{context}.size"),
+            stride=_optional_int(data.get("stride"), f"{context}.stride"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "size": self.size,
+                "stride": self.stride,
+            }
+        )
+
+
+@dataclass(frozen=True)
 class ParseConfig:
     outdir: str | None = None
     dry_run: bool | None = None
     fail_fast: bool | None = None
     validate_schema: bool | None = None
+    message_windows: MessageWindowsConfig = field(default_factory=MessageWindowsConfig)
 
     @classmethod
     def from_raw(cls, raw: Any, *, context: str) -> ParseConfig:
@@ -363,6 +386,10 @@ class ParseConfig:
                 data.get("validate_schema"),
                 f"{context}.validate_schema",
             ),
+            message_windows=MessageWindowsConfig.from_raw(
+                data.get("message_windows"),
+                context=f"{context}.message_windows",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -372,6 +399,7 @@ class ParseConfig:
                 "dry_run": self.dry_run,
                 "fail_fast": self.fail_fast,
                 "validate_schema": self.validate_schema,
+                "message_windows": self.message_windows.to_dict(),
             }
         )
 
@@ -384,6 +412,7 @@ class ChainConfig:
     dry_run: bool | None = None
     fail_fast: bool | None = None
     validate_schema: bool | None = None
+    message_windows: MessageWindowsConfig = field(default_factory=MessageWindowsConfig)
 
     @classmethod
     def from_raw(cls, raw: Any, *, context: str) -> ChainConfig:
@@ -404,6 +433,10 @@ class ChainConfig:
                 data.get("validate_schema"),
                 f"{context}.validate_schema",
             ),
+            message_windows=MessageWindowsConfig.from_raw(
+                data.get("message_windows"),
+                context=f"{context}.message_windows",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -415,6 +448,7 @@ class ChainConfig:
                 "dry_run": self.dry_run,
                 "fail_fast": self.fail_fast,
                 "validate_schema": self.validate_schema,
+                "message_windows": self.message_windows.to_dict(),
             }
         )
 
@@ -690,6 +724,7 @@ class ConfigProfile:
                     if parse.validate_schema is not None
                     else legacy_validate_schema
                 ),
+                message_windows=parse.message_windows,
             ),
             chain=ChainConfig(
                 outdir=chain.outdir or legacy_outdir,
@@ -704,6 +739,7 @@ class ConfigProfile:
                     if chain.validate_schema is not None
                     else legacy_validate_schema
                 ),
+                message_windows=chain.message_windows,
             ),
             extract=ExtractConfig(
                 outdir=extract.outdir or legacy_outdir,

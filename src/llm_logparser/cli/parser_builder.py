@@ -75,6 +75,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=_("cli.parse.opt.validate_schema.help"),
     )
+    parse_cmd.add_argument(
+        "--message-window-size",
+        dest="message_window_size",
+        type=int,
+        default=4,
+        help=_("cli.parse.opt.message_window_size.help"),
+    )
+    parse_cmd.add_argument(
+        "--message-window-stride",
+        dest="message_window_stride",
+        type=int,
+        default=None,
+        help=_("cli.parse.opt.message_window_stride.help"),
+    )
 
     export_cmd = subparsers.add_parser(
         "export",
@@ -557,6 +571,20 @@ def build_parser() -> argparse.ArgumentParser:
         dest="validate_schema",
         action="store_true",
         help=_("cli.chain.opt.validate_schema.help"),
+    )
+    chain_cmd.add_argument(
+        "--message-window-size",
+        dest="message_window_size",
+        type=int,
+        default=4,
+        help=_("cli.chain.opt.message_window_size.help"),
+    )
+    chain_cmd.add_argument(
+        "--message-window-stride",
+        dest="message_window_stride",
+        type=int,
+        default=None,
+        help=_("cli.chain.opt.message_window_stride.help"),
     )
 
     subparsers.add_parser("viewer", help=_("cli.viewer.help"))

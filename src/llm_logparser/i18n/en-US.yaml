@@ -25,6 +25,8 @@ messages:
   cli.parse.opt.dry_run.help: Run parse without writing any files (stats/log only).
   cli.parse.opt.fail_fast.help: Stop parsing on first error instead of continuing.
   cli.parse.opt.validate_schema.help: Validate normalized messages against message.schema.json
+  cli.parse.opt.message_window_size.help: Number of canonical messages per generated message window
+  cli.parse.opt.message_window_stride.help: Advance step between generated message windows. Defaults to the window size when omitted.
   cli.export.opt.input.help: Path to thread parsed.jsonl
   cli.export.opt.out.help: Output Markdown path
   cli.extract.opt.conversation_id.help: Conversation ID to extract
@@ -78,6 +80,8 @@ messages:
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.
   cli.chain.opt.fail_fast.help: Stop chain processing on first export error. Default is to continue.
   cli.chain.opt.validate_schema.help: Validate normalized messages during the parse phase
+  cli.chain.opt.message_window_size.help: Number of canonical messages per generated message window during the parse phase
+  cli.chain.opt.message_window_stride.help: Advance step between generated message windows during the parse phase. Defaults to the window size when omitted.
   cli.parse.provider: "Provider: {provider}"
   cli.parse.input: "Input file: {path}"
   cli.parse.outdir: "Output directory: {path}"

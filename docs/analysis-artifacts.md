@@ -195,10 +195,17 @@ Contract:
   - `char_count`: total characters across the included canonical message text
   - `ts_start`: earliest message timestamp in the window as epoch milliseconds, or `null`
   - `ts_end`: latest message timestamp in the window as epoch milliseconds, or `null`
+  - `window_size`: configured window size used to generate the row
+  - `window_stride`: configured stride used to generate the row
   - `text`: deterministic concatenated window text
 - notes:
   - `message_windows.jsonl` is a parse-time thread-local artifact, not canonical storage
   - rows now emit an explicit `schema_version` for contract stability
+  - window IDs remain deterministic sequential IDs in emission order; changing
+    size or stride changes which message spans receive those IDs, but not the
+    deterministic ordering rule itself
+  - omitted stride preserves legacy non-overlapping behavior by defaulting the
+    stride to the configured size
   - the schema describes the emitted row contract as it exists today; it does not imply future chunking or L3 structure
 
 The `parsed.jsonl` file contains:
@@ -750,6 +757,9 @@ Experimental prototype note:
   lightweight progress logs for long-running phases
 - when `--sqlite-db` is provided, candidate retrieval uses L2 `analysis.db`
   filters before similarity scoring instead of a global dense comparison
+- SQLite-assisted runs now compare windows symmetrically inside each narrowed
+  candidate pool, improving mutual-link recovery without reintroducing
+  corpus-wide all-pairs comparison
 - backend/model selection is config- or CLI-owned; code keeps conservative
   fallback embedding settings (`max_input_bytes=256`,
   `chunk_overlap_bytes=32`, `aggregate=mean`) plus a small compatibility shim

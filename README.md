@@ -295,9 +295,16 @@ uv run llm-logparser parse \
   --provider openai \
   --input <file> \
   --outdir artifacts \
+  [--message-window-size <N>] \
+  [--message-window-stride <N>] \
   [--dry-run] [--fail-fast] \
   [--validate-schema]
 ```
+
+`message_windows.jsonl` is generated during `parse`. The default remains
+non-overlapping windows because omitted stride falls back to the window size.
+Use `--message-window-stride` smaller than `--message-window-size` to opt into
+deterministic overlapping/sliding windows.
 
 ### Export
 
@@ -532,11 +539,27 @@ The semantic layer is not yet positioned as a stable topic system.
 Current L3 prototype behavior is intentionally limited:
 
 * `window_neighbors.jsonl` still stores nearest-neighbor links, but those links are now filtered by `--min-score` before emission
-* when `--sqlite-db` is provided, candidate windows are narrowed with `analysis.db` before similarity scoring instead of using a global dense comparison for every pair
+* when `--sqlite-db` is provided, candidate windows are first narrowed with `analysis.db`, then compared symmetrically inside each deduplicated local candidate pool instead of using a global dense comparison for every pair
 * `window_clusters.jsonl` groups windows by connected components over retained mutual neighbor links
 * clusters are structural groupings only; they are not canonical topics, do not carry labels, and do not model lifecycle state or summaries
 
 If `--sqlite-db` is omitted, `semantic-prototype` keeps its original all-windows fallback path and computes neighbors directly from the full embedded window set.
+
+Window shape is controlled at parse time because `semantic-prototype` reads the
+stored `message_windows.jsonl` artifact. Config therefore uses the parse/chain
+sections:
+
+```yaml
+parse:
+  message_windows:
+    size: 4
+    stride: 2
+
+chain:
+  message_windows:
+    size: 4
+    stride: 2
+```
 
 ### Analyze Semantic Preview
 

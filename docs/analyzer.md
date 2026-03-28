@@ -520,6 +520,10 @@ deterministic and model-derived capabilities.
 - `semantic-prototype` is an experimental bridge into future L3 work: it
   reads deterministic `message_windows.jsonl`, writes rebuildable embedding,
   neighbor, and minimal cluster artifacts, and does not perform topic labeling
+  Window generation quality can now be improved upstream with deterministic
+  sliding windows: `message_windows.jsonl` still defaults to
+  non-overlapping windows, but parse/chain can opt into overlap by setting
+  message-window stride smaller than window size.
   It supports a default `deterministic-hash` backend for local plumbing/tests
   and an `ollama` backend for real local embeddings via a local Ollama model.
   For Ollama-backed runs, oversized window text is chunked automatically with a
@@ -529,8 +533,12 @@ deterministic and model-derived capabilities.
   not emitted unconditionally.
   When `--sqlite-db` is provided, candidate generation uses L2
   `analysis.db` filters (`ts_start`, candidate window size, thread-level
-  assistant ratio, and same-thread policy) before cosine scoring instead of
-  computing a global dense `N×N` similarity matrix for that run.
+  assistant ratio, and same-thread policy) to build local candidate pools
+  before cosine scoring.
+  Similarity inside those narrowed pools is now evaluated symmetrically via
+  pool-local all-pairs comparison, which improves reciprocity opportunities for
+  the existing mutual-only clustering rule without reintroducing corpus-wide
+  dense comparison.
   Long-running phases emit lightweight progress logs while windows load,
   embeddings generate, neighbors build, clusters build, and artifacts are
   written.
@@ -570,6 +578,14 @@ Key `semantic-prototype` flags:
 - `--candidate-same-thread`: controls whether same-thread candidates are
   allowed, preferred on tie-breaks, restricted to only same-thread windows, or
   excluded
+
+Parse-time windowing controls:
+
+- `parse.message_windows.size` / `chain.message_windows.size`: number of
+  canonical messages per emitted message window
+- `parse.message_windows.stride` / `chain.message_windows.stride`: advance step
+  between emitted windows; omitting it preserves the legacy non-overlapping
+  behavior by reusing the window size
 
 - L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
   are conceptual future extensions and remain opt-in, model-dependent, and

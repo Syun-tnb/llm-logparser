@@ -8,6 +8,7 @@
   * `thread_stats.json` now emits `schema_version: "1.0"`
   * `message_windows.jsonl` rows now emit `schema_version: "1.0"`
   * added formal JSON Schema for `message_windows.jsonl` rows
+  * `message_windows.jsonl` now supports deterministic sliding windows via size/stride controls while preserving legacy non-overlapping defaults
 * Added experimental `analyze semantic-prototype`:
   * reads `message_windows.jsonl`
   * writes rebuildable `window_embeddings.jsonl`, `window_neighbors.jsonl`, and `window_clusters.jsonl`
@@ -19,6 +20,7 @@
   * automatically chunks oversized Ollama embedding inputs and aggregates them into one final embedding per window
   * now supports `--min-score` thresholding so weak semantic links are not emitted unconditionally
   * can optionally use `analysis.db` for L2-backed candidate generation before similarity scoring
+  * SQLite-assisted mode now performs symmetric all-pairs comparison inside each narrowed candidate pool
   * emits minimal mutual-link connected components as `window_clusters.jsonl`
   * still does not perform topic labeling, lifecycle modeling, or summarization
 * Added experimental `analyze semantic-preview`:
