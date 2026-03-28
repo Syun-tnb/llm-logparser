@@ -34,6 +34,7 @@ SUPPORTED_SAME_THREAD_POLICIES = frozenset(
 )
 CLUSTER_EDGE_POLICY = "mutual-only"
 DEFAULT_MAX_SAME_THREAD_SHARED_MESSAGES = 1
+DEFAULT_CROSS_THREAD_SCORE_PERCENTILE = 0.75
 
 
 class SemanticPrototypeError(RuntimeError):
@@ -330,6 +331,16 @@ def _neighbor_row_from_indices(
 def _validate_min_score(min_score: float) -> None:
     if not -1.0 <= min_score <= 1.0:
         raise ValueError("min_score must be between -1.0 and 1.0")
+
+
+def _quantile(sorted_values: list[float], probability: float) -> float:
+    if not sorted_values:
+        raise ValueError("cannot compute quantile of empty values")
+    index = min(
+        len(sorted_values) - 1,
+        int((len(sorted_values) - 1) * probability),
+    )
+    return float(sorted_values[index])
 
 
 def build_window_neighbor_rows(
@@ -641,16 +652,21 @@ def window_clusters_artifact_path(windows_path: Path) -> Path:
 def build_window_cluster_rows(
     embeddings: list[WindowEmbeddingRecord],
     neighbor_rows: list[dict[str, Any]],
+    *,
+    cross_thread_score_percentile: float = DEFAULT_CROSS_THREAD_SCORE_PERCENTILE,
 ) -> list[dict[str, Any]]:
     if len(embeddings) != len(neighbor_rows):
         raise ValueError("embeddings and neighbor_rows must have the same length")
     if not embeddings:
         return []
+    if not 0.0 <= cross_thread_score_percentile <= 1.0:
+        raise ValueError("cross_thread_score_percentile must be between 0.0 and 1.0")
 
     nodes = [_window_key(record) for record in embeddings]
     node_set = set(nodes)
     record_by_key = {_window_key(record): record for record in embeddings}
     neighbor_map: dict[WindowKey, set[WindowKey]] = {node: set() for node in nodes}
+    neighbor_scores: dict[WindowKey, dict[WindowKey, float]] = {node: {} for node in nodes}
     for row in neighbor_rows:
         source = (row["provider_id"], row["conversation_id"], row["window_id"])
         for neighbor in row["neighbors"]:
@@ -661,6 +677,34 @@ def build_window_cluster_rows(
             )
             if target in node_set:
                 neighbor_map[source].add(target)
+                score = neighbor.get("score")
+                if isinstance(score, (int, float)):
+                    neighbor_scores[source][target] = float(score)
+
+    cross_thread_mutual_scores: list[float] = []
+    seen_pairs: set[tuple[WindowKey, WindowKey]] = set()
+    for source in nodes:
+        for target in sorted(neighbor_map[source]):
+            if source[1] == target[1]:
+                continue
+            pair = tuple(sorted((source, target)))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            if source not in neighbor_map.get(target, set()):
+                continue
+            forward_score = neighbor_scores.get(source, {}).get(target)
+            reverse_score = neighbor_scores.get(target, {}).get(source)
+            if forward_score is None or reverse_score is None:
+                continue
+            cross_thread_mutual_scores.append((forward_score + reverse_score) / 2.0)
+
+    cross_thread_min_score: float | None = None
+    if cross_thread_mutual_scores:
+        cross_thread_min_score = _quantile(
+            sorted(cross_thread_mutual_scores),
+            cross_thread_score_percentile,
+        )
 
     adjacency: dict[WindowKey, set[WindowKey]] = {node: set() for node in nodes}
     for source in nodes:
@@ -668,7 +712,17 @@ def build_window_cluster_rows(
             if source in neighbor_map.get(target, set()):
                 source_record = record_by_key[source]
                 target_record = record_by_key[target]
-                if not _cluster_edge_allowed(source_record, target_record):
+                mutual_score: float | None = None
+                forward_score = neighbor_scores.get(source, {}).get(target)
+                reverse_score = neighbor_scores.get(target, {}).get(source)
+                if forward_score is not None and reverse_score is not None:
+                    mutual_score = (forward_score + reverse_score) / 2.0
+                if not _cluster_edge_allowed(
+                    source_record,
+                    target_record,
+                    mutual_score=mutual_score,
+                    cross_thread_min_score=cross_thread_min_score,
+                ):
                     continue
                 adjacency[source].add(target)
                 adjacency[target].add(source)
@@ -714,10 +768,14 @@ def _cluster_edge_allowed(
     source: WindowEmbeddingRecord,
     target: WindowEmbeddingRecord,
     *,
+    mutual_score: float | None = None,
+    cross_thread_min_score: float | None = None,
     max_same_thread_shared_messages: int = DEFAULT_MAX_SAME_THREAD_SHARED_MESSAGES,
 ) -> bool:
     if source.conversation_id != target.conversation_id:
-        return True
+        if cross_thread_min_score is None or mutual_score is None:
+            return True
+        return mutual_score >= cross_thread_min_score
     if max_same_thread_shared_messages < 0:
         return True
     if not source.message_ids or not target.message_ids:

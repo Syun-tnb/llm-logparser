@@ -1443,6 +1443,172 @@ def test_build_window_cluster_rows_falls_back_to_legacy_behavior_without_message
     assert [row["cluster_size"] for row in rows] == [2, 2]
 
 
+def test_build_window_cluster_rows_suppresses_weak_cross_thread_bridges_but_keeps_stronger_links():
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id=conversation_id,
+            window_id=window_id,
+            ts_start=index * 2 + 1,
+            ts_end=index * 2 + 2,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=(f"{conversation_id}-{window_id}-m1",),
+        )
+        for index, (conversation_id, window_id) in enumerate(
+            [
+                ("conv-a", "window-0001"),
+                ("conv-a", "window-0002"),
+                ("conv-b", "window-0001"),
+                ("conv-b", "window-0002"),
+                ("conv-c", "window-0001"),
+                ("conv-c", "window-0002"),
+                ("conv-d", "window-0001"),
+                ("conv-d", "window-0002"),
+            ]
+        )
+    ]
+    neighbors_by_key = {
+        ("conv-a", "window-0001"): [
+            ("conv-a", "window-0002", 0.99),
+            ("conv-b", "window-0001", 0.91),
+        ],
+        ("conv-a", "window-0002"): [
+            ("conv-a", "window-0001", 0.99),
+        ],
+        ("conv-b", "window-0001"): [
+            ("conv-b", "window-0002", 0.99),
+            ("conv-a", "window-0001", 0.91),
+            ("conv-c", "window-0001", 0.80),
+        ],
+        ("conv-b", "window-0002"): [
+            ("conv-b", "window-0001", 0.99),
+        ],
+        ("conv-c", "window-0001"): [
+            ("conv-c", "window-0002", 0.99),
+            ("conv-b", "window-0001", 0.80),
+            ("conv-d", "window-0001", 0.92),
+        ],
+        ("conv-c", "window-0002"): [
+            ("conv-c", "window-0001", 0.99),
+        ],
+        ("conv-d", "window-0001"): [
+            ("conv-d", "window-0002", 0.99),
+            ("conv-c", "window-0001", 0.92),
+        ],
+        ("conv-d", "window-0002"): [
+            ("conv-d", "window-0001", 0.99),
+        ],
+    }
+    neighbor_rows = [
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": record.conversation_id,
+            "window_id": record.window_id,
+            "embedding_model": "local/test",
+            "neighbor_count": len(
+                neighbors_by_key[(record.conversation_id, record.window_id)]
+            ),
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": conversation_id,
+                    "window_id": window_id,
+                    "score": score,
+                }
+                for conversation_id, window_id, score in neighbors_by_key[
+                    (record.conversation_id, record.window_id)
+                ]
+            ],
+        }
+        for record in embeddings
+    ]
+
+    rows = build_window_cluster_rows(embeddings, neighbor_rows)
+    cluster_ids = {
+        (row["conversation_id"], row["window_id"]): row["cluster_id"] for row in rows
+    }
+
+    assert rows[0]["cluster_size"] == 4
+    assert rows[2]["cluster_size"] == 4
+    assert rows[4]["cluster_size"] == 4
+    assert rows[6]["cluster_size"] == 4
+    assert cluster_ids[("conv-a", "window-0001")] == cluster_ids[("conv-b", "window-0001")]
+    assert cluster_ids[("conv-c", "window-0001")] == cluster_ids[("conv-d", "window-0001")]
+    assert cluster_ids[("conv-a", "window-0001")] != cluster_ids[("conv-c", "window-0001")]
+
+
+def test_build_window_cluster_rows_falls_back_to_legacy_cross_thread_behavior_without_scores():
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            ts_start=1,
+            ts_end=2,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("m1",),
+        ),
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-b",
+            window_id="window-0001",
+            ts_start=3,
+            ts_end=4,
+            embedding_model="local/test",
+            text_char_count=10,
+            embedding=(1.0, 0.0),
+            message_ids=("n1",),
+        ),
+    ]
+    neighbor_rows = [
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0001",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-b",
+                    "window_id": "window-0001",
+                }
+            ],
+        },
+        {
+            "record_type": "window_neighbors",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-b",
+            "window_id": "window-0001",
+            "embedding_model": "local/test",
+            "neighbor_count": 1,
+            "neighbors": [
+                {
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "window_id": "window-0001",
+                }
+            ],
+        },
+    ]
+
+    rows = build_window_cluster_rows(embeddings, neighbor_rows)
+
+    assert [row["cluster_size"] for row in rows] == [2, 2]
+
+
 def test_analyze_semantic_prototype_cli_happy_path(tmp_path):
     root = tmp_path / "artifacts" / "openai"
     thread_a = root / "thread-conv-a" / "message_windows.jsonl"

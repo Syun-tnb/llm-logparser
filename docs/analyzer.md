@@ -544,10 +544,16 @@ deterministic and model-derived capabilities.
   written.
   Cluster construction is intentionally minimal: it converts retained mutual
   neighbor links into undirected edges, suppresses same-thread mutual edges
-  when the paired windows share more than one source message, and writes
-  connected-component membership to `window_clusters.jsonl`. That overlap cap
-  was selected from the real artifact corpus because it reduced sliding-window
-  chaining without the extra fragmentation of a stricter zero-overlap rule.
+  when the paired windows share more than one source message, applies a
+  stricter cross-thread gate at the runtime P75 of cross-thread mutual scores,
+  and writes connected-component membership to `window_clusters.jsonl`. The
+  same-thread overlap cap and the cross-thread P75 rule were both selected
+  from the real artifact corpus: the first reduced sliding-window chaining
+  without the extra fragmentation of a stricter zero-overlap rule, and the
+  second reduced broad cross-thread components while retaining more mutual
+  structure than stricter cross-thread thresholds. If older callers provide
+  neighbor rows without usable scores, the cross-thread gate falls back to the
+  legacy mutual-only behavior for those edges instead of failing.
   Backend/model selection is config- or CLI-owned: `backend` selects the
   runtime binding, `model` selects the embedding model identifier, and
   embedding chunking settings can be declared explicitly in config. Code keeps

@@ -772,6 +772,14 @@ Experimental prototype note:
   default was selected from the repository artifact corpus to reduce
   sliding-window chaining while preserving slightly more useful links than a
   stricter zero-overlap rule
+- cross-thread mutual edges are also gated more strictly at clustering time:
+  production derives the current run's P75 cross-thread mutual score from the
+  retained neighbor rows and only keeps cross-thread edges at or above that
+  threshold; this keeps mutual-only semantics intact while reducing broad
+  cross-thread components without depending on `./tmp` experiment outputs
+- when older or partial neighbor rows do not carry usable cross-thread scores,
+  clustering falls back to the legacy mutual-only behavior for those edges
+  instead of failing
 - `window_clusters.jsonl` rows use
   `src/llm_logparser/core/schemas/window_clusters.schema.json` and currently
   emit one deterministic membership row per source window with
