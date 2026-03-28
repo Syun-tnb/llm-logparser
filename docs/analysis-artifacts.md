@@ -833,6 +833,10 @@ Experimental prototype note:
   `message_windows.jsonl`, then builds:
   `topic_id -> members`, `message_id -> topic_id`, and
   `conversation_id -> topic_id` indexes in memory for navigation
+- the explorer's default list ordering is deterministic and scan-oriented:
+  larger topics first, then broader conversation coverage, then higher
+  observed intra-cluster scores when present, with representative previews and
+  lightweight quality hints surfaced in the text view
 - because `message_windows.jsonl` carries `message_ids`, timestamps, and text,
   the explorer can join reverse membership rows back to excerpts and temporal
   order without touching clustering logic or making any LLM calls

@@ -694,6 +694,11 @@ uv run llm-logparser analyze semantic-topic-explore \
 - `message -> topic`
 - `topic -> timeline`
 
+Its default topic list is tuned for scanning rather than exhaustiveness: it
+surfaces larger topics first, then broader conversation coverage, then higher
+observed intra-cluster scores when available, and shows one representative
+window preview plus lightweight quality hints in the text view.
+
 ### Analyze Semantic Topic
 
 Render experimental topic labels and summaries from stored L3 clusters without

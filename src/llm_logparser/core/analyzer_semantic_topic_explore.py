@@ -79,6 +79,12 @@ def _format_timestamp(value: int | None) -> str:
     return str(value)
 
 
+def _format_score(value: float | None) -> str:
+    if not isinstance(value, (int, float)):
+        return "?"
+    return f"{float(value):.2f}"
+
+
 def load_topics_index(input_root: Path) -> dict[str, dict[str, Any]]:
     validator = load_topics_validator()
     topics: dict[str, dict[str, Any]] = {}
@@ -195,21 +201,42 @@ def build_topic_explore_index(input_root: Path) -> TopicExploreIndex:
 def _topic_list_rows(index: TopicExploreIndex) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for topic in index.topics_by_id.values():
+        quality_signals = topic.get("quality_signals")
+        representative_windows = topic.get("representative_windows", [])
+        representative_window = (
+            representative_windows[0]
+            if isinstance(representative_windows, list) and representative_windows
+            else None
+        )
         rows.append(
             {
                 "topic_id": topic["topic_id"],
                 "label": topic.get("label"),
+                "summary": topic.get("summary"),
                 "cluster_count": topic.get("cluster_count", len(topic.get("cluster_ids", []))),
+                "window_count": topic.get("window_count", len(topic.get("window_refs", []))),
                 "message_count": topic.get("message_count", len(topic.get("message_refs", []))),
                 "conversation_count": len(topic.get("conversation_ids", [])),
-                "quality_signals": topic.get("quality_signals"),
+                "quality_signals": quality_signals,
+                "representative_window": representative_window,
                 "first_seen": topic.get("first_seen"),
                 "last_seen": topic.get("last_seen"),
             }
         )
     rows.sort(
         key=lambda row: (
-            -int(row["message_count"] or 0),
+            -int(
+                (row["quality_signals"] or {}).get("cluster_size")
+                or row["window_count"]
+                or 0
+            ),
+            -int(
+                (row["quality_signals"] or {}).get("conversation_count")
+                or row["conversation_count"]
+                or 0
+            ),
+            (row["quality_signals"] or {}).get("avg_intra_cluster_score") is None,
+            -float((row["quality_signals"] or {}).get("avg_intra_cluster_score") or 0.0),
             row["topic_id"],
         )
     )
@@ -276,6 +303,7 @@ def _topic_detail_payload(index: TopicExploreIndex, topic_id: str) -> dict[str, 
             "cluster_ids": topic.get("cluster_ids", []),
             "conversation_ids": topic.get("conversation_ids", []),
             "quality_signals": topic.get("quality_signals"),
+            "representative_windows": topic.get("representative_windows", []),
             "first_seen": topic.get("first_seen"),
             "last_seen": topic.get("last_seen"),
             "timeline": _topic_timeline(topic=topic, windows_by_ref=index.windows_by_ref),
@@ -378,12 +406,25 @@ def _render_topic_list(payload: dict[str, Any]) -> str:
     lines: list[str] = []
     for row in payload["topics"]:
         label = row["label"] or "(unlabeled)"
+        summary = row["summary"] or "(none)"
+        representative = row.get("representative_window")
+        quality_signals = row.get("quality_signals") or {}
+        lines.append(f"{row['topic_id']} | {label}")
+        lines.append(f"  summary: {summary}")
         lines.append(
-            f"{row['topic_id']} | {label} | "
-            f"clusters={row['cluster_count']} messages={row['message_count']} "
-            f"conversations={row['conversation_count']} "
+            "  stats: "
+            f"clusters={row['cluster_count']} windows={row['window_count']} "
+            f"messages={row['message_count']} conversations={row['conversation_count']} "
+            f"avg_intra_cluster_score={_format_score(quality_signals.get('avg_intra_cluster_score'))} "
             f"range={_format_timestamp(row['first_seen'])} -> {_format_timestamp(row['last_seen'])}"
         )
+        if isinstance(representative, dict):
+            lines.append(
+                "  preview: "
+                f"[{representative.get('conversation_id', '?')} / "
+                f"{representative.get('window_id', '?')}] "
+                f"\"{representative.get('excerpt', '')}\""
+            )
     return "\n".join(lines)
 
 
@@ -400,11 +441,29 @@ def _render_topic_detail(payload: dict[str, Any]) -> str:
             f"clusters={topic['cluster_count']} windows={topic['window_count']} "
             f"messages={topic['message_count']}"
         ),
+        (
+            "Quality: "
+            f"windows={(topic.get('quality_signals') or {}).get('cluster_size', topic['window_count'])} "
+            f"conversations={(topic.get('quality_signals') or {}).get('conversation_count', len(topic['conversation_ids']))} "
+            f"avg_intra_cluster_score={_format_score((topic.get('quality_signals') or {}).get('avg_intra_cluster_score'))} "
+            f"max_intra_cluster_score={_format_score((topic.get('quality_signals') or {}).get('max_intra_cluster_score'))} "
+            f"single_window={'yes' if (topic.get('quality_signals') or {}).get('single_window') else 'no'}"
+        ),
         f"Range: {_format_timestamp(topic['first_seen'])} -> {_format_timestamp(topic['last_seen'])}",
         "Conversations: "
         + (", ".join(topic["conversation_ids"]) if topic["conversation_ids"] else "(none)"),
-        "Timeline:",
+        "Representative:",
     ]
+    for row in topic.get("representative_windows", []):
+        lines.append(
+            f"- [{row['conversation_id']} / {row['window_id']}] "
+            f"\"{row['excerpt']}\""
+        )
+    lines.extend(
+        [
+        "Timeline:",
+        ]
+    )
     for row in topic["timeline"]:
         lines.append(
             f"- {_format_timestamp(row['timestamp'])} | {row['conversation_id']} / "

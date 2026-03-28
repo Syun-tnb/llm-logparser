@@ -611,7 +611,10 @@ deterministic and model-derived capabilities.
   and builds in-memory indexes for:
   `topic -> members`, `message -> topic`, and `conversation -> topics`.
   It supports a default topic list, topic detail with timeline, reverse lookup
-  from `message_id`, and conversation-centric topic grouping.
+  from `message_id`, and conversation-centric topic grouping. The default list
+  now prefers larger topics first, then broader conversation coverage, then
+  higher observed intra-cluster scores when those scores exist, and the text
+  view surfaces one representative preview plus lightweight quality hints.
 
 Current limitations remain explicit:
 
