@@ -601,7 +601,9 @@ deterministic and model-derived capabilities.
   `null` for every topic. Provenance is execution-oriented: structural-only
   runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
   while model-enriched runs populate them from the actually used local labeling
-  prompt. Representative windows in `topics.json` use the same deterministic
+  prompt. Topic records may also include additive `quality_signals` derived
+  from cluster size, conversation count, and retained intra-cluster neighbor
+  scores when available. Representative windows in `topics.json` use the same deterministic
   intra-cluster connectedness-first ranking as `semantic-topic`.
 
 - `semantic-topic-explore` is the read-only UX layer on top of those artifacts:

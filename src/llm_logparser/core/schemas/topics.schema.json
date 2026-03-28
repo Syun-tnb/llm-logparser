@@ -58,6 +58,24 @@
       },
       "additionalProperties": false
     },
+    "qualitySignals": {
+      "type": "object",
+      "required": [
+        "cluster_size",
+        "conversation_count",
+        "avg_intra_cluster_score",
+        "max_intra_cluster_score",
+        "single_window"
+      ],
+      "properties": {
+        "cluster_size": { "type": "integer", "minimum": 1 },
+        "conversation_count": { "type": "integer", "minimum": 1 },
+        "avg_intra_cluster_score": { "type": ["number", "null"] },
+        "max_intra_cluster_score": { "type": ["number", "null"] },
+        "single_window": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "clusteringProvenance": {
       "type": "object",
       "required": [
@@ -175,6 +193,7 @@
         "cluster_count": { "type": "integer", "minimum": 1 },
         "window_count": { "type": "integer", "minimum": 1 },
         "message_count": { "type": "integer", "minimum": 1 },
+        "quality_signals": { "$ref": "#/$defs/qualitySignals" },
         "first_seen": { "type": ["integer", "null"], "minimum": 0 },
         "last_seen": { "type": ["integer", "null"], "minimum": 0 },
         "representative_windows": {

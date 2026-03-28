@@ -266,6 +266,37 @@ def select_representative_cluster_windows(
     return tuple(deduped)
 
 
+def compute_cluster_quality_signals(
+    *,
+    members: list[WindowClusterMember],
+    neighbor_index: dict[WindowRef, list[WindowNeighborReference]] | None,
+) -> dict[str, Any]:
+    cluster_keys = {
+        (member.conversation_id, member.window_id)
+        for member in members
+    }
+    scores: list[float] = []
+    neighbor_index = neighbor_index or {}
+
+    for key in cluster_keys:
+        for neighbor in neighbor_index.get(key, []):
+            neighbor_key = (neighbor.conversation_id, neighbor.window_id)
+            if neighbor_key in cluster_keys and neighbor_key != key:
+                scores.append(float(neighbor.score))
+
+    return {
+        "cluster_size": len(members),
+        "conversation_count": len({member.conversation_id for member in members}),
+        "avg_intra_cluster_score": (
+            sum(scores) / len(scores)
+            if scores
+            else None
+        ),
+        "max_intra_cluster_score": max(scores) if scores else None,
+        "single_window": len(members) == 1,
+    }
+
+
 def _display_turn_role(role: str) -> str:
     lowered = role.strip().lower()
     if lowered == "user":

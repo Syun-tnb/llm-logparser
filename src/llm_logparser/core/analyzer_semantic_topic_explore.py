@@ -202,6 +202,7 @@ def _topic_list_rows(index: TopicExploreIndex) -> list[dict[str, Any]]:
                 "cluster_count": topic.get("cluster_count", len(topic.get("cluster_ids", []))),
                 "message_count": topic.get("message_count", len(topic.get("message_refs", []))),
                 "conversation_count": len(topic.get("conversation_ids", [])),
+                "quality_signals": topic.get("quality_signals"),
                 "first_seen": topic.get("first_seen"),
                 "last_seen": topic.get("last_seen"),
             }
@@ -274,6 +275,7 @@ def _topic_detail_payload(index: TopicExploreIndex, topic_id: str) -> dict[str, 
             "message_count": topic.get("message_count", len(topic.get("message_refs", []))),
             "cluster_ids": topic.get("cluster_ids", []),
             "conversation_ids": topic.get("conversation_ids", []),
+            "quality_signals": topic.get("quality_signals"),
             "first_seen": topic.get("first_seen"),
             "last_seen": topic.get("last_seen"),
             "timeline": _topic_timeline(topic=topic, windows_by_ref=index.windows_by_ref),
@@ -333,6 +335,7 @@ def _conversation_payload(index: TopicExploreIndex, conversation_id: str) -> dic
                 "label": topic.get("label"),
                 "summary": topic.get("summary"),
                 "message_count": len(rows),
+                "quality_signals": topic.get("quality_signals"),
                 "first_seen": min(timestamps) if timestamps else None,
                 "last_seen": max(timestamps) if timestamps else None,
             }

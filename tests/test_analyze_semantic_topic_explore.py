@@ -266,6 +266,13 @@ def test_semantic_topic_explore_conversation_grouping(tmp_path):
     assert payload["conversation_id"] == "conv-a"
     assert len(payload["topics"]) == 1
     assert payload["topics"][0]["message_count"] == 3
+    assert payload["topics"][0]["quality_signals"] == {
+        "cluster_size": 3,
+        "conversation_count": 2,
+        "avg_intra_cluster_score": None,
+        "max_intra_cluster_score": None,
+        "single_window": False,
+    }
     assert payload["topics"][0]["first_seen"] == 100
     assert payload["topics"][0]["last_seen"] == 140
 
@@ -290,6 +297,13 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
     assert payload["view"] == "topic-detail"
     assert payload["topic"]["topic_id"] == topic_id
     assert payload["topic"]["message_count"] == 2
+    assert payload["topic"]["quality_signals"] == {
+        "cluster_size": 2,
+        "conversation_count": 1,
+        "avg_intra_cluster_score": None,
+        "max_intra_cluster_score": None,
+        "single_window": False,
+    }
     assert len(payload["topic"]["timeline"]) == 2
 
 

@@ -35,6 +35,8 @@ Implemented today:
 - formal topic artifacts under `l3/semantic-topics/`:
   - `topics.json`
   - `topic_membership.jsonl`
+- additive per-topic quality signals derived from cluster size, conversation
+  spread, and retained intra-cluster neighbor scores when those scores exist
 - read-only topic rendering via `analyze semantic-topic`
 
 Not implemented today:

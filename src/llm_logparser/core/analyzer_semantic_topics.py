@@ -11,6 +11,7 @@ from .analyzer_semantic_preview import (
     SemanticPreviewError,
     WindowClusterMember,
     WindowPreviewRecord,
+    compute_cluster_quality_signals,
     load_window_cluster_index,
     load_window_neighbor_index,
     load_window_preview_index,
@@ -409,6 +410,10 @@ def build_semantic_topics_artifact(
                 len(windows[(member.conversation_id, member.window_id)].message_ids)
                 for member in members
                 if (member.conversation_id, member.window_id) in windows
+            ),
+            "quality_signals": compute_cluster_quality_signals(
+                members=members,
+                neighbor_index=neighbor_index,
             ),
             "first_seen": first_seen,
             "last_seen": last_seen,

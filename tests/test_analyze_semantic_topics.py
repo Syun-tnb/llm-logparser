@@ -516,6 +516,15 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     ]
     assert topics_payload["topics"][0]["state"] is None
     assert topics_payload["topics"][0]["cluster_ids"] == ["cluster_000001"]
+    assert topics_payload["topics"][0]["quality_signals"]["cluster_size"] == 3
+    assert topics_payload["topics"][0]["quality_signals"]["conversation_count"] == 2
+    assert topics_payload["topics"][0]["quality_signals"]["single_window"] is False
+    assert topics_payload["topics"][0]["quality_signals"]["avg_intra_cluster_score"] == pytest.approx(
+        (0.91 + 0.89 + 0.91) / 3
+    )
+    assert topics_payload["topics"][0]["quality_signals"]["max_intra_cluster_score"] == pytest.approx(
+        0.91
+    )
     assert topics_payload["topics"][0]["first_seen"] == 100
     assert topics_payload["topics"][0]["last_seen"] == 170
 
@@ -548,6 +557,7 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
     assert topic_a["summary"] is None
     assert topic_a["keywords"] == []
     assert topic_a["state"] is None
+    assert topic_a["quality_signals"] == topic_b["quality_signals"]
     assert artifact_a["provenance"]["prompt_hash"] == artifact_b["provenance"]["prompt_hash"]
     assert artifact_a["provenance"]["prompt_hash"] is None
     assert artifact_a["provenance"]["prompt_variant"] is None
@@ -630,6 +640,13 @@ def test_semantic_topics_single_window_cluster_uses_its_only_window(tmp_path):
             "excerpt": "user: standalone checkpoint note",
         }
     ]
+    assert artifact["topics"][0]["quality_signals"] == {
+        "cluster_size": 1,
+        "conversation_count": 1,
+        "avg_intra_cluster_score": None,
+        "max_intra_cluster_score": None,
+        "single_window": True,
+    }
 
 
 def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp_path):
@@ -650,6 +667,9 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     assert all(topic["summary"] is None for topic in topics_payload["topics"])
     assert all(topic["keywords"] == [] for topic in topics_payload["topics"])
     assert all(topic["state"] is None for topic in topics_payload["topics"])
+    assert all(topic["quality_signals"]["avg_intra_cluster_score"] is None for topic in topics_payload["topics"])
+    assert all(topic["quality_signals"]["max_intra_cluster_score"] is None for topic in topics_payload["topics"])
+    assert {topic["quality_signals"]["cluster_size"] for topic in topics_payload["topics"]} == {2, 3}
 
 
 def test_analyze_semantic_topics_cli_happy_path(tmp_path, caplog):

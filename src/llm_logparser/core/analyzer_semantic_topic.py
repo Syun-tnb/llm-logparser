@@ -11,6 +11,7 @@ from urllib import request as urllib_request
 from .analyzer_semantic_preview import (
     SemanticPreviewError,
     WindowClusterMember,
+    compute_cluster_quality_signals,
     load_window_cluster_index,
     load_window_neighbor_index,
     load_window_preview_index,
@@ -52,6 +53,7 @@ class TopicClusterInput:
     cluster_id: str
     cluster_size: int
     conversation_count: int
+    quality_signals: dict[str, Any]
     windows: tuple[dict[str, str], ...]
 
 
@@ -128,6 +130,10 @@ def _build_topic_clusters(
                 cluster_id=item_cluster_id,
                 cluster_size=len(members),
                 conversation_count=len({member.conversation_id for member in members}),
+                quality_signals=compute_cluster_quality_signals(
+                    members=members,
+                    neighbor_index=neighbor_index,
+                ),
                 windows=topic_windows,
             )
         )
@@ -268,6 +274,7 @@ def _topic_payload(
         "cluster_id": cluster.cluster_id,
         "cluster_size": cluster.cluster_size,
         "conversation_count": cluster.conversation_count,
+        "quality_signals": cluster.quality_signals,
         "topic_label": " ".join(topic_label.split()),
         "summary": " ".join(summary.split()),
         "keywords": _normalize_keywords(output.get("keywords")),

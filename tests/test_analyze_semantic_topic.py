@@ -267,6 +267,13 @@ def test_render_semantic_topic_json_filters_cross_thread_clusters(tmp_path, monk
     assert payload["cluster_count"] == 1
     assert payload["topics"][0]["cluster_id"] == "cluster_000001"
     assert payload["topics"][0]["topic_label"] == "Launch Readiness"
+    assert payload["topics"][0]["quality_signals"] == {
+        "cluster_size": 3,
+        "conversation_count": 2,
+        "avg_intra_cluster_score": None,
+        "max_intra_cluster_score": None,
+        "single_window": False,
+    }
 
 
 def test_render_semantic_topic_requires_cluster_artifacts(tmp_path):

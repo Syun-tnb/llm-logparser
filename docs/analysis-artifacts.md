@@ -811,6 +811,9 @@ Experimental prototype note:
   cluster, with deterministic `topic_id`, structural references back to
   clusters/windows/messages, conversation coverage, time bounds, and optional
   model-derived label / summary / keywords
+- each topic record may also carry additive `quality_signals` for observation
+  only, such as cluster size, conversation count, and retained intra-cluster
+  score summaries when neighbor data is available
 - `topics.json` now uses `schema_version: "1.0"` and carries top-level
   `generated_at`, `source_inputs`, and `provenance`; provenance records the
   topic builder mode plus the upstream clustering policy used to produce the
