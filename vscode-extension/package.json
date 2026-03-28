@@ -1,112 +1,55 @@
 {
-  "name": "llm-logparser-vscode",
-  "displayName": "LLM Logparser",
-  "description": "GUI for the llm-logparser CLI inside VS Code.",
-  "version": "0.0.1",
-  "publisher": "local",
+  "name": "llm-logparser-analyzer",
+  "displayName": "LLM LogParser Analysis Instrument",
+  "description": "Hardcore utility wrapper and Liquid dashboard for llm-logparser",
+  "version": "1.0.0",
+  "publisher": "llm-logparser",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:llmLogparser.openPanel"
-  ],
-  "main": "./out/extension.js",
+  "activationEvents": [],
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "llmLogparser.openPanel",
-        "title": "LLM Logparser: Open GUI"
+        "command": "llmLogparser.openDashboard",
+        "title": "Open LogParser Instrument"
       }
     ],
-    "configuration": {
-      "title": "LLM Logparser",
-      "properties": {
-        "llmLogparser.pythonPath": {
-          "type": "string",
-          "default": "python3",
-          "description": "Python interpreter used to run llm-logparser when cliCommand is not set."
-        },
-        "llmLogparser.cliCommand": {
-          "type": "string",
-          "default": "",
-          "description": "Optional CLI executable to run instead of python -m llm_logparser.cli."
-        },
-        "llmLogparser.viewer.language": {
-          "type": "string",
-          "default": "auto",
-          "enum": ["auto", "en", "ja"],
-          "description": "Viewer language. auto follows VS Code UI language."
-        },
-        "llmLogparser.viewer.timezone": {
-          "type": "string",
-          "default": "local",
-          "enum": ["local", "utc"],
-          "description": "Timezone used when rendering timestamps."
-        },
-        "llmLogparser.viewer.timestampFormat": {
-          "type": "string",
-          "default": "absolute",
-          "enum": ["relative", "absolute"],
-          "description": "Timestamp rendering style."
-        },
-        "llmLogparser.viewer.wrap": {
-          "type": "string",
-          "default": "on",
-          "enum": ["on", "off"],
-          "description": "Wrap long message text in the viewer."
-        },
-        "llmLogparser.viewer.showSystem": {
-          "type": "string",
-          "default": "on",
-          "enum": ["on", "off"],
-          "description": "Show system messages in the viewer."
-        },
-        "llmLogparser.viewer.showToolCalls": {
-          "type": "string",
-          "default": "on",
-          "enum": ["on", "off"],
-          "description": "Show tool-call messages in the viewer."
-        },
-        "llmLogparser.viewer.compactMode": {
-          "type": "string",
-          "default": "off",
-          "enum": ["on", "off"],
-          "description": "Reduce spacing in the viewer layout."
-        },
-        "llmLogparser.viewer.codeTheme": {
-          "type": "string",
-          "default": "auto",
-          "enum": ["auto", "light", "dark"],
-          "description": "Code block theme in the viewer."
-        },
-        "llmLogparser.viewer.maxMessagesPerThread": {
-          "type": "number",
-          "default": 2000,
-          "description": "Maximum messages to render per thread for performance."
-        },
-        "llmLogparser.viewer.search.caseSensitive": {
-          "type": "boolean",
-          "default": false,
-          "description": "Search matches are case-sensitive."
-        },
-        "llmLogparser.viewer.search.useRegex": {
-          "type": "boolean",
-          "default": false,
-          "description": "Search uses regular expressions."
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "llmLogparserExplorer",
+          "title": "LLM LogParser",
+          "icon": "resources/icon.svg"
         }
-      }
+      ]
+    },
+    "views": {
+      "llmLogparserExplorer": [
+        {
+          "type": "webview",
+          "id": "llmLogparser.sidebarView",
+          "name": "Command Center",
+          "icon": "resources/icon.svg"
+        }
+      ]
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "vscode:prepublish": "npm run package",
+    "compile": "rm -rf dist && tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "test": "echo 'No tests yet'"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.85.0",
-    "typescript": "^5.3.0"
+    "esbuild": "^0.19.11",
+    "typescript": "^5.3.3"
   }
 }
