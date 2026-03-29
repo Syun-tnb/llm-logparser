@@ -32,6 +32,7 @@ export class LogParserPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
+  private readonly outputChannel: vscode.OutputChannel;
   private disposables: vscode.Disposable[] = [];
   private workspaceRoot?: string;
   private runState: RunState;
@@ -41,9 +42,14 @@ export class LogParserPanel {
     values: Partial<Record<string, string>>;
   };
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+  private constructor(
+    panel: vscode.WebviewPanel,
+    extensionUri: vscode.Uri,
+    outputChannel: vscode.OutputChannel
+  ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
+    this.outputChannel = outputChannel;
     this.workspaceRoot = this.getWorkspaceRoot();
     this.runState = {
       busy: false,
@@ -71,7 +77,10 @@ export class LogParserPanel {
     this.postInit();
   }
 
-  public static createOrShow(extensionUri: vscode.Uri): LogParserPanel {
+  public static createOrShow(
+    extensionUri: vscode.Uri,
+    outputChannel: vscode.OutputChannel
+  ): LogParserPanel {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -94,7 +103,11 @@ export class LogParserPanel {
       }
     );
 
-    LogParserPanel.currentPanel = new LogParserPanel(panel, extensionUri);
+    LogParserPanel.currentPanel = new LogParserPanel(
+      panel,
+      extensionUri,
+      outputChannel
+    );
     return LogParserPanel.currentPanel;
   }
 
@@ -211,6 +224,28 @@ export class LogParserPanel {
     this.postMessage({ type: "busy", value });
   }
 
+  private appendExecutionLog(value: string): void {
+    this.postMessage({ type: "log", value });
+    this.outputChannel.append(value);
+  }
+
+  private appendOutputLine(value: string): void {
+    this.outputChannel.appendLine(value);
+  }
+
+  private async promptToOpenOutput(uiError: {
+    what: string;
+  }): Promise<void> {
+    const openOutput = "Open Output";
+    const selection = await vscode.window.showErrorMessage(
+      uiError.what,
+      openOutput
+    );
+    if (selection === openOutput) {
+      this.outputChannel.show(true);
+    }
+  }
+
   private async handlePick(payload: PickMessage["payload"]): Promise<void> {
     const options: vscode.OpenDialogOptions = {
       canSelectMany: false,
@@ -276,22 +311,22 @@ export class LogParserPanel {
         busy: true,
       };
       this.setBusy(true);
-      this.postMessage({ type: "log", value: `> ${commandLine}\n` });
+      this.appendExecutionLog(`> ${commandLine}\n`);
 
       const exitCode = await runCli(runRequest, {
         cwd: workspaceRoot,
         pythonPath,
         cliCommand,
-        onStdout: (chunk) =>
-          this.postMessage({ type: "log", value: chunk }),
-        onStderr: (chunk) =>
-          this.postMessage({ type: "log", value: chunk }),
+        onStdout: (chunk) => this.appendExecutionLog(chunk),
+        onStderr: (chunk) => this.appendExecutionLog(chunk),
       });
 
       this.runState = {
         busy: false,
         lastExitCode: exitCode,
       };
+      this.appendOutputLine("");
+      this.appendOutputLine(`Exit code: ${exitCode}`);
       if (payload.command === "parse" || payload.command === "chain") {
         await this.handleRefreshFiles({
           root: this.getViewerRootForCommand(payload),
@@ -311,6 +346,10 @@ export class LogParserPanel {
         busy: false,
         lastError: uiError,
       };
+      this.appendOutputLine("");
+      this.appendOutputLine(`Command failed: ${uiError.what}`);
+      this.appendOutputLine(`Why: ${uiError.why}`);
+      this.appendOutputLine(`Next step: ${uiError.nextStep}`);
       this.postMessage({
         type: "run-failed",
         errorType: uiError.type,
@@ -318,6 +357,7 @@ export class LogParserPanel {
         why: uiError.why,
         nextStep: uiError.nextStep,
       });
+      void this.promptToOpenOutput(uiError);
     } finally {
       this.setBusy(false);
     }
