@@ -11,7 +11,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:llmLogparser.openDashboard"
+    "onCommand:llmLogparser.openDashboard",
+    "onCommand:llmLogparser.openFromExplorer"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -20,9 +21,21 @@
         "command": "llmLogparser.openDashboard",
         "category": "LLM LogParser",
         "title": "Open LogParser"
+      },
+      {
+        "command": "llmLogparser.openFromExplorer",
+        "category": "LLM LogParser",
+        "title": "Open in LLM LogParser"
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "llmLogparser.openFromExplorer",
+          "when": "resourceExtname == .json || resourceExtname == .jsonl",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
         {
           "command": "llmLogparser.openDashboard"

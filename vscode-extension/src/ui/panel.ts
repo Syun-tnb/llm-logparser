@@ -36,6 +36,10 @@ export class LogParserPanel {
   private workspaceRoot?: string;
   private runState: RunState;
   private viewerState: ViewerState;
+  private pendingRunPreset?: {
+    command: CliRunPayload["command"];
+    values: Partial<Record<string, string>>;
+  };
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel = panel;
@@ -67,14 +71,14 @@ export class LogParserPanel {
     this.postInit();
   }
 
-  public static createOrShow(extensionUri: vscode.Uri): void {
+  public static createOrShow(extensionUri: vscode.Uri): LogParserPanel {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
 
     if (LogParserPanel.currentPanel) {
       LogParserPanel.currentPanel.panel.reveal(column);
-      return;
+      return LogParserPanel.currentPanel;
     }
 
     const panel = vscode.window.createWebviewPanel(
@@ -91,6 +95,24 @@ export class LogParserPanel {
     );
 
     LogParserPanel.currentPanel = new LogParserPanel(panel, extensionUri);
+    return LogParserPanel.currentPanel;
+  }
+
+  public showWithInput(filePath: string): void {
+    this.pendingRunPreset = {
+      command: "parse",
+      values: {
+        input: filePath,
+      },
+    };
+    this.postMessage({
+      type: "set-mode",
+      mode: "parse",
+    });
+    this.postMessage({
+      type: "apply-run-preset",
+      preset: this.pendingRunPreset,
+    });
   }
 
   public dispose(): void {
@@ -113,6 +135,12 @@ export class LogParserPanel {
       runState: this.runState,
       viewerState: this.viewerState,
     });
+    if (this.pendingRunPreset) {
+      this.postMessage({
+        type: "apply-run-preset",
+        preset: this.pendingRunPreset,
+      });
+    }
     void this.postConfig("config");
   }
 

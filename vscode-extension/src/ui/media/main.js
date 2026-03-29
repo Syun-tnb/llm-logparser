@@ -604,6 +604,31 @@
         logEl.textContent = "";
       }
     },
+    "apply-run-preset"(message) {
+      const preset = message.preset;
+      if (!preset || !preset.command) {
+        return;
+      }
+      if (commandSelect) {
+        commandSelect.value = preset.command;
+      }
+      showSection(preset.command);
+      setViewMode(DEFAULT_MODE, { refresh: false });
+      clearValidationState();
+
+      Object.entries(preset.values || {}).forEach(([name, value]) => {
+        const fieldId = commandFieldIds[preset.command]?.[name];
+        if (!fieldId) {
+          return;
+        }
+        const target = document.getElementById(fieldId);
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+          return;
+        }
+        target.value = value ?? "";
+        clearFieldValidation(fieldId);
+      });
+    },
     "pick-result"(message) {
       if (!message.targetId) {
         return;

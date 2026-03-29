@@ -133,6 +133,14 @@ export interface PickResultMessage {
   value: string;
 }
 
+export interface ApplyRunPresetMessage {
+  type: "apply-run-preset";
+  preset: {
+    command: CliRunPayload["command"];
+    values: Partial<Record<string, string>>;
+  };
+}
+
 export interface BusyMessage {
   type: "busy";
   value: boolean;
@@ -178,6 +186,7 @@ export interface ClearLogMessage {
 export type ExtensionToWebviewMessage =
   | InitMessage
   | ConfigMessage
+  | ApplyRunPresetMessage
   | PickResultMessage
   | BusyMessage
   | LogMessage

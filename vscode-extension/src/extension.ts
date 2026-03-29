@@ -10,6 +10,18 @@ export function activate(context: vscode.ExtensionContext) {
             () => {
                 LogParserPanel.createOrShow(context.extensionUri);
             }
+        ),
+        vscode.commands.registerCommand(
+            'llmLogparser.openFromExplorer',
+            (resource?: vscode.Uri) => {
+                if (!resource || resource.scheme !== 'file') {
+                    LogParserPanel.createOrShow(context.extensionUri);
+                    return;
+                }
+
+                const panel = LogParserPanel.createOrShow(context.extensionUri);
+                panel.showWithInput(resource.fsPath);
+            }
         )
     );
 }
