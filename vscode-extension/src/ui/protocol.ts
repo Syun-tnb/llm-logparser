@@ -5,6 +5,7 @@ import type {
 } from "../backend/python";
 
 export type PickKind = "file" | "folder";
+export type ViewMode = "parse" | "view";
 
 export type ViewerErrorCode =
   | "workspaceRequired"
@@ -83,6 +84,11 @@ export interface RunMessage {
   payload: CliRunPayload;
 }
 
+export interface ValidationState {
+  command: CliRunPayload["command"];
+  fields: string[];
+}
+
 export interface RefreshFilesMessage {
   type: "refresh-files";
   payload?: {
@@ -155,6 +161,16 @@ export interface ViewerStateMessage {
   state: ViewerState;
 }
 
+export interface SetModeMessage {
+  type: "set-mode";
+  mode: ViewMode;
+}
+
+export interface ValidationStateMessage {
+  type: "validation-state";
+  state: ValidationState;
+}
+
 export interface ClearLogMessage {
   type: "clear-log";
 }
@@ -168,4 +184,6 @@ export type ExtensionToWebviewMessage =
   | RunFinishedMessage
   | RunFailedMessage
   | ViewerStateMessage
+  | SetModeMessage
+  | ValidationStateMessage
   | ClearLogMessage;

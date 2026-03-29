@@ -325,7 +325,7 @@ const formatArg = (value: string): string => {
   return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
 };
 
-const validateCliPayload = (payload: CliRunPayload): string[] => {
+export const getInvalidCliFields = (payload: CliRunPayload): string[] => {
   const missing: string[] = [];
   const opts = payload.options;
 
@@ -546,7 +546,7 @@ const buildCliInvocation = async (
 };
 
 export const createRunCliRequest = (payload: CliRunPayload): RunCliRequest => {
-  const missing = validateCliPayload(payload);
+  const missing = getInvalidCliFields(payload);
   if (missing.length > 0) {
     throw new InvalidInputError(
       "preflight",

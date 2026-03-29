@@ -5,6 +5,8 @@ import * as readline from "readline";
 import {
   createRunCliRequest,
   formatCliCommandLine,
+  getInvalidCliFields,
+  InvalidInputError,
   runCli,
   toCliUiError,
   type CliRunPayload,
@@ -15,6 +17,7 @@ import type {
   PickMessage,
   RefreshFilesMessage,
   RunState,
+  ValidationStateMessage,
   ViewerConfig,
   ViewerErrorCode,
   ViewerFileData,
@@ -158,6 +161,20 @@ export class LogParserPanel {
     this.postMessage(message);
   }
 
+  private postValidationState(
+    command: CliRunPayload["command"],
+    fields: string[]
+  ): void {
+    const message: ValidationStateMessage = {
+      type: "validation-state",
+      state: {
+        command,
+        fields,
+      },
+    };
+    this.postMessage(message);
+  }
+
   private setBusy(value: boolean): void {
     this.runState = {
       ...this.runState,
@@ -192,6 +209,32 @@ export class LogParserPanel {
     const config = vscode.workspace.getConfiguration("llmLogparser");
     const pythonPath = config.get<string>("pythonPath") ?? "python3";
     const cliCommand = config.get<string>("cliCommand") ?? "";
+    const invalidFields = getInvalidCliFields(payload);
+
+    this.postValidationState(payload.command, invalidFields);
+    if (invalidFields.length > 0) {
+      const missing = invalidFields.join(", ");
+      const uiError = toCliUiError(
+        new InvalidInputError(
+          "preflight",
+          "Required command inputs are missing.",
+          `The ${payload.command} command needs these fields before it can run: ${missing}.`,
+          `Fill in ${missing} in the panel and run the command again.`
+        )
+      );
+      this.runState = {
+        busy: false,
+        lastError: uiError,
+      };
+      this.postMessage({
+        type: "run-failed",
+        errorType: uiError.type,
+        what: uiError.what,
+        why: uiError.why,
+        nextStep: uiError.nextStep,
+      });
+      return;
+    }
 
     try {
       const runRequest = createRunCliRequest(payload);
@@ -221,6 +264,15 @@ export class LogParserPanel {
         busy: false,
         lastExitCode: exitCode,
       };
+      if (payload.command === "parse" || payload.command === "chain") {
+        await this.handleRefreshFiles({
+          root: this.getViewerRootForCommand(payload),
+        });
+        this.postMessage({
+          type: "set-mode",
+          mode: "view",
+        });
+      }
       this.postMessage({
         type: "run-finished",
         exitCode,
@@ -241,6 +293,38 @@ export class LogParserPanel {
     } finally {
       this.setBusy(false);
     }
+  }
+
+  private getViewerRootForCommand(payload: CliRunPayload): string | undefined {
+    const workspaceRoot = this.workspaceRoot;
+    if (!workspaceRoot) {
+      return undefined;
+    }
+
+    const resolveFromWorkspace = (input: unknown): string | undefined => {
+      const target = valueAsString(input);
+      if (!target) {
+        return undefined;
+      }
+      return path.resolve(workspaceRoot, target);
+    };
+
+    if (payload.command === "parse") {
+      return resolveFromWorkspace(payload.options.outdir) ?? this.viewerState.root ?? workspaceRoot;
+    }
+
+    if (payload.command === "chain") {
+      const parsedRoot = resolveFromWorkspace(payload.options.parsedRoot);
+      if (parsedRoot) {
+        return parsedRoot;
+      }
+      const outdir = resolveFromWorkspace(payload.options.outdir);
+      if (outdir) {
+        return path.join(outdir, "output");
+      }
+    }
+
+    return this.viewerState.root ?? workspaceRoot;
   }
 
   private setViewerError(code: ViewerErrorCode, detail?: string): void {

@@ -14,6 +14,7 @@
   const viewerThreadMeta = document.getElementById("viewer-thread-meta");
   const viewerMessages = document.getElementById("viewer-messages");
   const viewerRootInput = document.getElementById("viewer-root");
+  const DEFAULT_MODE = "parse";
 
   const screens = {
     parse: document.getElementById("screen-parse"),
@@ -53,8 +54,22 @@
   };
 
   const uiState = {
-    mode: "parse",
+    mode: DEFAULT_MODE,
     viewerFilter: "",
+  };
+
+  const commandFieldIds = {
+    parse: {
+      provider: "parse-provider",
+      input: "parse-input",
+    },
+    export: {
+      input: "export-input",
+    },
+    chain: {
+      provider: "chain-provider",
+      input: "chain-input",
+    },
   };
 
   let i18nTable = {};
@@ -195,7 +210,53 @@
     });
   };
 
-  const setViewMode = (mode) => {
+  const clearFieldValidation = (id) => {
+    if (!id) {
+      return;
+    }
+    const field = document.getElementById(id);
+    if (!(field instanceof HTMLElement)) {
+      return;
+    }
+    field.removeAttribute("aria-invalid");
+    field.closest(".field")?.classList.remove("invalid");
+  };
+
+  const clearValidationState = () => {
+    Object.values(commandFieldIds).forEach((fields) => {
+      Object.values(fields).forEach((id) => clearFieldValidation(id));
+    });
+  };
+
+  const applyValidationState = (state) => {
+    clearValidationState();
+    if (!state || !Array.isArray(state.fields) || state.fields.length === 0) {
+      return;
+    }
+
+    const commandFields = commandFieldIds[state.command] || {};
+    let firstInvalidField;
+
+    state.fields.forEach((name) => {
+      const id = commandFields[name];
+      if (!id) {
+        return;
+      }
+      const field = document.getElementById(id);
+      if (!(field instanceof HTMLElement)) {
+        return;
+      }
+      field.setAttribute("aria-invalid", "true");
+      field.closest(".field")?.classList.add("invalid");
+      firstInvalidField = firstInvalidField || field;
+    });
+
+    if (firstInvalidField instanceof HTMLElement) {
+      firstInvalidField.focus();
+    }
+  };
+
+  const setViewMode = (mode, options = {}) => {
     uiState.mode = mode;
     if (pageEl) {
       pageEl.dataset.view = mode;
@@ -216,7 +277,7 @@
       button.classList.toggle("active", button.dataset.view === mode);
     });
 
-    if (mode === "view") {
+    if (mode === "view" && options.refresh !== false) {
       requestFileRefresh();
     }
   };
@@ -551,6 +612,7 @@
       if (target) {
         target.value = message.value ?? "";
       }
+      clearFieldValidation(message.targetId);
       if (message.targetId === "viewer-root") {
         requestFileRefresh(message.value ?? undefined);
       }
@@ -569,6 +631,7 @@
         busy: false,
         lastExitCode: message.exitCode,
       };
+      clearValidationState();
       appendLog(`\n${t("log.exitCode", { code: message.exitCode })}\n`);
     },
     "run-failed"(message) {
@@ -597,6 +660,12 @@
     "viewer-state"(message) {
       extensionState.viewerState = message.state || { files: [] };
       renderViewer();
+    },
+    "set-mode"(message) {
+      setViewMode(message.mode, { refresh: false });
+    },
+    "validation-state"(message) {
+      applyValidationState(message.state);
     },
   };
 
@@ -644,6 +713,7 @@
   });
 
   commandSelect?.addEventListener("change", (event) => {
+    clearValidationState();
     showSection(event.target.value);
   });
 
@@ -663,7 +733,20 @@
     }
   });
 
+  const clearValidationOnEdit = (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.id) {
+      return;
+    }
+    clearFieldValidation(target.id);
+  };
+
+  document.querySelectorAll("input, select, textarea").forEach((element) => {
+    element.addEventListener("input", clearValidationOnEdit);
+    element.addEventListener("change", clearValidationOnEdit);
+  });
+
   applyViewerOptions();
   showSection(commandSelect?.value ?? "parse");
-  setViewMode("parse");
+  setViewMode(DEFAULT_MODE);
 })();

@@ -135,6 +135,10 @@ body {
   margin-bottom: 12px;
 }
 
+.field.invalid label {
+  color: var(--warn);
+}
+
 label {
   font-size: 13px;
   color: var(--muted);
@@ -158,6 +162,20 @@ select:focus,
 textarea:focus {
   outline: 2px solid rgba(11, 110, 79, 0.35);
   border-color: var(--accent);
+}
+
+.field.invalid input,
+.field.invalid select,
+.field.invalid textarea {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 1px rgba(184, 97, 25, 0.12);
+}
+
+.field.invalid input:focus,
+.field.invalid select:focus,
+.field.invalid textarea:focus {
+  outline: 2px solid rgba(184, 97, 25, 0.28);
+  border-color: var(--warn);
 }
 
 .row {
