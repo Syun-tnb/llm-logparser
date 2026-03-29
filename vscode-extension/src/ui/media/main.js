@@ -23,6 +23,7 @@
   const DEFAULT_MODE = "parse";
   const INITIAL_MESSAGE_LIMIT = 200;
   const LOAD_MORE_STEP = 200;
+  const WEBVIEW_STATE_VERSION = 1;
 
   const screens = {
     parse: document.getElementById("screen-parse"),
@@ -80,6 +81,7 @@
     viewerRole: "all",
     viewerVisibleCount: INITIAL_MESSAGE_LIMIT,
     viewerFileKey: "",
+    viewerSelectedPath: "",
   };
 
   const commandFieldIds = {
@@ -144,6 +146,148 @@
       const value = vars[token];
       return value === undefined || value === null ? "" : String(value);
     });
+  };
+
+  const getPersistedFields = () => {
+    const fields = {};
+    document.querySelectorAll("input[id], select[id], textarea[id]").forEach((element) => {
+      if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) {
+        return;
+      }
+      if (!element.id) {
+        return;
+      }
+      if (element instanceof HTMLInputElement && element.type === "checkbox") {
+        fields[element.id] = element.checked;
+        return;
+      }
+      fields[element.id] = element.value ?? "";
+    });
+    return fields;
+  };
+
+  const applyPersistedFields = (fields) => {
+    Object.entries(fields || {}).forEach(([id, value]) => {
+      const target = document.getElementById(id);
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+        return;
+      }
+      if (target instanceof HTMLInputElement && target.type === "checkbox") {
+        target.checked = Boolean(value);
+        return;
+      }
+      target.value = typeof value === "string" ? value : "";
+    });
+  };
+
+  const normalizePersistedState = (state) => {
+    const fields =
+      state && typeof state === "object" && state.fields && typeof state.fields === "object"
+        ? Object.fromEntries(
+            Object.entries(state.fields).filter(
+              ([, value]) =>
+                typeof value === "string" || typeof value === "boolean"
+            )
+          )
+        : {};
+
+    const viewer =
+      state && typeof state === "object" && state.viewer && typeof state.viewer === "object"
+        ? state.viewer
+        : {};
+
+    const visibleCount =
+      typeof viewer.visibleCount === "number" && Number.isFinite(viewer.visibleCount)
+        ? Math.max(INITIAL_MESSAGE_LIMIT, Math.floor(viewer.visibleCount))
+        : INITIAL_MESSAGE_LIMIT;
+
+    return {
+      version:
+        state && typeof state === "object" && typeof state.version === "number"
+          ? state.version
+          : WEBVIEW_STATE_VERSION,
+      mode:
+        state && typeof state === "object" && state.mode === "view"
+          ? "view"
+          : DEFAULT_MODE,
+      fields,
+      viewer: {
+        selectedPath:
+          typeof viewer.selectedPath === "string" ? viewer.selectedPath : "",
+        visibleCount,
+      },
+    };
+  };
+
+  const persistWebviewState = () => {
+    const fields = getPersistedFields();
+    if (restoreState.viewerSyncPending && restoreState.desiredRoot) {
+      fields["viewer-root"] = restoreState.desiredRoot;
+    }
+
+    const selectedPath =
+      restoreState.viewerSyncPending && restoreState.desiredSelectedPath
+        ? restoreState.desiredSelectedPath
+        : uiState.viewerSelectedPath || extensionState.viewerState.selectedPath || "";
+
+    const nextState = {
+      version: WEBVIEW_STATE_VERSION,
+      mode: uiState.mode,
+      fields,
+      viewer: {
+        selectedPath,
+        visibleCount: uiState.viewerVisibleCount,
+      },
+    };
+    vscode.setState(nextState);
+  };
+
+  const applyPersistedWebviewState = () => {
+    applyPersistedFields(persistedState.fields);
+
+    uiState.mode = persistedState.mode;
+    uiState.viewerFilter =
+      typeof persistedState.fields["viewer-filter"] === "string"
+        ? persistedState.fields["viewer-filter"]
+        : "";
+    uiState.viewerSearch =
+      typeof persistedState.fields["viewer-search"] === "string"
+        ? persistedState.fields["viewer-search"]
+        : "";
+    uiState.viewerRole =
+      typeof persistedState.fields["viewer-role-filter"] === "string" &&
+      persistedState.fields["viewer-role-filter"]
+        ? persistedState.fields["viewer-role-filter"]
+        : "all";
+    uiState.viewerVisibleCount = persistedState.viewer.visibleCount;
+    uiState.viewerSelectedPath = persistedState.viewer.selectedPath || "";
+    uiState.viewerFileKey = persistedState.viewer.selectedPath || "";
+
+    const restoredCommand =
+      typeof persistedState.fields.command === "string" && persistedState.fields.command
+        ? persistedState.fields.command
+        : commandSelect?.value ?? "parse";
+
+    if (commandSelect) {
+      commandSelect.value = restoredCommand;
+    }
+    showSection(restoredCommand);
+    if (restoredCommand === "analyze") {
+      showAnalyzeSection(getAnalyzeSubcommand());
+    }
+    setViewMode(uiState.mode, { refresh: false });
+    renderViewerFiles();
+  };
+
+  const persistedState = normalizePersistedState(vscode.getState());
+  const restoreState = {
+    desiredRoot: persistedState.fields["viewer-root"] || "",
+    desiredSelectedPath: persistedState.viewer.selectedPath || "",
+    rootRequested: false,
+    fileRequested: false,
+    viewerSyncPending: Boolean(
+      persistedState.fields["viewer-root"] || persistedState.viewer.selectedPath
+    ),
   };
 
   const applyTranslationToElement = (el, key, attribute) => {
@@ -389,6 +533,10 @@
     if (mode === "view" && options.refresh !== false) {
       requestFileRefresh();
     }
+
+    if (options.persist !== false) {
+      persistWebviewState();
+    }
   };
 
   const postMessage = (message) => {
@@ -406,6 +554,7 @@
     if (!path) {
       return;
     }
+    uiState.viewerSelectedPath = path;
     if (viewerThreadMeta) {
       viewerThreadMeta.textContent = t("viewer.loading");
     }
@@ -419,6 +568,7 @@
       type: "open-viewer-file",
       payload: { path },
     });
+    persistWebviewState();
   };
 
   const requestResumeRun = (id) => {
@@ -429,6 +579,45 @@
       type: "resume-run",
       payload: { id },
     });
+  };
+
+  const reconcileRestoredViewerState = () => {
+    if (!restoreState.viewerSyncPending) {
+      return;
+    }
+
+    const desiredRoot = restoreState.desiredRoot.trim();
+    if (desiredRoot && extensionState.viewerState.root !== desiredRoot) {
+      if (!restoreState.rootRequested) {
+        restoreState.rootRequested = true;
+        requestFileRefresh(desiredRoot);
+      }
+      return;
+    }
+
+    const desiredSelectedPath = restoreState.desiredSelectedPath.trim();
+    if (desiredSelectedPath) {
+      if (extensionState.viewerState.selectedPath === desiredSelectedPath) {
+        uiState.viewerSelectedPath = desiredSelectedPath;
+        restoreState.viewerSyncPending = false;
+        persistWebviewState();
+        return;
+      }
+
+      const files = Array.isArray(extensionState.viewerState.files)
+        ? extensionState.viewerState.files
+        : [];
+      if (files.some((file) => file.path === desiredSelectedPath)) {
+        if (!restoreState.fileRequested) {
+          restoreState.fileRequested = true;
+          requestViewerFile(desiredSelectedPath);
+        }
+        return;
+      }
+    }
+
+    restoreState.viewerSyncPending = false;
+    persistWebviewState();
   };
 
   const getLocale = () => {
@@ -843,7 +1032,10 @@
 
   const renderViewer = () => {
     if (viewerRootInput) {
-      viewerRootInput.value = extensionState.viewerState.root || "";
+      viewerRootInput.value =
+        (restoreState.viewerSyncPending && restoreState.desiredRoot) ||
+        extensionState.viewerState.root ||
+        "";
     }
     if (viewerSearchInput) {
       viewerSearchInput.value = uiState.viewerSearch;
@@ -1038,6 +1230,7 @@
       if (preset.command === "analyze") {
         showAnalyzeSection(getAnalyzeSubcommand());
       }
+      persistWebviewState();
     },
     "pick-result"(message) {
       if (!message.targetId) {
@@ -1048,6 +1241,7 @@
         target.value = message.value ?? "";
       }
       clearFieldValidation(message.targetId);
+      persistWebviewState();
       if (message.targetId === "viewer-root") {
         requestFileRefresh(message.value ?? undefined);
       }
@@ -1080,10 +1274,15 @@
       extensionState.workspaceRoot = message.workspaceRoot || "-";
       extensionState.runState = message.runState || extensionState.runState;
       extensionState.viewerState = message.viewerState || extensionState.viewerState;
+      if (extensionState.viewerState.selectedPath) {
+        uiState.viewerSelectedPath = extensionState.viewerState.selectedPath;
+      }
       extensionState.salvageState =
         message.salvageState || extensionState.salvageState;
       setWorkspaceLabel();
       renderViewer();
+      reconcileRestoredViewerState();
+      persistWebviewState();
       if (runButton) {
         runButton.disabled = Boolean(extensionState.runState.busy);
       }
@@ -1096,7 +1295,12 @@
     },
     "viewer-state"(message) {
       extensionState.viewerState = message.state || { files: [] };
+      if (extensionState.viewerState.selectedPath) {
+        uiState.viewerSelectedPath = extensionState.viewerState.selectedPath;
+      }
       renderViewer();
+      reconcileRestoredViewerState();
+      persistWebviewState();
     },
     "set-mode"(message) {
       setViewMode(message.mode, { refresh: false });
@@ -1159,11 +1363,13 @@
   commandSelect?.addEventListener("change", (event) => {
     clearValidationState();
     showSection(event.target.value);
+    persistWebviewState();
   });
 
   document.getElementById("analyze-subcommand")?.addEventListener("change", () => {
     clearValidationState();
     showAnalyzeSection(getAnalyzeSubcommand());
+    persistWebviewState();
   });
 
   viewerRefreshButton?.addEventListener("click", () => {
@@ -1173,28 +1379,33 @@
   viewerFilterInput?.addEventListener("input", (event) => {
     uiState.viewerFilter = event.target.value || "";
     renderViewerFiles();
+    persistWebviewState();
   });
 
   viewerSearchInput?.addEventListener("input", (event) => {
     uiState.viewerSearch = event.target.value || "";
     uiState.viewerVisibleCount = INITIAL_MESSAGE_LIMIT;
     renderViewerContent();
+    persistWebviewState();
   });
 
   viewerRoleFilter?.addEventListener("change", (event) => {
     uiState.viewerRole = event.target.value || "all";
     uiState.viewerVisibleCount = INITIAL_MESSAGE_LIMIT;
     renderViewerContent();
+    persistWebviewState();
   });
 
   viewerClearFiltersButton?.addEventListener("click", () => {
     resetViewerThreadState();
     renderViewerContent();
+    persistWebviewState();
   });
 
   viewerLoadMoreButton?.addEventListener("click", () => {
     uiState.viewerVisibleCount += LOAD_MORE_STEP;
     renderViewerContent();
+    persistWebviewState();
   });
 
   viewerRootInput?.addEventListener("change", (event) => {
@@ -1210,6 +1421,7 @@
       return;
     }
     clearFieldValidation(target.id);
+    persistWebviewState();
   };
 
   document.querySelectorAll("input, select, textarea").forEach((element) => {
@@ -1218,6 +1430,6 @@
   });
 
   applyViewerOptions();
-  showSection(commandSelect?.value ?? "parse");
-  setViewMode(DEFAULT_MODE);
+  applyPersistedWebviewState();
+  persistWebviewState();
 })();
