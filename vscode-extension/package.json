@@ -10,16 +10,65 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:llmLogparser.openDashboard"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "llmLogparser.openDashboard",
-        "title": "Open LogParser Instrument"
+        "category": "LLM LogParser",
+        "title": "Open LogParser"
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "llmLogparser.openDashboard"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "LLM LogParser",
+      "properties": {
+        "llmLogparser.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "scope": "resource",
+          "markdownDescription": "Python executable used to run the LogParser CLI when `llmLogparser.cliCommand` is not set."
+        },
+        "llmLogparser.cliCommand": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Optional full command used to launch LogParser instead of the default `python -m llm_logparser.cli` entry point."
+        },
+        "llmLogparser.viewer.language": {
+          "type": "string",
+          "default": "auto",
+          "scope": "resource",
+          "enum": [
+            "auto",
+            "en",
+            "ja"
+          ],
+          "enumDescriptions": [
+            "Follow the current VS Code display language and fall back to English when Japanese is not active.",
+            "Force the LogParser panel UI to English.",
+            "Force the LogParser panel UI to Japanese."
+          ],
+          "markdownDescription": "Language used by the LogParser panel viewer UI."
+        }
+      }
+    }
   },
+  "keywords": [
+    "llm",
+    "logparser",
+    "logs",
+    "webview"
+  ],
   "scripts": {
     "vscode:prepublish": "npm run package",
     "compile": "rm -rf dist && tsc -p ./",
