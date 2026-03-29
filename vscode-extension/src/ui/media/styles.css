@@ -263,6 +263,12 @@ button:hover:not(:disabled) {
   animation: reveal 0.35s ease-out;
 }
 
+.subsection {
+  padding-top: 6px;
+  margin-top: 12px;
+  border-top: 1px dashed rgba(91, 90, 85, 0.2);
+}
+
 .hidden {
   display: none;
 }

@@ -25,6 +25,14 @@
     parse: document.getElementById("section-parse"),
     export: document.getElementById("section-export"),
     chain: document.getElementById("section-chain"),
+    analyze: document.getElementById("section-analyze"),
+  };
+
+  const analyzeSections = {
+    stats: document.getElementById("analyze-section-stats"),
+    timeline: document.getElementById("analyze-section-timeline"),
+    tokens: document.getElementById("analyze-section-tokens"),
+    metrics: document.getElementById("analyze-section-metrics"),
   };
 
   const defaultViewerConfig = {
@@ -69,6 +77,10 @@
     chain: {
       provider: "chain-provider",
       input: "chain-input",
+    },
+    analyze: {
+      analyzeCommand: "analyze-subcommand",
+      input: "analyze-input",
     },
   };
 
@@ -201,6 +213,17 @@
     renderViewer();
   };
 
+  const getAnalyzeSubcommand = () => valueOf("analyze-subcommand") || "stats";
+
+  const showAnalyzeSection = (subcommand) => {
+    Object.entries(analyzeSections).forEach(([key, element]) => {
+      if (!element) {
+        return;
+      }
+      element.classList.toggle("hidden", key !== subcommand);
+    });
+  };
+
   const showSection = (command) => {
     Object.entries(sections).forEach(([key, element]) => {
       if (!element) {
@@ -208,6 +231,10 @@
       }
       element.classList.toggle("hidden", key !== command);
     });
+
+    if (command === "analyze") {
+      showAnalyzeSection(getAnalyzeSubcommand());
+    }
   };
 
   const clearFieldValidation = (id) => {
@@ -566,6 +593,65 @@
             validateSchema: checked("chain-validate-schema"),
           },
         };
+      case "analyze": {
+        const analyzeCommand = getAnalyzeSubcommand();
+        return {
+          command,
+          options: {
+            analyzeCommand,
+            input: valueOf("analyze-input"),
+            json:
+              analyzeCommand === "stats"
+                ? checked("analyze-stats-json")
+                : analyzeCommand === "timeline"
+                  ? checked("analyze-timeline-json")
+                  : false,
+            out:
+              analyzeCommand === "stats"
+                ? valueOf("analyze-stats-out")
+                : analyzeCommand === "timeline"
+                  ? valueOf("analyze-timeline-out")
+                  : "",
+            perThread:
+              analyzeCommand === "stats" && checked("analyze-stats-per-thread"),
+            top:
+              analyzeCommand === "stats"
+                ? valueOf("analyze-stats-top")
+                : "",
+            sort:
+              analyzeCommand === "stats"
+                ? valueOf("analyze-stats-sort")
+                : "",
+            includeRoleBreakdown:
+              analyzeCommand === "stats" &&
+              checked("analyze-stats-include-role-breakdown"),
+            bucket:
+              analyzeCommand === "timeline"
+                ? valueOf("analyze-timeline-bucket")
+                : "",
+            model:
+              analyzeCommand === "tokens"
+                ? valueOf("analyze-tokens-model")
+                : "",
+            encoding:
+              analyzeCommand === "tokens"
+                ? valueOf("analyze-tokens-encoding")
+                : "",
+            skipExisting:
+              analyzeCommand === "tokens"
+                ? checked("analyze-tokens-skip-existing")
+                : analyzeCommand === "metrics"
+                  ? checked("analyze-metrics-skip-existing")
+                  : false,
+            dryRun:
+              analyzeCommand === "tokens"
+                ? checked("analyze-tokens-dry-run")
+                : analyzeCommand === "metrics"
+                  ? checked("analyze-metrics-dry-run")
+                  : false,
+          },
+        };
+      }
       default:
         return { command: "parse", options: {} };
     }
@@ -740,6 +826,11 @@
   commandSelect?.addEventListener("change", (event) => {
     clearValidationState();
     showSection(event.target.value);
+  });
+
+  document.getElementById("analyze-subcommand")?.addEventListener("change", () => {
+    clearValidationState();
+    showAnalyzeSection(getAnalyzeSubcommand());
   });
 
   viewerRefreshButton?.addEventListener("click", () => {

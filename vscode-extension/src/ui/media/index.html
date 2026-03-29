@@ -15,7 +15,7 @@
       <div class="hero">
         <h1 data-i18n="app.title">LLM Logparser</h1>
         <p data-i18n="app.subtitle">
-          Drive the CLI from a focused GUI. Choose a command, pick inputs, and run parse/export pipelines.
+          Drive the CLI from a focused GUI. Choose a command, pick inputs, and run parse/export/analyze workflows.
         </p>
         <div class="workspace" id="workspaceRoot" data-i18n="workspace.label">Workspace: -</div>
       </div>
@@ -35,6 +35,7 @@
                 <option value="parse" data-i18n="command.option.parse">parse</option>
                 <option value="export" data-i18n="command.option.export">export</option>
                 <option value="chain" data-i18n="command.option.chain">chain</option>
+                <option value="analyze" data-i18n="command.option.analyze">analyze</option>
               </select>
             </div>
 
@@ -359,6 +360,187 @@
                 <input id="chain-validate-schema" type="checkbox" />
                 <label for="chain-validate-schema" data-i18n="chain.validateSchema">Validate Schema</label>
               </div>
+            </div>
+
+            <div id="section-analyze" class="section hidden">
+              <div class="field">
+                <label for="analyze-subcommand" data-i18n="analyze.subcommand.label">Analyze Command</label>
+                <select id="analyze-subcommand">
+                  <option value="stats" data-i18n="analyze.subcommand.option.stats">stats</option>
+                  <option value="timeline" data-i18n="analyze.subcommand.option.timeline">timeline</option>
+                  <option value="tokens" data-i18n="analyze.subcommand.option.tokens">tokens</option>
+                  <option value="metrics" data-i18n="analyze.subcommand.option.metrics">metrics</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="analyze-input" data-i18n="analyze.input.label">Input parsed.jsonl or directory</label>
+                <div class="row">
+                  <input
+                    id="analyze-input"
+                    type="text"
+                    placeholder="artifacts/output/openai"
+                    data-i18n-placeholder="analyze.input.placeholder"
+                  />
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="file"
+                    data-target="analyze-input"
+                    data-i18n="button.browse"
+                  >
+                    Browse File
+                  </button>
+                  <button
+                    class="secondary"
+                    type="button"
+                    data-pick="folder"
+                    data-target="analyze-input"
+                    data-i18n="button.browse"
+                  >
+                    Browse Folder
+                  </button>
+                </div>
+              </div>
+
+              <div id="analyze-section-stats" class="subsection">
+                <div class="row">
+                  <div class="field">
+                    <label for="analyze-stats-top" data-i18n="analyze.stats.top.label">Top Rows (optional)</label>
+                    <input
+                      id="analyze-stats-top"
+                      type="number"
+                      placeholder="20"
+                      data-i18n-placeholder="analyze.stats.top.placeholder"
+                    />
+                  </div>
+                  <div class="field">
+                    <label for="analyze-stats-sort" data-i18n="analyze.stats.sort.label">Sort</label>
+                    <select id="analyze-stats-sort">
+                      <option value="" data-i18n="analyze.stats.sort.option.default">default</option>
+                      <option value="messages" data-i18n="analyze.stats.sort.option.messages">messages</option>
+                      <option value="chars" data-i18n="analyze.stats.sort.option.chars">chars</option>
+                      <option value="span" data-i18n="analyze.stats.sort.option.span">span</option>
+                      <option value="conversation_id" data-i18n="analyze.stats.sort.option.conversationId">conversation_id</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="analyze-stats-out" data-i18n="analyze.stats.out.label">Output File (optional)</label>
+                  <div class="row">
+                    <input
+                      id="analyze-stats-out"
+                      type="text"
+                      placeholder="artifacts/stats.txt"
+                      data-i18n-placeholder="analyze.stats.out.placeholder"
+                    />
+                    <button
+                      class="secondary"
+                      type="button"
+                      data-pick="file"
+                      data-target="analyze-stats-out"
+                      data-i18n="button.browse"
+                    >
+                      Browse
+                    </button>
+                  </div>
+                </div>
+                <div class="inline">
+                  <input id="analyze-stats-json" type="checkbox" />
+                  <label for="analyze-stats-json" data-i18n="analyze.stats.json">JSON Output</label>
+                </div>
+                <div class="inline">
+                  <input id="analyze-stats-per-thread" type="checkbox" />
+                  <label for="analyze-stats-per-thread" data-i18n="analyze.stats.perThread">Include Per-Thread Rows</label>
+                </div>
+                <div class="inline">
+                  <input id="analyze-stats-include-role-breakdown" type="checkbox" />
+                  <label for="analyze-stats-include-role-breakdown" data-i18n="analyze.stats.includeRoleBreakdown">Include Role Breakdown</label>
+                </div>
+              </div>
+
+              <div id="analyze-section-timeline" class="subsection hidden">
+                <div class="row">
+                  <div class="field">
+                    <label for="analyze-timeline-bucket" data-i18n="analyze.timeline.bucket.label">Bucket</label>
+                    <select id="analyze-timeline-bucket">
+                      <option value="day" data-i18n="analyze.timeline.bucket.option.day">day</option>
+                      <option value="hour" data-i18n="analyze.timeline.bucket.option.hour">hour</option>
+                      <option value="week" data-i18n="analyze.timeline.bucket.option.week">week</option>
+                      <option value="month" data-i18n="analyze.timeline.bucket.option.month">month</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="analyze-timeline-out" data-i18n="analyze.timeline.out.label">Output File (optional)</label>
+                    <div class="row">
+                      <input
+                        id="analyze-timeline-out"
+                        type="text"
+                        placeholder="artifacts/timeline.json"
+                        data-i18n-placeholder="analyze.timeline.out.placeholder"
+                      />
+                      <button
+                        class="secondary"
+                        type="button"
+                        data-pick="file"
+                        data-target="analyze-timeline-out"
+                        data-i18n="button.browse"
+                      >
+                        Browse
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="inline">
+                  <input id="analyze-timeline-json" type="checkbox" />
+                  <label for="analyze-timeline-json" data-i18n="analyze.timeline.json">JSON Output</label>
+                </div>
+              </div>
+
+              <div id="analyze-section-tokens" class="subsection hidden">
+                <div class="row">
+                  <div class="field">
+                    <label for="analyze-tokens-model" data-i18n="analyze.tokens.model.label">Model (optional)</label>
+                    <input
+                      id="analyze-tokens-model"
+                      type="text"
+                      placeholder="gpt-4o-mini"
+                      data-i18n-placeholder="analyze.tokens.model.placeholder"
+                    />
+                  </div>
+                  <div class="field">
+                    <label for="analyze-tokens-encoding" data-i18n="analyze.tokens.encoding.label">Encoding (optional)</label>
+                    <input
+                      id="analyze-tokens-encoding"
+                      type="text"
+                      placeholder="cl100k_base"
+                      data-i18n-placeholder="analyze.tokens.encoding.placeholder"
+                    />
+                  </div>
+                </div>
+                <div class="inline">
+                  <input id="analyze-tokens-skip-existing" type="checkbox" />
+                  <label for="analyze-tokens-skip-existing" data-i18n="analyze.tokens.skipExisting">Skip Existing Sidecars</label>
+                </div>
+                <div class="inline">
+                  <input id="analyze-tokens-dry-run" type="checkbox" />
+                  <label for="analyze-tokens-dry-run" data-i18n="analyze.tokens.dryRun">Dry Run</label>
+                </div>
+              </div>
+
+              <div id="analyze-section-metrics" class="subsection hidden">
+                <div class="inline">
+                  <input id="analyze-metrics-skip-existing" type="checkbox" />
+                  <label for="analyze-metrics-skip-existing" data-i18n="analyze.metrics.skipExisting">Skip Existing Sidecars</label>
+                </div>
+                <div class="inline">
+                  <input id="analyze-metrics-dry-run" type="checkbox" />
+                  <label for="analyze-metrics-dry-run" data-i18n="analyze.metrics.dryRun">Dry Run</label>
+                </div>
+              </div>
+
+              <p class="hint" data-i18n="analyze.hint">
+                Start with a parsed.jsonl file or a directory that already contains parsed threads.
+              </p>
             </div>
 
             <div class="actions">

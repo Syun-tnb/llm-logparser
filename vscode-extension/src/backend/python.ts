@@ -2,7 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
 
-export type CliCommand = "parse" | "export" | "chain";
+export type AnalyzeSubcommand = "stats" | "timeline" | "tokens" | "metrics";
+export type CliCommand = "parse" | "export" | "chain" | "analyze";
 export type CliOptionValue = string | boolean | undefined;
 export type CliOptions = Record<string, CliOptionValue>;
 export type CliExecutionErrorType =
@@ -242,6 +243,36 @@ const buildCliArgs = (payload: CliRunPayload): string[] => {
     addFlag("--dry-run", valueAsBoolean(opts.dryRun));
     addFlag("--fail-fast", valueAsBoolean(opts.failFast));
     addFlag("--validate-schema", valueAsBoolean(opts.validateSchema));
+  } else if (payload.command === "analyze") {
+    const analyzeCommand = valueAsString(opts.analyzeCommand);
+    if (analyzeCommand) {
+      args.push(analyzeCommand);
+    }
+    add("--input", valueAsString(opts.input));
+
+    if (analyzeCommand === "stats") {
+      addFlag("--json", valueAsBoolean(opts.json));
+      add("--out", valueAsString(opts.out));
+      addFlag("--per-thread", valueAsBoolean(opts.perThread));
+      add("--top", valueAsString(opts.top));
+      add("--sort", valueAsString(opts.sort));
+      addFlag(
+        "--include-role-breakdown",
+        valueAsBoolean(opts.includeRoleBreakdown)
+      );
+    } else if (analyzeCommand === "timeline") {
+      add("--bucket", valueAsString(opts.bucket));
+      addFlag("--json", valueAsBoolean(opts.json));
+      add("--out", valueAsString(opts.out));
+    } else if (analyzeCommand === "tokens") {
+      add("--model", valueAsString(opts.model));
+      add("--encoding", valueAsString(opts.encoding));
+      addFlag("--skip-existing", valueAsBoolean(opts.skipExisting));
+      addFlag("--dry-run", valueAsBoolean(opts.dryRun));
+    } else if (analyzeCommand === "metrics") {
+      addFlag("--skip-existing", valueAsBoolean(opts.skipExisting));
+      addFlag("--dry-run", valueAsBoolean(opts.dryRun));
+    }
   }
 
   return args;
@@ -336,6 +367,9 @@ export const getInvalidCliFields = (payload: CliRunPayload): string[] => {
     if (!valueAsString(opts.input)) missing.push("input");
   } else if (payload.command === "chain") {
     if (!valueAsString(opts.provider)) missing.push("provider");
+    if (!valueAsString(opts.input)) missing.push("input");
+  } else if (payload.command === "analyze") {
+    if (!valueAsString(opts.analyzeCommand)) missing.push("analyzeCommand");
     if (!valueAsString(opts.input)) missing.push("input");
   }
 
