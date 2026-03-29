@@ -631,25 +631,22 @@
                 <input
                   id="viewer-search"
                   type="search"
-                  placeholder="keyword / role / time"
+                  placeholder="keyword / model / content"
                   data-i18n-placeholder="viewer.toolbar.search.placeholder"
-                  disabled
                 />
               </div>
               <div class="field">
-                <label for="viewer-summary" data-i18n="viewer.toolbar.summary.label">Summary</label>
-                <textarea
-                  id="viewer-summary"
-                  rows="3"
-                  placeholder="Summary will appear here"
-                  data-i18n-placeholder="viewer.toolbar.summary.placeholder"
-                  disabled
-                ></textarea>
+                <label for="viewer-role-filter" data-i18n="viewer.toolbar.role.label">Role</label>
+                <select id="viewer-role-filter">
+                  <option value="all" data-i18n="viewer.toolbar.role.option.all">All roles</option>
+                  <option value="user" data-i18n="viewer.toolbar.role.option.user">user</option>
+                  <option value="assistant" data-i18n="viewer.toolbar.role.option.assistant">assistant</option>
+                  <option value="system" data-i18n="viewer.toolbar.role.option.system">system</option>
+                </select>
               </div>
               <div class="actions">
-                <button type="button" disabled data-i18n="viewer.toolbar.summarize">Summarize (coming soon)</button>
-                <button type="button" class="secondary" disabled data-i18n="viewer.toolbar.sendAi">
-                  Send to AI (coming soon)
+                <button type="button" id="viewer-clear-filters" class="secondary" data-i18n="viewer.toolbar.clearFilters">
+                  Clear Filters
                 </button>
               </div>
             </div>
@@ -658,11 +655,23 @@
               Select a parsed.jsonl to view messages.
             </div>
             <div class="thread-messages" id="viewer-messages"></div>
+            <div class="viewer-footer">
+              <button
+                type="button"
+                id="viewer-load-more"
+                class="secondary hidden"
+                data-i18n="viewer.toolbar.loadMore"
+              >
+                Load More
+              </button>
+            </div>
           </div>
         </div>
       </section>
     </div>
 
+    <script nonce="{{nonce}}" src="{{markedUri}}" defer></script>
+    <script nonce="{{nonce}}" src="{{dompurifyUri}}" defer></script>
     <script nonce="{{nonce}}" src="{{scriptUri}}" defer></script>
   </body>
 </html>

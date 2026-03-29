@@ -101,6 +101,7 @@ export class LogParserPanel {
         retainContextWhenHidden: true,
         localResourceRoots: [
           vscode.Uri.joinPath(extensionUri, "src", "ui", "media"),
+          vscode.Uri.joinPath(extensionUri, "node_modules"),
         ],
       }
     );
@@ -628,6 +629,24 @@ export class LogParserPanel {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(mediaRoot, "main.js")
     );
+    const markedUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "node_modules",
+        "marked",
+        "lib",
+        "marked.umd.js"
+      )
+    );
+    const dompurifyUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "node_modules",
+        "dompurify",
+        "dist",
+        "purify.min.js"
+      )
+    );
     const templatePath = path.join(
       this.extensionUri.fsPath,
       "src",
@@ -641,6 +660,8 @@ export class LogParserPanel {
       .replace(/{{cspSource}}/g, webview.cspSource)
       .replace(/{{nonce}}/g, nonce)
       .replace(/{{stylesUri}}/g, stylesUri.toString())
+      .replace(/{{markedUri}}/g, markedUri.toString())
+      .replace(/{{dompurifyUri}}/g, dompurifyUri.toString())
       .replace(/{{scriptUri}}/g, scriptUri.toString());
   }
 }
@@ -976,10 +997,20 @@ const readParsedJsonl = async (filePath: string): Promise<ViewerFileData> => {
       continue;
     }
     if (recordType === "message") {
+      const rowMeta =
+        row.meta && typeof row.meta === "object"
+          ? (row.meta as Record<string, unknown>)
+          : undefined;
       messages.push({
         role: typeof row.role === "string" ? row.role : "",
         ts: typeof row.ts === "number" ? row.ts : undefined,
         text: typeof row.text === "string" ? row.text : "",
+        model:
+          typeof row.model === "string"
+            ? row.model
+            : typeof rowMeta?.model === "string"
+              ? rowMeta.model
+              : undefined,
       });
     }
   }

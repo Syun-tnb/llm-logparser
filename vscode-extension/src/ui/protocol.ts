@@ -26,6 +26,7 @@ export interface ViewerMessage {
   role: string;
   ts?: number;
   text: string;
+  model?: string;
 }
 
 export interface ViewerFileData {

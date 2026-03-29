@@ -14,9 +14,15 @@
   const viewerThreadMeta = document.getElementById("viewer-thread-meta");
   const viewerMessages = document.getElementById("viewer-messages");
   const viewerRootInput = document.getElementById("viewer-root");
+  const viewerSearchInput = document.getElementById("viewer-search");
+  const viewerRoleFilter = document.getElementById("viewer-role-filter");
+  const viewerClearFiltersButton = document.getElementById("viewer-clear-filters");
+  const viewerLoadMoreButton = document.getElementById("viewer-load-more");
   const recentTopicsList = document.getElementById("recent-topics-list");
   const resumeCandidatesList = document.getElementById("resume-candidates-list");
   const DEFAULT_MODE = "parse";
+  const INITIAL_MESSAGE_LIMIT = 200;
+  const LOAD_MORE_STEP = 200;
 
   const screens = {
     parse: document.getElementById("screen-parse"),
@@ -70,6 +76,10 @@
   const uiState = {
     mode: DEFAULT_MODE,
     viewerFilter: "",
+    viewerSearch: "",
+    viewerRole: "all",
+    viewerVisibleCount: INITIAL_MESSAGE_LIMIT,
+    viewerFileKey: "",
   };
 
   const commandFieldIds = {
@@ -402,6 +412,9 @@
     if (viewerMessages) {
       viewerMessages.textContent = "";
     }
+    if (viewerLoadMoreButton) {
+      viewerLoadMoreButton.classList.add("hidden");
+    }
     postMessage({
       type: "open-viewer-file",
       payload: { path },
@@ -486,6 +499,120 @@
     return formatAbsoluteTimestamp(timestamp);
   };
 
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const renderMarkdown = (value) => {
+    const source =
+      typeof value === "string" && value.trim().length > 0
+        ? value
+        : t("viewer.message.empty");
+
+    try {
+      const rendered =
+        globalThis.marked && typeof globalThis.marked.parse === "function"
+          ? globalThis.marked.parse(source, { gfm: true, breaks: false })
+          : "";
+      if (
+        rendered &&
+        globalThis.DOMPurify &&
+        typeof globalThis.DOMPurify.sanitize === "function"
+      ) {
+        return globalThis.DOMPurify.sanitize(rendered);
+      }
+    } catch (error) {
+      // Fall back to plain escaped content if markdown parsing fails.
+    }
+
+    return `<p>${escapeHtml(source).replaceAll("\n", "<br />")}</p>`;
+  };
+
+  const normalizeRole = (role) =>
+    typeof role === "string" ? role.trim().toLowerCase() : "";
+
+  const getViewerFileKey = () =>
+    extensionState.viewerState.selectedPath ||
+    extensionState.viewerState.file?.path ||
+    "";
+
+  const resetViewerThreadState = () => {
+    uiState.viewerSearch = "";
+    uiState.viewerRole = "all";
+    uiState.viewerVisibleCount = INITIAL_MESSAGE_LIMIT;
+    if (viewerSearchInput) {
+      viewerSearchInput.value = "";
+    }
+    if (viewerRoleFilter) {
+      viewerRoleFilter.value = "all";
+    }
+  };
+
+  const syncViewerThreadState = () => {
+    const nextFileKey = getViewerFileKey();
+    if (uiState.viewerFileKey === nextFileKey) {
+      return;
+    }
+    uiState.viewerFileKey = nextFileKey;
+    resetViewerThreadState();
+  };
+
+  const getThreadMessages = () => {
+    const file = extensionState.viewerState.file;
+    const allMessages = Array.isArray(file?.messages) ? file.messages : [];
+    let filteredMessages = [...allMessages];
+
+    if (!viewerConfig.showSystem) {
+      filteredMessages = filteredMessages.filter(
+        (message) => normalizeRole(message.role) !== "system"
+      );
+    }
+    if (!viewerConfig.showToolCalls) {
+      filteredMessages = filteredMessages.filter(
+        (message) => normalizeRole(message.role) !== "tool"
+      );
+    }
+    if (viewerConfig.maxMessagesPerThread > 0) {
+      filteredMessages = filteredMessages.slice(-viewerConfig.maxMessagesPerThread);
+    }
+
+    if (uiState.viewerRole !== "all") {
+      filteredMessages = filteredMessages.filter(
+        (message) => normalizeRole(message.role) === uiState.viewerRole
+      );
+    }
+
+    const query = uiState.viewerSearch.trim().toLowerCase();
+    if (query) {
+      filteredMessages = filteredMessages.filter((message) => {
+        const searchHaystack = [
+          message.role,
+          message.model,
+          message.text,
+          formatTimestamp(message.ts),
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .toLowerCase();
+        return searchHaystack.includes(query);
+      });
+    }
+
+    const visibleCount = Math.max(uiState.viewerVisibleCount, INITIAL_MESSAGE_LIMIT);
+    const visibleMessages = filteredMessages.slice(-visibleCount);
+
+    return {
+      allMessages,
+      filteredMessages,
+      visibleMessages,
+      hiddenCount: Math.max(filteredMessages.length - visibleMessages.length, 0),
+    };
+  };
+
   const renderViewerFiles = () => {
     if (!viewerFileList) {
       return;
@@ -549,40 +676,50 @@
       return;
     }
 
+    syncViewerThreadState();
+
     const { error, file } = extensionState.viewerState;
     viewerMessages.textContent = "";
 
     if (error) {
-      const base = t(`viewer.error.${error.code}`, {}, t("viewer.error"));
+      const base = t(
+        `viewer.error.${error.code}`,
+        {},
+        t("viewer.error", { message: error.code || "" }, "Viewer error")
+      );
       const detail = error.detail ? ` (${error.detail})` : "";
       viewerThreadMeta.textContent = `${base}${detail}`;
+      if (viewerLoadMoreButton) {
+        viewerLoadMoreButton.classList.add("hidden");
+      }
       return;
     }
 
-    if (!file || !file.meta) {
+    if (!file) {
       viewerThreadMeta.textContent = t("viewer.meta.empty");
+      if (viewerLoadMoreButton) {
+        viewerLoadMoreButton.classList.add("hidden");
+      }
       return;
     }
 
-    let messages = Array.isArray(file.messages) ? file.messages : [];
-    if (!viewerConfig.showSystem) {
-      messages = messages.filter((message) => message.role !== "system");
-    }
-    if (!viewerConfig.showToolCalls) {
-      messages = messages.filter((message) => message.role !== "tool");
-    }
-    if (viewerConfig.maxMessagesPerThread > 0) {
-      messages = messages.slice(-viewerConfig.maxMessagesPerThread);
-    }
+    const { allMessages, filteredMessages, visibleMessages, hiddenCount } =
+      getThreadMessages();
 
     const metaParts = [];
-    if (file.meta.conversation_id) {
+    if (file.meta?.conversation_id) {
       metaParts.push(t("viewer.meta.thread", { id: file.meta.conversation_id }));
     }
-    if (file.meta.provider_id) {
+    if (file.meta?.provider_id) {
       metaParts.push(t("viewer.meta.provider", { provider: file.meta.provider_id }));
     }
-    metaParts.push(t("viewer.meta.count", { count: messages.length }));
+    metaParts.push(t("viewer.meta.count", { count: allMessages.length }));
+    metaParts.push(
+      t("viewer.meta.visible", {
+        visible: visibleMessages.length,
+        filtered: filteredMessages.length,
+      })
+    );
     const displayPath = file.display || file.path;
     if (displayPath) {
       metaParts.push(t("viewer.meta.path", { path: displayPath }));
@@ -590,31 +727,64 @@
     viewerThreadMeta.textContent =
       metaParts.length > 0 ? metaParts.join(" | ") : t("viewer.meta.empty");
 
-    messages.forEach((message) => {
+    if (visibleMessages.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "thread-empty";
+      empty.textContent = t("viewer.meta.filteredEmpty");
+      viewerMessages.appendChild(empty);
+    }
+
+    visibleMessages.forEach((message) => {
       const card = document.createElement("div");
       card.className = "message";
+      card.dataset.role = normalizeRole(message.role) || "unknown";
 
       const header = document.createElement("div");
       header.className = "message-header";
 
-      const role = document.createElement("div");
+      const roleGroup = document.createElement("div");
+      roleGroup.className = "message-heading";
+
+      const role = document.createElement("span");
       role.className = "message-role";
       role.textContent = message.role || "";
+      roleGroup.appendChild(role);
 
-      const time = document.createElement("div");
+      if (message.model) {
+        const model = document.createElement("span");
+        model.className = "message-model";
+        model.textContent = message.model;
+        roleGroup.appendChild(model);
+      }
+
+      const time = document.createElement("time");
+      time.className = "message-time";
       time.textContent = formatTimestamp(message.ts);
+      if (message.ts !== undefined && message.ts !== null) {
+        const isoDate = new Date(Number(message.ts) * 1000);
+        if (!Number.isNaN(isoDate.getTime())) {
+          time.dateTime = isoDate.toISOString();
+        }
+      }
 
-      header.appendChild(role);
+      header.appendChild(roleGroup);
       header.appendChild(time);
 
-      const body = document.createElement("div");
-      body.className = "message-text";
-      body.textContent = message.text || t("viewer.message.empty");
+      const body = document.createElement("article");
+      body.className = "message-body markdown-body";
+      body.innerHTML = renderMarkdown(message.text);
 
       card.appendChild(header);
       card.appendChild(body);
       viewerMessages.appendChild(card);
     });
+
+    if (viewerLoadMoreButton) {
+      viewerLoadMoreButton.classList.toggle("hidden", hiddenCount <= 0);
+      viewerLoadMoreButton.textContent = t("viewer.toolbar.loadMore", {
+        count: Math.min(LOAD_MORE_STEP, hiddenCount),
+      });
+    }
   };
 
   const renderSalvageList = (element, items, emptyKey) => {
@@ -674,6 +844,12 @@
   const renderViewer = () => {
     if (viewerRootInput) {
       viewerRootInput.value = extensionState.viewerState.root || "";
+    }
+    if (viewerSearchInput) {
+      viewerSearchInput.value = uiState.viewerSearch;
+    }
+    if (viewerRoleFilter) {
+      viewerRoleFilter.value = uiState.viewerRole;
     }
     renderViewerFiles();
     renderViewerContent();
@@ -997,6 +1173,28 @@
   viewerFilterInput?.addEventListener("input", (event) => {
     uiState.viewerFilter = event.target.value || "";
     renderViewerFiles();
+  });
+
+  viewerSearchInput?.addEventListener("input", (event) => {
+    uiState.viewerSearch = event.target.value || "";
+    uiState.viewerVisibleCount = INITIAL_MESSAGE_LIMIT;
+    renderViewerContent();
+  });
+
+  viewerRoleFilter?.addEventListener("change", (event) => {
+    uiState.viewerRole = event.target.value || "all";
+    uiState.viewerVisibleCount = INITIAL_MESSAGE_LIMIT;
+    renderViewerContent();
+  });
+
+  viewerClearFiltersButton?.addEventListener("click", () => {
+    resetViewerThreadState();
+    renderViewerContent();
+  });
+
+  viewerLoadMoreButton?.addEventListener("click", () => {
+    uiState.viewerVisibleCount += LOAD_MORE_STEP;
+    renderViewerContent();
   });
 
   viewerRootInput?.addEventListener("change", (event) => {
