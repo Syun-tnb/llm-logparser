@@ -202,7 +202,7 @@ export class LogParserPanel {
 
     const runRequest = createRunCliRequest(payload);
 
-    const commandLine = formatCliCommandLine(runRequest, {
+    const commandLine = await formatCliCommandLine(runRequest, {
       cwd: workspaceRoot,
       pythonPath,
       cliCommand,

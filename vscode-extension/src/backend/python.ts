@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
 
@@ -24,7 +25,17 @@ export interface RunCliOptions {
   onStderr?: (chunk: string) => void;
 }
 
+type CliLaunchStrategy = "cliCommand" | "uv" | "pythonModule";
+
+interface ResolvedCliInvocation {
+  command: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  strategy: CliLaunchStrategy;
+}
+
 const PATH_SEPARATOR = process.platform === "win32" ? ";" : ":";
+const uvAvailabilityCache = new Map<string, Promise<boolean>>();
 
 const appendPath = (existing: string | undefined, nextPath: string): string => {
   if (!existing) {
@@ -35,6 +46,62 @@ const appendPath = (existing: string | undefined, nextPath: string): string => {
     return existing;
   }
   return `${nextPath}${PATH_SEPARATOR}${existing}`;
+};
+
+const resolveWorkspaceRoot = (cwd: string): string => {
+  const trimmed = cwd.trim();
+  if (!trimmed) {
+    throw new Error("Workspace folder is required.");
+  }
+  return path.resolve(trimmed);
+};
+
+const getWorkspaceSrcPath = (workspaceRoot: string): string =>
+  path.join(workspaceRoot, "src");
+
+const getPyprojectPath = (workspaceRoot: string): string =>
+  path.join(workspaceRoot, "pyproject.toml");
+
+const fileExists = async (target: string): Promise<boolean> => {
+  try {
+    await fs.promises.access(target, fs.constants.F_OK);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+const hasWorkspacePyproject = async (workspaceRoot: string): Promise<boolean> =>
+  fileExists(getPyprojectPath(workspaceRoot));
+
+const isCommandAvailable = (command: string, cwd: string): Promise<boolean> => {
+  const cacheKey = `${cwd}::${command}`;
+  const cached = uvAvailabilityCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = new Promise<boolean>((resolve) => {
+    const child = spawn(command, ["--version"], {
+      cwd,
+      stdio: "ignore",
+    });
+
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
+
+  uvAvailabilityCache.set(cacheKey, pending);
+  return pending;
+};
+
+const buildBaseEnv = (
+  options: RunCliOptions,
+  workspaceRoot: string
+): NodeJS.ProcessEnv => {
+  const env = { ...process.env, ...options.env };
+  env.PYTHONPATH = appendPath(env.PYTHONPATH, getWorkspaceSrcPath(workspaceRoot));
+  return env;
 };
 
 const valueAsString = (value: unknown): string | undefined => {
@@ -119,7 +186,7 @@ const tokenizeCommand = (commandLine: string): string[] => {
       continue;
     }
 
-    if (char === "\\") {
+    if (quote && char === "\\") {
       escaping = true;
       continue;
     }
@@ -196,17 +263,38 @@ export const createRunCliRequest = (payload: CliRunPayload): RunCliRequest => ({
   args: buildCliArgs(payload),
 });
 
-export const buildCliInvocation = (
+const resolveLaunchStrategy = async (
+  options: RunCliOptions,
+  workspaceRoot: string
+): Promise<CliLaunchStrategy> => {
+  if (options.cliCommand && options.cliCommand.trim().length > 0) {
+    return "cliCommand";
+  }
+
+  const [hasPyproject, hasUv] = await Promise.all([
+    hasWorkspacePyproject(workspaceRoot),
+    isCommandAvailable("uv", workspaceRoot),
+  ]);
+
+  if (hasPyproject && hasUv) {
+    return "uv";
+  }
+
+  return "pythonModule";
+};
+
+export const buildCliInvocation = async (
   request: RunCliRequest,
   options: RunCliOptions
-): { command: string; args: string[]; env: NodeJS.ProcessEnv } => {
+): Promise<ResolvedCliInvocation> => {
+  const workspaceRoot = resolveWorkspaceRoot(options.cwd);
   const cliArgs = [request.command, ...request.args];
-  const env = { ...process.env, ...options.env };
-  const pythonPath = path.join(options.cwd, "src");
-  env.PYTHONPATH = appendPath(env.PYTHONPATH, pythonPath);
+  const env = buildBaseEnv(options, workspaceRoot);
+  const strategy = await resolveLaunchStrategy(options, workspaceRoot);
+  const cliCommand = options.cliCommand?.trim();
 
-  if (options.cliCommand && options.cliCommand.trim().length > 0) {
-    const [command, ...commandArgs] = tokenizeCommand(options.cliCommand);
+  if (strategy === "cliCommand") {
+    const [command, ...commandArgs] = tokenizeCommand(cliCommand ?? "");
     if (!command) {
       throw new Error("cliCommand must include an executable.");
     }
@@ -214,6 +302,16 @@ export const buildCliInvocation = (
       command,
       args: [...commandArgs, ...cliArgs],
       env,
+      strategy,
+    };
+  }
+
+  if (strategy === "uv") {
+    return {
+      command: "uv",
+      args: ["run", "llp", ...cliArgs],
+      env,
+      strategy,
     };
   }
 
@@ -221,38 +319,41 @@ export const buildCliInvocation = (
     command: options.pythonPath,
     args: ["-m", "llm_logparser.cli", ...cliArgs],
     env,
+    strategy,
   };
 };
 
 export const formatCliCommandLine = (
   request: RunCliRequest,
   options: RunCliOptions
-): string => {
-  const invocation = buildCliInvocation(request, options);
-  return [invocation.command, ...invocation.args].map(formatArg).join(" ");
+): Promise<string> => {
+  return buildCliInvocation(request, options).then((invocation) =>
+    [invocation.command, ...invocation.args].map(formatArg).join(" ")
+  );
 };
 
 export const runCli = (
   request: RunCliRequest,
   options: RunCliOptions
 ): Promise<number> => {
-  const invocation = buildCliInvocation(request, options);
+  return buildCliInvocation(request, options).then(
+    (invocation) =>
+      new Promise((resolve, reject) => {
+        const child = spawn(invocation.command, invocation.args, {
+          cwd: resolveWorkspaceRoot(options.cwd),
+          env: invocation.env,
+        });
 
-  return new Promise((resolve, reject) => {
-    const child = spawn(invocation.command, invocation.args, {
-      cwd: options.cwd,
-      env: invocation.env,
-    });
+        child.stdout.on("data", (chunk: Buffer) => {
+          options.onStdout?.(chunk.toString());
+        });
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      options.onStdout?.(chunk.toString());
-    });
+        child.stderr.on("data", (chunk: Buffer) => {
+          options.onStderr?.(chunk.toString());
+        });
 
-    child.stderr.on("data", (chunk: Buffer) => {
-      options.onStderr?.(chunk.toString());
-    });
-
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => resolve(code ?? 1));
-  });
+        child.on("error", (err) => reject(err));
+        child.on("close", (code) => resolve(code ?? 1));
+      })
+  );
 };
