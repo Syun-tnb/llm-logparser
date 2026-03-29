@@ -14,6 +14,8 @@
   const viewerThreadMeta = document.getElementById("viewer-thread-meta");
   const viewerMessages = document.getElementById("viewer-messages");
   const viewerRootInput = document.getElementById("viewer-root");
+  const recentTopicsList = document.getElementById("recent-topics-list");
+  const resumeCandidatesList = document.getElementById("resume-candidates-list");
   const DEFAULT_MODE = "parse";
 
   const screens = {
@@ -59,6 +61,10 @@
     viewerState: {
       files: [],
     },
+    salvageState: {
+      recentTopics: [],
+      resumeCandidates: [],
+    },
   };
 
   const uiState = {
@@ -70,17 +76,49 @@
     parse: {
       provider: "parse-provider",
       input: "parse-input",
+      outdir: "parse-outdir",
+      dryRun: "parse-dry-run",
+      failFast: "parse-fail-fast",
+      validateSchema: "parse-validate-schema",
     },
     export: {
       input: "export-input",
+      out: "export-out",
+      timezone: "export-timezone",
+      formatting: "export-formatting",
+      split: "export-split",
+      splitSoftOverflow: "export-split-soft-overflow",
+      splitHard: "export-split-hard",
+      splitPreview: "export-split-preview",
+      tinyTailThreshold: "export-tiny-tail-threshold",
     },
     chain: {
       provider: "chain-provider",
       input: "chain-input",
+      outdir: "chain-outdir",
+      timezone: "chain-timezone",
+      formatting: "chain-formatting",
+      split: "chain-split",
+      splitSoftOverflow: "chain-split-soft-overflow",
+      splitHard: "chain-split-hard",
+      splitPreview: "chain-split-preview",
+      tinyTailThreshold: "chain-tiny-tail-threshold",
+      exportOutdir: "chain-export-outdir",
+      parsedRoot: "chain-parsed-root",
+      dryRun: "chain-dry-run",
+      failFast: "chain-fail-fast",
+      validateSchema: "chain-validate-schema",
     },
     analyze: {
       analyzeCommand: "analyze-subcommand",
       input: "analyze-input",
+      perThread: "analyze-stats-per-thread",
+      top: "analyze-stats-top",
+      sort: "analyze-stats-sort",
+      includeRoleBreakdown: "analyze-stats-include-role-breakdown",
+      bucket: "analyze-timeline-bucket",
+      model: "analyze-tokens-model",
+      encoding: "analyze-tokens-encoding",
     },
   };
 
@@ -215,6 +253,40 @@
 
   const getAnalyzeSubcommand = () => valueOf("analyze-subcommand") || "stats";
 
+  const resolvePresetFieldId = (command, name, values = {}) => {
+    if (command !== "analyze") {
+      return commandFieldIds[command]?.[name];
+    }
+
+    const analyzeCommand =
+      typeof values.analyzeCommand === "string" && values.analyzeCommand
+        ? values.analyzeCommand
+        : getAnalyzeSubcommand();
+
+    if (name === "json") {
+      return analyzeCommand === "timeline"
+        ? "analyze-timeline-json"
+        : "analyze-stats-json";
+    }
+    if (name === "out") {
+      return analyzeCommand === "timeline"
+        ? "analyze-timeline-out"
+        : "analyze-stats-out";
+    }
+    if (name === "skipExisting") {
+      return analyzeCommand === "metrics"
+        ? "analyze-metrics-skip-existing"
+        : "analyze-tokens-skip-existing";
+    }
+    if (name === "dryRun") {
+      return analyzeCommand === "metrics"
+        ? "analyze-metrics-dry-run"
+        : "analyze-tokens-dry-run";
+    }
+
+    return commandFieldIds.analyze?.[name];
+  };
+
   const showAnalyzeSection = (subcommand) => {
     Object.entries(analyzeSections).forEach(([key, element]) => {
       if (!element) {
@@ -333,6 +405,16 @@
     postMessage({
       type: "open-viewer-file",
       payload: { path },
+    });
+  };
+
+  const requestResumeRun = (id) => {
+    if (!id) {
+      return;
+    }
+    postMessage({
+      type: "resume-run",
+      payload: { id },
     });
   };
 
@@ -535,12 +617,67 @@
     });
   };
 
+  const renderSalvageList = (element, items, emptyKey) => {
+    if (!element) {
+      return;
+    }
+
+    element.textContent = "";
+    if (!Array.isArray(items) || items.length === 0) {
+      const emptyItem = document.createElement("li");
+      emptyItem.className = "salvage-empty";
+      emptyItem.textContent = t(emptyKey);
+      element.appendChild(emptyItem);
+      return;
+    }
+
+    items.forEach((item) => {
+      const listItem = document.createElement("li");
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "salvage-item";
+      button.addEventListener("click", () => {
+        requestResumeRun(item.id);
+      });
+
+      const title = document.createElement("div");
+      title.className = "salvage-title";
+      title.textContent = item.label || "";
+      button.appendChild(title);
+
+      if (item.detail) {
+        const detail = document.createElement("div");
+        detail.className = "salvage-detail";
+        detail.textContent = item.detail;
+        button.appendChild(detail);
+      }
+
+      listItem.appendChild(button);
+      element.appendChild(listItem);
+    });
+  };
+
+  const renderSalvage = () => {
+    renderSalvageList(
+      recentTopicsList,
+      extensionState.salvageState?.recentTopics,
+      "viewer.salvage.recent.empty"
+    );
+    renderSalvageList(
+      resumeCandidatesList,
+      extensionState.salvageState?.resumeCandidates,
+      "viewer.salvage.resume.empty"
+    );
+  };
+
   const renderViewer = () => {
     if (viewerRootInput) {
       viewerRootInput.value = extensionState.viewerState.root || "";
     }
     renderViewerFiles();
     renderViewerContent();
+    renderSalvage();
   };
 
   const collectPayload = (command) => {
@@ -703,7 +840,11 @@
       clearValidationState();
 
       Object.entries(preset.values || {}).forEach(([name, value]) => {
-        const fieldId = commandFieldIds[preset.command]?.[name];
+        const fieldId = resolvePresetFieldId(
+          preset.command,
+          name,
+          preset.values || {}
+        );
         if (!fieldId) {
           return;
         }
@@ -711,9 +852,16 @@
         if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
           return;
         }
-        target.value = value ?? "";
+        if (target instanceof HTMLInputElement && target.type === "checkbox") {
+          target.checked = Boolean(value);
+        } else {
+          target.value = value ?? "";
+        }
         clearFieldValidation(fieldId);
       });
+      if (preset.command === "analyze") {
+        showAnalyzeSection(getAnalyzeSubcommand());
+      }
     },
     "pick-result"(message) {
       if (!message.targetId) {
@@ -756,6 +904,8 @@
       extensionState.workspaceRoot = message.workspaceRoot || "-";
       extensionState.runState = message.runState || extensionState.runState;
       extensionState.viewerState = message.viewerState || extensionState.viewerState;
+      extensionState.salvageState =
+        message.salvageState || extensionState.salvageState;
       setWorkspaceLabel();
       renderViewer();
       if (runButton) {
@@ -777,6 +927,13 @@
     },
     "validation-state"(message) {
       applyValidationState(message.state);
+    },
+    "salvage-state"(message) {
+      extensionState.salvageState = message.state || {
+        recentTopics: [],
+        resumeCandidates: [],
+      };
+      renderSalvage();
     },
   };
 

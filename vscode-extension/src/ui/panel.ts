@@ -12,11 +12,15 @@ import {
   type CliRunPayload,
 } from "../backend/python";
 import type {
+  ApplyRunPresetMessage,
   ExtensionToWebviewMessage,
   OpenViewerFileMessage,
   PickMessage,
   RefreshFilesMessage,
+  ResumeRunMessage,
   RunState,
+  SalvageState,
+  SalvageStateMessage,
   ValidationStateMessage,
   ViewerConfig,
   ViewerErrorCode,
@@ -37,10 +41,8 @@ export class LogParserPanel {
   private workspaceRoot?: string;
   private runState: RunState;
   private viewerState: ViewerState;
-  private pendingRunPreset?: {
-    command: CliRunPayload["command"];
-    values: Partial<Record<string, string>>;
-  };
+  private pendingRunPreset?: ApplyRunPresetMessage["preset"];
+  private runHistory: RunHistoryEntry[] = [];
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -147,6 +149,7 @@ export class LogParserPanel {
       workspaceRoot: this.workspaceRoot,
       runState: this.runState,
       viewerState: this.viewerState,
+      salvageState: this.getSalvageState(),
     });
     if (this.pendingRunPreset) {
       this.postMessage({
@@ -174,6 +177,9 @@ export class LogParserPanel {
       case "clear-log":
         this.postMessage({ type: "clear-log" });
         return;
+      case "resume-run":
+        this.handleResumeRun(message.payload);
+        return;
       default:
         return;
     }
@@ -198,6 +204,14 @@ export class LogParserPanel {
     const message: ViewerStateMessage = {
       type: "viewer-state",
       state: this.viewerState,
+    };
+    this.postMessage(message);
+  }
+
+  private postSalvageState(): void {
+    const message: SalvageStateMessage = {
+      type: "salvage-state",
+      state: this.getSalvageState(),
     };
     this.postMessage(message);
   }
@@ -231,6 +245,83 @@ export class LogParserPanel {
 
   private appendOutputLine(value: string): void {
     this.outputChannel.appendLine(value);
+  }
+
+  private recordRunHistory(
+    payload: CliRunPayload,
+    result: {
+      success: boolean;
+      exitCode?: number;
+      commandLine?: string;
+      errorWhat?: string;
+    }
+  ): void {
+    const entry: RunHistoryEntry = {
+      id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ts: Date.now(),
+      payload,
+      success: result.success,
+      exitCode: result.exitCode,
+      commandLine: result.commandLine,
+      errorWhat: result.errorWhat,
+    };
+
+    this.runHistory = [entry, ...this.runHistory].slice(0, 20);
+    this.postSalvageState();
+  }
+
+  private getSalvageState(): SalvageState {
+    const recentTopics: SalvageState["recentTopics"] = [];
+    const seenLabels = new Set<string>();
+
+    for (const entry of this.runHistory) {
+      const label = buildRunHistoryLabel(entry.payload);
+      const normalized = label.toLowerCase();
+      if (seenLabels.has(normalized)) {
+        continue;
+      }
+      seenLabels.add(normalized);
+      recentTopics.push({
+        id: entry.id,
+        label,
+        detail: buildRunHistoryDetail(entry),
+        timestamp: entry.ts,
+      });
+      if (recentTopics.length >= 6) {
+        break;
+      }
+    }
+
+    const resumeCandidates = this.runHistory
+      .filter((entry) => !entry.success)
+      .slice(0, 6)
+      .map((entry) => ({
+        id: entry.id,
+        label: buildRunHistoryLabel(entry.payload),
+        detail: buildRunHistoryDetail(entry),
+        timestamp: entry.ts,
+      }));
+
+    return {
+      recentTopics,
+      resumeCandidates,
+    };
+  }
+
+  private handleResumeRun(payload: ResumeRunMessage["payload"]): void {
+    const entry = this.runHistory.find((item) => item.id === payload.id);
+    if (!entry) {
+      return;
+    }
+
+    this.postMessage({
+      type: "set-mode",
+      mode: "parse",
+    });
+    this.postMessage({
+      type: "apply-run-preset",
+      preset: createRunPreset(entry.payload),
+    });
   }
 
   private async promptToOpenOutput(uiError: {
@@ -296,6 +387,10 @@ export class LogParserPanel {
         why: uiError.why,
         nextStep: uiError.nextStep,
       });
+      this.recordRunHistory(payload, {
+        success: false,
+        errorWhat: uiError.what,
+      });
       return;
     }
 
@@ -325,6 +420,11 @@ export class LogParserPanel {
         busy: false,
         lastExitCode: exitCode,
       };
+      this.recordRunHistory(payload, {
+        success: true,
+        exitCode,
+        commandLine,
+      });
       this.appendOutputLine("");
       this.appendOutputLine(`Exit code: ${exitCode}`);
       if (payload.command === "parse" || payload.command === "chain") {
@@ -356,6 +456,10 @@ export class LogParserPanel {
         what: uiError.what,
         why: uiError.why,
         nextStep: uiError.nextStep,
+      });
+      this.recordRunHistory(payload, {
+        success: false,
+        errorWhat: uiError.what,
       });
       void this.promptToOpenOutput(uiError);
     } finally {
@@ -540,6 +644,135 @@ export class LogParserPanel {
       .replace(/{{scriptUri}}/g, scriptUri.toString());
   }
 }
+
+interface RunHistoryEntry {
+  id: string;
+  ts: number;
+  payload: CliRunPayload;
+  success: boolean;
+  exitCode?: number;
+  commandLine?: string;
+  errorWhat?: string;
+}
+
+const RUN_PRESET_OPTION_KEYS: Record<
+  CliRunPayload["command"],
+  readonly string[]
+> = {
+  parse: [
+    "provider",
+    "input",
+    "outdir",
+    "dryRun",
+    "failFast",
+    "validateSchema",
+  ],
+  export: [
+    "input",
+    "out",
+    "timezone",
+    "formatting",
+    "split",
+    "splitSoftOverflow",
+    "splitHard",
+    "splitPreview",
+    "tinyTailThreshold",
+  ],
+  chain: [
+    "provider",
+    "input",
+    "outdir",
+    "timezone",
+    "formatting",
+    "split",
+    "splitSoftOverflow",
+    "splitHard",
+    "splitPreview",
+    "tinyTailThreshold",
+    "exportOutdir",
+    "parsedRoot",
+    "dryRun",
+    "failFast",
+    "validateSchema",
+  ],
+  analyze: [
+    "analyzeCommand",
+    "input",
+    "json",
+    "out",
+    "perThread",
+    "top",
+    "sort",
+    "includeRoleBreakdown",
+    "bucket",
+    "model",
+    "encoding",
+    "skipExisting",
+    "dryRun",
+  ],
+};
+
+const createRunPreset = (
+  payload: CliRunPayload
+): ApplyRunPresetMessage["preset"] => {
+  const values: ApplyRunPresetMessage["preset"]["values"] = {};
+
+  for (const key of RUN_PRESET_OPTION_KEYS[payload.command]) {
+    const value = payload.options[key];
+    if (typeof value === "string" || typeof value === "boolean") {
+      values[key] = value;
+    }
+  }
+
+  return {
+    command: payload.command,
+    values,
+  };
+};
+
+const basenameOrValue = (value: unknown): string | undefined => {
+  const target = valueAsString(value);
+  if (!target) {
+    return undefined;
+  }
+  return path.basename(target) || target;
+};
+
+const buildRunHistoryLabel = (payload: CliRunPayload): string => {
+  if (payload.command === "analyze") {
+    const analyzeCommand = valueAsString(payload.options.analyzeCommand) ?? "analyze";
+    const input = basenameOrValue(payload.options.input);
+    return input ? `analyze ${analyzeCommand} · ${input}` : `analyze ${analyzeCommand}`;
+  }
+
+  if (payload.command === "parse" || payload.command === "chain") {
+    const provider = valueAsString(payload.options.provider);
+    const input = basenameOrValue(payload.options.input);
+    const parts: string[] = [payload.command];
+    if (provider) {
+      parts.push(provider);
+    }
+    if (input) {
+      parts.push(input);
+    }
+    return parts.join(" · ");
+  }
+
+  const input = basenameOrValue(payload.options.input);
+  return input ? `${payload.command} · ${input}` : payload.command;
+};
+
+const buildRunHistoryDetail = (entry: RunHistoryEntry): string | undefined => {
+  if (!entry.success) {
+    return entry.errorWhat ?? "Last run did not finish successfully.";
+  }
+
+  if (typeof entry.exitCode === "number") {
+    return `Finished with exit code ${entry.exitCode}.`;
+  }
+
+  return entry.commandLine;
+};
 
 const valueAsString = (value: unknown): string | undefined => {
   if (typeof value !== "string") {

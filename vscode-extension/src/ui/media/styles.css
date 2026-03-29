@@ -351,6 +351,55 @@ button:hover:not(:disabled) {
   color: var(--muted);
 }
 
+.salvage-panel {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.salvage-group h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.salvage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.salvage-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(91, 90, 85, 0.16);
+  color: var(--ink);
+}
+
+.salvage-item:hover:not(:disabled) {
+  border-color: rgba(11, 110, 79, 0.35);
+}
+
+.salvage-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.salvage-detail,
+.salvage-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .viewer-content {
   display: flex;
   flex-direction: column;

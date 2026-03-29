@@ -6,6 +6,7 @@ import type {
 
 export type PickKind = "file" | "folder";
 export type ViewMode = "parse" | "view";
+export type RunPresetValue = string | boolean;
 
 export type ViewerErrorCode =
   | "workspaceRequired"
@@ -65,6 +66,18 @@ export interface ViewerConfig {
   };
 }
 
+export interface SalvageItem {
+  id: string;
+  label: string;
+  detail?: string;
+  timestamp?: number;
+}
+
+export interface SalvageState {
+  recentTopics: SalvageItem[];
+  resumeCandidates: SalvageItem[];
+}
+
 export interface RunState {
   busy: boolean;
   lastExitCode?: number;
@@ -107,18 +120,27 @@ export interface ClearLogRequestMessage {
   type: "clear-log";
 }
 
+export interface ResumeRunMessage {
+  type: "resume-run";
+  payload: {
+    id: string;
+  };
+}
+
 export type WebviewToExtensionMessage =
   | PickMessage
   | RunMessage
   | RefreshFilesMessage
   | OpenViewerFileMessage
-  | ClearLogRequestMessage;
+  | ClearLogRequestMessage
+  | ResumeRunMessage;
 
 export interface InitMessage {
   type: "init";
   workspaceRoot?: string;
   runState: RunState;
   viewerState: ViewerState;
+  salvageState: SalvageState;
 }
 
 export interface ConfigMessage {
@@ -137,7 +159,7 @@ export interface ApplyRunPresetMessage {
   type: "apply-run-preset";
   preset: {
     command: CliRunPayload["command"];
-    values: Partial<Record<string, string>>;
+    values: Partial<Record<string, RunPresetValue>>;
   };
 }
 
@@ -179,6 +201,11 @@ export interface ValidationStateMessage {
   state: ValidationState;
 }
 
+export interface SalvageStateMessage {
+  type: "salvage-state";
+  state: SalvageState;
+}
+
 export interface ClearLogMessage {
   type: "clear-log";
 }
@@ -195,4 +222,5 @@ export type ExtensionToWebviewMessage =
   | ViewerStateMessage
   | SetModeMessage
   | ValidationStateMessage
+  | SalvageStateMessage
   | ClearLogMessage;
