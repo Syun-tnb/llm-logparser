@@ -99,10 +99,7 @@ export class LogParserPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, "src", "ui", "media"),
-          vscode.Uri.joinPath(extensionUri, "node_modules"),
-        ],
+        localResourceRoots: getWebviewResourceRoots(extensionUri),
       }
     );
 
@@ -617,11 +614,8 @@ export class LogParserPanel {
   private getHtmlForWebview(): string {
     const webview = this.panel.webview;
     const nonce = getNonce();
-    const mediaRoot = vscode.Uri.joinPath(
-      this.extensionUri,
-      "src",
-      "ui",
-      "media"
+    const mediaRoot = vscode.Uri.file(
+      resolveRuntimeMediaRoot(this.extensionUri.fsPath)
     );
     const stylesUri = webview.asWebviewUri(
       vscode.Uri.joinPath(mediaRoot, "styles.css")
@@ -629,39 +623,19 @@ export class LogParserPanel {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(mediaRoot, "main.js")
     );
-    const markedUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(
-        this.extensionUri,
-        "node_modules",
-        "marked",
-        "lib",
-        "marked.umd.js"
-      )
+    const vendorScripts = buildVendorScriptTags(
+      webview,
+      nonce,
+      this.extensionUri.fsPath
     );
-    const dompurifyUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(
-        this.extensionUri,
-        "node_modules",
-        "dompurify",
-        "dist",
-        "purify.min.js"
-      )
-    );
-    const templatePath = path.join(
-      this.extensionUri.fsPath,
-      "src",
-      "ui",
-      "media",
-      "index.html"
-    );
+    const templatePath = path.join(mediaRoot.fsPath, "index.html");
     const html = fs.readFileSync(templatePath, "utf8");
 
     return html
       .replace(/{{cspSource}}/g, webview.cspSource)
       .replace(/{{nonce}}/g, nonce)
       .replace(/{{stylesUri}}/g, stylesUri.toString())
-      .replace(/{{markedUri}}/g, markedUri.toString())
-      .replace(/{{dompurifyUri}}/g, dompurifyUri.toString())
+      .replace(/{{vendorScripts}}/g, vendorScripts)
       .replace(/{{scriptUri}}/g, scriptUri.toString());
   }
 }
@@ -911,7 +885,7 @@ const readTranslationsFile = (basePath: string, language: string): Record<string
 };
 
 const loadTranslations = (root: string, language: string): Record<string, string> => {
-  const basePath = path.join(root, "src", "ui", "media", "i18n");
+  const basePath = path.join(resolveRuntimeMediaRoot(root), "i18n");
   try {
     const fallback = readTranslationsFile(basePath, "en");
     if (language === "en") {
@@ -964,6 +938,63 @@ const collectParsedJsonlFiles = async (root: string): Promise<string[]> => {
   }
 
   return results.sort();
+};
+
+const resolveRuntimeMediaRoot = (root: string): string =>
+  resolveExistingPath(root, [
+    ["dist", "ui", "media"],
+    ["src", "ui", "media"],
+  ]);
+
+const resolveRuntimeVendorRoot = (root: string): string | undefined =>
+  resolveExistingPath(root, [["dist", "ui", "vendor"]], false);
+
+const resolveExistingPath = (
+  root: string,
+  candidates: string[][],
+  required = true
+): string => {
+  for (const segments of candidates) {
+    const candidate = path.join(root, ...segments);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const fallback = path.join(root, ...candidates[0]);
+  if (required) {
+    return fallback;
+  }
+  return "";
+};
+
+const getWebviewResourceRoots = (extensionUri: vscode.Uri): vscode.Uri[] => {
+  const roots = [vscode.Uri.file(resolveRuntimeMediaRoot(extensionUri.fsPath))];
+  const vendorRoot = resolveRuntimeVendorRoot(extensionUri.fsPath);
+  if (vendorRoot) {
+    roots.push(vscode.Uri.file(vendorRoot));
+  }
+  return roots;
+};
+
+const buildVendorScriptTags = (
+  webview: vscode.Webview,
+  nonce: string,
+  root: string
+): string => {
+  const vendorRoot = resolveRuntimeVendorRoot(root);
+  if (!vendorRoot) {
+    return "";
+  }
+
+  const vendorFiles = ["marked.umd.js", "purify.min.js"];
+  return vendorFiles
+    .filter((fileName) => fs.existsSync(path.join(vendorRoot, fileName)))
+    .map((fileName) => {
+      const uri = webview.asWebviewUri(vscode.Uri.file(path.join(vendorRoot, fileName)));
+      return `<script nonce="${nonce}" src="${uri.toString()}" defer></script>`;
+    })
+    .join("\n    ");
 };
 
 const readParsedJsonl = async (filePath: string): Promise<ViewerFileData> => {

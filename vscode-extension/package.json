@@ -84,9 +84,10 @@
   ],
   "scripts": {
     "vscode:prepublish": "npm run package",
-    "compile": "rm -rf dist && tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "package": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "copy:assets": "node ./scripts/copy-webview-assets.mjs",
+    "compile": "rm -rf dist && tsc -p ./ && npm run copy:assets",
+    "watch": "npm run copy:assets && tsc -watch -p ./",
+    "package": "rm -rf dist && esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node && npm run copy:assets",
     "test": "echo 'No tests yet'"
   },
   "devDependencies": {
