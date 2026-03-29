@@ -157,6 +157,18 @@ export class LogParserPanel {
       }
     }
   }
+  
+  private resolveExecutionRoot(): string {
+    const config = vscode.workspace.getConfiguration("llmLogparser");
+    const configuredRoot = config.get<string>("defaultRoot");
+
+    return (
+      this.viewerState.root ||
+      configuredRoot ||
+      this.workspaceRoot ||
+      process.cwd()
+    );
+  }
 
   private postInit(): void {
     this.syncWorkspaceRoot();
@@ -375,7 +387,7 @@ export class LogParserPanel {
 
   private async handleRun(payload: CliRunPayload): Promise<void> {
     this.syncWorkspaceRoot();
-    const workspaceRoot = this.workspaceRoot ?? "";
+    const executionRoot = this.resolveExecutionRoot();
     const config = vscode.workspace.getConfiguration("llmLogparser");
     const pythonPath = config.get<string>("pythonPath") ?? "python3";
     const cliCommand = config.get<string>("cliCommand") ?? "";
@@ -413,7 +425,7 @@ export class LogParserPanel {
     try {
       const runRequest = panelRuntime.createRunCliRequest(payload);
       const commandLine = await panelRuntime.formatCliCommandLine(runRequest, {
-        cwd: workspaceRoot,
+        cwd: executionRoot,
         pythonPath,
         cliCommand,
       });
@@ -425,7 +437,7 @@ export class LogParserPanel {
       this.appendExecutionLog(`> ${commandLine}\n`);
 
       const exitCode = await panelRuntime.runCli(runRequest, {
-        cwd: workspaceRoot,
+        cwd: executionRoot,
         pythonPath,
         cliCommand,
         onStdout: (chunk) => this.appendExecutionLog(chunk),
@@ -484,35 +496,32 @@ export class LogParserPanel {
   }
 
   private getViewerRootForCommand(payload: CliRunPayload): string | undefined {
-    const workspaceRoot = this.workspaceRoot;
-    if (!workspaceRoot) {
-      return undefined;
-    }
+    const baseRoot = this.resolveExecutionRoot();
 
-    const resolveFromWorkspace = (input: unknown): string | undefined => {
+    const resolveFromBase = (input: unknown): string | undefined => {
       const target = valueAsString(input);
       if (!target) {
         return undefined;
       }
-      return path.resolve(workspaceRoot, target);
+      return path.resolve(baseRoot, target);
     };
 
     if (payload.command === "parse") {
-      return resolveFromWorkspace(payload.options.outdir) ?? this.viewerState.root ?? workspaceRoot;
+      return resolveFromBase(payload.options.outdir) ?? this.viewerState.root ?? baseRoot;
     }
 
     if (payload.command === "chain") {
-      const parsedRoot = resolveFromWorkspace(payload.options.parsedRoot);
+      const parsedRoot = resolveFromBase(payload.options.parsedRoot);
       if (parsedRoot) {
         return parsedRoot;
       }
-      const outdir = resolveFromWorkspace(payload.options.outdir);
+      const outdir = resolveFromBase(payload.options.outdir);
       if (outdir) {
         return path.join(outdir, "output");
       }
     }
 
-    return this.viewerState.root ?? workspaceRoot;
+    return this.viewerState.root ?? baseRoot;
   }
 
   private setViewerError(code: ViewerErrorCode, detail?: string): void {
