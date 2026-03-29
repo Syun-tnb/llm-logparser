@@ -18,26 +18,7 @@
         "command": "llmLogparser.openDashboard",
         "title": "Open LogParser Instrument"
       }
-    ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "llmLogparserExplorer",
-          "title": "LLM LogParser",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "llmLogparserExplorer": [
-        {
-          "type": "webview",
-          "id": "llmLogparser.sidebarView",
-          "name": "Command Center",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
