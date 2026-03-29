@@ -31,6 +31,24 @@ import type {
   WebviewToExtensionMessage,
 } from "./protocol";
 
+type PanelRuntime = {
+  createRunCliRequest: typeof createRunCliRequest;
+  formatCliCommandLine: typeof formatCliCommandLine;
+  getInvalidCliFields: typeof getInvalidCliFields;
+  runCli: typeof runCli;
+  toCliUiError: typeof toCliUiError;
+};
+
+const defaultPanelRuntime: PanelRuntime = {
+  createRunCliRequest,
+  formatCliCommandLine,
+  getInvalidCliFields,
+  runCli,
+  toCliUiError,
+};
+
+let panelRuntime: PanelRuntime = { ...defaultPanelRuntime };
+
 export class LogParserPanel {
   public static currentPanel: LogParserPanel | undefined;
 
@@ -361,12 +379,12 @@ export class LogParserPanel {
     const config = vscode.workspace.getConfiguration("llmLogparser");
     const pythonPath = config.get<string>("pythonPath") ?? "python3";
     const cliCommand = config.get<string>("cliCommand") ?? "";
-    const invalidFields = getInvalidCliFields(payload);
+    const invalidFields = panelRuntime.getInvalidCliFields(payload);
 
     this.postValidationState(payload.command, invalidFields);
     if (invalidFields.length > 0) {
       const missing = invalidFields.join(", ");
-      const uiError = toCliUiError(
+      const uiError = panelRuntime.toCliUiError(
         new InvalidInputError(
           "preflight",
           "Required command inputs are missing.",
@@ -393,8 +411,8 @@ export class LogParserPanel {
     }
 
     try {
-      const runRequest = createRunCliRequest(payload);
-      const commandLine = await formatCliCommandLine(runRequest, {
+      const runRequest = panelRuntime.createRunCliRequest(payload);
+      const commandLine = await panelRuntime.formatCliCommandLine(runRequest, {
         cwd: workspaceRoot,
         pythonPath,
         cliCommand,
@@ -406,7 +424,7 @@ export class LogParserPanel {
       this.setBusy(true);
       this.appendExecutionLog(`> ${commandLine}\n`);
 
-      const exitCode = await runCli(runRequest, {
+      const exitCode = await panelRuntime.runCli(runRequest, {
         cwd: workspaceRoot,
         pythonPath,
         cliCommand,
@@ -439,7 +457,7 @@ export class LogParserPanel {
         exitCode,
       });
     } catch (error) {
-      const uiError = toCliUiError(error);
+      const uiError = panelRuntime.toCliUiError(error);
       this.runState = {
         busy: false,
         lastError: uiError,
@@ -639,6 +657,24 @@ export class LogParserPanel {
       .replace(/{{scriptUri}}/g, scriptUri.toString());
   }
 }
+
+export const __panelTestApi = {
+  setRuntime(overrides: Partial<PanelRuntime> = {}): void {
+    panelRuntime = {
+      ...defaultPanelRuntime,
+      ...overrides,
+    };
+  },
+  resetRuntime(): void {
+    panelRuntime = { ...defaultPanelRuntime };
+  },
+  async dispatchMessage(
+    panel: LogParserPanel,
+    message: WebviewToExtensionMessage
+  ): Promise<void> {
+    await (panel as unknown as { handleMessage: (message: WebviewToExtensionMessage) => Promise<void> }).handleMessage(message);
+  },
+};
 
 interface RunHistoryEntry {
   id: string;

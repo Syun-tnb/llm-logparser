@@ -88,12 +88,15 @@
     "compile": "rm -rf dist && tsc -p ./ && npm run copy:assets",
     "watch": "npm run copy:assets && tsc -watch -p ./",
     "package": "rm -rf dist && esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node && npm run copy:assets",
-    "test": "echo 'No tests yet'"
+    "test": "npm run compile && node ./dist/test/runTest.js"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.19.11",
+    "mocha": "^10.8.2",
     "typescript": "^5.3.3"
   },
   "dependencies": {
