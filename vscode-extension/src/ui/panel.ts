@@ -2,12 +2,13 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import * as readline from "readline";
-import { runCli, type CliCommand, type RunCliRequest } from "../backend/python";
-
-type RunPayload = {
-  command: CliCommand;
-  options: Record<string, string | boolean | undefined>;
-};
+import {
+  createRunCliRequest,
+  formatCliCommandLine,
+  runCli,
+  type CliRunPayload,
+  validateCliPayload,
+} from "../backend/python";
 
 type PickPayload = {
   targetId: string;
@@ -143,7 +144,7 @@ export class LogParserPanel {
         await this.handlePick(message.payload as PickPayload);
         return;
       case "run":
-        await this.handleRun(message.payload as RunPayload);
+        await this.handleRun(message.payload as CliRunPayload);
         return;
       case "viewer-list":
         await this.handleViewerList(message.payload as ViewerListPayload);
@@ -179,14 +180,14 @@ export class LogParserPanel {
     });
   }
 
-  private async handleRun(payload: RunPayload): Promise<void> {
+  private async handleRun(payload: CliRunPayload): Promise<void> {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceRoot) {
       vscode.window.showErrorMessage("Workspace folder is required.");
       return;
     }
 
-    const missing = validatePayload(payload);
+    const missing = validateCliPayload(payload);
     if (missing.length > 0) {
       this.panel.webview.postMessage({
         type: "run-error",
@@ -195,17 +196,17 @@ export class LogParserPanel {
       return;
     }
 
-    const args = buildArgs(payload);
     const config = vscode.workspace.getConfiguration("llmLogparser");
     const pythonPath = config.get<string>("pythonPath") ?? "python3";
     const cliCommand = config.get<string>("cliCommand") ?? "";
 
-    const runRequest: RunCliRequest = {
-      command: payload.command,
-      args,
-    };
+    const runRequest = createRunCliRequest(payload);
 
-    const commandLine = buildCommandLine(runRequest, pythonPath, cliCommand);
+    const commandLine = formatCliCommandLine(runRequest, {
+      cwd: workspaceRoot,
+      pythonPath,
+      cliCommand,
+    });
     this.panel.webview.postMessage({ type: "busy", value: true });
     this.panel.webview.postMessage({ type: "log", value: `> ${commandLine}\n` });
 
@@ -373,88 +374,6 @@ const valueAsString = (value: unknown): string | undefined => {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const valueAsBoolean = (value: unknown): boolean => Boolean(value);
-
-const validatePayload = (payload: RunPayload): string[] => {
-  const missing: string[] = [];
-  const opts = payload.options;
-  if (payload.command === "parse") {
-    if (!valueAsString(opts.provider)) missing.push("provider");
-    if (!valueAsString(opts.input)) missing.push("input");
-  } else if (payload.command === "export") {
-    if (!valueAsString(opts.input)) missing.push("input");
-  } else if (payload.command === "chain") {
-    if (!valueAsString(opts.provider)) missing.push("provider");
-    if (!valueAsString(opts.input)) missing.push("input");
-  }
-  return missing;
-};
-
-const buildArgs = (payload: RunPayload): string[] => {
-  const args: string[] = [];
-  const opts = payload.options;
-
-  const add = (flag: string, value?: string) => {
-    if (value) {
-      args.push(flag, value);
-    }
-  };
-  const addFlag = (flag: string, enabled: boolean) => {
-    if (enabled) {
-      args.push(flag);
-    }
-  };
-
-  if (payload.command === "parse") {
-    add("--provider", valueAsString(opts.provider));
-    add("--input", valueAsString(opts.input));
-    add("--outdir", valueAsString(opts.outdir));
-    addFlag("--dry-run", valueAsBoolean(opts.dryRun));
-    addFlag("--fail-fast", valueAsBoolean(opts.failFast));
-    addFlag("--validate-schema", valueAsBoolean(opts.validateSchema));
-  } else if (payload.command === "export") {
-    add("--input", valueAsString(opts.input));
-    add("--out", valueAsString(opts.out));
-    add("--timezone", valueAsString(opts.timezone));
-    add("--formatting", valueAsString(opts.formatting));
-    add("--split", valueAsString(opts.split));
-    add("--split-soft-overflow", valueAsString(opts.splitSoftOverflow));
-    addFlag("--split-hard", valueAsBoolean(opts.splitHard));
-    addFlag("--split-preview", valueAsBoolean(opts.splitPreview));
-    add("--tiny-tail-threshold", valueAsString(opts.tinyTailThreshold));
-  } else if (payload.command === "chain") {
-    add("--provider", valueAsString(opts.provider));
-    add("--input", valueAsString(opts.input));
-    add("--outdir", valueAsString(opts.outdir));
-    add("--timezone", valueAsString(opts.timezone));
-    add("--formatting", valueAsString(opts.formatting));
-    add("--split", valueAsString(opts.split));
-    add("--split-soft-overflow", valueAsString(opts.splitSoftOverflow));
-    addFlag("--split-hard", valueAsBoolean(opts.splitHard));
-    addFlag("--split-preview", valueAsBoolean(opts.splitPreview));
-    add("--tiny-tail-threshold", valueAsString(opts.tinyTailThreshold));
-    add("--export-outdir", valueAsString(opts.exportOutdir));
-    add("--parsed-root", valueAsString(opts.parsedRoot));
-    addFlag("--dry-run", valueAsBoolean(opts.dryRun));
-    addFlag("--fail-fast", valueAsBoolean(opts.failFast));
-    addFlag("--validate-schema", valueAsBoolean(opts.validateSchema));
-  }
-
-  return args;
-};
-
-const buildCommandLine = (
-  request: RunCliRequest,
-  pythonPath: string,
-  cliCommand: string
-): string => {
-  const args = [request.command, ...request.args];
-  if (cliCommand && cliCommand.trim().length > 0) {
-    return `${cliCommand} ${args.join(" ")}`;
-  }
-  return `${pythonPath} -m llm_logparser.cli ${args.join(" ")}`;
 };
 
 const getNonce = (): string => {
