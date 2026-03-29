@@ -467,22 +467,30 @@ const resolveEnum = <T extends string>(
   return allowed.includes(value as T) ? (value as T) : fallback;
 };
 
+const readTranslationsFile = (basePath: string, language: string): Record<string, string> => {
+  const target = path.join(basePath, `${language}.json`);
+  const raw = fs.readFileSync(target, "utf8");
+  return JSON.parse(raw) as Record<string, string>;
+};
+
 const loadTranslations = (root: string, language: string): Record<string, string> => {
   const basePath = path.join(root, "src", "ui", "media", "i18n");
-  const primary = path.join(basePath, `${language}.json`);
   try {
-    const raw = fs.readFileSync(primary, "utf8");
-    return JSON.parse(raw) as Record<string, string>;
-  } catch (error) {
-    if (language !== "en") {
-      const fallback = path.join(basePath, "en.json");
-      try {
-        const raw = fs.readFileSync(fallback, "utf8");
-        return JSON.parse(raw) as Record<string, string>;
-      } catch (fallbackError) {
-        return {};
-      }
+    const fallback = readTranslationsFile(basePath, "en");
+    if (language === "en") {
+      return fallback;
     }
+
+    try {
+      const localized = readTranslationsFile(basePath, language);
+      return {
+        ...fallback,
+        ...localized,
+      };
+    } catch (error) {
+      return fallback;
+    }
+  } catch (error) {
     return {};
   }
 };

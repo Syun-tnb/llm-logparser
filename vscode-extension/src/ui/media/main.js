@@ -43,12 +43,57 @@
   let activeViewerPath = "";
   let lastViewerData = null;
 
-  const t = (key, vars = {}) => {
-    const template = i18nTable[key] || key;
+  const hasTranslation = (key) => Boolean(i18nTable && Object.prototype.hasOwnProperty.call(i18nTable, key));
+
+  const t = (key, vars = {}, fallback) => {
+    const template = i18nTable[key] ?? fallback ?? key;
     return template.replace(/\{(\w+)\}/g, (_, token) => {
       const value = vars[token];
       return value === undefined || value === null ? "" : String(value);
     });
+  };
+
+  const applyTranslationToElement = (el, key, attribute) => {
+    if (!key) {
+      return;
+    }
+    const translated = t(key);
+    if (attribute) {
+      el.setAttribute(attribute, translated);
+      return;
+    }
+    el.textContent = translated;
+  };
+
+  const translateErrorField = (message, field) => {
+    const errorType = message.errorType || "UnknownExecutionError";
+    const key = `run.error.${errorType}.${field}`;
+    if (hasTranslation(key)) {
+      return t(key);
+    }
+
+    if (field === "what") {
+      return message.what || t("run.error.unknown.what");
+    }
+    if (field === "why") {
+      return message.why || t("run.error.unknown.why");
+    }
+    return message.nextStep || t("run.error.unknown.nextStep");
+  };
+
+  const formatRunFailure = (message) => {
+    const errorType = message.errorType || "UnknownExecutionError";
+    const titleKey = `run.error.${errorType}.title`;
+    const title = hasTranslation(titleKey)
+      ? t(titleKey)
+      : t("run.error.UnknownExecutionError.title", {}, "Command failed.");
+
+    return [
+      title,
+      `${t("run.error.label.what")}: ${translateErrorField(message, "what")}`,
+      `${t("run.error.label.why")}: ${translateErrorField(message, "why")}`,
+      `${t("run.error.label.nextStep")}: ${translateErrorField(message, "nextStep")}`,
+    ].join("\n");
   };
 
   const applyI18n = () => {
@@ -56,17 +101,25 @@
     textTargets.forEach((el) => {
       const key = el.dataset.i18n;
       if (!key) return;
-      el.textContent = t(key);
+      applyTranslationToElement(el, key);
     });
 
     const placeholderTargets = document.querySelectorAll("[data-i18n-placeholder]");
     placeholderTargets.forEach((el) => {
       const key = el.dataset.i18nPlaceholder;
       if (!key) return;
-      el.setAttribute("placeholder", t(key));
+      applyTranslationToElement(el, key, "placeholder");
+    });
+
+    const ariaTargets = document.querySelectorAll("[data-i18n-aria-label]");
+    ariaTargets.forEach((el) => {
+      const key = el.dataset.i18nAriaLabel;
+      if (!key) return;
+      applyTranslationToElement(el, key, "aria-label");
     });
 
     document.title = t("app.title");
+    document.documentElement.lang = viewerConfig.language || "en";
   };
 
   const setWorkspaceLabel = (value) => {
@@ -74,7 +127,11 @@
     if (!workspaceRootEl) {
       return;
     }
-    workspaceRootEl.textContent = t("workspace.label", { path: workspaceRoot });
+    workspaceRootEl.textContent = t(
+      "workspace.label",
+      { path: workspaceRoot },
+      `Workspace: ${workspaceRoot}`
+    );
   };
 
   const applyViewerOptions = () => {
@@ -581,30 +638,7 @@
     logEl.scrollTop = logEl.scrollHeight;
   };
 
-  const formatRunFailure = (message) => {
-    const lines = [];
-    if (message.what) {
-      lines.push(message.what);
-    }
-    if (message.why) {
-      lines.push(message.why);
-    }
-    if (message.nextStep) {
-      lines.push(message.nextStep);
-    }
-    if (lines.length === 0) {
-      lines.push(
-        t("log.runFailed", {
-          message: message.message || t("log.unknownError"),
-        })
-      );
-    }
-    return lines.join("\n");
-  };
-
   applyViewerOptions();
-  applyI18n();
-  setWorkspaceLabel("-");
   showSection(commandSelect?.value ?? "parse");
   setViewMode("parse");
 })();

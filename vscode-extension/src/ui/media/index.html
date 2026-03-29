@@ -20,7 +20,7 @@
         <div class="workspace" id="workspaceRoot" data-i18n="workspace.label">Workspace: -</div>
       </div>
 
-      <div class="mode-switch" role="tablist" aria-label="Mode">
+      <div class="mode-switch" role="tablist" aria-label="Mode" data-i18n-aria-label="nav.mode">
         <button type="button" class="mode-tab active" data-view="parse" data-i18n="nav.parse">Parse</button>
         <button type="button" class="mode-tab" data-view="view" data-i18n="nav.view">View</button>
       </div>
@@ -32,9 +32,9 @@
             <div class="field">
               <label for="command" data-i18n="command.label">Command</label>
               <select id="command">
-                <option value="parse">parse</option>
-                <option value="export">export</option>
-                <option value="chain">chain</option>
+                <option value="parse" data-i18n="command.option.parse">parse</option>
+                <option value="export" data-i18n="command.option.export">export</option>
+                <option value="chain" data-i18n="command.option.chain">chain</option>
               </select>
             </div>
 
@@ -153,8 +153,8 @@
                 <div class="field">
                   <label for="export-formatting" data-i18n="export.formatting.label">Formatting</label>
                   <select id="export-formatting">
-                    <option value="light">light</option>
-                    <option value="none">none</option>
+                    <option value="light" data-i18n="formatting.option.light">light</option>
+                    <option value="none" data-i18n="formatting.option.none">none</option>
                   </select>
                 </div>
               </div>
@@ -261,8 +261,8 @@
                 <div class="field">
                   <label for="chain-formatting" data-i18n="chain.formatting.label">Formatting</label>
                   <select id="chain-formatting">
-                    <option value="light">light</option>
-                    <option value="none">none</option>
+                    <option value="light" data-i18n="formatting.option.light">light</option>
+                    <option value="none" data-i18n="formatting.option.none">none</option>
                   </select>
                 </div>
               </div>
