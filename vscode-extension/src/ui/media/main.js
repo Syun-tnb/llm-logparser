@@ -529,18 +529,11 @@
           runButton.disabled = Boolean(message.value);
         }
         return;
-      case "run-error":
-        appendLog(`\n${t("log.missingFields", { fields: (message.fields || []).join(", ") })}\n`);
-        return;
       case "run-finished":
         appendLog(`\n${t("log.exitCode", { code: message.exitCode })}\n`);
         return;
       case "run-failed":
-        appendLog(
-          `\n${t("log.runFailed", {
-            message: message.message || t("log.unknownError"),
-          })}\n`
-        );
+        appendLog(`\n${formatRunFailure(message)}\n`);
         return;
       case "init":
         setWorkspaceLabel(message.workspaceRoot || "-");
@@ -586,6 +579,27 @@
     }
     logEl.textContent += value;
     logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const formatRunFailure = (message) => {
+    const lines = [];
+    if (message.what) {
+      lines.push(message.what);
+    }
+    if (message.why) {
+      lines.push(message.why);
+    }
+    if (message.nextStep) {
+      lines.push(message.nextStep);
+    }
+    if (lines.length === 0) {
+      lines.push(
+        t("log.runFailed", {
+          message: message.message || t("log.unknownError"),
+        })
+      );
+    }
+    return lines.join("\n");
   };
 
   applyViewerOptions();

@@ -6,8 +6,8 @@ import {
   createRunCliRequest,
   formatCliCommandLine,
   runCli,
+  toCliUiError,
   type CliRunPayload,
-  validateCliPayload,
 } from "../backend/python";
 
 type PickPayload = {
@@ -181,36 +181,22 @@ export class LogParserPanel {
   }
 
   private async handleRun(payload: CliRunPayload): Promise<void> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!workspaceRoot) {
-      vscode.window.showErrorMessage("Workspace folder is required.");
-      return;
-    }
-
-    const missing = validateCliPayload(payload);
-    if (missing.length > 0) {
-      this.panel.webview.postMessage({
-        type: "run-error",
-        fields: missing,
-      });
-      return;
-    }
-
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
     const config = vscode.workspace.getConfiguration("llmLogparser");
     const pythonPath = config.get<string>("pythonPath") ?? "python3";
     const cliCommand = config.get<string>("cliCommand") ?? "";
 
-    const runRequest = createRunCliRequest(payload);
-
-    const commandLine = await formatCliCommandLine(runRequest, {
-      cwd: workspaceRoot,
-      pythonPath,
-      cliCommand,
-    });
-    this.panel.webview.postMessage({ type: "busy", value: true });
-    this.panel.webview.postMessage({ type: "log", value: `> ${commandLine}\n` });
-
     try {
+      const runRequest = createRunCliRequest(payload);
+      const commandLine = await formatCliCommandLine(runRequest, {
+        cwd: workspaceRoot,
+        pythonPath,
+        cliCommand,
+      });
+
+      this.panel.webview.postMessage({ type: "busy", value: true });
+      this.panel.webview.postMessage({ type: "log", value: `> ${commandLine}\n` });
+
       const exitCode = await runCli(runRequest, {
         cwd: workspaceRoot,
         pythonPath,
@@ -226,9 +212,13 @@ export class LogParserPanel {
         exitCode,
       });
     } catch (error) {
+      const uiError = toCliUiError(error);
       this.panel.webview.postMessage({
         type: "run-failed",
-        message: error instanceof Error ? error.message : undefined,
+        errorType: uiError.type,
+        what: uiError.what,
+        why: uiError.why,
+        nextStep: uiError.nextStep,
       });
     } finally {
       this.panel.webview.postMessage({ type: "busy", value: false });

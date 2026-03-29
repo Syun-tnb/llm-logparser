@@ -5,6 +5,12 @@ import { spawn } from "child_process";
 export type CliCommand = "parse" | "export" | "chain";
 export type CliOptionValue = string | boolean | undefined;
 export type CliOptions = Record<string, CliOptionValue>;
+export type CliExecutionErrorType =
+  | "MissingWorkspaceError"
+  | "BinaryNotFoundError"
+  | "PermissionDeniedError"
+  | "InvalidInputError"
+  | "UnknownExecutionError";
 
 export interface CliRunPayload {
   command: CliCommand;
@@ -25,7 +31,16 @@ export interface RunCliOptions {
   onStderr?: (chunk: string) => void;
 }
 
+export interface CliUiError {
+  type: CliExecutionErrorType;
+  what: string;
+  why: string;
+  nextStep: string;
+}
+
 type CliLaunchStrategy = "cliCommand" | "uv" | "pythonModule";
+type ErrorPhase = "preflight" | "runtime";
+type CommandProbeResult = "ok" | "missing" | "permissionDenied";
 
 interface ResolvedCliInvocation {
   command: string;
@@ -34,8 +49,68 @@ interface ResolvedCliInvocation {
   strategy: CliLaunchStrategy;
 }
 
+class CliExecutionError extends Error {
+  public readonly type: CliExecutionErrorType;
+  public readonly phase: ErrorPhase;
+  public readonly what: string;
+  public readonly why: string;
+  public readonly nextStep: string;
+
+  constructor(
+    type: CliExecutionErrorType,
+    phase: ErrorPhase,
+    what: string,
+    why: string,
+    nextStep: string
+  ) {
+    super(`${what} ${why} ${nextStep}`);
+    this.name = type;
+    this.type = type;
+    this.phase = phase;
+    this.what = what;
+    this.why = why;
+    this.nextStep = nextStep;
+  }
+}
+
+export class MissingWorkspaceError extends CliExecutionError {
+  constructor(phase: ErrorPhase, why?: string, nextStep?: string) {
+    super(
+      "MissingWorkspaceError",
+      phase,
+      "No workspace folder is available.",
+      why ?? "The LogParser CLI runs against files in the current workspace checkout.",
+      nextStep ?? "Open the repository folder in VS Code and run the command again."
+    );
+  }
+}
+
+export class BinaryNotFoundError extends CliExecutionError {
+  constructor(phase: ErrorPhase, what: string, why: string, nextStep: string) {
+    super("BinaryNotFoundError", phase, what, why, nextStep);
+  }
+}
+
+export class PermissionDeniedError extends CliExecutionError {
+  constructor(phase: ErrorPhase, what: string, why: string, nextStep: string) {
+    super("PermissionDeniedError", phase, what, why, nextStep);
+  }
+}
+
+export class InvalidInputError extends CliExecutionError {
+  constructor(phase: ErrorPhase, what: string, why: string, nextStep: string) {
+    super("InvalidInputError", phase, what, why, nextStep);
+  }
+}
+
+export class UnknownExecutionError extends CliExecutionError {
+  constructor(phase: ErrorPhase, what: string, why: string, nextStep: string) {
+    super("UnknownExecutionError", phase, what, why, nextStep);
+  }
+}
+
 const PATH_SEPARATOR = process.platform === "win32" ? ";" : ":";
-const uvAvailabilityCache = new Map<string, Promise<boolean>>();
+const commandAvailabilityCache = new Map<string, Promise<CommandProbeResult>>();
 
 const appendPath = (existing: string | undefined, nextPath: string): string => {
   if (!existing) {
@@ -51,9 +126,34 @@ const appendPath = (existing: string | undefined, nextPath: string): string => {
 const resolveWorkspaceRoot = (cwd: string): string => {
   const trimmed = cwd.trim();
   if (!trimmed) {
-    throw new Error("Workspace folder is required.");
+    throw new MissingWorkspaceError("preflight");
   }
   return path.resolve(trimmed);
+};
+
+const ensureWorkspaceRoot = async (cwd: string): Promise<string> => {
+  const workspaceRoot = resolveWorkspaceRoot(cwd);
+
+  try {
+    const stats = await fs.promises.stat(workspaceRoot);
+    if (!stats.isDirectory()) {
+      throw new MissingWorkspaceError(
+        "preflight",
+        "The configured workspace root does not point to a folder on disk.",
+        "Open the repository root as a folder in VS Code and run the command again."
+      );
+    }
+    return workspaceRoot;
+  } catch (error) {
+    if (error instanceof CliExecutionError) {
+      throw error;
+    }
+    throw new MissingWorkspaceError(
+      "preflight",
+      "The configured workspace root does not exist on disk anymore.",
+      "Reopen the repository folder in VS Code and run the command again."
+    );
+  }
 };
 
 const getWorkspaceSrcPath = (workspaceRoot: string): string =>
@@ -73,27 +173,6 @@ const fileExists = async (target: string): Promise<boolean> => {
 
 const hasWorkspacePyproject = async (workspaceRoot: string): Promise<boolean> =>
   fileExists(getPyprojectPath(workspaceRoot));
-
-const isCommandAvailable = (command: string, cwd: string): Promise<boolean> => {
-  const cacheKey = `${cwd}::${command}`;
-  const cached = uvAvailabilityCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const pending = new Promise<boolean>((resolve) => {
-    const child = spawn(command, ["--version"], {
-      cwd,
-      stdio: "ignore",
-    });
-
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
-  });
-
-  uvAvailabilityCache.set(cacheKey, pending);
-  return pending;
-};
 
 const buildBaseEnv = (
   options: RunCliOptions,
@@ -221,7 +300,12 @@ const tokenizeCommand = (commandLine: string): string[] => {
   }
 
   if (quote) {
-    throw new Error(`Unterminated quote in cliCommand: ${commandLine}`);
+    throw new InvalidInputError(
+      "preflight",
+      "The configured CLI command could not be parsed.",
+      "The `llmLogparser.cliCommand` setting has an unterminated quote or invalid escaping.",
+      "Fix `llmLogparser.cliCommand` in settings and run the command again."
+    );
   }
 
   if (current.length > 0) {
@@ -241,7 +325,7 @@ const formatArg = (value: string): string => {
   return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
 };
 
-export const validateCliPayload = (payload: CliRunPayload): string[] => {
+const validateCliPayload = (payload: CliRunPayload): string[] => {
   const missing: string[] = [];
   const opts = payload.options;
 
@@ -258,10 +342,143 @@ export const validateCliPayload = (payload: CliRunPayload): string[] => {
   return missing;
 };
 
-export const createRunCliRequest = (payload: CliRunPayload): RunCliRequest => ({
-  command: payload.command,
-  args: buildCliArgs(payload),
-});
+const formatMissingFields = (fields: string[]): string => fields.join(", ");
+
+const probeCommandAvailability = (
+  command: string,
+  cwd: string
+): Promise<CommandProbeResult> => {
+  const cacheKey = `${cwd}::${command}`;
+  const cached = commandAvailabilityCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = new Promise<CommandProbeResult>((resolve) => {
+    const child = spawn(command, ["--version"], {
+      cwd,
+      stdio: "ignore",
+    });
+
+    let settled = false;
+
+    const finish = (result: CommandProbeResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(result);
+    };
+
+    child.once("spawn", () => {
+      finish("ok");
+      child.kill();
+    });
+
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EACCES" || error.code === "EPERM") {
+        finish("permissionDenied");
+        return;
+      }
+      finish("missing");
+    });
+  });
+
+  commandAvailabilityCache.set(cacheKey, pending);
+  return pending;
+};
+
+const resolveConfiguredCommand = (cliCommand: string): string => {
+  const [command] = tokenizeCommand(cliCommand);
+  if (!command) {
+    throw new InvalidInputError(
+      "preflight",
+      "The configured CLI command is empty.",
+      "The `llmLogparser.cliCommand` setting does not contain an executable to run.",
+      "Set `llmLogparser.cliCommand` to a valid command or clear it to use automatic detection."
+    );
+  }
+  return command;
+};
+
+const createBinaryNotFoundError = (
+  phase: ErrorPhase,
+  strategy: CliLaunchStrategy,
+  command: string
+): BinaryNotFoundError => {
+  if (strategy === "cliCommand") {
+    return new BinaryNotFoundError(
+      phase,
+      "The configured CLI command is not available.",
+      `The executable "${command}" from \`llmLogparser.cliCommand\` could not be found from this workspace.`,
+      "Fix `llmLogparser.cliCommand` in settings or install the required tool, then run the command again."
+    );
+  }
+
+  if (strategy === "uv") {
+    return new BinaryNotFoundError(
+      phase,
+      "uv is not available.",
+      "The workspace has a `pyproject.toml`, so the extension prefers `uv run llp`, but `uv` could not be started.",
+      "Install uv or set `llmLogparser.cliCommand` in settings to a working command."
+    );
+  }
+
+  return new BinaryNotFoundError(
+    phase,
+    `Python executable "${command}" is not available.`,
+    "The extension fell back to `python -m llm_logparser.cli`, but the configured Python executable could not be found.",
+    "Install Python, fix `llmLogparser.pythonPath`, or set `llmLogparser.cliCommand` in settings."
+  );
+};
+
+const createPermissionDeniedError = (
+  phase: ErrorPhase,
+  strategy: CliLaunchStrategy,
+  command: string
+): PermissionDeniedError => {
+  if (strategy === "cliCommand") {
+    return new PermissionDeniedError(
+      phase,
+      "The configured CLI command could not be started.",
+      `The operating system denied permission to run "${command}" from \`llmLogparser.cliCommand\`.`,
+      "Check that the command is executable and accessible from this workspace, or update the setting."
+    );
+  }
+
+  if (strategy === "uv") {
+    return new PermissionDeniedError(
+      phase,
+      "uv could not be started.",
+      `The operating system denied permission to run "${command}".`,
+      "Check the uv installation and permissions, or set `llmLogparser.cliCommand` to another working command."
+    );
+  }
+
+  return new PermissionDeniedError(
+    phase,
+    "Python could not be started.",
+    `The operating system denied permission to run "${command}".`,
+    "Check the Python executable path and permissions, or set `llmLogparser.cliCommand` to another working command."
+  );
+};
+
+const ensureCommandAvailable = async (
+  command: string,
+  workspaceRoot: string,
+  strategy: CliLaunchStrategy,
+  phase: ErrorPhase
+): Promise<void> => {
+  const result = await probeCommandAvailability(command, workspaceRoot);
+
+  if (result === "missing") {
+    throw createBinaryNotFoundError(phase, strategy, command);
+  }
+
+  if (result === "permissionDenied") {
+    throw createPermissionDeniedError(phase, strategy, command);
+  }
+};
 
 const resolveLaunchStrategy = async (
   options: RunCliOptions,
@@ -273,7 +490,7 @@ const resolveLaunchStrategy = async (
 
   const [hasPyproject, hasUv] = await Promise.all([
     hasWorkspacePyproject(workspaceRoot),
-    isCommandAvailable("uv", workspaceRoot),
+    probeCommandAvailability("uv", workspaceRoot).then((result) => result === "ok"),
   ]);
 
   if (hasPyproject && hasUv) {
@@ -283,11 +500,11 @@ const resolveLaunchStrategy = async (
   return "pythonModule";
 };
 
-export const buildCliInvocation = async (
+const buildCliInvocation = async (
   request: RunCliRequest,
-  options: RunCliOptions
+  options: RunCliOptions,
+  workspaceRoot: string
 ): Promise<ResolvedCliInvocation> => {
-  const workspaceRoot = resolveWorkspaceRoot(options.cwd);
   const cliArgs = [request.command, ...request.args];
   const env = buildBaseEnv(options, workspaceRoot);
   const strategy = await resolveLaunchStrategy(options, workspaceRoot);
@@ -296,7 +513,12 @@ export const buildCliInvocation = async (
   if (strategy === "cliCommand") {
     const [command, ...commandArgs] = tokenizeCommand(cliCommand ?? "");
     if (!command) {
-      throw new Error("cliCommand must include an executable.");
+      throw new InvalidInputError(
+        "preflight",
+        "The configured CLI command is empty.",
+        "The `llmLogparser.cliCommand` setting does not contain an executable to run.",
+        "Set `llmLogparser.cliCommand` to a valid command or clear it to use automatic detection."
+      );
     }
     return {
       command,
@@ -323,37 +545,155 @@ export const buildCliInvocation = async (
   };
 };
 
-export const formatCliCommandLine = (
+export const createRunCliRequest = (payload: CliRunPayload): RunCliRequest => {
+  const missing = validateCliPayload(payload);
+  if (missing.length > 0) {
+    throw new InvalidInputError(
+      "preflight",
+      "Required command inputs are missing.",
+      `The ${payload.command} command needs these fields before it can run: ${formatMissingFields(
+        missing
+      )}.`,
+      `Fill in ${formatMissingFields(missing)} in the panel and run the command again.`
+    );
+  }
+
+  return {
+    command: payload.command,
+    args: buildCliArgs(payload),
+  };
+};
+
+export const preflightCliExecution = async (
   request: RunCliRequest,
   options: RunCliOptions
-): Promise<string> => {
-  return buildCliInvocation(request, options).then((invocation) =>
-    [invocation.command, ...invocation.args].map(formatArg).join(" ")
+): Promise<ResolvedCliInvocation> => {
+  const workspaceRoot = await ensureWorkspaceRoot(options.cwd);
+  const invocation = await buildCliInvocation(request, options, workspaceRoot);
+
+  if (invocation.strategy === "cliCommand") {
+    const configuredCommand = resolveConfiguredCommand(options.cliCommand?.trim() ?? "");
+    await ensureCommandAvailable(configuredCommand, workspaceRoot, "cliCommand", "preflight");
+    return invocation;
+  }
+
+  if (invocation.strategy === "uv") {
+    const pyprojectExists = await hasWorkspacePyproject(workspaceRoot);
+    if (!pyprojectExists) {
+      throw new InvalidInputError(
+        "preflight",
+        "The workspace is not configured for uv execution.",
+        "Automatic `uv run llp` execution requires a `pyproject.toml` at the workspace root.",
+        "Open the repository root, add `pyproject.toml`, or set `llmLogparser.cliCommand` explicitly."
+      );
+    }
+    await ensureCommandAvailable("uv", workspaceRoot, "uv", "preflight");
+    return invocation;
+  }
+
+  await ensureCommandAvailable(options.pythonPath, workspaceRoot, "pythonModule", "preflight");
+  return invocation;
+};
+
+const mapSpawnError = (
+  error: unknown,
+  invocation: ResolvedCliInvocation
+): CliExecutionError => {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as NodeJS.ErrnoException).code)
+      : undefined;
+
+  if (code === "ENOENT") {
+    return createBinaryNotFoundError("runtime", invocation.strategy, invocation.command);
+  }
+
+  if (code === "EACCES" || code === "EPERM") {
+    return createPermissionDeniedError("runtime", invocation.strategy, invocation.command);
+  }
+
+  return new UnknownExecutionError(
+    "runtime",
+    "The command could not be started.",
+    "The operating system returned an unexpected execution error before the CLI could run.",
+    "Check the command configuration, then run the command again."
   );
 };
 
-export const runCli = (
+const mapExitFailure = (
+  exitCode: number | null,
+  invocation: ResolvedCliInvocation
+): CliExecutionError => {
+  if (exitCode === 126) {
+    return createPermissionDeniedError("runtime", invocation.strategy, invocation.command);
+  }
+
+  if (exitCode === 127) {
+    return createBinaryNotFoundError("runtime", invocation.strategy, invocation.command);
+  }
+
+  return new UnknownExecutionError(
+    "runtime",
+    `The command exited with code ${exitCode ?? "unknown"}.`,
+    "The CLI started, but it reported a failure. The command output above usually contains the exact reason.",
+    "Review the command output, fix the reported problem, and run the command again."
+  );
+};
+
+export const toCliUiError = (error: unknown): CliUiError => {
+  if (error instanceof CliExecutionError) {
+    return {
+      type: error.type,
+      what: error.what,
+      why: error.why,
+      nextStep: error.nextStep,
+    };
+  }
+
+  return {
+    type: "UnknownExecutionError",
+    what: "The command failed for an unexpected reason.",
+    why: "The extension received an error it could not classify safely.",
+    nextStep: "Review the command output and settings, then try again.",
+  };
+};
+
+export const formatCliCommandLine = async (
+  request: RunCliRequest,
+  options: RunCliOptions
+): Promise<string> => {
+  const invocation = await preflightCliExecution(request, options);
+  return [invocation.command, ...invocation.args].map(formatArg).join(" ");
+};
+
+export const runCli = async (
   request: RunCliRequest,
   options: RunCliOptions
 ): Promise<number> => {
-  return buildCliInvocation(request, options).then(
-    (invocation) =>
-      new Promise((resolve, reject) => {
-        const child = spawn(invocation.command, invocation.args, {
-          cwd: resolveWorkspaceRoot(options.cwd),
-          env: invocation.env,
-        });
+  const invocation = await preflightCliExecution(request, options);
+  const workspaceRoot = await ensureWorkspaceRoot(options.cwd);
 
-        child.stdout.on("data", (chunk: Buffer) => {
-          options.onStdout?.(chunk.toString());
-        });
+  return new Promise((resolve, reject) => {
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: workspaceRoot,
+      env: invocation.env,
+    });
 
-        child.stderr.on("data", (chunk: Buffer) => {
-          options.onStderr?.(chunk.toString());
-        });
+    child.stdout.on("data", (chunk: Buffer) => {
+      options.onStdout?.(chunk.toString());
+    });
 
-        child.on("error", (err) => reject(err));
-        child.on("close", (code) => resolve(code ?? 1));
-      })
-  );
+    child.stderr.on("data", (chunk: Buffer) => {
+      options.onStderr?.(chunk.toString());
+    });
+
+    child.on("error", (error) => reject(mapSpawnError(error, invocation)));
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(0);
+        return;
+      }
+      reject(mapExitFailure(code, invocation));
+    });
+  });
 };
