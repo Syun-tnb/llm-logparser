@@ -178,12 +178,18 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
         result = analyze_semantic_prototype(
             input_path,
             top_k=args.top_k,
+            min_score=args.min_score,
             overwrite=args.overwrite,
             backend_name=args.backend,
             model=args.model,
             max_input_bytes=args.max_input_bytes,
             chunk_overlap_bytes=args.chunk_overlap_bytes,
             aggregate=args.aggregate,
+            sqlite_db=args.sqlite_db,
+            candidate_window_days=args.candidate_window_days,
+            candidate_min_chars=args.candidate_min_chars,
+            candidate_min_assistant_ratio=args.candidate_min_assistant_ratio,
+            candidate_same_thread=args.candidate_same_thread,
             backend_options=getattr(args, "backend_options", None),
             progress=logger.info,
         )
@@ -211,14 +217,98 @@ def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
     try:
         rendered = render_semantic_preview(
             input_root=input_root,
-            conversation_id=args.thread_id,
-            window_id=args.window,
+            cluster_id=args.cluster_id,
+            conversation_id=args.conversation_id,
+            window_id=args.window_id,
+            top_clusters=args.top_clusters,
+            min_cluster_size=args.min_cluster_size,
+            cross_thread_only=args.cross_thread_only,
+            json_output=args.json_output,
             top_k=args.top_k,
             include_text=args.include_text,
             max_chars=args.max_chars,
             show_meta=args.show_meta,
         )
     except SemanticPreviewError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    write_or_print(rendered, None)
+
+
+def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_topic import (
+        SemanticTopicError,
+        render_semantic_topic,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        rendered = render_semantic_topic(
+            input_root=input_root,
+            model=args.model,
+            cluster_id=args.cluster_id,
+            top_clusters=args.top_clusters,
+            min_cluster_size=args.min_cluster_size,
+            cross_thread_only=args.cross_thread_only,
+            base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
+            json_output=args.json_output,
+        )
+    except SemanticTopicError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    write_or_print(rendered, None)
+
+
+def run_analyze_semantic_topics(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_topics import (
+        SemanticTopicsError,
+        write_semantic_topics_artifacts,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_semantic_topics_artifacts(
+            input_root,
+            model=args.model,
+            cluster_id=args.cluster_id,
+            min_cluster_size=args.min_cluster_size,
+            cross_thread_only=args.cross_thread_only,
+            base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
+        )
+    except SemanticTopicsError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "semantic topics artifacts written: "
+        f"{result['topic_count']} topic(s) -> {result['topics_path']} "
+        f"and {result['membership_path']} ({result['label_mode']})"
+    )
+
+
+def run_analyze_semantic_topic_explore(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_topic_explore import (
+        SemanticTopicExploreError,
+        render_semantic_topic_explore,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        rendered = render_semantic_topic_explore(
+            input_root=input_root,
+            topic_id=args.topic_id,
+            message_id=args.message_id,
+            conversation_id=args.conversation_id,
+            hide_single_window=args.hide_single_window,
+            min_window_count=args.min_window_count,
+            min_conversation_count=args.min_conversation_count,
+            json_output=args.json_output,
+        )
+    except SemanticTopicExploreError as exc:
         logger.error(str(exc))
         raise SystemExit(2) from None
 

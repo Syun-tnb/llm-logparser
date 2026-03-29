@@ -195,10 +195,17 @@ Contract:
   - `char_count`: total characters across the included canonical message text
   - `ts_start`: earliest message timestamp in the window as epoch milliseconds, or `null`
   - `ts_end`: latest message timestamp in the window as epoch milliseconds, or `null`
+  - `window_size`: configured window size used to generate the row
+  - `window_stride`: configured stride used to generate the row
   - `text`: deterministic concatenated window text
 - notes:
   - `message_windows.jsonl` is a parse-time thread-local artifact, not canonical storage
   - rows now emit an explicit `schema_version` for contract stability
+  - window IDs remain deterministic sequential IDs in emission order; changing
+    size or stride changes which message spans receive those IDs, but not the
+    deterministic ordering rule itself
+  - omitted stride preserves legacy non-overlapping behavior by defaulting the
+    stride to the configured size
   - the schema describes the emitted row contract as it exists today; it does not imply future chunking or L3 structure
 
 The `parsed.jsonl` file contains:
@@ -739,26 +746,109 @@ Experimental prototype note:
 - `analyze semantic-prototype` is an experimental higher-layer bridge built on
   `message_windows.jsonl`
 - it currently writes rebuildable `window_embeddings.jsonl` and
-  `window_neighbors.jsonl` artifacts next to each thread's window artifact
+  `window_neighbors.jsonl` artifacts plus a minimal `window_clusters.jsonl`
+  membership artifact next to each thread's window artifact
 - it supports a default `deterministic-hash` backend plus an `ollama` backend
   for local embedding models served by Ollama
 - Ollama-backed runs automatically chunk oversized window text with a
   deterministic UTF-8 byte budget and aggregate chunk embeddings back into one
   final embedding per source window
-- neighbor construction now uses vectorized cosine similarity and emits
+- neighbor construction now supports `--min-score` thresholding and emits
   lightweight progress logs for long-running phases
+- the current default `--min-score` is `0.62`; that default was selected from
+  repeated real-data subset validation because it reduced broad noisy
+  cross-thread clusters more effectively than the old permissive default
+  without the extra fragmentation seen at stricter nearby thresholds
+- when `--sqlite-db` is provided, candidate retrieval uses L2 `analysis.db`
+  filters before similarity scoring instead of a global dense comparison
+- SQLite-assisted runs now compare windows symmetrically inside each narrowed
+  candidate pool, improving mutual-link recovery without reintroducing
+  corpus-wide all-pairs comparison
 - backend/model selection is config- or CLI-owned; code keeps conservative
   fallback embedding settings (`max_input_bytes=256`,
   `chunk_overlap_bytes=32`, `aggregate=mean`) plus a small compatibility shim
   for a couple of historic Ollama model IDs
-- those outputs are non-canonical and intentionally limited to embeddings plus
-  nearest-neighbor structure
-- this prototype does not perform topic labeling, clustering, or timeline
-  reconstruction yet
+- those outputs are non-canonical and intentionally limited to embeddings,
+  thresholded nearest-neighbor structure, and minimal connected-component
+  grouping over retained mutual links
+- cluster edge eligibility remains mutual-only, but same-thread mutual edges
+  are dropped when the paired windows share more than one source message; that
+  default was selected from the repository artifact corpus to reduce
+  sliding-window chaining while preserving slightly more useful links than a
+  stricter zero-overlap rule
+- cross-thread mutual edges are also gated more strictly at clustering time:
+  production derives the current run's P75 cross-thread mutual score from the
+  retained neighbor rows and only keeps cross-thread edges at or above that
+  threshold; this keeps mutual-only semantics intact while reducing broad
+  cross-thread components without depending on `./tmp` experiment outputs
+- when older or partial neighbor rows do not carry usable cross-thread scores,
+  clustering falls back to the legacy mutual-only behavior for those edges
+  instead of failing
+- `window_clusters.jsonl` rows use
+  `src/llm_logparser/core/schemas/window_clusters.schema.json` and currently
+  emit one deterministic membership row per source window with
+  `cluster_id`, `cluster_size`, and `edge_policy`
+- `window_clusters.jsonl` is not a topic summary artifact: it does not add
+  labels, summaries, lifecycle state, or canonical meaning
 - `analyze semantic-preview` is a read-only renderer for those same prototype
-  artifacts; it reads `window_neighbors.jsonl` plus `message_windows.jsonl`
-  and prints a human-readable target-window-versus-neighbors comparison
-  without writing new files
+  artifacts; it reads `message_windows.jsonl`, `window_clusters.jsonl`, and
+  optional `window_neighbors.jsonl` and can print:
+  a default cluster list, one cluster in detail, one conversation's cluster
+  participation, or the older single-window neighbor preview, all without
+  writing new files
+- `analyze semantic-topic` is a read-only L4 consumer of the same L3
+  artifacts; it reads `message_windows.jsonl` and `window_clusters.jsonl`,
+  selects representative windows from each cluster, and asks a local Ollama
+  model for a label, short summary, and keywords
+- representative-window selection is deterministic and lightweight: it prefers
+  windows with more retained intra-cluster neighbor links first, then higher
+  average retained intra-cluster scores, then larger message/character
+  footprints when centrality signals tie or are unavailable
+- `analyze semantic-topics` is the formal topic artifact builder for that same
+  boundary; it writes provider-scoped artifacts under
+  `<provider-root>/l3/semantic-topics/`
+- `topics.json` is the forward topic index: one current topic record per L3
+  cluster, with deterministic `topic_id`, structural references back to
+  clusters/windows/messages, conversation coverage, time bounds, and optional
+  model-derived label / summary / keywords
+- each topic record may also carry additive `quality_signals` for observation
+  only, such as cluster size, conversation count, and retained intra-cluster
+  score summaries when neighbor data is available
+- `topics.json` now uses `schema_version: "1.0"` and carries top-level
+  `generated_at`, `source_inputs`, and `provenance`; provenance records the
+  topic builder mode plus the upstream clustering policy used to produce the
+  source L3 clusters
+- prompt provenance is execution-based rather than capability-based:
+  structural-only runs keep `labeling_model`, `prompt_variant`, and
+  `prompt_hash` as `null`; model-enriched runs populate them from the actual
+  labeling invocation
+- each topic record now includes `state`; current production emits `null` as a
+  lifecycle placeholder rather than inferring lifecycle heuristics
+- `topic_membership.jsonl` is the reverse lookup index: it emits explicit
+  `membership_type=cluster|window|message` rows so `cluster -> topic`,
+  `window -> topic`, and `message -> topic` are all direct lookups rather than
+  implied joins
+- `analyze semantic-topic-explore` is the read-only consumer of that reverse
+  index; it loads `topics.json`, `topic_membership.jsonl`, and
+  `message_windows.jsonl`, then builds:
+  `topic_id -> members`, `message_id -> topic_id`, and
+  `conversation_id -> topic_id` indexes in memory for navigation
+- the explorer's default list ordering is deterministic and scan-oriented:
+  larger topics first, then broader conversation coverage, then higher
+  observed intra-cluster scores when present, with representative previews and
+  lightweight quality hints surfaced in the text view
+- browse-time filters such as singleton suppression or minimum topic size are
+  runtime-only UX controls; they improve navigation but do not rewrite
+  `topics.json` or `topic_membership.jsonl`
+- because `message_windows.jsonl` carries `message_ids`, timestamps, and text,
+  the explorer can join reverse membership rows back to excerpts and temporal
+  order without touching clustering logic or making any LLM calls
+- model-derived fields remain additive only; if `semantic-topics` runs without
+  `--model`, it still writes the structural topic index and reverse membership
+  rows with label/summary fields left empty
+- the current production topic prompt was selected from the repository's
+  prompt experiment harness under `./tmp`; runtime does not depend on those
+  tmp files and instead uses the fixed winning settings directly
 
 This separation ensures that:
 

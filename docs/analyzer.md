@@ -444,7 +444,7 @@ thread-<conversation_id>/
 <provider>/
     analysis.db
     l3/
-      semantic-topics/  # future cross-thread semantic topic artifacts
+      semantic-topics/  # current cross-thread semantic topic artifacts
     l4/   # future API-derived outputs
     gui/  # future GUI-oriented cache or index artifacts
 ```
@@ -452,7 +452,7 @@ thread-<conversation_id>/
 In this model:
 
 - the thread directory root remains for deterministic artifacts
-- provider-root `l3/semantic-topics/` is the intended place for future
+- provider-root `l3/semantic-topics/` is the current place for formal
   cross-thread semantic topic artifacts
 - `l4/` is the intended place for future API-derived outputs
 - provider-root `gui/` is the intended place for GUI-specific cache/index data
@@ -476,12 +476,14 @@ llm-logparser analyze metrics ...
 llm-logparser analyze sqlite-build ...
 llm-logparser analyze semantic-prototype ...
 llm-logparser analyze semantic-preview ...
+llm-logparser analyze semantic-topics ...
+llm-logparser analyze semantic-topic ...
+llm-logparser analyze semantic-topic-explore ...
 ```
 
 Conceptual future modes:
 
 ```
-llm-logparser analyze semantic-topics ...
 llm-logparser analyze topic-summary ...
 llm-logparser analyze topic-timeline ...
 llm-logparser analyze llm ...
@@ -498,7 +500,9 @@ Possible modes:
 | sqlite-build | L2 |
 | semantic-prototype | L3 prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
-| semantic-topics | L3 (conceptual / future) |
+| semantic-topics | L3 topic artifact builder (experimental) |
+| semantic-topic | L3/L4 topic renderer (experimental) |
+| semantic-topic-explore | L3/L4 topic navigation UX (experimental) |
 | topic-summary | L3 (conceptual / future) |
 | topic-timeline | L3 (conceptual / future) |
 | llm | L4 (conceptual / future) |
@@ -518,17 +522,42 @@ deterministic and model-derived capabilities.
   are deterministic, rebuildable, and safe for local-first workflows
 
 - `semantic-prototype` is an experimental bridge into future L3 work: it
-  reads deterministic `message_windows.jsonl`, writes rebuildable embedding and
-  neighbor artifacts, and does not perform topic labeling or clustering
+  reads deterministic `message_windows.jsonl`, writes rebuildable embedding,
+  neighbor, and minimal cluster artifacts, and does not perform topic labeling
+  Window generation quality can now be improved upstream with deterministic
+  sliding windows: `message_windows.jsonl` still defaults to
+  non-overlapping windows, but parse/chain can opt into overlap by setting
+  message-window stride smaller than window size.
   It supports a default `deterministic-hash` backend for local plumbing/tests
   and an `ollama` backend for real local embeddings via a local Ollama model.
   For Ollama-backed runs, oversized window text is chunked automatically with a
   deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
   one final embedding per window.
-  Neighbor construction now uses vectorized cosine similarity instead of
-  Python-level all-pairs math, and long-running phases emit lightweight
-  progress logs while windows load, embeddings generate, neighbors build, and
-  artifacts are written.
+  Neighbor construction supports `--min-score` thresholding so weak links are
+  not emitted unconditionally.
+  When `--sqlite-db` is provided, candidate generation uses L2
+  `analysis.db` filters (`ts_start`, candidate window size, thread-level
+  assistant ratio, and same-thread policy) to build local candidate pools
+  before cosine scoring.
+  Similarity inside those narrowed pools is now evaluated symmetrically via
+  pool-local all-pairs comparison, which improves reciprocity opportunities for
+  the existing mutual-only clustering rule without reintroducing corpus-wide
+  dense comparison.
+  Long-running phases emit lightweight progress logs while windows load,
+  embeddings generate, neighbors build, clusters build, and artifacts are
+  written.
+  Cluster construction is intentionally minimal: it converts retained mutual
+  neighbor links into undirected edges, suppresses same-thread mutual edges
+  when the paired windows share more than one source message, applies a
+  stricter cross-thread gate at the runtime P75 of cross-thread mutual scores,
+  and writes connected-component membership to `window_clusters.jsonl`. The
+  same-thread overlap cap and the cross-thread P75 rule were both selected
+  from the real artifact corpus: the first reduced sliding-window chaining
+  without the extra fragmentation of a stricter zero-overlap rule, and the
+  second reduced broad cross-thread components while retaining more mutual
+  structure than stricter cross-thread thresholds. If older callers provide
+  neighbor rows without usable scores, the cross-thread gate falls back to the
+  legacy mutual-only behavior for those edges instead of failing.
   Backend/model selection is config- or CLI-owned: `backend` selects the
   runtime binding, `model` selects the embedding model identifier, and
   embedding chunking settings can be declared explicitly in config. Code keeps
@@ -537,13 +566,159 @@ deterministic and model-derived capabilities.
   source-of-truth Python presets.
 
 - `semantic-preview` is a read-only companion to `semantic-prototype`: it
-  reads stored `window_neighbors.jsonl` plus `message_windows.jsonl` and renders
-  one target window with its nearest-neighbor text side by side for quick human
-  inspection. It does not recompute embeddings or modify artifacts.
+  reads stored `message_windows.jsonl`, `window_clusters.jsonl`, and optional
+  `window_neighbors.jsonl` and provides three inspection modes without
+  recomputing embeddings or modifying artifacts:
+  cluster list view by default, cluster detail via `--cluster-id`, and
+  conversation-centric lookup via `--conversation-id`. The older
+  conversation-plus-window neighbor preview remains available when
+  `--conversation-id` and `--window` are supplied together. `--json` switches
+  any of those modes to machine-readable output for downstream tooling.
 
-- L3/L4 commands (`semantic-topics`, `topic-summary`, `topic-timeline`, `llm`)
-  are conceptual future extensions and remain opt-in, model-dependent, and
-  potentially non-deterministic
+- `semantic-topic` is an experimental L4 read-only layer on top of stored L3
+  cluster artifacts: it reads `message_windows.jsonl` plus
+  `window_clusters.jsonl`, selects representative windows per cluster, and
+  sends them to a local Ollama generation model for a short label, summary,
+  and keywords. Production keeps the prompt/template fixed from the repository
+  prompt-selection experiment under `./tmp`: Prompt B, an 8-window cap per
+  cluster, and 300-character normalized window excerpts. Representative
+  windows are chosen deterministically by preferring stronger retained
+  intra-cluster connectedness first, then larger message/character footprints
+  as lightweight tie-breaks. It does not write any new artifacts and does not
+  alter L3 clustering.
+
+- `semantic-topics` is the formal L3/L4 boundary artifact builder: it reads
+  stored `message_windows.jsonl` plus `window_clusters.jsonl` and writes
+  provider-scoped artifacts under `l3/semantic-topics/`:
+  `topics.json` as the forward topic index and `topic_membership.jsonl` as the
+  reverse lookup index. Current membership is intentionally conservative:
+  one topic per L3 cluster (`cluster-is-topic-v1`). Structural fields are
+  always written; model-derived fields are added only when `--model` is
+  supplied. `topics.json` now emits `schema_version: "1.0"` with top-level
+  `generated_at`, `source_inputs`, and `provenance`. Per-topic records keep
+  `cluster_ids` as the primary anchor, derive `window_refs` and `message_refs`
+  from cluster membership, and include `state`, which is currently emitted as
+  `null` for every topic. Provenance is execution-oriented: structural-only
+  runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
+  while model-enriched runs populate them from the actually used local labeling
+  prompt. Topic records may also include additive `quality_signals` derived
+  from cluster size, conversation count, and retained intra-cluster neighbor
+  scores when available. Representative windows in `topics.json` use the same deterministic
+  intra-cluster connectedness-first ranking as `semantic-topic`.
+
+- `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
+  it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`
+  and builds in-memory indexes for:
+  `topic -> members`, `message -> topic`, and `conversation -> topics`.
+  It supports a default topic list, topic detail with timeline, reverse lookup
+  from `message_id`, and conversation-centric topic grouping. The default list
+  now prefers larger topics first, then broader conversation coverage, then
+  higher observed intra-cluster scores when those scores exist, and the text
+  view surfaces one representative preview plus lightweight quality hints.
+
+Current limitations remain explicit:
+
+- semantic clusters are not canonical topics
+- topic membership is currently `1 topic = 1 L3 cluster`; no cross-cluster
+  merge logic is applied yet
+- no lifecycle state is inferred
+- no cross-cluster topic reasoning is performed
+
+Key `semantic-prototype` flags:
+
+- `--min-score`: filters out neighbors whose cosine similarity is below the
+  threshold; `top_k` still applies after filtering. The current default is
+  `0.62`, promoted from repeated real-data subset validation as the best
+  current tradeoff between broad cross-thread noise and extra fragmentation.
+- `--sqlite-db`: enables SQLite-assisted candidate generation using
+  `analysis.db`; omitting it preserves the full embedded-window fallback path
+- `--candidate-window-days`: bounds candidate retrieval by `ts_start` around
+  each target window
+- `--candidate-min-chars`: excludes short candidate windows before scoring
+- `--candidate-min-assistant-ratio`: excludes source threads whose
+  `assistant_messages / message_count` ratio is below the threshold
+- `--candidate-same-thread`: controls whether same-thread candidates are
+  allowed, preferred on tie-breaks, restricted to only same-thread windows, or
+  excluded
+
+Key `semantic-preview` flags:
+
+- `--top-clusters`: limits the default cluster-list view
+- `--min-cluster-size`: filters small clusters out of list and conversation
+  views
+- `--cross-thread-only`: hides single-conversation clusters in list and
+  conversation views
+- `--cluster-id`: switches to detailed inspection for one cluster
+- `--conversation-id`: switches to conversation-centric inspection; when paired
+  with `--window`, switches to the older single-window neighbor preview
+- `--json`: emits structured machine-readable output instead of pretty text
+
+Key `semantic-topic` flags:
+
+- `--model`: required local Ollama generation model
+- `--cluster-id`: generate a topic for one cluster only
+- `--top-clusters`: limit the number of clusters processed when not targeting a
+  single cluster
+- `--min-cluster-size`: skip very small clusters before prompting the local
+  model
+- `--cross-thread-only`: limit topic generation to clusters spanning multiple
+  conversations
+- `--json`: emit structured machine-readable output instead of pretty text
+
+Key `semantic-topics` flags:
+
+- `--model`: optional local Ollama generation model; omit it to write
+  structural-only artifacts
+- `--cluster-id`: build artifacts for one cluster only
+- `--min-cluster-size`: skip very small clusters before artifact generation
+- `--cross-thread-only`: limit artifact generation to multi-conversation
+  clusters
+- `--base-url` / `--timeout-seconds`: control the local Ollama endpoint when
+  `--model` is used
+
+Key `semantic-topic-explore` flags:
+
+- `--topic-id`: show one topic in detail, including a chronological timeline
+  over its windows
+- `--message-id`: reverse lookup one message into one or more topics
+- `--conversation-id`: show all topics that appear in one conversation
+- `--hide-single-window`: suppress browse-time singleton topics when
+  `quality_signals.single_window` is available
+- `--min-window-count`: suppress browse-time topics smaller than the requested
+  window count
+- `--min-conversation-count`: suppress browse-time topics with narrower
+  conversation coverage
+- `--json`: emit structured machine-readable output instead of pretty text
+
+Practical browsing guidance:
+
+- Default browse behavior is intentionally inclusive. It is useful for full
+  inspection, but on real data it can be noisy because many topics are
+  single-window fragments.
+- Use `--hide-single-window` first for everyday browsing. In the current
+  validated subset, it removed most browse noise without losing the observed
+  cross-thread topics.
+- Use `--min-conversation-count 2` when the goal is cross-thread continuity
+  rather than topic exhaustiveness. This is the clearest “show me ongoing work
+  across conversations” mode.
+- Use `--min-window-count 3` for a stricter deep-inspection pass when you want
+  to focus on somewhat larger topic groups.
+- Be careful with over-filtering. In the current validated subset,
+  `--min-window-count 5` was already too aggressive for general browsing and
+  removed too many smaller useful topics. These recommendations come from one
+  real-data subset and may evolve as more corpus validation is done.
+
+Parse-time windowing controls:
+
+- `parse.message_windows.size` / `chain.message_windows.size`: number of
+  canonical messages per emitted message window
+- `parse.message_windows.stride` / `chain.message_windows.stride`: advance step
+  between emitted windows; omitting it preserves the legacy non-overlapping
+  behavior by reusing the window size
+
+- broader lifecycle-oriented follow-ups (`topic-summary`, `topic-timeline`,
+  `llm`) remain conceptual future extensions beyond the current
+  `semantic-topics` artifact builder and `semantic-topic` renderer
 
 Design constraints:
 

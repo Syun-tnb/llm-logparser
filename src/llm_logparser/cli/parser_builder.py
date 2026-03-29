@@ -75,6 +75,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=_("cli.parse.opt.validate_schema.help"),
     )
+    parse_cmd.add_argument(
+        "--message-window-size",
+        dest="message_window_size",
+        type=int,
+        default=4,
+        help=_("cli.parse.opt.message_window_size.help"),
+    )
+    parse_cmd.add_argument(
+        "--message-window-stride",
+        dest="message_window_stride",
+        type=int,
+        default=None,
+        help=_("cli.parse.opt.message_window_stride.help"),
+    )
 
     export_cmd = subparsers.add_parser(
         "export",
@@ -368,6 +382,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.top_k.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
+        "--min-score",
+        dest="min_score",
+        type=float,
+        default=0.62,
+        help=_("cli.analyze.semantic_prototype.opt.min_score.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
         "--max-input-bytes",
         dest="max_input_bytes",
         type=int,
@@ -385,6 +406,40 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.aggregate.help"),
     )
     analyze_semantic_prototype_cmd.add_argument(
+        "--sqlite-db",
+        dest="sqlite_db",
+        type=Path,
+        help=_("cli.analyze.semantic_prototype.opt.sqlite_db.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-window-days",
+        dest="candidate_window_days",
+        type=int,
+        default=30,
+        help=_("cli.analyze.semantic_prototype.opt.candidate_window_days.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-min-chars",
+        dest="candidate_min_chars",
+        type=int,
+        default=0,
+        help=_("cli.analyze.semantic_prototype.opt.candidate_min_chars.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-min-assistant-ratio",
+        dest="candidate_min_assistant_ratio",
+        type=float,
+        default=0.0,
+        help=_("cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
+        "--candidate-same-thread",
+        dest="candidate_same_thread",
+        choices=["allow", "prefer", "only", "exclude"],
+        default="allow",
+        help=_("cli.analyze.semantic_prototype.opt.candidate_same_thread.help"),
+    )
+    analyze_semantic_prototype_cmd.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",
@@ -396,21 +451,52 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_preview.help"),
     )
     analyze_semantic_preview_cmd.add_argument(
+        "--cluster-id",
+        dest="cluster_id",
+        help=_("cli.analyze.semantic_preview.opt.cluster_id.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--conversation-id",
+        "--thread",
+        dest="conversation_id",
+        help=_("cli.analyze.semantic_preview.opt.conversation_id.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--window",
+        dest="window_id",
+        help=_("cli.analyze.semantic_preview.opt.window.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--top-clusters",
+        dest="top_clusters",
+        type=int,
+        default=20,
+        help=_("cli.analyze.semantic_preview.opt.top_clusters.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--min-cluster-size",
+        dest="min_cluster_size",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_preview.opt.min_cluster_size.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--cross-thread-only",
+        dest="cross_thread_only",
+        action="store_true",
+        help=_("cli.analyze.semantic_preview.opt.cross_thread_only.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_preview.opt.json.help"),
+    )
+    analyze_semantic_preview_cmd.add_argument(
         "--input",
         required=False,
         type=Path,
         help=_("cli.analyze.semantic_preview.opt.input.help"),
-    )
-    analyze_semantic_preview_cmd.add_argument(
-        "--thread",
-        dest="thread_id",
-        required=True,
-        help=_("cli.analyze.semantic_preview.opt.thread.help"),
-    )
-    analyze_semantic_preview_cmd.add_argument(
-        "--window",
-        required=True,
-        help=_("cli.analyze.semantic_preview.opt.window.help"),
     )
     analyze_semantic_preview_cmd.add_argument(
         "--top-k",
@@ -438,6 +524,166 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=_("cli.analyze.semantic_preview.opt.show_meta.help"),
+    )
+
+    analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
+        "semantic-topic",
+        help=_("cli.analyze.semantic_topic.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_topic.opt.input.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--model",
+        required=True,
+        help=_("cli.analyze.semantic_topic.opt.model.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--cluster-id",
+        dest="cluster_id",
+        help=_("cli.analyze.semantic_topic.opt.cluster_id.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--top-clusters",
+        dest="top_clusters",
+        type=int,
+        default=20,
+        help=_("cli.analyze.semantic_topic.opt.top_clusters.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--min-cluster-size",
+        dest="min_cluster_size",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topic.opt.min_cluster_size.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--cross-thread-only",
+        dest="cross_thread_only",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic.opt.cross_thread_only.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.semantic_topic.opt.base_url.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.semantic_topic.opt.timeout_seconds.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic.opt.json.help"),
+    )
+
+    analyze_semantic_topics_cmd = analyze_subparsers.add_parser(
+        "semantic-topics",
+        help=_("cli.analyze.semantic_topics.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_topics.opt.input.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--model",
+        required=False,
+        help=_("cli.analyze.semantic_topics.opt.model.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--cluster-id",
+        dest="cluster_id",
+        help=_("cli.analyze.semantic_topics.opt.cluster_id.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--min-cluster-size",
+        dest="min_cluster_size",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topics.opt.min_cluster_size.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--cross-thread-only",
+        dest="cross_thread_only",
+        action="store_true",
+        help=_("cli.analyze.semantic_topics.opt.cross_thread_only.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.semantic_topics.opt.base_url.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.semantic_topics.opt.timeout_seconds.help"),
+    )
+
+    analyze_semantic_topic_explore_cmd = analyze_subparsers.add_parser(
+        "semantic-topic-explore",
+        help=_("cli.analyze.semantic_topic_explore.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_topic_explore.opt.input.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--topic-id",
+        dest="topic_id",
+        help=_("cli.analyze.semantic_topic_explore.opt.topic_id.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--message-id",
+        dest="message_id",
+        help=_("cli.analyze.semantic_topic_explore.opt.message_id.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--conversation-id",
+        "--thread",
+        dest="conversation_id",
+        help=_("cli.analyze.semantic_topic_explore.opt.conversation_id.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--hide-single-window",
+        dest="hide_single_window",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic_explore.opt.hide_single_window.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--min-window-count",
+        dest="min_window_count",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topic_explore.opt.min_window_count.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--min-conversation-count",
+        dest="min_conversation_count",
+        type=int,
+        default=1,
+        help=_("cli.analyze.semantic_topic_explore.opt.min_conversation_count.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic_explore.opt.json.help"),
     )
 
     chain_cmd = subparsers.add_parser(
@@ -516,6 +762,20 @@ def build_parser() -> argparse.ArgumentParser:
         dest="validate_schema",
         action="store_true",
         help=_("cli.chain.opt.validate_schema.help"),
+    )
+    chain_cmd.add_argument(
+        "--message-window-size",
+        dest="message_window_size",
+        type=int,
+        default=4,
+        help=_("cli.chain.opt.message_window_size.help"),
+    )
+    chain_cmd.add_argument(
+        "--message-window-stride",
+        dest="message_window_stride",
+        type=int,
+        default=None,
+        help=_("cli.chain.opt.message_window_stride.help"),
     )
 
     subparsers.add_parser("viewer", help=_("cli.viewer.help"))

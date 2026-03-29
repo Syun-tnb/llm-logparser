@@ -29,6 +29,8 @@ messages:
   cli.parse.opt.dry_run.help: ファイルを書き込まずに parse を実行する (統計/ログのみ)。
   cli.parse.opt.fail_fast.help: 継続せず、最初のエラーで parse を停止する。
   cli.parse.opt.validate_schema.help: 正規化済みメッセージを message.schema.json で検証する
+  cli.parse.opt.message_window_size.help: 生成する message window ごとの canonical message 数
+  cli.parse.opt.message_window_stride.help: 生成する message window 間の進み幅。未指定時は window size と同じになります。
   cli.export.opt.input.help: スレッド parsed.jsonl へのパス
   cli.export.opt.out.help: 出力 Markdown パス
   cli.extract.opt.conversation_id.help: 抽出する会話 ID
@@ -54,28 +56,68 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: provider ごとの成果物ディレクトリを含むルートディレクトリ
   cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: 既存の analysis.db を削除して再構築する
-  cli.analyze.semantic_prototype.help: message_windows.jsonl から実験的な window_embeddings.jsonl と window_neighbors.jsonl を生成する
+  cli.analyze.semantic_prototype.help: message_windows.jsonl から実験的な window_embeddings.jsonl、window_neighbors.jsonl、window_clusters.jsonl を生成する
   cli.analyze.semantic_prototype.opt.input.help: message_windows.jsonl ファイル、または message_windows.jsonl を含むディレクトリへのパス
   cli.analyze.semantic_prototype.opt.backend.help: "使用する埋め込みバックエンド (`deterministic-hash` または `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須です。"
   cli.analyze.semantic_prototype.opt.top_k.help: 各ウィンドウごとに保持する近傍数
+  cli.analyze.semantic_prototype.opt.min_score.help: 近傍として出力する前に必要な最小 cosine 類似度スコア
   cli.analyze.semantic_prototype.opt.max_input_bytes.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な UTF-8 バイト予算
   cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算
   cli.analyze.semantic_prototype.opt.aggregate.help: chunk 埋め込みの集約方式
-  cli.analyze.semantic_prototype.opt.overwrite.help: 既存の window_embeddings.jsonl と window_neighbors.jsonl を上書きする
-  cli.analyze.semantic_preview.help: 1 つの semantic window と保存済み近傍を人間向けにプレビューする
-  cli.analyze.semantic_preview.opt.input.help: message_windows.jsonl と window_neighbors.jsonl を含む provider 成果物ルート
-  cli.analyze.semantic_preview.opt.thread.help: プレビュー対象の会話 / スレッド ID
-  cli.analyze.semantic_preview.opt.window.help: プレビュー対象の window ID
-  cli.analyze.semantic_preview.opt.top_k.help: 表示する近傍数を制限する。未指定時は保存済み近傍リストをそのまま使う
+  cli.analyze.semantic_prototype.opt.sqlite_db.help: SQLite 支援の candidate 生成に使う analysis.db への任意パス
+  cli.analyze.semantic_prototype.opt.candidate_window_days.help: SQLite モード有効時に各 target window の timestamp 前後で candidate を取得する日数範囲
+  cli.analyze.semantic_prototype.opt.candidate_min_chars.help: SQLite モード有効時の candidate window 最小文字数
+  cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help: SQLite モードで candidate 元スレッドに要求する assistant_messages / message_count の最小比率
+  cli.analyze.semantic_prototype.opt.candidate_same_thread.help: SQLite モードでの same-thread candidate ポリシー (allow, prefer, only, exclude)
+  cli.analyze.semantic_prototype.opt.overwrite.help: 既存の window_embeddings.jsonl、window_neighbors.jsonl、window_clusters.jsonl を上書きする
+  cli.analyze.semantic_preview.help: 保存済み L3 semantic prototype 成果物から cluster、conversation、window を閲覧する
+  cli.analyze.semantic_preview.opt.input.help: message_windows.jsonl、window_clusters.jsonl、任意の window_neighbors.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_preview.opt.cluster_id.help: 1 つの cluster を詳細表示する
+  cli.analyze.semantic_preview.opt.conversation_id.help: 調べる会話 / スレッド ID (`--thread` でも指定可能)
+  cli.analyze.semantic_preview.opt.window.help: 調べる window ID。window ビューでは --conversation-id / --thread と併用する
+  cli.analyze.semantic_preview.opt.top_clusters.help: 既定の cluster 一覧ビューで表示する cluster 数
+  cli.analyze.semantic_preview.opt.min_cluster_size.help: 一覧ビューまたは conversation ビューに含める最小 cluster サイズ
+  cli.analyze.semantic_preview.opt.cross_thread_only.help: 一覧ビューまたは conversation ビューを複数 conversation にまたがる cluster のみに制限する
+  cli.analyze.semantic_preview.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
+  cli.analyze.semantic_preview.opt.top_k.help: 詳細ビューで表示する近傍関係数を制限する。window ビューでは保存済み近傍の表示数を制限する
   cli.analyze.semantic_preview.opt.include_text.help: プレビューに復元テキストを含める (`--no-include-text` で無効化)
   cli.analyze.semantic_preview.opt.max_chars.help: 各 window で切り詰める前に表示する最大文字数
   cli.analyze.semantic_preview.opt.show_meta.help: プレビューにメタデータブロックを含める (`--no-show-meta` で無効化)
+  cli.analyze.semantic_topic.help: 保存済み L3 cluster からローカル Ollama モデルで実験的な L4 topic label / summary を生成する
+  cli.analyze.semantic_topic.opt.input.help: message_windows.jsonl と window_clusters.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_topic.opt.model.help: 使用するローカル Ollama 生成モデル ID
+  cli.analyze.semantic_topic.opt.cluster_id.help: 指定した cluster 1 件だけ topic を生成する
+  cli.analyze.semantic_topic.opt.top_clusters.help: --cluster-id 未指定時に label 生成する cluster 数
+  cli.analyze.semantic_topic.opt.min_cluster_size.help: ローカルモデルに渡す前に含める最小 cluster サイズ
+  cli.analyze.semantic_topic.opt.cross_thread_only.help: 複数 conversation にまたがる cluster のみに topic 生成を制限する
+  cli.analyze.semantic_topic.opt.base_url.help: ローカル Ollama サーバーの base URL
+  cli.analyze.semantic_topic.opt.timeout_seconds.help: cluster ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.semantic_topic.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
+  cli.analyze.semantic_topics.help: 保存済み L3 cluster から forward / reverse lookup 可能な formal topic artifact を構築する
+  cli.analyze.semantic_topics.opt.input.help: message_windows.jsonl と window_clusters.jsonl を含む provider 成果物ルート
+  cli.analyze.semantic_topics.opt.model.help: 任意のローカル Ollama 生成モデル。省略すると構造情報だけの topic artifact を生成する
+  cli.analyze.semantic_topics.opt.cluster_id.help: 指定した cluster 1 件だけで artifact を構築する
+  cli.analyze.semantic_topics.opt.min_cluster_size.help: 生成する topic 集合に含める最小 cluster サイズ
+  cli.analyze.semantic_topics.opt.cross_thread_only.help: 複数 conversation にまたがる cluster のみに生成対象を制限する
+  cli.analyze.semantic_topics.opt.base_url.help: ローカル Ollama サーバーの base URL
+  cli.analyze.semantic_topics.opt.timeout_seconds.help: --model 使用時の cluster ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
+  cli.analyze.semantic_topic_explore.opt.input.help: topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート
+  cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する
+  cli.analyze.semantic_topic_explore.opt.message_id.help: 1 件の message_id を含む topic を逆引きする
+  cli.analyze.semantic_topic_explore.opt.conversation_id.help: 1 件の conversation / thread に現れる topic を表示する (`--thread` でも指定可能)
+  cli.analyze.semantic_topic_explore.opt.hide_single_window.help: browse view で quality_signals.single_window が true の topic を非表示にする
+  cli.analyze.semantic_topic_explore.opt.min_window_count.help: browse view で window_count がこの値未満の topic を非表示にする
+  cli.analyze.semantic_topic_explore.opt.min_conversation_count.help: browse view で conversation 数がこの値未満の topic を非表示にする
+  cli.analyze.semantic_topic_explore.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/output/<provider>/... 配下になる
   cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む
   cli.chain.opt.parsed_root.help: 既に parsed スレッド (…/thread-*/parsed.jsonl) を含む任意のルートディレクトリ。指定した場合は parse フェーズをスキップする
   cli.chain.opt.fail_fast.help: 最初の export エラーで chain 処理を停止する。既定では継続する。
   cli.chain.opt.validate_schema.help: parse フェーズ中に正規化済みメッセージを検証する
+  cli.chain.opt.message_window_size.help: parse フェーズで生成する message window ごとの canonical message 数
+  cli.chain.opt.message_window_stride.help: parse フェーズで生成する message window 間の進み幅。未指定時は window size と同じになります。
   cli.error.path: "パスエラー: {detail}"
   cli.error.permission: "アクセス権限エラー: {detail}"
   cli.error.unexpected: "予期しないエラー: {detail}"
@@ -98,6 +140,7 @@ messages:
   runtime.analyze.semantic_prototype.generating_embeddings: "semantic prototype: 埋め込みを生成しています"
   runtime.analyze.semantic_prototype.embeddings_complete: "semantic prototype: 埋め込み生成完了 ({windows} ウィンドウ)"
   runtime.analyze.semantic_prototype.building_neighbors: "semantic prototype: 近傍を構築しています"
+  runtime.analyze.semantic_prototype.building_clusters: "semantic prototype: クラスタを構築しています"
   runtime.analyze.semantic_prototype.neighbor_progress: "semantic prototype: 近傍 {count} / {total}"
   runtime.analyze.semantic_prototype.writing_artifacts: "semantic prototype: 成果物を書き込んでいます"
   runtime.analyze.semantic_prototype_written: "semantic prototype 成果物を書き込みました: {threads} スレッド / {windows} ウィンドウ (model={model})"

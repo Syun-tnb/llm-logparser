@@ -346,11 +346,34 @@ class SanitizeConfig:
 
 
 @dataclass(frozen=True)
+class MessageWindowsConfig:
+    size: int | None = None
+    stride: int | None = None
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> MessageWindowsConfig:
+        data = _optional_mapping(raw, context)
+        return cls(
+            size=_optional_int(data.get("size"), f"{context}.size"),
+            stride=_optional_int(data.get("stride"), f"{context}.stride"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "size": self.size,
+                "stride": self.stride,
+            }
+        )
+
+
+@dataclass(frozen=True)
 class ParseConfig:
     outdir: str | None = None
     dry_run: bool | None = None
     fail_fast: bool | None = None
     validate_schema: bool | None = None
+    message_windows: MessageWindowsConfig = field(default_factory=MessageWindowsConfig)
 
     @classmethod
     def from_raw(cls, raw: Any, *, context: str) -> ParseConfig:
@@ -363,6 +386,10 @@ class ParseConfig:
                 data.get("validate_schema"),
                 f"{context}.validate_schema",
             ),
+            message_windows=MessageWindowsConfig.from_raw(
+                data.get("message_windows"),
+                context=f"{context}.message_windows",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -372,6 +399,7 @@ class ParseConfig:
                 "dry_run": self.dry_run,
                 "fail_fast": self.fail_fast,
                 "validate_schema": self.validate_schema,
+                "message_windows": self.message_windows.to_dict(),
             }
         )
 
@@ -384,6 +412,7 @@ class ChainConfig:
     dry_run: bool | None = None
     fail_fast: bool | None = None
     validate_schema: bool | None = None
+    message_windows: MessageWindowsConfig = field(default_factory=MessageWindowsConfig)
 
     @classmethod
     def from_raw(cls, raw: Any, *, context: str) -> ChainConfig:
@@ -404,6 +433,10 @@ class ChainConfig:
                 data.get("validate_schema"),
                 f"{context}.validate_schema",
             ),
+            message_windows=MessageWindowsConfig.from_raw(
+                data.get("message_windows"),
+                context=f"{context}.message_windows",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -415,6 +448,7 @@ class ChainConfig:
                 "dry_run": self.dry_run,
                 "fail_fast": self.fail_fast,
                 "validate_schema": self.validate_schema,
+                "message_windows": self.message_windows.to_dict(),
             }
         )
 
@@ -512,6 +546,12 @@ class SemanticPrototypeConfig:
     backend: str | None = None
     model: str | None = None
     top_k: int | None = None
+    min_score: float | int | None = None
+    sqlite_db: str | None = None
+    candidate_window_days: int | None = None
+    candidate_min_chars: int | None = None
+    candidate_min_assistant_ratio: float | int | None = None
+    candidate_same_thread: str | None = None
     backend_options: SemanticPrototypeBackendOptionsConfig = field(
         default_factory=SemanticPrototypeBackendOptionsConfig
     )
@@ -526,6 +566,24 @@ class SemanticPrototypeConfig:
             backend=_optional_string(data.get("backend"), f"{context}.backend"),
             model=_optional_string(data.get("model"), f"{context}.model"),
             top_k=_optional_int(data.get("top_k"), f"{context}.top_k"),
+            min_score=_optional_number(data.get("min_score"), f"{context}.min_score"),
+            sqlite_db=_optional_string(data.get("sqlite_db"), f"{context}.sqlite_db"),
+            candidate_window_days=_optional_int(
+                data.get("candidate_window_days"),
+                f"{context}.candidate_window_days",
+            ),
+            candidate_min_chars=_optional_int(
+                data.get("candidate_min_chars"),
+                f"{context}.candidate_min_chars",
+            ),
+            candidate_min_assistant_ratio=_optional_number(
+                data.get("candidate_min_assistant_ratio"),
+                f"{context}.candidate_min_assistant_ratio",
+            ),
+            candidate_same_thread=_optional_string(
+                data.get("candidate_same_thread"),
+                f"{context}.candidate_same_thread",
+            ),
             backend_options=SemanticPrototypeBackendOptionsConfig.from_raw(
                 data.get("backend_options"),
                 context=f"{context}.backend_options",
@@ -542,6 +600,12 @@ class SemanticPrototypeConfig:
                 "backend": self.backend,
                 "model": self.model,
                 "top_k": self.top_k,
+                "min_score": self.min_score,
+                "sqlite_db": self.sqlite_db,
+                "candidate_window_days": self.candidate_window_days,
+                "candidate_min_chars": self.candidate_min_chars,
+                "candidate_min_assistant_ratio": self.candidate_min_assistant_ratio,
+                "candidate_same_thread": self.candidate_same_thread,
                 "backend_options": self.backend_options.to_dict(),
                 "embedding": self.embedding.to_dict(),
             }
@@ -660,6 +724,7 @@ class ConfigProfile:
                     if parse.validate_schema is not None
                     else legacy_validate_schema
                 ),
+                message_windows=parse.message_windows,
             ),
             chain=ChainConfig(
                 outdir=chain.outdir or legacy_outdir,
@@ -674,6 +739,7 @@ class ConfigProfile:
                     if chain.validate_schema is not None
                     else legacy_validate_schema
                 ),
+                message_windows=chain.message_windows,
             ),
             extract=ExtractConfig(
                 outdir=extract.outdir or legacy_outdir,

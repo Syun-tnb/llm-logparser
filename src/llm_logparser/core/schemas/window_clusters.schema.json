@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/window_clusters.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "window_id",
+    "cluster_id",
+    "cluster_size",
+    "edge_policy"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "window_cluster_member" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "window_id": { "type": "string", "minLength": 1 },
+    "cluster_id": { "type": "string", "minLength": 1 },
+    "cluster_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "edge_policy": {
+      "type": "string",
+      "const": "mutual-only"
+    }
+  },
+  "additionalProperties": true
+}

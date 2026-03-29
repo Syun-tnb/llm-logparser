@@ -12,8 +12,10 @@ read, search, and analyze — without sending anything to the cloud.
 3. **Analyze** your conversations: message counts, token usage, safety metrics, timelines, and more
 
 Experimental higher-layer analysis is also available as an additive, local-first
-preview path: window embeddings, semantic neighbors, and a read-only
-`semantic-preview` renderer. These semantic features are non-canonical,
+preview path: window embeddings, semantic neighbors, a read-only
+`semantic-preview` renderer, a formal `semantic-topics` artifact builder, and
+an experimental `semantic-topic` renderer that asks a local Ollama model for
+cluster labels and summaries. These semantic features are non-canonical,
 rebuildable, and still intentionally conservative in scope.
 
 Everything runs locally. No cloud. No telemetry. Your data stays on your machine.
@@ -277,8 +279,11 @@ llm-logparser analyze sqlite-build \
 | `analyze datasheet` | Generate a research-ready dataset summary |
 | `analyze timeline` | See when you were most active |
 | `analyze sqlite-build` | Query large datasets with SQL (optional) |
-| `analyze semantic-prototype` | Build experimental window embeddings and semantic neighbors |
-| `analyze semantic-preview` | Read one semantic window and its nearest neighbors in terminal |
+| `analyze semantic-prototype` | Build experimental window embeddings, thresholded semantic neighbors, and minimal semantic clusters |
+| `analyze semantic-preview` | Inspect stored semantic clusters, conversations, and windows in terminal |
+| `analyze semantic-topics` | Build formal topic artifacts and explicit reverse-lookup membership rows from semantic clusters |
+| `analyze semantic-topic-explore` | Browse topic lists, topic timelines, reverse message lookup, and conversation/topic coverage |
+| `analyze semantic-topic` | Generate experimental topic labels and summaries from stored semantic clusters with a local Ollama model |
 
 ---
 
@@ -295,9 +300,16 @@ uv run llm-logparser parse \
   --provider openai \
   --input <file> \
   --outdir artifacts \
+  [--message-window-size <N>] \
+  [--message-window-stride <N>] \
   [--dry-run] [--fail-fast] \
   [--validate-schema]
 ```
+
+`message_windows.jsonl` is generated during `parse`. The default remains
+non-overlapping windows because omitted stride falls back to the window size.
+Use `--message-window-stride` smaller than `--message-window-size` to opt into
+deterministic overlapping/sliding windows.
 
 ### Export
 
@@ -475,6 +487,12 @@ uv run llm-logparser analyze semantic-prototype \
   [--backend deterministic-hash|ollama] \
   [--model <local-embedding-model>] \
   [--top-k <N>] \
+  [--min-score <float>] \
+  [--sqlite-db <path/to/analysis.db>] \
+  [--candidate-window-days <N>] \
+  [--candidate-min-chars <N>] \
+  [--candidate-min-assistant-ratio <float>] \
+  [--candidate-same-thread allow|prefer|only|exclude] \
   [--overwrite]
 ```
 
@@ -482,6 +500,7 @@ This command currently produces:
 
 * `window_embeddings.jsonl`
 * `window_neighbors.jsonl`
+* `window_clusters.jsonl`
 
 These outputs are:
 
@@ -522,22 +541,235 @@ analyze:
 
 The semantic layer is not yet positioned as a stable topic system.
 
+Current L3 prototype behavior is intentionally limited:
+
+* `window_neighbors.jsonl` still stores nearest-neighbor links, but those links are now filtered by `--min-score` before emission; the current default is `0.62`, selected from repeated real-data subset validation as the best current tradeoff between broad noisy cross-thread clusters and over-fragmentation
+* when `--sqlite-db` is provided, candidate windows are first narrowed with `analysis.db`, then compared symmetrically inside each deduplicated local candidate pool instead of using a global dense comparison for every pair
+* `window_clusters.jsonl` groups windows by connected components over retained mutual neighbor links; same-thread mutual edges are suppressed when the two windows share more than one underlying message, while cross-thread mutual edges must also meet a stricter runtime threshold equal to the current corpus P75 of cross-thread mutual scores
+* if cross-thread mutual scores are unavailable in older neighbor rows, cluster construction falls back to the legacy mutual-only behavior for those edges instead of failing
+* clusters are structural groupings only; they are not canonical topics, do not carry labels, and do not model lifecycle state or summaries
+
+If `--sqlite-db` is omitted, `semantic-prototype` keeps its original all-windows fallback path and computes neighbors directly from the full embedded window set.
+
+Window shape is controlled at parse time because `semantic-prototype` reads the
+stored `message_windows.jsonl` artifact. Config therefore uses the parse/chain
+sections:
+
+```yaml
+parse:
+  message_windows:
+    size: 4
+    stride: 2
+
+chain:
+  message_windows:
+    size: 4
+    stride: 2
+```
+
 ### Analyze Semantic Preview
 
-Render one window and its stored nearest neighbors in a readable terminal view:
+Browse stored L3 semantic clusters in a readable terminal view. By default the
+command lists the largest clusters from `window_clusters.jsonl`:
 
 ```bash
 uv run llm-logparser analyze semantic-preview \
   --input <provider-artifact-root> \
-  --thread <conversation_id> \
+  [--top-clusters <N>] \
+  [--min-cluster-size <N>] \
+  [--cross-thread-only]
+```
+
+Cluster detail:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --cluster-id <cluster_id> \
+  [--top-k <N>]
+```
+
+Conversation-centric view:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --conversation-id <conversation_id> \
+  [--cross-thread-only]
+```
+
+Legacy single-window lookup is still available:
+
+```bash
+uv run llm-logparser analyze semantic-preview \
+  --input <provider-artifact-root> \
+  --conversation-id <conversation_id> \
   --window <window_id> \
   [--top-k <N>] \
   [--max-chars <N>]
 ```
 
-`semantic-preview` is read-only. It reuses stored semantic neighbor artifacts
-plus `message_windows.jsonl`; it does not recompute embeddings or write new
-files.
+`semantic-preview` is read-only. It reuses stored `message_windows.jsonl`,
+`window_clusters.jsonl`, and optional `window_neighbors.jsonl`; it does not
+recompute embeddings or write new files. `--json` emits machine-readable output
+for downstream tooling.
+
+### Analyze Semantic Topics
+
+Build formal topic artifacts under `<provider-artifact-root>/l3/semantic-topics/`:
+
+```bash
+uv run llm-logparser analyze semantic-topics \
+  --input <provider-artifact-root> \
+  [--model <ollama-model>] \
+  [--min-cluster-size <N>] \
+  [--cross-thread-only]
+```
+
+Target one cluster only:
+
+```bash
+uv run llm-logparser analyze semantic-topics \
+  --input <provider-artifact-root> \
+  --cluster-id <cluster_id> \
+  [--model <ollama-model>]
+```
+
+`semantic-topics` writes:
+
+- `topics.json`: forward topic index in `schema_version: "1.0"` with top-level
+  `generated_at`, `source_inputs`, and `provenance`, plus per-topic
+  cluster/window/message references
+- `topic_membership.jsonl`: reverse lookup rows for `cluster -> topic`, `window -> topic`, and `message -> topic`
+
+Structural fields such as `topic_id`, `cluster_ids`, `window_refs`,
+`message_refs`, `conversation_ids`, `first_seen`, and `last_seen` are built
+from stored L3 artifacts. `cluster_ids` remain the primary L3-native anchor;
+`window_refs` and `message_refs` are derived from cluster membership. The
+forward artifact also carries `state`, which is currently emitted as `null` for
+every topic. If `--model` is omitted, labels and summaries remain empty and the
+command still writes structural-only artifacts. `provenance` records both the
+topic-labeling settings and the upstream L3 clustering basis so the artifact
+stays additive, rebuildable, and non-canonical. In structural-only runs,
+`provenance.labeling_model`, `provenance.prompt_variant`, and
+`provenance.prompt_hash` remain `null` because no labeling prompt was executed.
+
+### Analyze Semantic Topic Explore
+
+Browse the semantic topic index without any model calls:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root>
+```
+
+Topic detail:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --topic-id <topic_id>
+```
+
+Reverse lookup from one message:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --message-id <message_id>
+```
+
+Conversation-centric view:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --conversation-id <conversation_id> \
+  [--hide-single-window] \
+  [--min-window-count <N>] \
+  [--min-conversation-count <N>]
+```
+
+`semantic-topic-explore` reads `topics.json`, `topic_membership.jsonl`, and
+`message_windows.jsonl`, builds in-memory indexes, and lets you navigate:
+
+- `topic -> conversations / windows / messages`
+- `message -> topic`
+- `topic -> timeline`
+
+Its default topic list is tuned for scanning rather than exhaustiveness: it
+surfaces larger topics first, then broader conversation coverage, then higher
+observed intra-cluster scores when available, and shows one representative
+window preview plus lightweight quality hints in the text view. Runtime-only
+filters such as `--hide-single-window`, `--min-window-count`, and
+`--min-conversation-count` can suppress obvious browsing noise without
+rewriting topic artifacts.
+
+Practical starting points from the current real-data validation pass on a
+staged `openai` subset:
+
+- What should I run first?
+  Start with singleton suppression for everyday browsing:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --hide-single-window
+```
+
+- How do I focus on cross-thread continuity?
+  Use conversation coverage as the browse filter:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --min-conversation-count 2
+```
+
+- How do I do a stricter deep-inspection pass?
+  Raise the minimum topic size:
+
+```bash
+uv run llm-logparser analyze semantic-topic-explore \
+  --input <artifact-root> \
+  --min-window-count 3
+```
+
+These are current usage recommendations, not hard defaults. On the validated
+subset, `--min-window-count 5` was too aggressive for general browsing and
+removed too many smaller useful topics, so it is not the recommended starting
+point.
+
+### Analyze Semantic Topic
+
+Render experimental topic labels and summaries from stored L3 clusters without
+writing artifacts:
+
+```bash
+uv run llm-logparser analyze semantic-topic \
+  --input <provider-artifact-root> \
+  --model <ollama-model> \
+  [--top-clusters <N>] \
+  [--min-cluster-size <N>] \
+  [--cross-thread-only]
+```
+
+One cluster only:
+
+```bash
+uv run llm-logparser analyze semantic-topic \
+  --input <provider-artifact-root> \
+  --model <ollama-model> \
+  --cluster-id <cluster_id>
+```
+
+`semantic-topic` is read-only. It requires stored `message_windows.jsonl` and
+`window_clusters.jsonl`, does not recompute embeddings, and does not write any
+new artifacts. The current production prompt is fixed from the repository's
+tmp-based prompt experiment winner: Prompt B with an 8-window per-cluster cap
+and 300-character per-window truncation. `--json` emits the same result in a
+machine-readable form. Use `semantic-topics` when you need durable topic
+artifacts and reverse lookup.
 
 ---
 

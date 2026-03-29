@@ -91,6 +91,16 @@ def test_analyze_semantic_prototype_help_mentions_backend_options(capsys):
     assert "ollama" in help_text
 
 
+def test_analyze_semantic_prototype_parser_uses_current_default_min_score():
+    set_locale("en-US")
+    parser = build_parser()
+
+    args = parser.parse_args(["analyze", "semantic-prototype"])
+
+    assert args.min_score == 0.62
+    assert args.top_k == 5
+
+
 def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
     set_locale("en-US")
     parser = build_parser()
@@ -100,7 +110,68 @@ def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
 
     assert exc.value.code == 0
     help_text = capsys.readouterr().out
+    assert "--cluster-id" in help_text
+    assert "--conversation-id" in help_text
     assert "--thread" in help_text
     assert "--window" in help_text
+    assert "--top-clusters" in help_text
+    assert "--min-cluster-size" in help_text
+    assert "--cross-thread-only" in help_text
+    assert "--json" in help_text
     assert "--top-k" in help_text
     assert "--max-chars" in help_text
+
+
+def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-topic", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--model" in help_text
+    assert "--cluster-id" in help_text
+    assert "--top-clusters" in help_text
+    assert "--min-cluster-size" in help_text
+    assert "--cross-thread-only" in help_text
+    assert "--base-url" in help_text
+    assert "--timeout-seconds" in help_text
+    assert "--json" in help_text
+
+
+def test_analyze_semantic_topics_help_mentions_artifact_builder_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-topics", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--model" in help_text
+    assert "--cluster-id" in help_text
+    assert "--min-cluster-size" in help_text
+    assert "--cross-thread-only" in help_text
+    assert "--base-url" in help_text
+    assert "--timeout-seconds" in help_text
+
+
+def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-topic-explore", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--topic-id" in help_text
+    assert "--message-id" in help_text
+    assert "--conversation-id" in help_text
+    assert "--thread" in help_text
+    assert "--hide-single-window" in help_text
+    assert "--min-window-count" in help_text
+    assert "--min-conversation-count" in help_text
+    assert "--json" in help_text

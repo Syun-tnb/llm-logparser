@@ -8,21 +8,34 @@
   * `thread_stats.json` now emits `schema_version: "1.0"`
   * `message_windows.jsonl` rows now emit `schema_version: "1.0"`
   * added formal JSON Schema for `message_windows.jsonl` rows
+  * `message_windows.jsonl` now supports deterministic sliding windows via size/stride controls while preserving legacy non-overlapping defaults
 * Added experimental `analyze semantic-prototype`:
   * reads `message_windows.jsonl`
-  * writes rebuildable `window_embeddings.jsonl` and `window_neighbors.jsonl`
+  * writes rebuildable `window_embeddings.jsonl`, `window_neighbors.jsonl`, and `window_clusters.jsonl`
   * uses a deterministic local hash backend by default
   * now also supports a local `ollama` embedding backend via `--backend ollama --model <name>`
   * supports profile-backed `analyze.semantic_prototype` embedding settings
   * uses deterministic UTF-8 byte-based chunking controls (`max_input_bytes`, `chunk_overlap_bytes`)
   * automatically applies built-in Ollama presets for known models and conservative fallback defaults for unknown models
   * automatically chunks oversized Ollama embedding inputs and aggregates them into one final embedding per window
-  * now uses vectorized neighbor construction and phase-level progress logging for longer runs
-  * does not perform topic labeling or clustering
+  * now supports `--min-score` thresholding so weak semantic links are not emitted unconditionally
+  * the default `--min-score` is now `0.62`, promoted from repeated real-data subset validation as the best current tradeoff between broad cross-thread noise and extra fragmentation
+  * can optionally use `analysis.db` for L2-backed candidate generation before similarity scoring
+  * SQLite-assisted mode now performs symmetric all-pairs comparison inside each narrowed candidate pool
+  * emits minimal mutual-link connected components as `window_clusters.jsonl`
+  * cluster construction now suppresses same-thread mutual edges when paired windows share more than one source message; the default was chosen from the repository artifact corpus because it sharply reduced sliding-window megaclusters without the extra fragmentation of a stricter zero-overlap rule
+  * cluster construction now also derives the current run's P75 cross-thread mutual score from retained neighbor rows and drops weaker cross-thread mutual edges; that default was selected from the repository artifact corpus because it reduced broad cross-thread components with less fragmentation than stricter cross-thread cutoffs
+  * still does not perform topic labeling, lifecycle modeling, or summarization
 * Added experimental `analyze semantic-preview`:
   * reads stored `window_neighbors.jsonl` plus `message_windows.jsonl`
   * renders one target window and its nearest neighbors as human-readable text
   * does not recompute embeddings or write new sidecar artifacts
+* Upgraded `analyze semantic-topics` forward artifacts:
+  * `topics.json` now emits `schema_version: "1.0"`
+  * top-level fields now include `generated_at`, `source_inputs`, and `provenance`
+  * topic records now include `state` and keep `cluster_ids` as the primary membership anchor
+  * provenance now records prompt hash, labeling mode, optional embedding/labeling models, and upstream clustering policy metadata
+  * structural-only runs now leave `labeling_model`, `prompt_variant`, and `prompt_hash` as `null` so provenance reflects executed labeling work only
 
 ---
 

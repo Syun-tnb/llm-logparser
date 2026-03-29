@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/topics.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "provider_id",
+    "topic_count",
+    "generated_at",
+    "source_inputs",
+    "provenance",
+    "topics"
+  ],
+  "properties": {
+    "artifact_type": { "type": "string", "const": "semantic_topics" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "topic_count": { "type": "integer", "minimum": 0 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "source_inputs": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "topics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/topicRecord" }
+    }
+  },
+  "$defs": {
+    "windowRef": {
+      "type": "object",
+      "required": ["conversation_id", "window_id"],
+      "properties": {
+        "conversation_id": { "type": "string", "minLength": 1 },
+        "window_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "messageRef": {
+      "type": "object",
+      "required": ["conversation_id", "message_id"],
+      "properties": {
+        "conversation_id": { "type": "string", "minLength": 1 },
+        "message_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "representativeWindow": {
+      "type": "object",
+      "required": ["conversation_id", "window_id", "excerpt"],
+      "properties": {
+        "conversation_id": { "type": "string", "minLength": 1 },
+        "window_id": { "type": "string", "minLength": 1 },
+        "excerpt": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "qualitySignals": {
+      "type": "object",
+      "required": [
+        "cluster_size",
+        "conversation_count",
+        "avg_intra_cluster_score",
+        "max_intra_cluster_score",
+        "single_window"
+      ],
+      "properties": {
+        "cluster_size": { "type": "integer", "minimum": 1 },
+        "conversation_count": { "type": "integer", "minimum": 1 },
+        "avg_intra_cluster_score": { "type": ["number", "null"] },
+        "max_intra_cluster_score": { "type": ["number", "null"] },
+        "single_window": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "clusteringProvenance": {
+      "type": "object",
+      "required": [
+        "method",
+        "edge_policy",
+        "neighbor_k",
+        "score_threshold_policy"
+      ],
+      "properties": {
+        "method": { "type": "string", "minLength": 1 },
+        "edge_policy": { "type": "string", "minLength": 1 },
+        "neighbor_k": { "type": ["integer", "null"], "minimum": 0 },
+        "score_threshold_policy": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "filters": {
+      "type": "object",
+      "required": ["cluster_id", "min_cluster_size", "cross_thread_only"],
+      "properties": {
+        "cluster_id": { "type": ["string", "null"] },
+        "min_cluster_size": { "type": "integer", "minimum": 1 },
+        "cross_thread_only": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "pipeline_version",
+        "membership_mode",
+        "label_mode",
+        "embedding_model",
+        "labeling_model",
+        "prompt_hash",
+        "prompt_variant",
+        "window_cap",
+        "max_window_chars",
+        "clustering",
+        "filters"
+      ],
+      "properties": {
+        "pipeline_version": { "type": "string", "minLength": 1 },
+        "membership_mode": { "type": "string", "const": "cluster-is-topic-v1" },
+        "label_mode": {
+          "type": "string",
+          "enum": ["structural-only", "model-enriched"]
+        },
+        "embedding_model": { "type": ["string", "null"] },
+        "labeling_model": { "type": ["string", "null"] },
+        "prompt_hash": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "prompt_variant": { "type": ["string", "null"], "minLength": 1 },
+        "window_cap": { "type": "integer", "minimum": 1 },
+        "max_window_chars": { "type": "integer", "minimum": 1 },
+        "clustering": { "$ref": "#/$defs/clusteringProvenance" },
+        "filters": { "$ref": "#/$defs/filters" }
+      },
+      "additionalProperties": false
+    },
+    "topicRecord": {
+      "type": "object",
+      "required": [
+        "topic_id",
+        "provider_id",
+        "label",
+        "summary",
+        "keywords",
+        "confidence",
+        "state",
+        "cluster_ids",
+        "conversation_ids",
+        "window_refs",
+        "message_refs",
+        "cluster_count",
+        "window_count",
+        "message_count",
+        "first_seen",
+        "last_seen",
+        "representative_windows"
+      ],
+      "properties": {
+        "topic_id": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "label": { "type": ["string", "null"] },
+        "summary": { "type": ["string", "null"] },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "state": { "type": ["string", "null"] },
+        "cluster_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "conversation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "window_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/windowRef" }
+        },
+        "message_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/messageRef" }
+        },
+        "cluster_count": { "type": "integer", "minimum": 1 },
+        "window_count": { "type": "integer", "minimum": 1 },
+        "message_count": { "type": "integer", "minimum": 1 },
+        "quality_signals": { "$ref": "#/$defs/qualitySignals" },
+        "first_seen": { "type": ["integer", "null"], "minimum": 0 },
+        "last_seen": { "type": ["integer", "null"], "minimum": 0 },
+        "representative_windows": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/representativeWindow" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

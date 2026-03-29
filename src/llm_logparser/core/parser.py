@@ -265,12 +265,18 @@ def write_message_windows_artifact(
     outdir_thread: Path,
     *,
     canonical_rows: list[dict[str, Any]],
+    window_size: int,
+    window_stride: int | None,
 ) -> None:
     """Persist deterministic message windows from canonical message rows."""
     artifact_path = outdir_thread / "message_windows.jsonl"
     tmp = artifact_path.with_suffix(".tmp")
     tmp.write_text(
-        render_message_windows_jsonl(canonical_rows),
+        render_message_windows_jsonl(
+            canonical_rows,
+            window_size=window_size,
+            window_stride=window_stride,
+        ),
         encoding="utf-8",
     )
     tmp.replace(artifact_path)
@@ -344,6 +350,8 @@ def parse_to_jsonl(
     progress_interval: int = 100,
     validate_schema: bool = False,
     schema_validator: "MessageSchemaValidator" | None = None,
+    message_window_size: int = 4,
+    message_window_stride: int | None = None,
 ) -> Dict[str, Any]:
     """
     Parse the exported JSON for each provider and generate thread-level JSONL files.
@@ -484,6 +492,8 @@ def parse_to_jsonl(
                         write_message_windows_artifact(
                             outdir_thread,
                             canonical_rows=canonical_rows,
+                            window_size=message_window_size,
+                            window_stride=message_window_stride,
                         )
                     except Exception as e:
                         raise LLPWriteError(f"write error: {e}")

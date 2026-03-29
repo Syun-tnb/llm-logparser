@@ -35,6 +35,8 @@ def run_parse(args, logger: logging.Logger) -> None:
         fail_fast=args.fail_fast,
         validate_schema=args.validate_schema,
         schema_validator=schema_validator,
+        message_window_size=args.message_window_size,
+        message_window_stride=args.message_window_stride,
     )
 
     threads = stats.get("threads", 0)

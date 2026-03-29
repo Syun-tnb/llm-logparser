@@ -159,7 +159,13 @@ def apply_profile_defaults(
         or (
             args.command == "analyze"
             and getattr(args, "analyze_command", None)
-            in {"semantic-prototype", "semantic-preview"}
+            in {
+                "semantic-prototype",
+                "semantic-preview",
+                "semantic-topic",
+                "semantic-topics",
+                "semantic-topic-explore",
+            }
         )
     ) and not cli_provided(explicit_flags, "--input"):
         candidates = _input_candidates(profile, args.command, base_dir)
@@ -182,6 +188,20 @@ def apply_profile_defaults(
             value = getattr(profile.parse, attr)
             if value is not None:
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_size",
+            ("--message-window-size",),
+            profile.parse.message_windows.size,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_stride",
+            ("--message-window-stride",),
+            profile.parse.message_windows.stride,
+        )
 
     elif args.command == "export":
         _set_if_not_cli(
@@ -255,6 +275,20 @@ def apply_profile_defaults(
             value = getattr(profile.chain, attr) if attr in {"dry_run", "fail_fast", "validate_schema"} else getattr(profile.output, attr)
             if value is not None:
                 _set_if_not_cli(args, explicit_flags, attr, (flag,), value)
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_size",
+            ("--message-window-size",),
+            profile.chain.message_windows.size,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "message_window_stride",
+            ("--message-window-stride",),
+            profile.chain.message_windows.stride,
+        )
 
     elif args.command == "extract":
         _set_if_not_cli(
@@ -299,6 +333,49 @@ def apply_profile_defaults(
             "top_k",
             ("--top-k",),
             semantic.top_k,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "min_score",
+            ("--min-score",),
+            semantic.min_score,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "sqlite_db",
+            ("--sqlite-db",),
+            semantic.sqlite_db,
+            transform=lambda v: _resolve_path(v, base_dir) or Path(v),
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_window_days",
+            ("--candidate-window-days",),
+            semantic.candidate_window_days,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_min_chars",
+            ("--candidate-min-chars",),
+            semantic.candidate_min_chars,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_min_assistant_ratio",
+            ("--candidate-min-assistant-ratio",),
+            semantic.candidate_min_assistant_ratio,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "candidate_same_thread",
+            ("--candidate-same-thread",),
+            semantic.candidate_same_thread,
         )
         _set_if_not_cli(
             args,

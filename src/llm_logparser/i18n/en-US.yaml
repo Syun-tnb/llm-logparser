@@ -25,6 +25,8 @@ messages:
   cli.parse.opt.dry_run.help: Run parse without writing any files (stats/log only).
   cli.parse.opt.fail_fast.help: Stop parsing on first error instead of continuing.
   cli.parse.opt.validate_schema.help: Validate normalized messages against message.schema.json
+  cli.parse.opt.message_window_size.help: Number of canonical messages per generated message window
+  cli.parse.opt.message_window_stride.help: Advance step between generated message windows. Defaults to the window size when omitted.
   cli.export.opt.input.help: Path to thread parsed.jsonl
   cli.export.opt.out.help: Output Markdown path
   cli.extract.opt.conversation_id.help: Conversation ID to extract
@@ -50,28 +52,68 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: Root directory containing per-provider artifact directories
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
-  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl and window_neighbors.jsonl artifacts from message_windows.jsonl
+  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl
   cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl file or a directory containing message_windows.jsonl files
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
+  cli.analyze.semantic_prototype.opt.min_score.help: Minimum cosine similarity score required before a neighbor is emitted
   cli.analyze.semantic_prototype.opt.max_input_bytes.help: Safe UTF-8 byte budget for one embedding request before deterministic chunking is applied
   cli.analyze.semantic_prototype.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks
   cli.analyze.semantic_prototype.opt.aggregate.help: Aggregation method for chunk embeddings
-  cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl and window_neighbors.jsonl artifacts
-  cli.analyze.semantic_preview.help: Render a human-readable preview for one semantic window and its stored neighbors
-  cli.analyze.semantic_preview.opt.input.help: Provider artifact root containing message_windows.jsonl and window_neighbors.jsonl files
-  cli.analyze.semantic_preview.opt.thread.help: Conversation/thread ID to preview
-  cli.analyze.semantic_preview.opt.window.help: Window ID to preview
-  cli.analyze.semantic_preview.opt.top_k.help: Limit the number of neighbors shown. By default, use the stored neighbor list.
+  cli.analyze.semantic_prototype.opt.sqlite_db.help: Optional path to analysis.db for SQLite-assisted candidate generation
+  cli.analyze.semantic_prototype.opt.candidate_window_days.help: Candidate retrieval window in days around each target window timestamp when SQLite mode is active
+  cli.analyze.semantic_prototype.opt.candidate_min_chars.help: Minimum candidate window character count when SQLite mode is active
+  cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help: Minimum assistant_messages / message_count ratio for candidate source threads in SQLite mode
+  cli.analyze.semantic_prototype.opt.candidate_same_thread.help: Same-thread candidate policy in SQLite mode (allow, prefer, only, exclude)
+  cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts
+  cli.analyze.semantic_preview.help: Browse semantic clusters, conversations, or individual windows from stored L3 prototype artifacts
+  cli.analyze.semantic_preview.opt.input.help: Provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files
+  cli.analyze.semantic_preview.opt.cluster_id.help: Show one cluster in detail
+  cli.analyze.semantic_preview.opt.conversation_id.help: Conversation/thread ID to inspect (also accepted as --thread)
+  cli.analyze.semantic_preview.opt.window.help: Window ID to inspect. Use with --conversation-id/--thread for window view.
+  cli.analyze.semantic_preview.opt.top_clusters.help: Number of clusters to show in the default cluster-list view
+  cli.analyze.semantic_preview.opt.min_cluster_size.help: Minimum cluster size to include in list or conversation views
+  cli.analyze.semantic_preview.opt.cross_thread_only.help: Restrict list or conversation views to clusters spanning more than one conversation
+  cli.analyze.semantic_preview.opt.json.help: Emit machine-readable JSON instead of pretty text
+  cli.analyze.semantic_preview.opt.top_k.help: Limit neighbor relationships shown in detail views. For window view, limit the number of stored neighbors shown.
   cli.analyze.semantic_preview.opt.include_text.help: Include reconstructed window text in the preview (use --no-include-text to disable)
   cli.analyze.semantic_preview.opt.max_chars.help: Maximum number of characters to show per window before truncation
   cli.analyze.semantic_preview.opt.show_meta.help: Include metadata blocks in the preview (use --no-show-meta to disable)
+  cli.analyze.semantic_topic.help: Generate experimental L4 topic labels and summaries from stored L3 clusters using a local Ollama model
+  cli.analyze.semantic_topic.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
+  cli.analyze.semantic_topic.opt.model.help: Local Ollama generation model identifier
+  cli.analyze.semantic_topic.opt.cluster_id.help: Generate one topic for the specified cluster only
+  cli.analyze.semantic_topic.opt.top_clusters.help: Number of clusters to label when --cluster-id is not provided
+  cli.analyze.semantic_topic.opt.min_cluster_size.help: Minimum cluster size to include before prompting the local model
+  cli.analyze.semantic_topic.opt.cross_thread_only.help: Restrict topic generation to clusters spanning more than one conversation
+  cli.analyze.semantic_topic.opt.base_url.help: Base URL for the local Ollama server
+  cli.analyze.semantic_topic.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds
+  cli.analyze.semantic_topic.opt.json.help: Emit machine-readable JSON instead of pretty text
+  cli.analyze.semantic_topics.help: Build formal semantic topic artifacts with forward and reverse lookup from stored L3 clusters
+  cli.analyze.semantic_topics.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
+  cli.analyze.semantic_topics.opt.model.help: Optional local Ollama generation model. Omit for structural-only topic artifacts.
+  cli.analyze.semantic_topics.opt.cluster_id.help: Build artifacts for one cluster only
+  cli.analyze.semantic_topics.opt.min_cluster_size.help: Minimum cluster size to include in the generated topic set
+  cli.analyze.semantic_topics.opt.cross_thread_only.help: Restrict the generated topic set to clusters spanning more than one conversation
+  cli.analyze.semantic_topics.opt.base_url.help: Base URL for the local Ollama server
+  cli.analyze.semantic_topics.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds when --model is used
+  cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
+  cli.analyze.semantic_topic_explore.opt.input.help: Artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl
+  cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline
+  cli.analyze.semantic_topic_explore.opt.message_id.help: Reverse lookup the topic or topics containing one message ID
+  cli.analyze.semantic_topic_explore.opt.conversation_id.help: Show topics that appear in one conversation/thread (also accepted as --thread)
+  cli.analyze.semantic_topic_explore.opt.hide_single_window.help: Hide topics marked as single-window by quality_signals during browse views
+  cli.analyze.semantic_topic_explore.opt.min_window_count.help: Hide topics whose window_count is below this threshold during browse views
+  cli.analyze.semantic_topic_explore.opt.min_conversation_count.help: Hide topics whose conversation coverage is below this threshold during browse views
+  cli.analyze.semantic_topic_explore.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.
   cli.chain.opt.fail_fast.help: Stop chain processing on first export error. Default is to continue.
   cli.chain.opt.validate_schema.help: Validate normalized messages during the parse phase
+  cli.chain.opt.message_window_size.help: Number of canonical messages per generated message window during the parse phase
+  cli.chain.opt.message_window_stride.help: Advance step between generated message windows during the parse phase. Defaults to the window size when omitted.
   cli.parse.provider: "Provider: {provider}"
   cli.parse.input: "Input file: {path}"
   cli.parse.outdir: "Output directory: {path}"
@@ -169,6 +211,7 @@ messages:
   runtime.analyze.semantic_prototype.generating_embeddings: "semantic prototype: generating embeddings"
   runtime.analyze.semantic_prototype.embeddings_complete: "semantic prototype: embeddings complete ({windows} windows)"
   runtime.analyze.semantic_prototype.building_neighbors: "semantic prototype: building neighbors"
+  runtime.analyze.semantic_prototype.building_clusters: "semantic prototype: building clusters"
   runtime.analyze.semantic_prototype.neighbor_progress: "semantic prototype: neighbors {count} / {total}"
   runtime.analyze.semantic_prototype.writing_artifacts: "semantic prototype: writing artifacts"
   runtime.analyze.semantic_prototype_written: "semantic prototype artifacts written for {threads} thread(s) ({windows} windows, model={model})"
