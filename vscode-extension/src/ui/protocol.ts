@@ -1,0 +1,171 @@
+import type {
+  CliExecutionErrorType,
+  CliRunPayload,
+  CliUiError,
+} from "../backend/python";
+
+export type PickKind = "file" | "folder";
+
+export type ViewerErrorCode =
+  | "workspaceRequired"
+  | "noFile"
+  | "outsideWorkspace"
+  | "listFailed"
+  | "readFailed"
+  | "rootInvalid";
+
+export interface ViewerListEntry {
+  path: string;
+  name: string;
+  display: string;
+}
+
+export interface ViewerMessage {
+  role: string;
+  ts?: number;
+  text: string;
+}
+
+export interface ViewerFileData {
+  path: string;
+  display?: string;
+  meta?: {
+    provider_id?: string;
+    conversation_id?: string;
+    message_count?: number;
+  };
+  messages: ViewerMessage[];
+}
+
+export interface ViewerState {
+  root?: string;
+  files: ViewerListEntry[];
+  selectedPath?: string;
+  file?: ViewerFileData;
+  error?: {
+    code: ViewerErrorCode;
+    detail?: string;
+  };
+}
+
+export interface ViewerConfig {
+  language: "en" | "ja";
+  timezone: "local" | "utc";
+  timestampFormat: "relative" | "absolute";
+  wrap: boolean;
+  showSystem: boolean;
+  showToolCalls: boolean;
+  compactMode: boolean;
+  codeTheme: "auto" | "light" | "dark";
+  maxMessagesPerThread: number;
+  search: {
+    caseSensitive: boolean;
+    useRegex: boolean;
+  };
+}
+
+export interface RunState {
+  busy: boolean;
+  lastExitCode?: number;
+  lastError?: CliUiError;
+}
+
+export interface PickMessage {
+  type: "pick";
+  payload: {
+    targetId: string;
+    kind: PickKind;
+  };
+}
+
+export interface RunMessage {
+  type: "run";
+  payload: CliRunPayload;
+}
+
+export interface RefreshFilesMessage {
+  type: "refresh-files";
+  payload?: {
+    root?: string;
+  };
+}
+
+export interface OpenViewerFileMessage {
+  type: "open-viewer-file";
+  payload: {
+    path: string;
+  };
+}
+
+export interface ClearLogRequestMessage {
+  type: "clear-log";
+}
+
+export type WebviewToExtensionMessage =
+  | PickMessage
+  | RunMessage
+  | RefreshFilesMessage
+  | OpenViewerFileMessage
+  | ClearLogRequestMessage;
+
+export interface InitMessage {
+  type: "init";
+  workspaceRoot?: string;
+  runState: RunState;
+  viewerState: ViewerState;
+}
+
+export interface ConfigMessage {
+  type: "config" | "config-changed";
+  config: ViewerConfig;
+  i18n: Record<string, string>;
+}
+
+export interface PickResultMessage {
+  type: "pick-result";
+  targetId: string;
+  value: string;
+}
+
+export interface BusyMessage {
+  type: "busy";
+  value: boolean;
+}
+
+export interface LogMessage {
+  type: "log";
+  value: string;
+}
+
+export interface RunFinishedMessage {
+  type: "run-finished";
+  exitCode: number;
+}
+
+export interface RunFailedMessage {
+  type: "run-failed";
+  errorType: CliExecutionErrorType;
+  what: string;
+  why: string;
+  nextStep: string;
+}
+
+export interface ViewerStateMessage {
+  type: "viewer-state";
+  state: ViewerState;
+}
+
+export interface ClearLogMessage {
+  type: "clear-log";
+}
+
+export type ExtensionToWebviewMessage =
+  | InitMessage
+  | ConfigMessage
+  | PickResultMessage
+  | BusyMessage
+  | LogMessage
+  | RunFinishedMessage
+  | RunFailedMessage
+  | ViewerStateMessage
+  | ClearLogMessage;

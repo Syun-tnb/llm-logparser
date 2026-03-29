@@ -9,57 +9,20 @@ import {
   toCliUiError,
   type CliRunPayload,
 } from "../backend/python";
-
-type PickPayload = {
-  targetId: string;
-  kind: "file" | "folder";
-};
-
-type ViewerListEntry = {
-  path: string;
-  name: string;
-  display: string;
-};
-
-type ViewerListPayload = {
-  root?: string;
-};
-
-type ViewerOpenPayload = {
-  path: string;
-};
-
-type ViewerMessage = {
-  role: string;
-  ts?: number;
-  text: string;
-};
-
-type ViewerFilePayload = {
-  path: string;
-  meta?: {
-    provider_id?: string;
-    conversation_id?: string;
-    message_count?: number;
-  };
-  messages: ViewerMessage[];
-};
-
-type ViewerConfig = {
-  language: "en" | "ja";
-  timezone: "local" | "utc";
-  timestampFormat: "relative" | "absolute";
-  wrap: boolean;
-  showSystem: boolean;
-  showToolCalls: boolean;
-  compactMode: boolean;
-  codeTheme: "auto" | "light" | "dark";
-  maxMessagesPerThread: number;
-  search: {
-    caseSensitive: boolean;
-    useRegex: boolean;
-  };
-};
+import type {
+  ExtensionToWebviewMessage,
+  OpenViewerFileMessage,
+  PickMessage,
+  RefreshFilesMessage,
+  RunState,
+  ViewerConfig,
+  ViewerErrorCode,
+  ViewerFileData,
+  ViewerMessage,
+  ViewerState,
+  ViewerStateMessage,
+  WebviewToExtensionMessage,
+} from "./protocol";
 
 export class LogParserPanel {
   public static currentPanel: LogParserPanel | undefined;
@@ -67,15 +30,25 @@ export class LogParserPanel {
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private disposables: vscode.Disposable[] = [];
-  private viewerRoot?: string;
+  private workspaceRoot?: string;
+  private runState: RunState;
+  private viewerState: ViewerState;
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel = panel;
     this.extensionUri = extensionUri;
+    this.workspaceRoot = this.getWorkspaceRoot();
+    this.runState = {
+      busy: false,
+    };
+    this.viewerState = {
+      root: this.workspaceRoot,
+      files: [],
+    };
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.panel.webview.onDidReceiveMessage(
-      (message) => this.handleMessage(message),
+      (message) => this.handleMessage(message as WebviewToExtensionMessage),
       null,
       this.disposables
     );
@@ -130,37 +103,70 @@ export class LogParserPanel {
   }
 
   private postInit(): void {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    this.panel.webview.postMessage({
+    this.syncWorkspaceRoot();
+    this.postMessage({
       type: "init",
-      workspaceRoot,
+      workspaceRoot: this.workspaceRoot,
+      runState: this.runState,
+      viewerState: this.viewerState,
     });
     void this.postConfig("config");
   }
 
-  private async handleMessage(message: { type: string; payload?: unknown }) {
+  private async handleMessage(message: WebviewToExtensionMessage) {
     switch (message.type) {
       case "pick":
-        await this.handlePick(message.payload as PickPayload);
+        await this.handlePick(message.payload);
         return;
       case "run":
-        await this.handleRun(message.payload as CliRunPayload);
+        await this.handleRun(message.payload);
         return;
-      case "viewer-list":
-        await this.handleViewerList(message.payload as ViewerListPayload);
+      case "refresh-files":
+        await this.handleRefreshFiles(message.payload);
         return;
-      case "viewer-open":
-        await this.handleViewerOpen(message.payload as ViewerOpenPayload);
+      case "open-viewer-file":
+        await this.handleViewerOpen(message.payload);
         return;
       case "clear-log":
-        this.panel.webview.postMessage({ type: "clear-log" });
+        this.postMessage({ type: "clear-log" });
         return;
       default:
         return;
     }
   }
 
-  private async handlePick(payload: PickPayload): Promise<void> {
+  private getWorkspaceRoot(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  private syncWorkspaceRoot(): void {
+    this.workspaceRoot = this.getWorkspaceRoot();
+    if (!this.viewerState.root && this.workspaceRoot) {
+      this.viewerState.root = this.workspaceRoot;
+    }
+  }
+
+  private postMessage(message: ExtensionToWebviewMessage): void {
+    void this.panel.webview.postMessage(message);
+  }
+
+  private postViewerState(): void {
+    const message: ViewerStateMessage = {
+      type: "viewer-state",
+      state: this.viewerState,
+    };
+    this.postMessage(message);
+  }
+
+  private setBusy(value: boolean): void {
+    this.runState = {
+      ...this.runState,
+      busy: value,
+    };
+    this.postMessage({ type: "busy", value });
+  }
+
+  private async handlePick(payload: PickMessage["payload"]): Promise<void> {
     const options: vscode.OpenDialogOptions = {
       canSelectMany: false,
       canSelectFolders: payload.kind === "folder",
@@ -173,7 +179,7 @@ export class LogParserPanel {
       return;
     }
 
-    this.panel.webview.postMessage({
+    this.postMessage({
       type: "pick-result",
       targetId: payload.targetId,
       value: result[0].fsPath,
@@ -181,7 +187,8 @@ export class LogParserPanel {
   }
 
   private async handleRun(payload: CliRunPayload): Promise<void> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+    this.syncWorkspaceRoot();
+    const workspaceRoot = this.workspaceRoot ?? "";
     const config = vscode.workspace.getConfiguration("llmLogparser");
     const pythonPath = config.get<string>("pythonPath") ?? "python3";
     const cliCommand = config.get<string>("cliCommand") ?? "";
@@ -194,26 +201,37 @@ export class LogParserPanel {
         cliCommand,
       });
 
-      this.panel.webview.postMessage({ type: "busy", value: true });
-      this.panel.webview.postMessage({ type: "log", value: `> ${commandLine}\n` });
+      this.runState = {
+        busy: true,
+      };
+      this.setBusy(true);
+      this.postMessage({ type: "log", value: `> ${commandLine}\n` });
 
       const exitCode = await runCli(runRequest, {
         cwd: workspaceRoot,
         pythonPath,
         cliCommand,
         onStdout: (chunk) =>
-          this.panel.webview.postMessage({ type: "log", value: chunk }),
+          this.postMessage({ type: "log", value: chunk }),
         onStderr: (chunk) =>
-          this.panel.webview.postMessage({ type: "log", value: chunk }),
+          this.postMessage({ type: "log", value: chunk }),
       });
 
-      this.panel.webview.postMessage({
+      this.runState = {
+        busy: false,
+        lastExitCode: exitCode,
+      };
+      this.postMessage({
         type: "run-finished",
         exitCode,
       });
     } catch (error) {
       const uiError = toCliUiError(error);
-      this.panel.webview.postMessage({
+      this.runState = {
+        busy: false,
+        lastError: uiError,
+      };
+      this.postMessage({
         type: "run-failed",
         errorType: uiError.type,
         what: uiError.what,
@@ -221,38 +239,45 @@ export class LogParserPanel {
         nextStep: uiError.nextStep,
       });
     } finally {
-      this.panel.webview.postMessage({ type: "busy", value: false });
+      this.setBusy(false);
     }
   }
 
-  private async handleViewerList(payload?: ViewerListPayload): Promise<void> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  private setViewerError(code: ViewerErrorCode, detail?: string): void {
+    this.viewerState = {
+      ...this.viewerState,
+      file: undefined,
+      selectedPath: undefined,
+      error: {
+        code,
+        detail,
+      },
+    };
+    this.postViewerState();
+  }
+
+  private async handleRefreshFiles(
+    payload?: RefreshFilesMessage["payload"]
+  ): Promise<void> {
+    this.syncWorkspaceRoot();
     const requestedRoot = valueAsString(payload?.root);
-    const root = requestedRoot ?? workspaceRoot;
+    const root = requestedRoot ?? this.viewerState.root ?? this.workspaceRoot;
 
     if (!root) {
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "workspaceRequired",
-      });
+      this.setViewerError("workspaceRequired");
       return;
     }
 
     const resolvedRoot = path.resolve(root);
     const validRoot = await isDirectory(resolvedRoot);
     if (!validRoot) {
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "rootInvalid",
-      });
+      this.setViewerError("rootInvalid");
       return;
     }
 
-    this.viewerRoot = resolvedRoot;
-
     try {
       const files = await collectParsedJsonlFiles(resolvedRoot);
-      const entries: ViewerListEntry[] = files.map((filePath) => {
+      const entries = files.map((filePath) => {
         const display = path.relative(resolvedRoot, filePath) || filePath;
         return {
           path: filePath,
@@ -260,66 +285,72 @@ export class LogParserPanel {
           display,
         };
       });
-      this.panel.webview.postMessage({ type: "viewer-files", files: entries });
+
+      const selectedPath = this.viewerState.selectedPath;
+      const selectedStillExists =
+        typeof selectedPath === "string" &&
+        entries.some((entry) => entry.path === selectedPath);
+
+      this.viewerState = {
+        ...this.viewerState,
+        root: resolvedRoot,
+        files: entries,
+        selectedPath: selectedStillExists ? selectedPath : undefined,
+        file: selectedStillExists ? this.viewerState.file : undefined,
+        error: undefined,
+      };
+      this.postViewerState();
     } catch (error) {
       const detail = error instanceof Error ? error.message : undefined;
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "listFailed",
-        detail,
-      });
+      this.setViewerError("listFailed", detail);
     }
   }
 
-  private async handleViewerOpen(payload: ViewerOpenPayload): Promise<void> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const root = this.viewerRoot ?? workspaceRoot;
+  private async handleViewerOpen(
+    payload: OpenViewerFileMessage["payload"]
+  ): Promise<void> {
+    this.syncWorkspaceRoot();
+    const root = this.viewerState.root ?? this.workspaceRoot;
     if (!root) {
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "workspaceRequired",
-      });
+      this.setViewerError("workspaceRequired");
       return;
     }
 
     if (!payload?.path) {
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "noFile",
-      });
+      this.setViewerError("noFile");
       return;
     }
 
     const resolved = path.resolve(payload.path);
     if (!isWithinRoot(root, resolved)) {
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "outsideWorkspace",
-      });
+      this.setViewerError("outsideWorkspace");
       return;
     }
 
     try {
-      const payloadData = await readParsedJsonl(resolved);
-      this.panel.webview.postMessage({
-        type: "viewer-file",
+      const file = await readParsedJsonl(resolved);
+      const viewerFile: ViewerFileData = {
+        ...file,
         display: path.relative(root, resolved) || resolved,
-        ...payloadData,
-      });
+      };
+
+      this.viewerState = {
+        ...this.viewerState,
+        selectedPath: resolved,
+        file: viewerFile,
+        error: undefined,
+      };
+      this.postViewerState();
     } catch (error) {
       const detail = error instanceof Error ? error.message : undefined;
-      this.panel.webview.postMessage({
-        type: "viewer-error",
-        code: "readFailed",
-        detail,
-      });
+      this.setViewerError("readFailed", detail);
     }
   }
 
   private async postConfig(type: "config" | "config-changed"): Promise<void> {
     const config = resolveViewerConfig();
     const i18n = loadTranslations(this.extensionUri.fsPath, config.language);
-    this.panel.webview.postMessage({
+    this.postMessage({
       type,
       config,
       i18n,
@@ -529,11 +560,11 @@ const collectParsedJsonlFiles = async (root: string): Promise<string[]> => {
   return results.sort();
 };
 
-const readParsedJsonl = async (filePath: string): Promise<ViewerFilePayload> => {
+const readParsedJsonl = async (filePath: string): Promise<ViewerFileData> => {
   const stream = fs.createReadStream(filePath, { encoding: "utf8" });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
-  let meta: ViewerFilePayload["meta"] | undefined;
+  let meta: ViewerFileData["meta"] | undefined;
   const messages: ViewerMessage[] = [];
 
   for await (const line of rl) {

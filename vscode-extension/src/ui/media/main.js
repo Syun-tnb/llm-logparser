@@ -1,12 +1,19 @@
 (() => {
   const vscode = acquireVsCodeApi();
 
+  // Message names mirror the typed contract in src/ui/protocol.ts.
   const logEl = document.getElementById("log");
   const commandSelect = document.getElementById("command");
   const runButton = document.getElementById("run");
   const clearButton = document.getElementById("clear");
   const workspaceRootEl = document.getElementById("workspaceRoot");
   const pageEl = document.querySelector(".page");
+  const viewerRefreshButton = document.getElementById("viewer-refresh");
+  const viewerFilterInput = document.getElementById("viewer-filter");
+  const viewerFileList = document.getElementById("viewer-file-list");
+  const viewerThreadMeta = document.getElementById("viewer-thread-meta");
+  const viewerMessages = document.getElementById("viewer-messages");
+  const viewerRootInput = document.getElementById("viewer-root");
 
   const screens = {
     parse: document.getElementById("screen-parse"),
@@ -35,15 +42,26 @@
     },
   };
 
+  const extensionState = {
+    workspaceRoot: "-",
+    runState: {
+      busy: false,
+    },
+    viewerState: {
+      files: [],
+    },
+  };
+
+  const uiState = {
+    mode: "parse",
+    viewerFilter: "",
+  };
+
   let i18nTable = {};
   let viewerConfig = { ...defaultViewerConfig };
-  let workspaceRoot = "-";
-  let viewerRoot = "";
-  let viewerFiles = [];
-  let activeViewerPath = "";
-  let lastViewerData = null;
 
-  const hasTranslation = (key) => Boolean(i18nTable && Object.prototype.hasOwnProperty.call(i18nTable, key));
+  const hasTranslation = (key) =>
+    Boolean(i18nTable && Object.prototype.hasOwnProperty.call(i18nTable, key));
 
   const t = (key, vars = {}, fallback) => {
     const template = i18nTable[key] ?? fallback ?? key;
@@ -100,21 +118,27 @@
     const textTargets = document.querySelectorAll("[data-i18n]");
     textTargets.forEach((el) => {
       const key = el.dataset.i18n;
-      if (!key) return;
+      if (!key) {
+        return;
+      }
       applyTranslationToElement(el, key);
     });
 
     const placeholderTargets = document.querySelectorAll("[data-i18n-placeholder]");
     placeholderTargets.forEach((el) => {
       const key = el.dataset.i18nPlaceholder;
-      if (!key) return;
+      if (!key) {
+        return;
+      }
       applyTranslationToElement(el, key, "placeholder");
     });
 
     const ariaTargets = document.querySelectorAll("[data-i18n-aria-label]");
     ariaTargets.forEach((el) => {
       const key = el.dataset.i18nAriaLabel;
-      if (!key) return;
+      if (!key) {
+        return;
+      }
       applyTranslationToElement(el, key, "aria-label");
     });
 
@@ -122,15 +146,14 @@
     document.documentElement.lang = viewerConfig.language || "en";
   };
 
-  const setWorkspaceLabel = (value) => {
-    workspaceRoot = value || "-";
+  const setWorkspaceLabel = () => {
     if (!workspaceRootEl) {
       return;
     }
     workspaceRootEl.textContent = t(
       "workspace.label",
-      { path: workspaceRoot },
-      `Workspace: ${workspaceRoot}`
+      { path: extensionState.workspaceRoot },
+      `Workspace: ${extensionState.workspaceRoot}`
     );
   };
 
@@ -143,31 +166,24 @@
     pageEl.dataset.codeTheme = viewerConfig.codeTheme || "auto";
   };
 
-  const applyConfig = (payload) => {
-    if (!payload) {
-      return;
+  const applyConfig = (message) => {
+    if (message.i18n && typeof message.i18n === "object") {
+      i18nTable = message.i18n;
     }
-    if (payload.i18n && typeof payload.i18n === "object") {
-      i18nTable = payload.i18n;
-    }
-    if (payload.config && typeof payload.config === "object") {
-      const next = payload.config;
+    if (message.config && typeof message.config === "object") {
       viewerConfig = {
         ...defaultViewerConfig,
-        ...next,
+        ...message.config,
         search: {
           ...defaultViewerConfig.search,
-          ...(next.search || {}),
+          ...(message.config.search || {}),
         },
       };
     }
     applyViewerOptions();
     applyI18n();
-    setWorkspaceLabel(workspaceRoot);
-    renderViewerFiles();
-    if (lastViewerData) {
-      renderViewerContent(lastViewerData);
-    }
+    setWorkspaceLabel();
+    renderViewer();
   };
 
   const showSection = (command) => {
@@ -175,28 +191,21 @@
       if (!element) {
         return;
       }
-      if (key === command) {
-        element.classList.remove("hidden");
-      } else {
-        element.classList.add("hidden");
-      }
+      element.classList.toggle("hidden", key !== command);
     });
   };
 
   const setViewMode = (mode) => {
-    if (!pageEl) {
-      return;
+    uiState.mode = mode;
+    if (pageEl) {
+      pageEl.dataset.view = mode;
     }
-    pageEl.dataset.view = mode;
+
     Object.entries(screens).forEach(([key, element]) => {
       if (!element) {
         return;
       }
-      if (key === mode) {
-        element.classList.remove("hidden");
-      } else {
-        element.classList.add("hidden");
-      }
+      element.classList.toggle("hidden", key !== mode);
     });
 
     const modeButtons = document.querySelectorAll(".mode-tab");
@@ -204,153 +213,38 @@
       if (!(button instanceof HTMLElement)) {
         return;
       }
-      const isActive = button.dataset.view === mode;
-      button.classList.toggle("active", isActive);
+      button.classList.toggle("active", button.dataset.view === mode);
     });
 
     if (mode === "view") {
-      if (!viewerRoot && workspaceRoot && workspaceRoot !== "-") {
-        viewerRoot = workspaceRoot;
-        const viewerRootInput = document.getElementById("viewer-root");
-        if (viewerRootInput) {
-          viewerRootInput.value = viewerRoot;
-        }
-      }
-      requestViewerFiles();
+      requestFileRefresh();
     }
   };
 
-  const pickButtons = document.querySelectorAll("[data-pick]");
-  pickButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      vscode.postMessage({
-        type: "pick",
-        payload: {
-          kind: button.dataset.pick,
-          targetId: button.dataset.target,
-        },
-      });
-    });
-  });
+  const postMessage = (message) => {
+    vscode.postMessage(message);
+  };
 
-  const modeButtons = document.querySelectorAll(".mode-tab");
-  modeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const mode = button.dataset.view;
-      if (!mode) return;
-      setViewMode(mode);
-    });
-  });
-
-  runButton?.addEventListener("click", () => {
-    const payload = collectPayload(commandSelect?.value ?? "parse");
-    vscode.postMessage({ type: "run", payload });
-  });
-
-  clearButton?.addEventListener("click", () => {
-    vscode.postMessage({ type: "clear-log" });
-  });
-
-  commandSelect?.addEventListener("change", (event) => {
-    showSection(event.target.value);
-  });
-
-  const viewerRefreshButton = document.getElementById("viewer-refresh");
-  const viewerFilterInput = document.getElementById("viewer-filter");
-  const viewerFileList = document.getElementById("viewer-file-list");
-  const viewerThreadMeta = document.getElementById("viewer-thread-meta");
-  const viewerMessages = document.getElementById("viewer-messages");
-  const viewerRootInput = document.getElementById("viewer-root");
-
-  viewerRefreshButton?.addEventListener("click", () => {
-    requestViewerFiles();
-  });
-
-  viewerFilterInput?.addEventListener("input", () => {
-    renderViewerFiles();
-  });
-
-  viewerRootInput?.addEventListener("change", (event) => {
-    const target = event.target;
-    if (target && typeof target.value === "string") {
-      viewerRoot = target.value.trim();
-      requestViewerFiles();
-    }
-  });
-
-  const requestViewerFiles = () => {
-    vscode.postMessage({
-      type: "viewer-list",
-      payload: {
-        root: viewerRoot || undefined,
-      },
+  const requestFileRefresh = (root) => {
+    postMessage({
+      type: "refresh-files",
+      payload: root ? { root } : undefined,
     });
   };
 
-  const openViewerFile = (path) => {
+  const requestViewerFile = (path) => {
     if (!path) {
       return;
     }
-    activeViewerPath = path;
     if (viewerThreadMeta) {
       viewerThreadMeta.textContent = t("viewer.loading");
     }
     if (viewerMessages) {
       viewerMessages.textContent = "";
     }
-    vscode.postMessage({ type: "viewer-open", payload: { path } });
-  };
-
-  const renderViewerFiles = () => {
-    if (!viewerFileList) {
-      return;
-    }
-
-    const filterValue = (viewerFilterInput?.value || "").trim().toLowerCase();
-    const filtered = viewerFiles.filter((file) => {
-      if (!filterValue) return true;
-      const display = (file.display || file.path || "").toLowerCase();
-      return display.includes(filterValue);
-    });
-
-    viewerFileList.textContent = "";
-
-    if (filtered.length === 0) {
-      const emptyItem = document.createElement("li");
-      emptyItem.className = "file-item";
-      emptyItem.classList.add("empty");
-      emptyItem.textContent = t("viewer.files.empty");
-      viewerFileList.appendChild(emptyItem);
-      return;
-    }
-
-    filtered.forEach((file) => {
-      const item = document.createElement("li");
-      item.className = "file-item";
-      if (file.path === activeViewerPath) {
-        item.classList.add("active");
-      }
-
-      const meta = document.createElement("div");
-      meta.className = "file-meta";
-
-      const title = document.createElement("div");
-      title.className = "file-title";
-      title.textContent = file.name || file.display || file.path || "";
-
-      const pathEl = document.createElement("div");
-      pathEl.className = "file-path";
-      pathEl.textContent = file.display || file.path || "";
-
-      meta.appendChild(title);
-      meta.appendChild(pathEl);
-      item.appendChild(meta);
-
-      item.addEventListener("click", () => {
-        openViewerFile(file.path);
-      });
-
-      viewerFileList.appendChild(item);
+    postMessage({
+      type: "open-viewer-file",
+      payload: { path },
     });
   };
 
@@ -422,20 +316,85 @@
     return formatAbsoluteTimestamp(timestamp);
   };
 
-  const renderViewerContent = (data) => {
+  const renderViewerFiles = () => {
+    if (!viewerFileList) {
+      return;
+    }
+
+    const files = Array.isArray(extensionState.viewerState.files)
+      ? extensionState.viewerState.files
+      : [];
+    const filterValue = uiState.viewerFilter.trim().toLowerCase();
+    const filtered = files.filter((file) => {
+      if (!filterValue) {
+        return true;
+      }
+      const display = (file.display || file.path || "").toLowerCase();
+      return display.includes(filterValue);
+    });
+
+    viewerFileList.textContent = "";
+
+    if (filtered.length === 0) {
+      const emptyItem = document.createElement("li");
+      emptyItem.className = "file-item";
+      emptyItem.classList.add("empty");
+      emptyItem.textContent = t("viewer.files.empty");
+      viewerFileList.appendChild(emptyItem);
+      return;
+    }
+
+    filtered.forEach((file) => {
+      const item = document.createElement("li");
+      item.className = "file-item";
+      if (file.path === extensionState.viewerState.selectedPath) {
+        item.classList.add("active");
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "file-meta";
+
+      const title = document.createElement("div");
+      title.className = "file-title";
+      title.textContent = file.name || file.display || file.path || "";
+
+      const pathEl = document.createElement("div");
+      pathEl.className = "file-path";
+      pathEl.textContent = file.display || file.path || "";
+
+      meta.appendChild(title);
+      meta.appendChild(pathEl);
+      item.appendChild(meta);
+
+      item.addEventListener("click", () => {
+        requestViewerFile(file.path);
+      });
+
+      viewerFileList.appendChild(item);
+    });
+  };
+
+  const renderViewerContent = () => {
     if (!viewerThreadMeta || !viewerMessages) {
       return;
     }
 
-    lastViewerData = data;
+    const { error, file } = extensionState.viewerState;
     viewerMessages.textContent = "";
 
-    if (!data || !data.meta) {
+    if (error) {
+      const base = t(`viewer.error.${error.code}`, {}, t("viewer.error"));
+      const detail = error.detail ? ` (${error.detail})` : "";
+      viewerThreadMeta.textContent = `${base}${detail}`;
+      return;
+    }
+
+    if (!file || !file.meta) {
       viewerThreadMeta.textContent = t("viewer.meta.empty");
       return;
     }
 
-    let messages = Array.isArray(data.messages) ? data.messages : [];
+    let messages = Array.isArray(file.messages) ? file.messages : [];
     if (!viewerConfig.showSystem) {
       messages = messages.filter((message) => message.role !== "system");
     }
@@ -447,18 +406,19 @@
     }
 
     const metaParts = [];
-    if (data.meta.conversation_id) {
-      metaParts.push(t("viewer.meta.thread", { id: data.meta.conversation_id }));
+    if (file.meta.conversation_id) {
+      metaParts.push(t("viewer.meta.thread", { id: file.meta.conversation_id }));
     }
-    if (data.meta.provider_id) {
-      metaParts.push(t("viewer.meta.provider", { provider: data.meta.provider_id }));
+    if (file.meta.provider_id) {
+      metaParts.push(t("viewer.meta.provider", { provider: file.meta.provider_id }));
     }
     metaParts.push(t("viewer.meta.count", { count: messages.length }));
-    const displayPath = data.display || data.path;
+    const displayPath = file.display || file.path;
     if (displayPath) {
       metaParts.push(t("viewer.meta.path", { path: displayPath }));
     }
-    viewerThreadMeta.textContent = metaParts.length > 0 ? metaParts.join(" | ") : t("viewer.meta.empty");
+    viewerThreadMeta.textContent =
+      metaParts.length > 0 ? metaParts.join(" | ") : t("viewer.meta.empty");
 
     messages.forEach((message) => {
       const card = document.createElement("div");
@@ -485,6 +445,14 @@
       card.appendChild(body);
       viewerMessages.appendChild(card);
     });
+  };
+
+  const renderViewer = () => {
+    if (viewerRootInput) {
+      viewerRootInput.value = extensionState.viewerState.root || "";
+    }
+    renderViewerFiles();
+    renderViewerContent();
   };
 
   const collectPayload = (command) => {
@@ -558,78 +526,6 @@
     return element.checked;
   };
 
-  window.addEventListener("message", (event) => {
-    const message = event.data;
-    switch (message.type) {
-      case "log":
-        appendLog(message.value);
-        return;
-      case "clear-log":
-        if (logEl) {
-          logEl.textContent = "";
-        }
-        return;
-      case "pick-result":
-        if (message.targetId) {
-          const target = document.getElementById(message.targetId);
-          if (target) {
-            target.value = message.value ?? "";
-          }
-          if (message.targetId === "viewer-root") {
-            viewerRoot = message.value ?? "";
-            requestViewerFiles();
-          }
-        }
-        return;
-      case "busy":
-        if (runButton) {
-          runButton.disabled = Boolean(message.value);
-        }
-        return;
-      case "run-finished":
-        appendLog(`\n${t("log.exitCode", { code: message.exitCode })}\n`);
-        return;
-      case "run-failed":
-        appendLog(`\n${formatRunFailure(message)}\n`);
-        return;
-      case "init":
-        setWorkspaceLabel(message.workspaceRoot || "-");
-        return;
-      case "config":
-      case "config-changed":
-        applyConfig(message);
-        return;
-      case "viewer-files":
-        viewerFiles = Array.isArray(message.files) ? message.files : [];
-        if (viewerFiles.length === 0) {
-          activeViewerPath = "";
-          if (viewerThreadMeta) {
-            viewerThreadMeta.textContent = t("viewer.meta.empty");
-          }
-          if (viewerMessages) {
-            viewerMessages.textContent = "";
-          }
-        }
-        renderViewerFiles();
-        return;
-      case "viewer-file":
-        activeViewerPath = message.path || "";
-        renderViewerFiles();
-        renderViewerContent(message);
-        return;
-      case "viewer-error":
-        if (viewerThreadMeta) {
-          const codeKey = message.code ? `viewer.error.${message.code}` : "";
-          const base = codeKey ? t(codeKey) : t("viewer.error", { message: message.message || "" });
-          const detail = message.detail ? ` (${message.detail})` : "";
-          viewerThreadMeta.textContent = `${base}${detail}`;
-        }
-        return;
-      default:
-        return;
-    }
-  });
-
   const appendLog = (value) => {
     if (!logEl) {
       return;
@@ -637,6 +533,135 @@
     logEl.textContent += value;
     logEl.scrollTop = logEl.scrollHeight;
   };
+
+  const extensionMessageHandlers = {
+    log(message) {
+      appendLog(message.value);
+    },
+    "clear-log"() {
+      if (logEl) {
+        logEl.textContent = "";
+      }
+    },
+    "pick-result"(message) {
+      if (!message.targetId) {
+        return;
+      }
+      const target = document.getElementById(message.targetId);
+      if (target) {
+        target.value = message.value ?? "";
+      }
+      if (message.targetId === "viewer-root") {
+        requestFileRefresh(message.value ?? undefined);
+      }
+    },
+    busy(message) {
+      extensionState.runState = {
+        ...extensionState.runState,
+        busy: Boolean(message.value),
+      };
+      if (runButton) {
+        runButton.disabled = extensionState.runState.busy;
+      }
+    },
+    "run-finished"(message) {
+      extensionState.runState = {
+        busy: false,
+        lastExitCode: message.exitCode,
+      };
+      appendLog(`\n${t("log.exitCode", { code: message.exitCode })}\n`);
+    },
+    "run-failed"(message) {
+      extensionState.runState = {
+        busy: false,
+        lastError: message,
+      };
+      appendLog(`\n${formatRunFailure(message)}\n`);
+    },
+    init(message) {
+      extensionState.workspaceRoot = message.workspaceRoot || "-";
+      extensionState.runState = message.runState || extensionState.runState;
+      extensionState.viewerState = message.viewerState || extensionState.viewerState;
+      setWorkspaceLabel();
+      renderViewer();
+      if (runButton) {
+        runButton.disabled = Boolean(extensionState.runState.busy);
+      }
+    },
+    config(message) {
+      applyConfig(message);
+    },
+    "config-changed"(message) {
+      applyConfig(message);
+    },
+    "viewer-state"(message) {
+      extensionState.viewerState = message.state || { files: [] };
+      renderViewer();
+    },
+  };
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    const handler = extensionMessageHandlers[message?.type];
+    if (typeof handler === "function") {
+      handler(message);
+    }
+  });
+
+  const pickButtons = document.querySelectorAll("[data-pick]");
+  pickButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      postMessage({
+        type: "pick",
+        payload: {
+          kind: button.dataset.pick,
+          targetId: button.dataset.target,
+        },
+      });
+    });
+  });
+
+  const modeButtons = document.querySelectorAll(".mode-tab");
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const mode = button.dataset.view;
+      if (!mode) {
+        return;
+      }
+      setViewMode(mode);
+    });
+  });
+
+  runButton?.addEventListener("click", () => {
+    postMessage({
+      type: "run",
+      payload: collectPayload(commandSelect?.value ?? "parse"),
+    });
+  });
+
+  clearButton?.addEventListener("click", () => {
+    postMessage({ type: "clear-log" });
+  });
+
+  commandSelect?.addEventListener("change", (event) => {
+    showSection(event.target.value);
+  });
+
+  viewerRefreshButton?.addEventListener("click", () => {
+    requestFileRefresh(viewerRootInput?.value.trim() || undefined);
+  });
+
+  viewerFilterInput?.addEventListener("input", (event) => {
+    uiState.viewerFilter = event.target.value || "";
+    renderViewerFiles();
+  });
+
+  viewerRootInput?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (target && typeof target.value === "string") {
+      requestFileRefresh(target.value.trim() || undefined);
+    }
+  });
 
   applyViewerOptions();
   showSection(commandSelect?.value ?? "parse");
