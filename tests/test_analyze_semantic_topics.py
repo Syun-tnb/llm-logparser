@@ -36,7 +36,7 @@ def _message_window_row(
 ) -> dict:
     return {
         "record_type": "message_window",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "provider_id": "openai",
         "conversation_id": conversation_id,
         "window_id": window_id,
@@ -116,8 +116,8 @@ def _write_topics_fixture(root: Path) -> None:
                 message_ids=["a-1", "a-2"],
                 roles=["user", "assistant"],
                 text=(
-                    "user: Draft the production migration checklist\n\n"
-                    "assistant: Include schema audit and rollback steps"
+                    "Draft the production migration checklist\n\n"
+                    "Include schema audit and rollback steps"
                 ),
                 ts_start=100,
                 ts_end=120,
@@ -127,7 +127,7 @@ def _write_topics_fixture(root: Path) -> None:
                 "window-0002",
                 message_ids=["a-3"],
                 roles=["user"],
-                text="user: Capture monitoring gates for rollout readiness",
+                text="Capture monitoring gates for rollout readiness",
                 ts_start=130,
                 ts_end=140,
             ),
@@ -142,8 +142,8 @@ def _write_topics_fixture(root: Path) -> None:
                 message_ids=["b-1", "b-2"],
                 roles=["assistant", "user"],
                 text=(
-                    "assistant: Review launch risk controls\n\n"
-                    "user: Add deployment rollback checks"
+                    "Review launch risk controls\n\n"
+                    "Add deployment rollback checks"
                 ),
                 ts_start=150,
                 ts_end=170,
@@ -158,7 +158,7 @@ def _write_topics_fixture(root: Path) -> None:
                 "window-0001",
                 message_ids=["c-1"],
                 roles=["user"],
-                text="user: Plan lunch options for next week",
+                text="Plan lunch options for next week",
                 ts_start=200,
                 ts_end=205,
             ),
@@ -167,7 +167,7 @@ def _write_topics_fixture(root: Path) -> None:
                 "window-0002",
                 message_ids=["c-2"],
                 roles=["assistant"],
-                text="assistant: Compare ramen shops and cafe seating",
+                text="Compare ramen shops and cafe seating",
                 ts_start=206,
                 ts_end=210,
             ),
@@ -235,7 +235,7 @@ def _write_representative_selection_fixture(root: Path) -> None:
                 "window-0001",
                 message_ids=["a-1"],
                 roles=["user"],
-                text="user: quick note about release prep",
+                text="quick note about release prep",
                 ts_start=10,
                 ts_end=12,
             )
@@ -250,7 +250,7 @@ def _write_representative_selection_fixture(root: Path) -> None:
                 message_ids=["b-1"],
                 roles=["assistant"],
                 text=(
-                    "assistant: long noisy aside about launch context, related ideas, "
+                    "long noisy aside about launch context, related ideas, "
                     "and extra prose that is less central to the rollout checklist"
                 ),
                 ts_start=20,
@@ -267,8 +267,8 @@ def _write_representative_selection_fixture(root: Path) -> None:
                 message_ids=["c-1", "c-2"],
                 roles=["user", "assistant"],
                 text=(
-                    "user: finalize rollout checklist and rollback guardrails\n\n"
-                    "assistant: confirm monitoring gates and deployment checks"
+                    "finalize rollout checklist and rollback guardrails\n\n"
+                    "confirm monitoring gates and deployment checks"
                 ),
                 ts_start=30,
                 ts_end=35,
@@ -283,7 +283,7 @@ def _write_representative_selection_fixture(root: Path) -> None:
                 "window-0001",
                 message_ids=["d-1"],
                 roles=["user"],
-                text="user: standalone checkpoint note",
+                text="standalone checkpoint note",
                 ts_start=40,
                 ts_end=41,
             )
@@ -637,7 +637,7 @@ def test_semantic_topics_single_window_cluster_uses_its_only_window(tmp_path):
         {
             "conversation_id": "conv-d",
             "window_id": "window-0001",
-            "excerpt": "user: standalone checkpoint note",
+            "excerpt": "standalone checkpoint note",
         }
     ]
     assert artifact["topics"][0]["quality_signals"] == {

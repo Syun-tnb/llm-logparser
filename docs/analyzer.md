@@ -537,7 +537,10 @@ deterministic and model-derived capabilities.
   neighbor, and minimal cluster artifacts, and does not perform topic labeling
   `message_windows.jsonl` is an L1 deterministic segmentation substrate, not a
   semantic unit, and its shared fields such as roles must remain canonical and
-  normalized rather than provider-specific.
+  normalized rather than provider-specific. In the current Step 2 contract,
+  window rows are message-ids-centric candidate spans; the retained `text`
+  field is only a minimal canonical projection kept for downstream
+  compatibility and must not be treated as the meaning of the window itself.
   Window generation quality can now be improved upstream with deterministic
   sliding windows: `message_windows.jsonl` still defaults to
   non-overlapping windows, but parse/chain can opt into overlap by setting

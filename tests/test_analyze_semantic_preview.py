@@ -28,7 +28,7 @@ def _message_window_row(
 ) -> dict:
     return {
         "record_type": "message_window",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "provider_id": "openai",
         "conversation_id": conversation_id,
         "window_id": window_id,
@@ -91,19 +91,19 @@ def _write_cluster_fixture(root: Path) -> None:
                 "conv-a",
                 "window-0001",
                 roles=["user"],
-                text="user: Draft migration runbook for the production rollout",
+                text="Draft migration runbook for the production rollout",
             ),
             _message_window_row(
                 "conv-a",
                 "window-0002",
                 roles=["assistant"],
-                text="assistant: Summarize the risk checklist for launch readiness",
+                text="Summarize the risk checklist for launch readiness",
             ),
             _message_window_row(
                 "conv-a",
                 "window-0003",
                 roles=["user"],
-                text="user: Completely unrelated singleton note about lunch plans",
+                text="Completely unrelated singleton note about lunch plans",
             ),
         ],
     )
@@ -114,13 +114,13 @@ def _write_cluster_fixture(root: Path) -> None:
                 "conv-b",
                 "window-0001",
                 roles=["assistant"],
-                text="assistant: Build rollback steps and migration safety checks",
+                text="Build rollback steps and migration safety checks",
             ),
             _message_window_row(
                 "conv-b",
                 "window-0002",
                 roles=["user"],
-                text="user: Another isolated note that should stay outside the large cluster",
+                text="Another isolated note that should stay outside the large cluster",
             ),
         ],
     )
@@ -131,7 +131,7 @@ def _write_cluster_fixture(root: Path) -> None:
                 "conv-c",
                 "window-0001",
                 roles=["user"],
-                text="user: Capture launch checklist follow-ups and audit reminders",
+                text="Capture launch checklist follow-ups and audit reminders",
             )
         ],
     )
@@ -276,9 +276,9 @@ def test_render_semantic_preview_cli_happy_path(tmp_path, capsys):
                 "window-0003",
                 roles=["user", "assistant", "user"],
                 text=(
-                    "user: Draft the migration checklist\n\n"
-                    "assistant: Start with schema audit\n\n"
-                    "user: Also capture rollout risks"
+                    "Draft the migration checklist\n\n"
+                    "Start with schema audit\n\n"
+                    "Also capture rollout risks"
                 ),
             )
         ],
@@ -291,8 +291,8 @@ def test_render_semantic_preview_cli_happy_path(tmp_path, capsys):
                 "window-0001",
                 roles=["user", "assistant"],
                 text=(
-                    "user: Build a deployment checklist\n\n"
-                    "assistant: Include rollback steps and monitoring"
+                    "Build a deployment checklist\n\n"
+                    "Include rollback steps and monitoring"
                 ),
             )
         ],
@@ -361,7 +361,7 @@ def test_render_semantic_preview_no_neighbors_found(tmp_path):
                 "conv-a",
                 "window-0001",
                 roles=["assistant"],
-                text="assistant: Standalone summary",
+                text="Standalone summary",
             )
         ],
     )
@@ -386,7 +386,7 @@ def test_render_semantic_preview_truncates_and_hides_meta(tmp_path):
                 "conv-a",
                 "window-0001",
                 roles=["user"],
-                text="user: " + ("x" * 50),
+                text="x" * 50,
             )
         ],
     )
@@ -418,7 +418,7 @@ def test_render_semantic_preview_turn_grouping_and_similarity_labels(tmp_path):
                 "conv-a",
                 "window-0001",
                 roles=["user", "assistant", "user"],
-                text="user: alpha\n\nassistant: beta\n\nuser: gamma",
+                text="alpha\n\nbeta\n\ngamma",
             )
         ],
     )
@@ -429,7 +429,7 @@ def test_render_semantic_preview_turn_grouping_and_similarity_labels(tmp_path):
                 "conv-b",
                 "window-0002",
                 roles=["user", "assistant"],
-                text="user: one\n\nassistant: two",
+                text="one\n\ntwo",
             )
         ],
     )
@@ -440,7 +440,7 @@ def test_render_semantic_preview_turn_grouping_and_similarity_labels(tmp_path):
                 "conv-c",
                 "window-0003",
                 roles=["user"],
-                text="user: three",
+                text="three",
             )
         ],
     )
@@ -494,9 +494,9 @@ def test_render_semantic_preview_cluster_list_view(tmp_path):
     assert "threads: 3" in rendered
     assert "cross-thread: yes" in rendered
     assert "Representative:" in rendered
-    assert '[conv-a / window-0001] "user: Draft migration runbook for the production rollout"' in rendered
-    assert '[conv-b / window-0001] "assistant: Build rollback steps and migration safety checks"' in rendered
-    assert '[conv-c / window-0001] "user: Capture launch checklist follow-ups and audit reminders"' in rendered
+    assert '[conv-a / window-0001] "Draft migration runbook for the production rollout"' in rendered
+    assert '[conv-b / window-0001] "Build rollback steps and migration safety checks"' in rendered
+    assert '[conv-c / window-0001] "Capture launch checklist follow-ups and audit reminders"' in rendered
 
 
 def test_render_semantic_preview_cli_cluster_list_default_view(tmp_path, capsys):
@@ -604,7 +604,7 @@ def test_semantic_preview_cli_errors_when_window_missing(tmp_path, caplog):
                 "conv-a",
                 "window-0001",
                 roles=["user"],
-                text="user: hello",
+                text="hello",
             )
         ],
     )

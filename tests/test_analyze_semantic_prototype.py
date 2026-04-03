@@ -53,7 +53,7 @@ def _window_row(
 ) -> dict:
     return {
         "record_type": "message_window",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "provider_id": provider_id,
         "conversation_id": conversation_id,
         "window_id": window_id,

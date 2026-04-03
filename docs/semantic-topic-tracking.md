@@ -106,6 +106,11 @@ Typical L3 inputs may include:
 - `message_windows.jsonl`
 - optional L2 query results from `analysis.db`
 
+When L3 consumes `message_windows.jsonl`, it is consuming a deterministic L1
+candidate-span substrate. The window rows are not semantic units themselves.
+Their `text` field, when present, is only a minimal canonical projection kept
+for current downstream compatibility rather than a semantic rendering contract.
+
 Architectural rules:
 
 - L3 does not modify canonical data

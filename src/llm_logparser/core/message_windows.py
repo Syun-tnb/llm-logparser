@@ -14,6 +14,7 @@ from .l1_derivation import (
 
 DEFAULT_MESSAGE_WINDOW_SIZE = 4
 DEFAULT_MESSAGE_WINDOW_STRIDE: int | None = None
+MESSAGE_WINDOWS_SCHEMA_VERSION = "2.0"
 
 
 def _message_timestamp(row: dict[str, Any]) -> int | float | None:
@@ -25,13 +26,15 @@ def _window_id(index: int) -> str:
     return f"window-{index:04d}"
 
 
-def _window_text(rows: list[dict[str, Any]]) -> str:
-    parts = []
-    for row in rows:
-        # L1 invariant: must use canonical normalized roles only
-        role = normalized_message_role(row)
-        assert_normalized_role(role)
-        parts.append(f"{role}: {message_text(row)}")
+def _window_text_projection(rows: list[dict[str, Any]]) -> str:
+    """Return a minimal canonical text projection for current downstream compatibility.
+
+    This is intentionally not the semantic meaning of the window. The artifact
+    remains message-ids-centric; `text` is retained only as a deterministic
+    projection of canonical message text so current L3 consumers do not require
+    a larger redesign during Step 2.
+    """
+    parts = [text for row in rows if (text := message_text(row))]
     return "\n\n".join(parts)
 
 
@@ -55,7 +58,7 @@ def build_message_window_artifact(
 
     return {
         "record_type": "message_window",
-        "schema_version": "1.0",
+        "schema_version": MESSAGE_WINDOWS_SCHEMA_VERSION,
         "provider_id": provider_id,
         "conversation_id": conversation_id,
         "window_id": _window_id(window_index),
@@ -67,7 +70,9 @@ def build_message_window_artifact(
         "ts_end": max(timestamps) if timestamps else None,
         "window_size": window_size,
         "window_stride": window_stride,
-        "text": _window_text(rows),
+        # Compatibility-only projection: current L3 readers still consume a
+        # text field, but it must remain a non-semantic canonical projection.
+        "text": _window_text_projection(rows),
     }
 
 

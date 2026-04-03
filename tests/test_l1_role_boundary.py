@@ -115,10 +115,22 @@ def test_no_provider_role_leakage_in_l1_artifacts(tmp_path):
         "tool",
     ]
     assert set(window["roles"]) <= NORMALIZED_ROLE_SET
+    assert window["schema_version"] == "2.0"
+    assert window["text"] == (
+        "hello\n\n"
+        "I can't help with that request.\n\n"
+        "plain assistant\n\n"
+        "internal\n\n"
+        "moderated\n\n"
+        "missing\n\n"
+        "sys\n\n"
+        "tool"
+    )
     assert " USER " not in window["text"]
     assert "Assistant:" not in window["text"]
     assert "moderator:" not in window["text"]
     assert "model:" not in window["text"]
+    assert "user:" not in window["text"]
 
     assert stats["user_messages"] == 1
     assert stats["assistant_messages"] == 2

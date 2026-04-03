@@ -30,7 +30,7 @@ def _message_window_row(
 ) -> dict:
     return {
         "record_type": "message_window",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "provider_id": "openai",
         "conversation_id": conversation_id,
         "window_id": window_id,
@@ -77,8 +77,8 @@ def _write_explore_fixture(root: Path) -> None:
                 message_ids=["a-1", "a-2"],
                 roles=["user", "assistant"],
                 text=(
-                    "user: Draft the production migration checklist\n\n"
-                    "assistant: Include schema audit and rollback steps"
+                    "Draft the production migration checklist\n\n"
+                    "Include schema audit and rollback steps"
                 ),
                 ts_start=100,
                 ts_end=120,
@@ -88,7 +88,7 @@ def _write_explore_fixture(root: Path) -> None:
                 "window-0002",
                 message_ids=["a-3"],
                 roles=["user"],
-                text="user: Capture monitoring gates for rollout readiness",
+                text="Capture monitoring gates for rollout readiness",
                 ts_start=130,
                 ts_end=140,
             ),
@@ -103,8 +103,8 @@ def _write_explore_fixture(root: Path) -> None:
                 message_ids=["b-1", "b-2"],
                 roles=["assistant", "user"],
                 text=(
-                    "assistant: Review launch risk controls\n\n"
-                    "user: Add deployment rollback checks"
+                    "Review launch risk controls\n\n"
+                    "Add deployment rollback checks"
                 ),
                 ts_start=150,
                 ts_end=170,
@@ -119,7 +119,7 @@ def _write_explore_fixture(root: Path) -> None:
                 "window-0001",
                 message_ids=["c-1"],
                 roles=["user"],
-                text="user: Plan lunch options for next week",
+                text="Plan lunch options for next week",
                 ts_start=200,
                 ts_end=205,
             ),
@@ -128,7 +128,7 @@ def _write_explore_fixture(root: Path) -> None:
                 "window-0002",
                 message_ids=["c-2"],
                 roles=["assistant"],
-                text="assistant: Compare ramen shops and cafe seating",
+                text="Compare ramen shops and cafe seating",
                 ts_start=206,
                 ts_end=210,
             ),
@@ -191,7 +191,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                 "window-0001",
                 message_ids=["a-1"],
                 roles=["user"],
-                text="user: alpha rollout checklist",
+                text="alpha rollout checklist",
                 ts_start=100,
                 ts_end=101,
             )
@@ -205,7 +205,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                 "window-0001",
                 message_ids=["b-1"],
                 roles=["assistant"],
-                text="assistant: beta launch notes",
+                text="beta launch notes",
                 ts_start=110,
                 ts_end=111,
             )
@@ -219,7 +219,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                 "window-0001",
                 message_ids=["c-1"],
                 roles=["user"],
-                text="user: gamma lunch planning",
+                text="gamma lunch planning",
                 ts_start=120,
                 ts_end=121,
             )
@@ -291,7 +291,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {
                                 "conversation_id": "conv-a",
                                 "window_id": "window-0001",
-                                "excerpt": "user: alpha rollout checklist",
+                                "excerpt": "alpha rollout checklist",
                             }
                         ],
                     },
@@ -329,7 +329,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {
                                 "conversation_id": "conv-b",
                                 "window_id": "window-0001",
-                                "excerpt": "assistant: beta launch notes",
+                                "excerpt": "beta launch notes",
                             }
                         ],
                     },
@@ -367,7 +367,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {
                                 "conversation_id": "conv-c",
                                 "window_id": "window-0001",
-                                "excerpt": "user: gamma lunch planning",
+                                "excerpt": "gamma lunch planning",
                             }
                         ],
                     },
@@ -403,7 +403,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {
                                 "conversation_id": "conv-c",
                                 "window_id": "window-0001",
-                                "excerpt": "user: gamma lunch planning",
+                                "excerpt": "gamma lunch planning",
                             }
                         ],
                     },
@@ -529,10 +529,10 @@ def test_semantic_topic_explore_topic_detail_view(tmp_path):
     assert "Quality: windows=3 conversations=2 avg_intra_cluster_score=?" in rendered
     assert "Conversations: conv-a, conv-b" in rendered
     assert "Representative:" in rendered
-    assert '- [conv-a / window-0001] "user: Draft the production migration checklist assistant: Include schema audit and rollback steps"' in rendered
+    assert '- [conv-a / window-0001] "Draft the production migration checklist Include schema audit and rollback steps"' in rendered
     assert "Timeline:" in rendered
     assert "- 100 | conv-a / window-0001" in rendered
-    assert '- 150 | conv-b / window-0001 | "assistant: Review launch risk controls user: Add deployment rollback checks"' in rendered
+    assert '- 150 | conv-b / window-0001 | "Review launch risk controls Add deployment rollback checks"' in rendered
 
 
 def test_semantic_topic_explore_message_reverse_lookup(tmp_path):
@@ -610,12 +610,12 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
         {
             "conversation_id": "conv-c",
             "window_id": "window-0002",
-            "excerpt": "assistant: Compare ramen shops and cafe seating",
+            "excerpt": "Compare ramen shops and cafe seating",
         },
         {
             "conversation_id": "conv-c",
             "window_id": "window-0001",
-            "excerpt": "user: Plan lunch options for next week",
+            "excerpt": "Plan lunch options for next week",
         },
     ]
     assert payload["topic"]["quality_signals"] == {
@@ -756,7 +756,7 @@ def test_semantic_topic_explore_topic_list_rendering_surfaces_preview_and_qualit
     assert "topic-zeta | Zeta" in rendered
     assert "summary: Large but low-score topic." in rendered
     assert "avg_intra_cluster_score=0.40" in rendered
-    assert 'preview: [conv-a / window-0001] "user: alpha rollout checklist"' in rendered
+    assert 'preview: [conv-a / window-0001] "alpha rollout checklist"' in rendered
 
 
 def test_analyze_semantic_topic_explore_cli_happy_path(tmp_path, capsys):

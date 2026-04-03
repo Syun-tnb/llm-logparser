@@ -28,7 +28,7 @@ def _message_window_row(
 ) -> dict:
     return {
         "record_type": "message_window",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "provider_id": "openai",
         "conversation_id": conversation_id,
         "window_id": window_id,
@@ -88,15 +88,15 @@ def _write_topic_fixture(root: Path) -> None:
                 "window-0001",
                 roles=["user", "assistant"],
                 text=(
-                    "user: Draft the production migration checklist\n\n"
-                    "assistant: Include schema audit and rollback steps"
+                    "Draft the production migration checklist\n\n"
+                    "Include schema audit and rollback steps"
                 ),
             ),
             _message_window_row(
                 "conv-a",
                 "window-0002",
                 roles=["user"],
-                text="user: Capture monitoring gates for rollout readiness",
+                text="Capture monitoring gates for rollout readiness",
             ),
         ],
     )
@@ -107,7 +107,7 @@ def _write_topic_fixture(root: Path) -> None:
                 "conv-b",
                 "window-0001",
                 roles=["assistant"],
-                text="assistant: Review launch risk controls and deployment rollback checks",
+                text="Review launch risk controls and deployment rollback checks",
             )
         ],
     )
@@ -118,13 +118,13 @@ def _write_topic_fixture(root: Path) -> None:
                 "conv-c",
                 "window-0001",
                 roles=["user"],
-                text="user: Plan lunch options for next week",
+                text="Plan lunch options for next week",
             ),
             _message_window_row(
                 "conv-c",
                 "window-0002",
                 roles=["assistant"],
-                text="assistant: Compare ramen shops and cafe seating",
+                text="Compare ramen shops and cafe seating",
             ),
         ],
     )
@@ -285,7 +285,7 @@ def test_render_semantic_topic_requires_cluster_artifacts(tmp_path):
                 "conv-a",
                 "window-0001",
                 roles=["user"],
-                text="user: Standalone window without cluster artifacts",
+                text="Standalone window without cluster artifacts",
             )
         ],
     )

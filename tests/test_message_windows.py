@@ -109,11 +109,8 @@ def test_iter_message_windows_from_rows_is_deterministic_and_uses_normalized_rol
     assert first[1]["roles"] == ["tool", "unknown"]
     assert first[0]["window_size"] == 3
     assert first[0]["window_stride"] == 3
-    assert "system: second" in first[0]["text"]
-    assert "tool: tool-output" in first[1]["text"]
-    assert "unknown: fifth" in first[1]["text"]
-    assert "User: first" not in first[0]["text"]
-    assert " SYSTEM : second" not in first[0]["text"]
+    assert first[0]["text"] == "first\n\nsecond\n\nthird"
+    assert first[1]["text"] == "tool-output\n\nfifth"
 
 
 def test_message_windows_do_not_leak_raw_provider_roles():
@@ -130,9 +127,11 @@ def test_message_windows_do_not_leak_raw_provider_roles():
     )
 
     assert artifact["roles"] == ["user", "unknown"]
-    assert artifact["text"] == "user: hello\n\nunknown: hidden"
+    assert artifact["text"] == "hello\n\nhidden"
     assert "USER:" not in artifact["text"]
     assert "moderator:" not in artifact["text"]
+    assert "user:" not in artifact["text"]
+    assert "unknown:" not in artifact["text"]
 
 
 def test_iter_message_windows_from_rows_supports_sliding_stride():
@@ -209,7 +208,7 @@ def test_message_window_artifact_matches_schema():
 
     assert list(validator.iter_errors(artifact)) == []
     assert artifact["record_type"] == "message_window"
-    assert artifact["schema_version"] == "1.0"
+    assert artifact["schema_version"] == "2.0"
 
 
 def test_message_windows_prefer_text_over_legacy_content_parts():
@@ -227,7 +226,7 @@ def test_message_windows_prefer_text_over_legacy_content_parts():
     ]
 
     artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
-    assert artifact["text"] == "assistant: canonical"
+    assert artifact["text"] == "canonical"
 
 
 def test_message_windows_support_legacy_content_parts_fallback():
@@ -244,7 +243,7 @@ def test_message_windows_support_legacy_content_parts_fallback():
     ]
 
     artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
-    assert artifact["text"] == "assistant: legacy"
+    assert artifact["text"] == "legacy"
 
 
 def test_message_window_schema_rejects_malformed_row():
@@ -302,7 +301,7 @@ def test_parse_writes_message_windows_jsonl_next_to_parsed_jsonl(monkeypatch, tm
 
     assert windows[0]["message_ids"] == ["m1", "m2", "m3", "m4"]
     assert windows[0]["roles"] == ["user", "system", "assistant", "tool"]
-    assert windows[0]["schema_version"] == "1.0"
+    assert windows[0]["schema_version"] == "2.0"
     assert windows[0]["window_size"] == 4
     assert windows[0]["window_stride"] == 4
     assert windows[1]["message_ids"] == ["m5"]
