@@ -12,7 +12,7 @@ GOOD_MESSAGE = {
     "message_id": "m1",
     "role": "user",
     "ts": 1_700_000_000_000,
-    "content": {"content_type": "text", "parts": ["Hello!"]},
+    "content": {"content_type": "multimodal_text", "parts": ["Hello!", {"text": "More"}]},
     "text": "Hello!",
 }
 

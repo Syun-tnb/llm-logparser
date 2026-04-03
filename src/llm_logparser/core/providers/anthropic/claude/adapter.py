@@ -59,31 +59,37 @@ def _normalize_role(sender: Any) -> str:
     return "unknown"
 
 
-class _ValidatedMessage(dict):
-    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._validation_content = validation_content
-
-    def get(self, key, default=None):
-        if key == "content" and self._validation_content is not None:
-            return self._validation_content
-        return super().get(key, default)
-
-
 def _extract_text_parts(content: Any) -> list[str]:
-    if not isinstance(content, list):
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            parts.extend(_extract_text_parts(block))
+        return parts
+
+    if not isinstance(content, dict):
         return []
 
     parts: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") != "text":
-            continue
-        text = block.get("text")
-        if isinstance(text, str):
-            parts.append(text)
+    if content.get("type") == "text" and isinstance(content.get("text"), str):
+        parts.append(content["text"])
+    message_text = content.get("message")
+    if isinstance(message_text, str):
+        parts.append(message_text)
+    nested = content.get("content")
+    if nested is not None:
+        parts.extend(_extract_text_parts(nested))
     return parts
+
+
+def _extract_message_text(message: dict[str, Any]) -> str:
+    """
+    Prefer Claude's top-level raw text surface when present.
+    Fallback to explicit text-bearing content blocks only.
+    """
+    raw_text = message.get("text")
+    if isinstance(raw_text, str):
+        return raw_text
+    return "\n".join(_extract_text_parts(message.get("content")))
 
 
 def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
@@ -115,11 +121,9 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             continue
 
         raw_content = message.get("content")
-        parts = _extract_text_parts(raw_content)
-        text = message.get("text") if isinstance(message.get("text"), str) else "\n".join(parts)
+        text = _extract_message_text(message)
 
-        entry = _ValidatedMessage(
-            {
+        entry = {
             "conversation_id": short_conversation_id,
             "conv_id": short_conversation_id,
             "message_id": shorten_id(raw_message_id),
@@ -130,9 +134,7 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             "thread_title": thread_title,
             "content": raw_content,
             "text": text,
-            },
-            validation_content={"content_type": "text", "parts": parts},
-        )
+        }
         out.append(entry)
 
     return out

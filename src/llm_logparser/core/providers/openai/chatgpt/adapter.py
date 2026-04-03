@@ -207,15 +207,30 @@ def _extract_finish_reason(msg: dict) -> str | None:
     return None
 
 
-class _ValidatedMessage(dict):
-    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._validation_content = validation_content
+def _extract_text_fragments(value: t.Any) -> list[str]:
+    """Extract text-bearing ChatGPT content fragments without mutating raw content."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            parts.extend(_extract_text_fragments(item))
+        return parts
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str):
+            return [text]
+        nested = value.get("parts")
+        if isinstance(nested, list):
+            return _extract_text_fragments(nested)
+    return []
 
-    def get(self, key, default=None):
-        if key == "content" and self._validation_content is not None:
-            return self._validation_content
-        return super().get(key, default)
+
+def _extract_text_from_content(content: t.Any) -> str:
+    """Canonical OpenAI text comes from ordered text-bearing content.parts entries."""
+    if not isinstance(content, dict):
+        return ""
+    return "\n".join(_extract_text_fragments(content.get("parts")))
 
 
 def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
@@ -257,27 +272,18 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             role = "unknown"
 
         raw_content = msg.get("content")
-        content = raw_content if isinstance(raw_content, dict) else {}
-        content_type = content.get("content_type") if isinstance(content.get("content_type"), str) else "text"
-        raw_parts = content.get("parts")
-        if isinstance(raw_parts, list):
-            parts = [str(p) for p in raw_parts if isinstance(p, str)]
-        else:
-            parts = []
-
         created_at = _first_not_none(msg.get("create_time"), node.get("create_time"), root_created_at)
         ts = _to_epoch_ms(created_at)
         if ts is None:
             # create_time is required for stable ordering in normalized schema
             continue
 
-        text = "\n".join(parts)
+        text = _extract_text_from_content(raw_content)
         raw_message_id = msg.get("id") or node_id
         raw_parent_id = node.get("parent") if isinstance(node.get("parent"), str) else None
         finish_reason = _extract_finish_reason(msg)
 
-        entry = _ValidatedMessage(
-            {
+        entry = {
             "conversation_id": short_conv_id,
             "conv_id": short_conv_id,
             "message_id": shorten_id(raw_message_id),
@@ -289,9 +295,7 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             "thread_title": thread_title,
             "content": raw_content if raw_content is not None else {},
             "text": text,
-            },
-            validation_content={"content_type": content_type, "parts": parts},
-        )
+        }
         if finish_reason:
             entry["finish_reason"] = finish_reason
 

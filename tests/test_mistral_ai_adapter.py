@@ -41,7 +41,7 @@ def test_mistral_le_chat_detection_rejects_unrelated_json_shape():
     assert is_le_chat_export(payload) is False
 
 
-def test_mistral_le_chat_adapter_normalizes_messages():
+def test_mistral_le_chat_adapter_preserves_provider_native_content():
     raw = _load_fixture()
 
     messages = list(mistral_adapter(raw))
@@ -54,37 +54,32 @@ def test_mistral_le_chat_adapter_normalizes_messages():
     assert user_msg["conversation_id"] == shorten_id(raw_conv_id)
     assert user_msg["conv_id"] == shorten_id(raw_conv_id)
     assert user_msg["message_id"] == shorten_id(raw[0]["id"])
-    assert user_msg["parent_id"] is None
+    assert user_msg.get("parent_id") is None
     assert user_msg["role"] == "user"
     assert user_msg["ts"] == 1773744815234
     assert user_msg["created_at"] == raw[0]["createdAt"]
+    assert type(user_msg) is dict
     assert user_msg["text"] == raw[0]["content"]
-    assert user_msg["content"] == {
-        "content_type": "text",
-        "parts": [raw[0]["content"]],
-    }
+    assert user_msg["content"] == raw[0]["content"]
 
     assert assistant_msg["message_id"] == shorten_id(raw[1]["id"])
     assert assistant_msg["role"] == "assistant"
     assert assistant_msg["text"] == raw[1]["content"]
-    assert assistant_msg["content"] == {
-        "content_type": "text",
-        "parts": ["Day 1", "Day 2"],
-    }
+    assert assistant_msg["content"] == raw[1]["contentChunks"]
     assert assistant_msg["meta"]["service"] == "le_chat"
     assert assistant_msg["meta"]["reactionDetail"] == "helpful"
     assert assistant_msg["meta"]["context"] == {"source": "memory"}
 
     assert empty_msg["text"] == ""
-    assert empty_msg["content"] == {"content_type": "text", "parts": []}
-    assert empty_msg["parent_id"] is None
+    assert empty_msg["content"] == raw[2]["content"]
+    assert empty_msg.get("parent_id") is None
 
 
 def test_parse_to_jsonl_supports_mistral_le_chat_single_file(tmp_path):
     fixture = Path("tests/fixtures/mistral_le_chat_thread.json")
     raw = _load_fixture()
 
-    stats = parse_to_jsonl("mistral_ai", fixture, tmp_path, dry_run=False, fail_fast=True)
+    stats = parse_to_jsonl("mistral_ai", fixture, tmp_path, dry_run=False, fail_fast=True, validate_schema=True)
 
     assert stats["threads"] == 1
     assert stats["messages"] == 3
@@ -108,8 +103,29 @@ def test_parse_to_jsonl_supports_mistral_le_chat_single_file(tmp_path):
     messages = [row for row in rows if row.get("record_type") == "message"]
     assert [row["message_id"] for row in messages] == [shorten_id(item["id"]) for item in raw]
     assert messages[1]["meta"]["service"] == "le_chat"
+    assert messages[1]["content"] == raw[1]["contentChunks"]
     assert messages[1]["text"] == raw[1]["content"]
-    assert messages[2]["content"]["parts"] == []
+    assert messages[2]["content"] == raw[2]["content"]
+
+
+def test_mistral_text_prefers_non_empty_content_over_chunks():
+    raw = _load_fixture()
+    raw[1]["content"] = "Canonical text"
+    raw[1]["contentChunks"] = [{"text": "Chunk text", "type": "text"}]
+
+    assert mistral_adapter(raw)[1]["text"] == "Canonical text"
+
+
+def test_mistral_text_falls_back_to_chunks_when_content_is_empty():
+    raw = _load_fixture()
+    raw[1]["content"] = ""
+    raw[1]["contentChunks"] = [
+        {"text": "Day 1", "type": "text"},
+        {"text": "Day 2", "type": "text"},
+        {"type": "image", "url": "https://example.test/img.png"},
+    ]
+
+    assert mistral_adapter(raw)[1]["text"] == "Day 1\nDay 2"
 
 
 def test_parse_to_jsonl_supports_mistral_le_chat_directory_input_and_ignores_non_matching_json(

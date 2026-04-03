@@ -170,6 +170,13 @@ def iter_input_records(
 # 4. Validation / Cache Utilities
 # ============================================================
 
+def _is_json_compatible(value: Any) -> bool:
+    try:
+        json.dumps(value, ensure_ascii=True)
+    except (TypeError, ValueError):
+        return False
+    return True
+
 def validate_message(msg: dict, *, fail_fast=False):
     """Basic schema validation."""
     required_str = ["conversation_id", "message_id", "role"]
@@ -191,19 +198,14 @@ def validate_message(msg: dict, *, fail_fast=False):
             raise LLPAdapterError("missing/invalid ts (expected epoch ms int)")
         return False
 
+    if "content" not in msg:
+        if fail_fast:
+            raise LLPAdapterError("missing content")
+        return False
     content = msg.get("content")
-    if not isinstance(content, dict):
+    if not _is_json_compatible(content):
         if fail_fast:
-            raise LLPAdapterError("missing/invalid content")
-        return False
-    if not isinstance(content.get("content_type"), str) or not content.get("content_type"):
-        if fail_fast:
-            raise LLPAdapterError("missing/invalid content.content_type")
-        return False
-    parts = content.get("parts")
-    if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
-        if fail_fast:
-            raise LLPAdapterError("missing/invalid content.parts (expected list[str])")
+            raise LLPAdapterError("invalid content (expected JSON-compatible value)")
         return False
 
     if not isinstance(msg.get("text"), str):

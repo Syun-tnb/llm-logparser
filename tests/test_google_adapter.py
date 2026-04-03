@@ -108,6 +108,25 @@ def test_google_gemini_assistant_text_extraction_from_safe_html_items():
     assert extract_assistant_text(safe_html_item) == "最初の段落です。\n\n次の段落です。"
 
 
+def test_google_gemini_assistant_text_is_deterministic_for_non_text_metadata_changes():
+    safe_html_item = [{"html": "<p>最初の段落です。</p>"}]
+    record_a = _record(
+        title="送信したメッセージ: テスト",
+        time="2026-03-23T07:18:42.981Z",
+        safe_html_item=safe_html_item,
+        products=["Gemini アプリ"],
+    )
+    record_b = _record(
+        title="送信したメッセージ: テスト",
+        time="2026-03-23T07:18:42.981Z",
+        safe_html_item=safe_html_item,
+        products=["Gemini Web"],
+    )
+
+    set_locale("ja-JP")
+    assert google_adapter(record_a)[1]["text"] == google_adapter(record_b)[1]["text"]
+
+
 def test_google_gemini_html_to_text_preserves_readable_boundaries():
     html = "<p>Alpha</p><p>Beta</p><ul><li>One</li><li>Two</li></ul>"
 
@@ -142,8 +161,10 @@ def test_google_gemini_adapter_handles_user_only_record():
     messages = google_adapter(record)
 
     assert len(messages) == 1
+    assert type(messages[0]) is dict
     assert messages[0]["role"] == "user"
     assert messages[0]["parent_id"] is None
+    assert messages[0]["content"] == record["title"]
     assert messages[0]["text"] == "明日の予定を整理して"
 
 
@@ -161,6 +182,7 @@ def test_google_gemini_adapter_handles_assistant_only_record():
     assert len(messages) == 1
     assert messages[0]["role"] == "assistant"
     assert messages[0]["parent_id"] is None
+    assert messages[0]["content"] == record["safeHtmlItem"]
     assert messages[0]["text"] == "こちらが要約です。"
 
 
@@ -176,6 +198,7 @@ def test_google_gemini_adapter_never_drops_user_message_when_prefix_is_unknown()
 
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == record["title"]
     assert messages[0]["text"] == "未知の接頭辞: 元のメッセージを保持する"
 
 
@@ -230,7 +253,7 @@ def test_parse_to_jsonl_supports_google_gemini_activity_as_event_scoped_threads(
     fixture = Path("tests/fixtures/google_gemini_activity.json")
     raw = json.loads(fixture.read_text(encoding="utf-8"))
 
-    stats = parse_to_jsonl("google", fixture, tmp_path, dry_run=False, fail_fast=True)
+    stats = parse_to_jsonl("google", fixture, tmp_path, dry_run=False, fail_fast=True, validate_schema=True)
 
     assert stats["threads"] == 3
     assert stats["messages"] == 4
@@ -248,6 +271,8 @@ def test_parse_to_jsonl_supports_google_gemini_activity_as_event_scoped_threads(
     ]
     messages = [row for row in rows if row.get("record_type") == "message"]
     assert [row["role"] for row in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == first_record["title"]
+    assert messages[1]["content"] == first_record["safeHtmlItem"]
     assert messages[0]["text"] == "小春？チャンク（Chunk）って何？"
     assert "Chunk はモデルが処理する単位です。" in messages[1]["text"]
 

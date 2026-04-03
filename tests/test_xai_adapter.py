@@ -40,6 +40,8 @@ def test_xai_adapter_maps_single_grok_conversation_bundle():
     assert user_msg["role"] == "user"
     assert user_msg["ts"] == 1771392805185
     assert user_msg["created_at"] == "2026-02-18T05:33:25.185Z"
+    assert type(user_msg) is dict
+    assert user_msg["content"] == raw["responses"][0]
     assert user_msg["text"] == raw["responses"][0]["response"]["message"]
     assert user_msg["meta"]["model"] == "grok-4-auto"
 
@@ -48,6 +50,7 @@ def test_xai_adapter_maps_single_grok_conversation_bundle():
     assert assistant_msg["role"] == "assistant"
     assert assistant_msg["ts"] == 1771392853861
     assert assistant_msg["created_at"] == "2026-02-18T05:34:13.861Z"
+    assert assistant_msg["content"] == raw["responses"][1]
     assert assistant_msg["text"] == raw["responses"][1]["response"]["message"]
     assert assistant_msg["meta"]["model"] == "grok-4"
 
@@ -55,7 +58,7 @@ def test_xai_adapter_maps_single_grok_conversation_bundle():
 def test_parse_to_jsonl_supports_real_grok_wrapper_shape(tmp_path):
     fixture = Path("tests/fixtures/grok_wrapper_sample.json")
 
-    stats = parse_to_jsonl("xai", fixture, tmp_path, dry_run=False, fail_fast=True)
+    stats = parse_to_jsonl("xai", fixture, tmp_path, dry_run=False, fail_fast=True, validate_schema=True)
 
     assert stats["threads"] == 2
     assert stats["messages"] == 4
@@ -87,6 +90,7 @@ def test_parse_to_jsonl_supports_real_grok_wrapper_shape(tmp_path):
         shorten_id("2130f537-c8bc-432e-8c7b-fda36f49d970"),
     ]
     assert first_messages[1]["parent_id"] == shorten_id("b7068bc6-2393-4766-82f2-36bab6bb576d")
+    assert first_messages[0]["content"] == _load_fixture()["conversations"][0]["responses"][0]
     assert first_messages[1]["text"] == (
         "プロジェクト案への意見です。検索結果を踏まえた上で、"
         "差分プライバシーと検疫ゲートウェイの案は筋が良いと思います。"
@@ -98,4 +102,16 @@ def test_parse_to_jsonl_supports_real_grok_wrapper_shape(tmp_path):
     ]
     assert [row["role"] for row in second_messages] == ["user", "assistant"]
     assert second_messages[1]["created_at"] == "2026-02-19T07:06:45.000Z"
+    assert second_messages[1]["content"] == _load_fixture()["conversations"][1]["responses"][0]
     assert second_messages[1]["meta"]["attachments"][0]["type"] == "file_attachment"
+
+
+def test_xai_attachment_changes_do_not_alter_text():
+    payload = _load_fixture()
+    raw = payload["conversations"][1]
+    changed = _load_fixture()["conversations"][1]
+    changed["responses"][0]["response"]["file_attachments"] = [
+        "different-attachment-id"
+    ]
+
+    assert xai_adapter(raw)[0]["text"] == xai_adapter(changed)[0]["text"]

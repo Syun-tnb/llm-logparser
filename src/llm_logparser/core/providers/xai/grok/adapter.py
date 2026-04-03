@@ -100,17 +100,6 @@ def _normalize_role(sender: Any) -> str:
     return "assistant"
 
 
-class _ValidatedMessage(dict):
-    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._validation_content = validation_content
-
-    def get(self, key, default=None):
-        if key == "content" and self._validation_content is not None:
-            return self._validation_content
-        return super().get(key, default)
-
-
 def _append_part(parts: list[str], value: str) -> None:
     if value:
         parts.append(value)
@@ -151,6 +140,23 @@ def _extract_text_parts(value: Any) -> list[str]:
     return []
 
 
+def _extract_response_text(response: dict[str, Any]) -> str:
+    """
+    Prefer Grok's direct message payload.
+    Fallback to nested text-bearing response content, never attachment metadata.
+    """
+    direct_message = response.get("message")
+    parts = _extract_text_parts(direct_message)
+    if parts:
+        return "\n".join(parts)
+
+    for candidate in ("content", "parts", "blocks", "items"):
+        parts = _extract_text_parts(response.get(candidate))
+        if parts:
+            return "\n".join(parts)
+    return ""
+
+
 def _unwrap_conversation(raw: dict) -> dict | None:
     if isinstance(raw.get("conversation"), dict) and isinstance(raw.get("responses"), list):
         return raw
@@ -164,6 +170,63 @@ def _unwrap_response(item: Any) -> dict | None:
         if isinstance(response, dict):
             return response
     return None
+
+
+def _parse_card_attachments(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    attachments: list[dict[str, Any]] = []
+    for item in value:
+        payload = item
+        if isinstance(item, str):
+            try:
+                payload = json.loads(item)
+            except json.JSONDecodeError:
+                payload = {"raw": item}
+
+        if isinstance(payload, dict):
+            image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
+            attachments.append(
+                {
+                    "type": str(payload.get("cardType") or "card"),
+                    "id": payload.get("id"),
+                    "title": image.get("title") or payload.get("title"),
+                    "url": image.get("link"),
+                    "thumbnail": image.get("thumbnail"),
+                }
+            )
+
+    return attachments
+
+
+def _extract_attachments(
+    conversation_meta: dict[str, Any],
+    response: dict[str, Any],
+) -> list[dict[str, Any]]:
+    attachments: list[dict[str, Any]] = []
+
+    asset_ids = conversation_meta.get("asset_ids")
+    if isinstance(asset_ids, list):
+        for asset_id in asset_ids:
+            if isinstance(asset_id, str) and asset_id:
+                attachments.append({"type": "conversation_asset", "id": asset_id})
+
+    file_attachments = response.get("file_attachments")
+    if isinstance(file_attachments, list):
+        for file_id in file_attachments:
+            if isinstance(file_id, str) and file_id:
+                attachments.append({"type": "file_attachment", "id": file_id})
+
+    attachments.extend(_parse_card_attachments(response.get("card_attachments_json")))
+
+    media_types = response.get("media_types")
+    if isinstance(media_types, list):
+        for media_type in media_types:
+            if isinstance(media_type, str) and media_type:
+                attachments.append({"type": "media", "media_type": media_type})
+
+    return attachments
 
 
 def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
@@ -205,31 +268,22 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
         if ts is None or created_at is None:
             continue
 
-        parts = _extract_text_parts(response.get("message"))
-        if not parts:
-            for candidate in ("content", "parts", "blocks", "items"):
-                parts = _extract_text_parts(response.get(candidate))
-                if parts:
-                    break
-
-        if not parts and not isinstance(item, dict):
+        text = _extract_response_text(response)
+        if not text and not isinstance(item, dict):
             continue
-
-        content_type = "text"
-        media_types = response.get("media_types")
-        if not parts and isinstance(media_types, list) and media_types:
-            content_type = str(media_types[0])
 
         meta: dict[str, Any] = {}
         model = response.get("model")
         if isinstance(model, str) and model.strip():
             meta["model"] = model.strip()
+        attachments = _extract_attachments(conversation_meta, response)
+        if attachments:
+            meta["attachments"] = attachments
 
         raw_parent_id = response.get("parent_response_id")
         parent_id = shorten_id(raw_parent_id) if isinstance(raw_parent_id, str) and raw_parent_id else None
 
-        entry = _ValidatedMessage(
-            {
+        entry = {
             "conversation_id": short_conversation_id,
             "conv_id": short_conversation_id,
             "message_id": shorten_id(raw_message_id),
@@ -240,10 +294,8 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             "created_at": created_at,
             "thread_title": thread_title,
             "content": item if isinstance(item, dict) else response,
-            "text": "\n".join(parts),
-            },
-            validation_content={"content_type": content_type, "parts": parts},
-        )
+            "text": text,
+        }
         if meta:
             entry["meta"] = meta
 

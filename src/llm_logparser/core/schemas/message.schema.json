@@ -17,23 +17,10 @@
     "provider_id": { "type": "string", "minLength": 1 },
     "conversation_id": { "type": "string", "minLength": 1 },
     "message_id": { "type": "string", "minLength": 1 },
-    "parent_id": { "type": "string" },
+    "parent_id": { "type": ["string", "null"] },
     "role": { "type": "string", "minLength": 1 },
     "ts": { "type": "integer", "minimum": 0 },
-    "content": {
-      "type": "object",
-      "required": ["content_type", "parts"],
-      "properties": {
-        "content_type": { "type": "string", "minLength": 1 },
-        "parts": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "additionalProperties": true
-    },
+    "content": {},
     "text": { "type": "string" },
     "meta": { "type": "object" }
   },

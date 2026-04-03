@@ -45,10 +45,7 @@ def _load_json_payload(path: Path, logger: logging.Logger) -> Any | None:
 def _is_candidate_chunk(chunk: Any) -> bool:
     if chunk is None:
         return True
-    if not isinstance(chunk, dict):
-        return False
-    chunk_type = chunk.get("type")
-    return (chunk_type is None or chunk_type == "text") and isinstance(chunk.get("text"), str)
+    return isinstance(chunk, dict)
 
 
 def _looks_like_le_chat_message(message: Any) -> bool:
@@ -144,17 +141,6 @@ def _normalize_role(value: Any) -> str:
     return normalized
 
 
-class _ValidatedMessage(dict):
-    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._validation_content = validation_content
-
-    def get(self, key, default=None):
-        if key == "content" and self._validation_content is not None:
-            return self._validation_content
-        return super().get(key, default)
-
-
 def _extract_parts(content: Any, content_chunks: Any) -> list[str]:
     if isinstance(content_chunks, list):
         parts = []
@@ -172,6 +158,18 @@ def _extract_parts(content: Any, content_chunks: Any) -> list[str]:
         return [content]
 
     return []
+
+
+def _extract_text(message: dict[str, Any]) -> str:
+    """
+    Prefer non-empty raw content when present.
+    Fallback to ordered text-bearing contentChunks when content is empty/missing.
+    """
+    content = message.get("content")
+    if isinstance(content, str) and content:
+        return content
+    parts = _extract_parts("", message.get("contentChunks"))
+    return "\n".join(parts)
 
 
 def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
@@ -195,7 +193,6 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
             continue
 
         content = message.get("content") if isinstance(message.get("content"), str) else ""
-        parts = _extract_parts(content, message.get("contentChunks"))
         short_conversation_id = shorten_id(raw_conversation_id)
         short_message_id = shorten_id(raw_message_id)
         raw_content = (
@@ -220,8 +217,7 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
         }
 
         out.append(
-            _ValidatedMessage(
-                {
+            {
                 "conversation_id": short_conversation_id,
                 "conv_id": short_conversation_id,
                 "message_id": short_message_id,
@@ -230,11 +226,9 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
                 "ts": ts,
                 "created_at": created_at,
                 "content": raw_content,
-                "text": content,
+                "text": _extract_text(message),
                 "meta": meta,
-                },
-                validation_content={"content_type": "text", "parts": parts},
-            )
+            }
         )
 
     return out
