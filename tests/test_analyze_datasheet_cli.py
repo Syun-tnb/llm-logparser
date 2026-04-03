@@ -309,7 +309,7 @@ def test_analyze_datasheet_structural_metrics_are_included(
     payload = json.loads(out)
 
     assert payload["structure"] == {
-        "avg_blocks_per_message": 1.5,
+        "avg_blocks_per_message": 1.0,
         "threads_with_code_blocks": 1,
         "code_block_message_ratio": 0.5,
     }

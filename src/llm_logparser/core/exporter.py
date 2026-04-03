@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Iterable, List, Dict, Any, Optional, Literal
 
 from .i18n import _
+from .l1_derivation import resolve_message_text
 from .utils import parse_size_expr, format_bytes, sanitize_filename
 
 def _ts_to_seconds(ts: float | int | None) -> float | None:
@@ -184,14 +185,9 @@ def export_thread_md(
         role = m.get("role", "unknown")
         ts_human = _to_local_human(m.get("ts"), tz=tz)
 
-        # normally adapters MUST populate `text`
-        # (contract: exporter should not reconstruct text)
-        # this fallback exists only as a safety net for broken adapters / legacy data
-        raw_text = (m.get("text") or "")
-        if not raw_text:
-            parts = (m.get("content") or {}).get("parts")
-            if isinstance(parts, list):
-                raw_text = "\n".join(str(p) for p in parts)
+        # Downstream rendering uses canonical top-level `text`.
+        # `content.parts` is legacy fallback support for older parsed artifacts only.
+        raw_text, _text_source = resolve_message_text(m)
         text = _render_message_text(raw_text, policy)
 
         message_id = m.get("message_id") or ""

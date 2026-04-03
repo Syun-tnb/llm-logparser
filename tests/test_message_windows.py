@@ -191,6 +191,41 @@ def test_message_window_artifact_matches_schema():
     assert artifact["schema_version"] == "1.0"
 
 
+def test_message_windows_prefer_text_over_legacy_content_parts():
+    rows = [
+        {
+            "record_type": "message",
+            "provider_id": "fake",
+            "conversation_id": "conv-1",
+            "message_id": "m1",
+            "role": "assistant",
+            "ts": 1,
+            "text": "canonical",
+            "content": {"content_type": "text", "parts": ["legacy"]},
+        }
+    ]
+
+    artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
+    assert artifact["text"] == "assistant: canonical"
+
+
+def test_message_windows_support_legacy_content_parts_fallback():
+    rows = [
+        {
+            "record_type": "message",
+            "provider_id": "fake",
+            "conversation_id": "conv-1",
+            "message_id": "m1",
+            "role": "assistant",
+            "ts": 1,
+            "content": {"content_type": "text", "parts": ["legacy"]},
+        }
+    ]
+
+    artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
+    assert artifact["text"] == "assistant: legacy"
+
+
 def test_message_window_schema_rejects_malformed_row():
     rows = [
         _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),

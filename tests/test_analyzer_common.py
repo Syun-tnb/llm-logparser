@@ -19,11 +19,15 @@ def test_normalize_role_handles_known_unknown_and_empty_inputs():
 def test_resolve_canonical_text_prefers_text_then_content_parts_then_empty():
     assert resolve_canonical_text({"text": "hello"}) == ("hello", "text")
     assert resolve_canonical_text(
+        {"text": "hello", "content": {"parts": ["alpha", "beta"]}}
+    ) == ("hello", "text")
+    assert resolve_canonical_text(
         {"text": None, "content": {"parts": ["alpha", "beta"]}}
     ) == ("alpha\nbeta", "content.parts")
     assert resolve_canonical_text(
         {"content": {"parts": ["alpha", 1, None, "beta"]}}
     ) == ("alpha\nbeta", "content.parts")
+    assert resolve_canonical_text({"content": ["provider-native"]}) == ("", "empty")
     assert resolve_canonical_text({"content": {"parts": []}}) == ("", "empty")
     assert resolve_canonical_text({}) == ("", "empty")
 

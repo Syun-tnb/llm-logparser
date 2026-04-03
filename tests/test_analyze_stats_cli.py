@@ -739,7 +739,7 @@ def test_analyze_stats_research_summary_structural_metrics_are_deterministic(
     structure = payload["research_summary"]["structure"]
 
     assert structure == {
-        "avg_blocks_per_message": 1.5,
+        "avg_blocks_per_message": 1.0,
         "threads_with_code_blocks": 1,
         "code_block_message_ratio": 0.5,
     }

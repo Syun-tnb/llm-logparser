@@ -11,6 +11,7 @@ from .l1_derivation import (
     UNKNOWN_ROLE,
     iter_parsed_records,
     normalize_role_value,
+    resolve_message_text,
 )
 
 RATIO_DECIMAL_PLACES = 4
@@ -27,19 +28,7 @@ def normalize_role(value: Any) -> str:
 
 
 def resolve_canonical_text(row: dict[str, Any]) -> tuple[str, str]:
-    text = row.get("text")
-    if isinstance(text, str):
-        return text, "text"
-
-    content = row.get("content")
-    if isinstance(content, dict):
-        parts = content.get("parts")
-        if isinstance(parts, list):
-            string_parts = [part for part in parts if isinstance(part, str)]
-            if string_parts:
-                return "\n".join(string_parts), "content.parts"
-
-    return "", "empty"
+    return resolve_message_text(row)
 
 
 def detect_header_metadata(parsed_path: Path) -> tuple[str | None, str | None]:

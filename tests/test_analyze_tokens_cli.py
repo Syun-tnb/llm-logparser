@@ -210,6 +210,39 @@ def test_analyze_tokens_falls_back_to_content_parts(tmp_path, monkeypatch):
     ]
 
 
+def test_analyze_tokens_prefers_text_over_legacy_content_parts(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-prefer-text" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-prefer-text",
+        [
+            {
+                "message_id": "m1",
+                "role": "user",
+                "text": "canonical",
+                "content": {"content_type": "text", "parts": ["legacy"]},
+            }
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+
+    artifact = _load_artifact(parsed)
+    assert artifact["summary"]["fallback_text_from_parts"] == 0
+    assert artifact["messages"][0]["text_source"] == "text"
+
+
 def test_analyze_tokens_counts_empty_text_messages(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-empty" / "parsed.jsonl"
     _write_parsed_jsonl(

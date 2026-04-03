@@ -13,6 +13,7 @@ from llm_logparser.core.l1_derivation import (
     message_role,
     message_text,
     normalize_role_value,
+    resolve_message_text,
     to_iso_utc,
     ts_to_seconds,
 )
@@ -125,6 +126,7 @@ def test_message_helpers_handle_partial_rows_without_exceptions():
     assert message_text({}) == ""
     assert message_text({"text": None}) == ""
     assert message_text({"text": "hello"}) == "hello"
+    assert message_text({"content": {"parts": ["alpha", "beta"]}}) == "alpha\nbeta"
     assert message_character_count({}) == 0
     assert message_character_count({"text": None}) == 0
     assert message_character_count({"text": "hello"}) == 5
@@ -136,6 +138,18 @@ def test_message_helpers_handle_partial_rows_without_exceptions():
     assert normalize_role_value("moderator") == UNKNOWN_ROLE
     assert normalize_role_value("") == UNKNOWN_ROLE
     assert normalize_role_value(None) == UNKNOWN_ROLE
+
+
+def test_resolve_message_text_prefers_text_then_legacy_content_parts():
+    assert resolve_message_text({"text": "hello", "content": {"parts": ["ignored"]}}) == (
+        "hello",
+        "text",
+    )
+    assert resolve_message_text({"content": {"parts": ["alpha", "beta"]}}) == (
+        "alpha\nbeta",
+        "content.parts",
+    )
+    assert resolve_message_text({"content": ["provider-native"]}) == ("", "empty")
 
 
 def test_message_role_preserves_raw_role_while_normalization_is_canonical():

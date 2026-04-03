@@ -151,10 +151,7 @@ def _analyze_thread_research(
             continue
 
         text, _text_source = resolve_canonical_text(row)
-        content = row.get("content")
-        if isinstance(content, dict) and isinstance(content.get("parts"), list):
-            block_count_total += len(content["parts"])
-        elif text:
+        if text:
             block_count_total += 1
 
         if "```" in text:

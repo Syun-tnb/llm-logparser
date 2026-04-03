@@ -82,9 +82,30 @@ def span_seconds(start: float | None, end: float | None) -> int | None:
     return int(end - start)
 
 
-def message_text(row: dict[str, Any]) -> str:
+def resolve_message_text(row: dict[str, Any]) -> tuple[str, str]:
+    """
+    Canonical downstream text access prefers top-level `text`.
+
+    `content.parts` fallback exists only for backward compatibility with older
+    parsed artifacts that predate the explicit top-level `text` contract.
+    """
     value = row.get("text")
-    return value if isinstance(value, str) else ""
+    if isinstance(value, str):
+        return value, "text"
+
+    content = row.get("content")
+    if isinstance(content, dict):
+        parts = content.get("parts")
+        if isinstance(parts, list):
+            string_parts = [part for part in parts if isinstance(part, str)]
+            if string_parts:
+                return "\n".join(string_parts), "content.parts"
+
+    return "", "empty"
+
+
+def message_text(row: dict[str, Any]) -> str:
+    return resolve_message_text(row)[0]
 
 
 def message_character_count(row: dict[str, Any]) -> int:

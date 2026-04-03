@@ -162,7 +162,7 @@ def build_datasheet_summary(input_path: Path) -> dict[str, Any]:
         "notes": [
             "Generated locally and deterministically from canonical parsed artifacts.",
             "Safety counts may reuse existing metrics.json sidecars when present.",
-            "Structural metrics are lightweight heuristics based on canonical text and content.parts.",
+            "Structural metrics are lightweight heuristics based on canonical text.",
         ],
     }
 
