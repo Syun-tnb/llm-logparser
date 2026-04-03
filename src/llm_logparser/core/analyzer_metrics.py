@@ -21,7 +21,12 @@ from .analyzer_common import (
     write_json_artifact,
 )
 from .i18n import _, get_resource_list
-from .l1_derivation import discover_parsed_jsonl, iter_parsed_records, ts_to_seconds
+from .l1_derivation import (
+    discover_parsed_jsonl,
+    iter_parsed_records,
+    normalized_message_role,
+    ts_to_seconds,
+)
 
 # Refusal detection is a normalized substring match against locale-backed cue
 # lists in `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US`
@@ -277,6 +282,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
     previous_message: dict[str, Any] | None = None
 
     for message in messages:
+        # L1 invariant: must use canonical normalized roles only
         role = normalize_role(message.get("role"))
         text = message.get("text")
         char_count = len(text) if isinstance(text, str) else 0
@@ -287,6 +293,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
             total_assistant_characters += char_count
 
         if previous_message is not None:
+            # L1 invariant: must use canonical normalized roles only
             previous_role = normalize_role(previous_message.get("role"))
             if previous_role == "assistant" and role == "user":
                 previous_ts = _timestamp_seconds(previous_message.get("ts"))
@@ -372,7 +379,8 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         texts.append(text)
         effort_messages.append(
             {
-                "role": row.get("role"),
+                # L1 invariant: must use canonical normalized roles only
+                "role": normalized_message_role(row),
                 "ts": row.get("ts"),
                 "text": text,
             }
@@ -380,7 +388,8 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         char_count = len(text)
         char_count_total += char_count
 
-        role = normalize_role(row.get("role"))
+        # L1 invariant: must use canonical normalized roles only
+        role = normalized_message_role(row)
         if role == "user":
             message_count_user += 1
             char_count_user += char_count

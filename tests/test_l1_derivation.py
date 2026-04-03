@@ -167,7 +167,7 @@ def test_ts_conversion_utilities_handle_seconds_milliseconds_and_invalid_values(
     assert to_iso_utc(None) is None
 
 
-def test_derive_thread_metrics_from_rows_treats_mixed_case_and_missing_roles_as_other():
+def test_derive_thread_metrics_from_rows_uses_normalized_roles_for_counters_and_breakdown():
     metrics = derive_thread_metrics_from_rows(
         [
             {
@@ -177,31 +177,44 @@ def test_derive_thread_metrics_from_rows_treats_mixed_case_and_missing_roles_as_
             {
                 "record_type": "message",
                 "conversation_id": "conv-mixed",
-                "role": "User",
+                "role": " USER ",
                 "text": "hello",
                 "ts": 1704067200000,
             },
             {
                 "record_type": "message",
                 "conversation_id": "conv-mixed",
+                "role": "moderator",
                 "text": None,
             },
             {
                 "record_type": "message",
                 "conversation_id": "conv-mixed",
-                "role": "assistant",
+                "role": "Assistant",
                 "text": "ok",
                 "ts": 1704067210000,
+            },
+            {
+                "record_type": "message",
+                "conversation_id": "conv-mixed",
+                "role": "model",
+                "text": "",
+            },
+            {
+                "record_type": "message",
+                "conversation_id": "conv-mixed",
+                "role": "tool",
+                "text": "tool output",
             },
         ]
     )
 
     assert metrics.conversation_id == "conv-mixed"
-    assert metrics.message_count == 3
-    assert metrics.user_messages == 0
+    assert metrics.message_count == 5
+    assert metrics.user_messages == 1
     assert metrics.assistant_messages == 1
-    assert metrics.other_roles == 2
-    assert metrics.character_count == 7
-    assert metrics.other_role_breakdown == {"User": 1, "unknown": 1}
+    assert metrics.other_roles == 3
+    assert metrics.character_count == 18
+    assert metrics.other_role_breakdown == {"tool": 1, "unknown": 2}
     assert metrics.first_ts == 1704067200.0
     assert metrics.last_ts == 1704067210.0

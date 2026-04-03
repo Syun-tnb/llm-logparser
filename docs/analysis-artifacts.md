@@ -153,12 +153,12 @@ Contract:
   - `first_timestamp`: earliest message timestamp as UTC ISO 8601, or `null`
   - `last_timestamp`: latest message timestamp as UTC ISO 8601, or `null`
   - `conversation_span_seconds`: integer span between first/last timestamps, or `null`
-  - `user_messages`: count of messages whose raw role is `user`
-  - `assistant_messages`: count of messages whose raw role is `assistant`
+  - `user_messages`: count of messages whose canonical normalized role is `user`
+  - `assistant_messages`: count of messages whose canonical normalized role is `assistant`
   - `other_roles`: count of all other or missing roles
-  - `characters_user`: characters from messages whose raw role is `user`
-  - `characters_assistant`: characters from messages whose raw role is `assistant`
-  - `other_role_breakdown`: sorted mapping of each non-`user`/`assistant` raw role label to its count, using `unknown` for missing roles
+  - `characters_user`: characters from messages whose canonical normalized role is `user`
+  - `characters_assistant`: characters from messages whose canonical normalized role is `assistant`
+  - `other_role_breakdown`: sorted mapping of each non-`user`/`assistant` canonical normalized role label to its count, using `unknown` for missing or unexpected roles
 - notes:
   - `thread_stats.json` is a deterministic L1 artifact, not canonical storage
   - it may be materialized during parse for convenience, but its conceptual ownership remains L1
@@ -275,6 +275,15 @@ Current shared responsibilities include:
 These helpers are intended to be reusable both from `analyze` subcommands and
 from deterministic L1 artifact materialization paths, including convenience
 writes that happen during parse.
+
+### Role Boundary Rule
+
+For deterministic L1 artifacts and metrics:
+
+- canonical normalized roles are the only allowed semantic role representation
+- raw/provider role labels must not influence shared L1 logic or outputs
+- raw roles may survive only in explicitly non-semantic pass-through paths
+  outside L1, such as indexing or display-only utilities
 
 The primary contract remains the normalized top-level `text` emitted during
 parse. When downstream consumers fall back to `content.parts`, they are doing

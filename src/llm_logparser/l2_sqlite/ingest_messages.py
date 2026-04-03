@@ -27,6 +27,7 @@ def ingest_messages(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 row.get("provider_id"),
                 row.get("conversation_id"),
                 row.get("message_id"),
+                # raw-role access allowed: pass-through / display only (NOT L1 semantics)
                 message_role(row) or "unknown",
                 row.get("ts"),
                 message_character_count(row),

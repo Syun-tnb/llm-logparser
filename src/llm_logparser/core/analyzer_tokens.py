@@ -189,6 +189,7 @@ def build_token_stats_artifact(
             if isinstance(meta, dict):
                 thread_model = string_or_none(meta.get("model"))
 
+        # L1 invariant: must use canonical normalized roles only
         role = normalize_role(row.get("role"))
         text, text_source = resolve_canonical_text(row)
         buffered_messages.append(

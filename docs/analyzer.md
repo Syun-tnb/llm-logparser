@@ -84,6 +84,13 @@ Their outputs are deterministic artifacts or views derived from canonical data.
 L1 does not define semantic meaning: it consumes canonical normalized fields
 only and produces deterministic substrates, sidecars, and views.
 
+## Role Boundary Rule
+
+- L1 MUST NOT depend on provider-specific role labels
+- canonical normalized roles are the only allowed semantic role representation in L1
+- raw roles are strictly non-semantic and non-shared; they may appear only in
+  explicit pass-through or display-oriented paths outside L1
+
 Current Layer 1 implementations include:
 
 - `analyze stats`

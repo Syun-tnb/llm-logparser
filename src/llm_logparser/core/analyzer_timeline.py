@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from .l1_derivation import (
+    assert_normalized_role,
     discover_parsed_jsonl,
     iter_message_records,
     message_character_count,
-    message_role,
+    normalized_message_role,
     ts_to_seconds,
 )
 
@@ -36,6 +37,7 @@ def _bucket_label(bucket_start: str, bucket: str) -> str:
 
 def analyze_timeline(input_path: Path, bucket: str = "day") -> dict[str, Any]:
     """Aggregate timestamped messages into UTC timeline buckets."""
+    # invariant: analyzer_timeline operates on canonical roles only
     parsed_files = discover_parsed_jsonl(input_path)
     timeline_by_bucket: dict[str, dict[str, Any]] = {}
 
@@ -63,7 +65,9 @@ def analyze_timeline(input_path: Path, bucket: str = "day") -> dict[str, Any]:
             item["message_count"] += 1
             item["characters_total"] += message_character_count(row)
 
-            role = message_role(row)
+            # L1 invariant: must use canonical normalized roles only
+            role = normalized_message_role(row)
+            assert_normalized_role(role)
             if role == "user":
                 item["user_messages"] += 1
             elif role == "assistant":

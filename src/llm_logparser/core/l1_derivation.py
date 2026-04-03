@@ -8,6 +8,7 @@ from typing import Any, Iterable, Iterator
 
 ROLE_ORDER = ("user", "assistant", "system", "tool")
 UNKNOWN_ROLE = "unknown"
+NORMALIZED_ROLE_SET = frozenset((*ROLE_ORDER, UNKNOWN_ROLE))
 
 
 def discover_parsed_jsonl(input_path: Path) -> list[Path]:
@@ -127,20 +128,28 @@ def normalize_role_value(value: Any) -> str:
     return UNKNOWN_ROLE
 
 
+def assert_normalized_role(role: str) -> None:
+    assert role in NORMALIZED_ROLE_SET
+
+
 def message_role(row: dict[str, Any]) -> str | None:
     """Return the raw provider role string when present.
 
     This is intentionally distinct from `normalize_role_value()`. Raw access is
-    still used by thread stats, timeline text, and selected pass-through views
-    where preserving the provider-emitted role label is desirable.
+    still used only in selected pass-through views such as L2 indexing where
+    preserving the provider-emitted role label is desirable.
     """
+    # raw-role access allowed: pass-through / display only (NOT L1 semantics)
     role = row.get("role")
     return role if isinstance(role, str) and role else None
 
 
 def normalized_message_role(row: dict[str, Any]) -> str:
     """Return the canonical normalized role label for shared L1 consumers."""
-    return normalize_role_value(row.get("role"))
+    # L1 invariant: must use canonical normalized roles only
+    role = normalize_role_value(row.get("role"))
+    assert_normalized_role(role)
+    return role
 
 
 @dataclass
@@ -158,12 +167,14 @@ class ThreadMetrics:
     last_ts: float | None = None
 
     def add_message(self, row: dict[str, Any]) -> None:
+        # invariant: ThreadMetrics is a deterministic L1 artifact (no provider role leakage)
         self.message_count += 1
 
         char_count = message_character_count(row)
         self.character_count += char_count
 
-        role = message_role(row)
+        role = normalized_message_role(row)
+        assert_normalized_role(role)
         if role == "user":
             self.user_messages += 1
             self.characters_user += char_count
@@ -172,11 +183,10 @@ class ThreadMetrics:
             self.characters_assistant += char_count
         else:
             self.other_roles += 1
-            role_key = role or "unknown"
             if self.other_role_breakdown is None:
                 self.other_role_breakdown = {}
-            self.other_role_breakdown[role_key] = (
-                self.other_role_breakdown.get(role_key, 0) + 1
+            self.other_role_breakdown[role] = (
+                self.other_role_breakdown.get(role, 0) + 1
             )
 
         ts = ts_to_seconds(row.get("ts"))
@@ -251,6 +261,8 @@ def build_thread_stats_artifact(
     provider_id: str,
 ) -> dict[str, Any]:
     """Build a deterministic thread-local stats artifact for parse-time reuse."""
+    for role in metrics.other_role_breakdown or {}:
+        assert_normalized_role(role)
     artifact = metrics.to_detail()
     artifact.update(
         {

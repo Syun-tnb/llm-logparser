@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .l1_derivation import (
+    assert_normalized_role,
     iter_message_records,
     message_character_count,
     message_text,
@@ -27,7 +28,10 @@ def _window_id(index: int) -> str:
 def _window_text(rows: list[dict[str, Any]]) -> str:
     parts = []
     for row in rows:
-        parts.append(f"{normalized_message_role(row)}: {message_text(row)}")
+        # L1 invariant: must use canonical normalized roles only
+        role = normalized_message_role(row)
+        assert_normalized_role(role)
+        parts.append(f"{role}: {message_text(row)}")
     return "\n\n".join(parts)
 
 
@@ -45,6 +49,9 @@ def build_message_window_artifact(
     provider_id = rows[0].get("provider_id")
     conversation_id = rows[0].get("conversation_id")
     timestamps = [ts for row in rows if (ts := _message_timestamp(row)) is not None]
+    roles = [normalized_message_role(row) for row in rows]
+    for role in roles:
+        assert_normalized_role(role)
 
     return {
         "record_type": "message_window",
@@ -53,7 +60,7 @@ def build_message_window_artifact(
         "conversation_id": conversation_id,
         "window_id": _window_id(window_index),
         "message_ids": [row.get("message_id") for row in rows],
-        "roles": [normalized_message_role(row) for row in rows],
+        "roles": roles,
         "message_count": len(rows),
         "char_count": sum(message_character_count(row) for row in rows),
         "ts_start": min(timestamps) if timestamps else None,

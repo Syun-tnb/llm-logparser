@@ -15,6 +15,7 @@ from .l1_derivation import (
     derive_thread_metrics,
     discover_parsed_jsonl,
     iter_parsed_records,
+    normalized_message_role,
     span_seconds,
     to_iso_utc,
 )
@@ -142,6 +143,7 @@ def _analyze_thread_research(
     refusal_indicators: list[str],
     intervention_indicators: list[str],
 ) -> dict[str, Any]:
+    # invariant: analyzer_stats operates on canonical roles only
     assistant_texts: list[str] = []
     block_count_total = 0
     code_block_message_count = 0
@@ -157,7 +159,8 @@ def _analyze_thread_research(
         if "```" in text:
             code_block_message_count += 1
 
-        if row.get("role") == "assistant":
+        # L1 invariant: must use canonical normalized roles only
+        if normalized_message_role(row) == "assistant":
             assistant_texts.append(text)
 
     sidecar_safety = _load_thread_safety_from_metrics(parsed_path)
