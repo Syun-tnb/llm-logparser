@@ -72,6 +72,10 @@ def _write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _metrics_artifact_text(parsed: Path) -> str:
+    return parsed.with_name("metrics.json").read_text(encoding="utf-8")
+
+
 def _build_metrics_fixture(
     parsed: Path,
     monkeypatch,
@@ -554,34 +558,41 @@ def test_analyze_metrics_computes_partial_refusal_rate(tmp_path, monkeypatch):
     assert metrics["safety"]["trigger_types"] == {"refusal": 1, "caveat": 0}
 
 
-def test_analyze_metrics_uses_en_us_indicator_fallback_for_missing_locale(
-    tmp_path, monkeypatch
-):
-    parsed = tmp_path / "thread-conv-locale-fallback" / "parsed.jsonl"
+def test_analyze_metrics_output_is_identical_across_locales(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-cross-locale" / "parsed.jsonl"
     _write_parsed_jsonl(
         parsed,
-        "conv-locale-fallback",
+        "conv-cross-locale",
         [
-            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m1", "role": "user", "text": "Explain recursion."},
             {
                 "message_id": "m2",
                 "role": "assistant",
-                "text": "I can't help with that request.",
+                "text": "I can't help with that request, but I can provide safer alternatives.",
+            },
+            {
+                "message_id": "m3",
+                "role": "user",
+                "text": "To clarify, explain it using a factorial example instead.",
             },
         ],
     )
 
-    _token_stats, metrics = _build_metrics_fixture(
+    _build_metrics_fixture(
         parsed,
         monkeypatch,
-        metrics_args=["--locale", "fr-FR"],
+        metrics_args=["--locale", "en-US"],
     )
+    first = _metrics_artifact_text(parsed)
 
-    assert metrics["safety"]["refusal_count"] == 1
-    assert metrics["safety"]["refusal_rate"] == 1.0
-    assert metrics["safety"]["intervention_count"] == 1
-    assert metrics["safety"]["intervention_rate"] == 1.0
-    assert metrics["safety"]["trigger_types"] == {"refusal": 1, "caveat": 0}
+    _build_metrics_fixture(
+        parsed,
+        monkeypatch,
+        metrics_args=["--locale", "ja-JP"],
+    )
+    second = _metrics_artifact_text(parsed)
+
+    assert first == second
 
 
 def test_analyze_metrics_detects_caveat_only_intervention(tmp_path, monkeypatch):
@@ -652,36 +663,6 @@ def test_analyze_metrics_intervention_count_stays_zero_without_safety_signal(
     assert metrics["safety"]["intervention_count"] == 0
     assert metrics["safety"]["intervention_rate"] == 0.0
     assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 0}
-
-
-def test_analyze_metrics_uses_en_us_intervention_indicator_fallback_for_missing_locale(
-    tmp_path, monkeypatch
-):
-    parsed = tmp_path / "thread-conv-intervention-locale-fallback" / "parsed.jsonl"
-    _write_parsed_jsonl(
-        parsed,
-        "conv-intervention-locale-fallback",
-        [
-            {"message_id": "m1", "role": "user", "text": "Explain the issue."},
-            {
-                "message_id": "m2",
-                "role": "assistant",
-                "text": "Be careful when sharing personal data online.",
-            },
-        ],
-    )
-
-    _token_stats, metrics = _build_metrics_fixture(
-        parsed,
-        monkeypatch,
-        metrics_args=["--locale", "fr-FR"],
-    )
-
-    assert metrics["safety"]["refusal_count"] == 0
-    assert metrics["safety"]["refusal_rate"] == 0.0
-    assert metrics["safety"]["intervention_count"] == 1
-    assert metrics["safety"]["intervention_rate"] == 1.0
-    assert metrics["safety"]["trigger_types"] == {"refusal": 0, "caveat": 1}
 
 
 def test_analyze_metrics_detects_similarity_revision_across_assistant_gap(
@@ -759,9 +740,7 @@ def test_analyze_metrics_does_not_count_very_short_user_messages_as_revisions(
     assert metrics["interaction"]["retry_count"] == 0
 
 
-def test_analyze_metrics_detects_correction_via_locale_cues(
-    tmp_path, monkeypatch
-):
+def test_analyze_metrics_detects_correction_via_machine_cues(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-correction-cue" / "parsed.jsonl"
     _write_parsed_jsonl(
         parsed,
@@ -787,9 +766,7 @@ def test_analyze_metrics_detects_correction_via_locale_cues(
     assert metrics["interaction"]["correction_rate"] == 0.5
 
 
-def test_analyze_metrics_detects_clarification_via_locale_cues(
-    tmp_path, monkeypatch
-):
+def test_analyze_metrics_detects_clarification_via_machine_cues(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-clarification-cue" / "parsed.jsonl"
     _write_parsed_jsonl(
         parsed,
@@ -859,36 +836,6 @@ def test_analyze_metrics_revision_rate_is_zero_with_zero_or_one_user_message(
     assert metrics["interaction"]["retry_count"] == 0
 
 
-def test_analyze_metrics_uses_en_us_revision_cue_fallback_for_missing_locale(
-    tmp_path, monkeypatch
-):
-    parsed = tmp_path / "thread-conv-revision-locale-fallback" / "parsed.jsonl"
-    _write_parsed_jsonl(
-        parsed,
-        "conv-revision-locale-fallback",
-        [
-            {"message_id": "m1", "role": "user", "text": "Describe HTTP caching."},
-            {"message_id": "m2", "role": "assistant", "text": "Here is a caching summary."},
-            {
-                "message_id": "m3",
-                "role": "user",
-                "text": "Let me rephrase: describe HTTP caching headers only.",
-            },
-        ],
-    )
-
-    _token_stats, metrics = _build_metrics_fixture(
-        parsed,
-        monkeypatch,
-        metrics_args=["--locale", "fr-FR"],
-    )
-
-    assert metrics["interaction"]["revision_count"] == 1
-    assert metrics["interaction"]["revision_rate"] == 0.5
-    assert metrics["interaction"]["clarification_count"] == 1
-    assert metrics["interaction"]["retry_count"] == 0
-
-
 def test_analyze_metrics_detects_retry_when_revision_has_no_subtype_cues(
     tmp_path, monkeypatch
 ):
@@ -948,34 +895,6 @@ def test_analyze_metrics_prioritizes_correction_when_similarity_and_cue_both_mat
     assert metrics["interaction"]["correction_count"] == 1
     assert metrics["interaction"]["clarification_count"] == 0
     assert metrics["interaction"]["retry_count"] == 0
-
-
-def test_analyze_metrics_uses_en_us_correction_and_clarification_fallback(
-    tmp_path, monkeypatch
-):
-    parsed = tmp_path / "thread-conv-subtype-locale-fallback" / "parsed.jsonl"
-    _write_parsed_jsonl(
-        parsed,
-        "conv-subtype-locale-fallback",
-        [
-            {"message_id": "m1", "role": "user", "text": "Explain HTTP cookies."},
-            {"message_id": "m2", "role": "assistant", "text": "Here is the overview."},
-            {
-                "message_id": "m3",
-                "role": "user",
-                "text": "To clarify, focus only on secure and httpOnly cookies.",
-            },
-        ],
-    )
-
-    _token_stats, metrics = _build_metrics_fixture(
-        parsed,
-        monkeypatch,
-        metrics_args=["--locale", "fr-FR"],
-    )
-
-    assert metrics["interaction"]["revision_count"] == 1
-    assert metrics["interaction"]["clarification_count"] == 1
 
 
 def test_analyze_metrics_interaction_subtype_counts_sum_to_revision_count(

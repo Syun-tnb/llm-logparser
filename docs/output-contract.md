@@ -78,19 +78,16 @@ Current i18n behavior is narrower than a fully localized exporter:
 * missing locale sections or keys are acceptable; fallback behavior is the design
 * for the canonical project-wide model, see `docs/requirements.md`
 
-* `--locale` / `--lang` control CLI/help/runtime message localization and analyzer
-  locale-backed phrase resources
+* `--locale` / `--lang` control CLI/help/runtime message localization only
 * `--timezone` controls exporter timestamp conversion
 * Locale resolution lives in `src/llm_logparser/core/i18n.py`
 * Locale files live under `src/llm_logparser/i18n/`
 * Locale files are best-effort YAML mappings and may contain:
   * `messages:` for scalar CLI/help/runtime/error text
-  * `analysis:` for structured analyzer phrase resources
+  * optional structured resources for non-machine runtime features
 * Missing sections and missing keys are allowed; fallback behavior handles partial locale files safely
 * Scalar message lookup falls back as:
   selected locale → `en-US` → raw key
-* Analyzer resources fall back as:
-  selected locale → `en-US`
 * Short aliases such as `en` and `ja` are derived from discovered locale filenames when the language prefix is unambiguous
 * Locale precedence is:
   `--locale` / `--lang` → `LLP_LOCALE` → `profiles.<name>.locale` → `en-US`
@@ -108,6 +105,7 @@ Output-contract caution:
 * `analyze stats` / `analyze timeline` text summaries are intentionally English-only
 * Human-readable Markdown timestamps are timezone-aware but not locale-formatted
 * Stable machine-readable artifacts and field names remain English
+* Deterministic analyzer computation is locale-independent
 
 ---
 

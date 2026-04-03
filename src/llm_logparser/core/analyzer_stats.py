@@ -144,6 +144,8 @@ def _analyze_thread_research(
     intervention_indicators: list[str],
 ) -> dict[str, Any]:
     # invariant: analyzer_stats operates on canonical roles only
+    # Machine safety heuristics must come from the locale-independent analyzer
+    # rule set in analyzer_metrics.py, never from runtime locale resources.
     assistant_texts: list[str] = []
     block_count_total = 0
     code_block_message_count = 0

@@ -191,8 +191,7 @@ analyzer phrase resources:
 - Locale files are best-effort YAML mappings and may contain `messages:` and/or
   `analysis:`.
 - Localized surfaces are:
-  CLI/help/runtime/error messages from `messages:` and analyzer heuristic
-  resources from `analysis:`.
+  CLI/help/runtime/error messages from `messages:`.
 - Not localized by design are:
   `analyze stats` / `analyze timeline` text summaries, stable
   machine-readable artifacts and schema keys, and argparse built-ins
@@ -200,8 +199,6 @@ analyzer phrase resources:
 - The canonical fallback locale is `en-US`.
 - Scalar message lookup falls back as:
   selected locale → `en-US` → raw key.
-- Analyzer resource lookup falls back as:
-  selected locale → `en-US`.
 - Short language aliases are auto-derived from discovered locale filenames when
   the language prefix is unambiguous.
 - Locale precedence is:

@@ -170,6 +170,49 @@ def test_analyze_timeline_json_output(tmp_path, monkeypatch, capsys):
     ]
 
 
+def test_analyze_timeline_json_is_identical_across_locales(tmp_path, monkeypatch, capsys):
+    parsed = tmp_path / "thread-conv-cross-locale" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-cross-locale",
+        [
+            {"role": "user", "ts": 1704067200000, "text": "hello"},
+            {"role": "assistant", "ts": 1704067260000, "text": "world"},
+        ],
+    )
+
+    en_output = _run_cli(
+        monkeypatch,
+        capsys,
+        [
+            "llm-logparser",
+            "--locale",
+            "en-US",
+            "analyze",
+            "timeline",
+            "--input",
+            str(parsed),
+            "--json",
+        ],
+    )
+    ja_output = _run_cli(
+        monkeypatch,
+        capsys,
+        [
+            "llm-logparser",
+            "--locale",
+            "ja-JP",
+            "analyze",
+            "timeline",
+            "--input",
+            str(parsed),
+            "--json",
+        ],
+    )
+
+    assert en_output == ja_output
+
+
 def test_analyze_timeline_hour_bucket_json_output(tmp_path, monkeypatch, capsys):
     parsed = tmp_path / "thread-conv-1" / "parsed.jsonl"
     _write_parsed_jsonl(

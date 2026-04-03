@@ -821,21 +821,21 @@ Locale の優先順位:
 
 Locale データは YAML 駆動です。`src/llm_logparser/i18n/` 配下の locale file は、厳密な契約ではなく best-effort な拡張です。部分的な file でも受け入れられ、`en-US` へのフォールバックは通常挙動です。
 
-スカラーな CLI、help、runtime メッセージは `messages:` 配下にあり、analyzer の phrase 調整は `analysis:` 配下にあります。
+スカラーな CLI、help、runtime メッセージは `messages:` 配下にあります。決定的な analyzer の machine heuristic は locale YAML ではなくコード内の固定 rule set を使います。
 
 キー:
 
 * `analysis.refusal.indicators`
-  assistant メッセージに対する `metrics.json` の refusal 検出で使われる phrase list。
+  locale resource に残っている構造化データキーです。`metrics.json` の machine 計算には使われません。
 
 * `analysis.revision.cues`
-  user メッセージに対する `metrics.json` の revision 検出で使われる phrase list。
+  locale resource に残っている構造化データキーです。`metrics.json` の machine 計算には使われません。
 
 * `analysis.correction.cues`
-  検出された revision の correction subtype 判定で `metrics.json` が使う phrase list。
+  locale resource に残っている構造化データキーです。`metrics.json` の machine 計算には使われません。
 
 * `analysis.clarification.cues`
-  検出された revision の clarification subtype 判定で `metrics.json` が使う phrase list。
+  locale resource に残っている構造化データキーです。`metrics.json` の machine 計算には使われません。
 
 ガイダンス:
 

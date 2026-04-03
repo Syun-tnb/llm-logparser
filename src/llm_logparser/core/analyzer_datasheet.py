@@ -89,6 +89,8 @@ def _format_markdown_value(value: Any) -> str:
 
 def build_datasheet_summary(input_path: Path) -> dict[str, Any]:
     parsed_files = discover_parsed_jsonl(input_path)
+    # Datasheet safety summaries must reuse the same locale-independent machine
+    # cues as metrics/stats so JSON output stays byte-identical across locales.
     refusal_indicators = _load_refusal_indicators()
     intervention_indicators = _load_intervention_indicators()
 
@@ -161,7 +163,7 @@ def build_datasheet_summary(input_path: Path) -> dict[str, Any]:
         "structure": research_summary["structure"],
         "notes": [
             "Generated locally and deterministically from canonical parsed artifacts.",
-            "Safety counts may reuse existing metrics.json sidecars when present.",
+            "Safety counts may reuse existing locale-independent metrics.json sidecars when present.",
             "Structural metrics are lightweight heuristics based on canonical text.",
         ],
     }

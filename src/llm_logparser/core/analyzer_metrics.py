@@ -20,22 +20,13 @@ from .analyzer_common import (
     string_or_none,
     write_json_artifact,
 )
-from .i18n import _, get_resource_list
+from .i18n import _
 from .l1_derivation import (
     discover_parsed_jsonl,
     iter_parsed_records,
     normalized_message_role,
     ts_to_seconds,
 )
-
-# Refusal detection is a normalized substring match against locale-backed cue
-# lists in `src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US`
-# handled by `get_resource_list()`.
-REFUSAL_INDICATORS_RESOURCE_KEY = "analysis.refusal.indicators"
-INTERVENTION_INDICATORS_RESOURCE_KEY = "analysis.safety.intervention_indicators"
-REVISION_CUES_RESOURCE_KEY = "analysis.revision.cues"
-CORRECTION_CUES_RESOURCE_KEY = "analysis.correction.cues"
-CLARIFICATION_CUES_RESOURCE_KEY = "analysis.clarification.cues"
 
 # Revision heuristics are intentionally simple and local:
 # - very short user messages are ignored to reduce false positives from replies
@@ -46,6 +37,54 @@ REVISION_MIN_NORMALIZED_LENGTH = 8
 REVISION_SIMILARITY_THRESHOLD = 0.78
 RAPID_REVISION_SECONDS = 60
 SESSION_GAP_SECONDS = 3600
+
+
+def _normalized_machine_phrases(*phrases: str) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for phrase in phrases:
+        folded = normalize_analysis_text(phrase)
+        if folded:
+            normalized.append(folded)
+    return tuple(normalized)
+
+
+# L1 invariant: machine heuristics must be locale-independent. These cue sets
+# are fixed analyzer constants, not i18n resources.
+MACHINE_REFUSAL_INDICATORS = _normalized_machine_phrases(
+    "I can't help with that",
+    "I cannot provide",
+    "against policy",
+)
+MACHINE_INTERVENTION_INDICATORS = _normalized_machine_phrases(
+    "it's important to note",
+    "however, you should be aware",
+    "i can provide safer alternatives",
+    "be careful when",
+)
+MACHINE_CORRECTION_CUES = _normalized_machine_phrases(
+    "no, that's not what I meant",
+    "that’s not what I meant",
+    "that's not what I meant",
+    "that's not correct",
+    "that is not correct",
+)
+MACHINE_REVISION_CUES = _normalized_machine_phrases(
+    "no, that's not what I meant",
+    "that’s not what I meant",
+    "that's not what I meant",
+    "in other words",
+    "what I mean is",
+    "let me rephrase",
+    "to clarify",
+    "I mean",
+)
+MACHINE_CLARIFICATION_CUES = _normalized_machine_phrases(
+    "in other words",
+    "what I mean is",
+    "let me rephrase",
+    "to clarify",
+    "i mean",
+)
 
 
 class MetricsDependencyError(RuntimeError):
@@ -128,38 +167,24 @@ def _load_diversity_units(token_stats: dict[str, Any], texts: list[str]) -> tupl
     return len(unique_tokens), total_tokens
 
 
-def _load_normalized_phrases(key: str) -> list[str]:
-    # Heuristic cue lists are locale-backed, but metrics.json remains a stable
-    # machine-readable artifact with English schema keys by design. The i18n
-    # layer already applies locale fallback to en-US, so the resulting phrase
-    # list is deterministic for a selected locale.
-    phrases = get_resource_list(key)
-    normalized = []
-    for phrase in phrases:
-        folded = normalize_analysis_text(phrase)
-        if folded:
-            normalized.append(folded)
-    return normalized
-
-
 def _load_refusal_indicators() -> list[str]:
-    return _load_normalized_phrases(REFUSAL_INDICATORS_RESOURCE_KEY)
+    return list(MACHINE_REFUSAL_INDICATORS)
 
 
 def _load_intervention_indicators() -> list[str]:
-    return _load_normalized_phrases(INTERVENTION_INDICATORS_RESOURCE_KEY)
+    return list(MACHINE_INTERVENTION_INDICATORS)
 
 
 def _load_revision_cues() -> list[str]:
-    return _load_normalized_phrases(REVISION_CUES_RESOURCE_KEY)
+    return list(MACHINE_REVISION_CUES)
 
 
 def _load_correction_cues() -> list[str]:
-    return _load_normalized_phrases(CORRECTION_CUES_RESOURCE_KEY)
+    return list(MACHINE_CORRECTION_CUES)
 
 
 def _load_clarification_cues() -> list[str]:
-    return _load_normalized_phrases(CLARIFICATION_CUES_RESOURCE_KEY)
+    return list(MACHINE_CLARIFICATION_CUES)
 
 
 def _matches_phrase(text: str, phrases: list[str]) -> bool:

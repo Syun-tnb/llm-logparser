@@ -257,7 +257,7 @@ Analyzer text output policy:
 
 * `analyze stats` and `analyze timeline` text summaries are intentionally English-only
 * `--json` output is the primary machine-readable analyzer interface
-* locale-backed analyzer resources under `analysis:` are for heuristic inputs, not artifact schema localization
+* locale does not affect deterministic analyzer computation; it only affects CLI/help/runtime text
 * exported Markdown remains timezone-aware but not locale-formatted
 
 ---
@@ -334,20 +334,9 @@ Current limitations:
 `export` and `chain`, where it controls local timestamp rendering in Markdown output.
 Those timestamps are timezone-aware, but not currently locale-formatted.
 
-Analyzer phrase heuristics are not configured through `config.yaml` yet.
-To tune refusal or revision phrase matching, edit the locale resource files directly:
-
-* `src/llm_logparser/i18n/en-US.yaml`
-* `src/llm_logparser/i18n/ja-JP.yaml`
-
-Relevant keys:
-
-* `messages.*` for CLI/help/runtime strings
-* `analysis.refusal.indicators`
-* `analysis.revision.cues`
-
-This is the intended customization path for dialect-specific, informal, or
-domain-specific wording.
+Deterministic analyzer phrase heuristics are not configured through
+`config.yaml` yet. Locale resources remain for CLI/help/runtime messages, but
+they are no longer part of machine metric computation.
 
 ---
 

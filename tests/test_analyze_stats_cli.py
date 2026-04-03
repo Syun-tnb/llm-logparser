@@ -54,6 +54,37 @@ def _run_cli(monkeypatch, capsys, argv: list[str]) -> str:
     return capsys.readouterr().out
 
 
+def _write_metrics_sidecars(root: Path, monkeypatch, capsys, *, locale: str) -> None:
+    _run_cli(
+        monkeypatch,
+        capsys,
+        [
+            "llm-logparser",
+            "--locale",
+            locale,
+            "analyze",
+            "tokens",
+            "--input",
+            str(root),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+    _run_cli(
+        monkeypatch,
+        capsys,
+        [
+            "llm-logparser",
+            "--locale",
+            locale,
+            "analyze",
+            "metrics",
+            "--input",
+            str(root),
+        ],
+    )
+
+
 def _iter_keys(value):
     if isinstance(value, dict):
         for key, nested in value.items():
@@ -756,6 +787,89 @@ def test_analyze_stats_research_summary_falls_back_without_metrics_sidecars(
     assert safety == {
         "threads_with_refusal": 1,
         "threads_with_intervention": 2,
+    }
+
+
+def test_analyze_stats_json_is_identical_across_locales_without_metrics_sidecars(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "I can't help with that request."},
+        ],
+    )
+    _write_parsed_jsonl(
+        root / "b" / "thread-conv-b" / "parsed.jsonl",
+        "conv-b",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "To clarify, please verify the source first."},
+        ],
+    )
+
+    en_output = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "en-US", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    ja_output = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "ja-JP", "analyze", "stats", "--input", str(root), "--json"],
+    )
+
+    assert en_output == ja_output
+
+
+def test_analyze_stats_json_is_identical_across_locales_with_metrics_sidecars(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _build_threads_fixture(root)
+    _write_metrics_sidecars(root, monkeypatch, capsys, locale="en-US")
+
+    en_output = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "en-US", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    ja_output = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "ja-JP", "analyze", "stats", "--input", str(root), "--json"],
+    )
+
+    assert en_output == ja_output
+
+
+def test_analyze_stats_sidecar_provenance_is_locale_independent(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "parsed"
+    _write_parsed_jsonl(
+        root / "a" / "thread-conv-a" / "parsed.jsonl",
+        "conv-a",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "I can't help with that request."},
+        ],
+    )
+    _write_metrics_sidecars(root, monkeypatch, capsys, locale="en-US")
+
+    output = _run_cli(
+        monkeypatch,
+        capsys,
+        ["llm-logparser", "--locale", "ja-JP", "analyze", "stats", "--input", str(root), "--json"],
+    )
+    payload = json.loads(output)
+
+    assert payload["research_summary"]["safety"] == {
+        "threads_with_refusal": 1,
+        "threads_with_intervention": 1,
     }
 
 

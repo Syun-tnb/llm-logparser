@@ -189,13 +189,13 @@ Incremental sidecar policy:
 - `--dry-run`: preview detected threads plus planned create/rebuild/skip counts without writing files
 - `analyze metrics --skip-existing` still requires pre-existing `token_stats.json` for any thread whose `metrics.json` is missing
 
-The refusal and revision phrase lists are locale-backed and loaded from
-`src/llm_logparser/i18n/{locale}.yaml`, with fallback to `en-US` when a key is missing.
+The refusal, intervention, and revision phrase lists used by deterministic
+machine analysis are fixed analyzer rule sets defined in code.
 
 The metrics heuristics are deterministic and local:
 
 - refusal detection: normalized substring match on assistant messages only
-- safety intervention detection: normalized substring match on assistant messages using locale YAML caveat indicators
+- safety intervention detection: normalized substring match on assistant messages using the fixed machine intervention cue set
 - revision detection: normalized cue match or similarity match between consecutive user messages
 - short user messages are ignored for revision counting to reduce false positives
 - revision subtypes use cue precedence: correction, then clarification, then generic retry
@@ -206,11 +206,11 @@ The metrics heuristics are deterministic and local:
 - `user_effort.response_length_ratio`: `total_assistant_characters / total_user_characters`, or `null` when user characters are `0`
 - `user_effort.negative_deltas`: count assistant → next user transitions whose timestamp delta is negative
 - `user_effort.human_read_time`: assistant → next user deltas, excluding gaps over `3600` seconds from summary stats, excluding negative deltas entirely, and counting long gaps separately as `excluded_long_gaps`
-- phrase lists come from locale YAML resources and remain auditable/editable on disk
+- machine phrase lists are locale-independent so `metrics.json`, `analyze stats --json`, and `analyze datasheet --json` remain identical across locales
 
 Analyzer i18n is intentionally narrow:
 
-- locale-backed YAML resources only affect heuristic inputs such as refusal and revision cues
+- locale affects presentation only: CLI/help/runtime strings, logs, and human-facing renderers
 - the human-readable text renderers for `analyze stats`, `analyze datasheet`,
   and `analyze timeline` are intentionally English-only
 - structured JSON output and schema keys remain English for tooling stability
@@ -250,7 +250,7 @@ The additive `analyze stats` research summary is intentionally lightweight:
 - turn-taking aggregates summarize per-thread `characters_user / characters_assistant`
   and exclude zero assistant denominators
 - safety aggregates count threads with refusal or intervention signals, reusing
-  existing `metrics.json` when present but still working without it
+  existing locale-independent `metrics.json` when present but still working without it
 - structural aggregates use simple local heuristics such as `content.parts`
   length and fenced code block markers; they are not a Markdown or multimodal parser
 

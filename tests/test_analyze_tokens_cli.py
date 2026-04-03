@@ -70,6 +70,10 @@ def _write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _token_stats_artifact_text(parsed_path: Path) -> str:
+    return parsed_path.with_name("token_stats.json").read_text(encoding="utf-8")
+
+
 def test_analyze_tokens_writes_deterministic_artifact(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-1" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -95,6 +99,52 @@ def test_analyze_tokens_writes_deterministic_artifact(tmp_path, monkeypatch):
 
     _run_cli(monkeypatch, argv)
     second = parsed.with_name("token_stats.json").read_text(encoding="utf-8")
+
+    assert first == second
+
+
+def test_analyze_tokens_sidecar_is_identical_across_locales(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-cross-locale" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-cross-locale",
+        [
+            {"message_id": "m1", "role": "user", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "world"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "--locale",
+            "en-US",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+    first = _token_stats_artifact_text(parsed)
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "--locale",
+            "ja-JP",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+    second = _token_stats_artifact_text(parsed)
 
     assert first == second
 
