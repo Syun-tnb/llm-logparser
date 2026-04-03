@@ -76,10 +76,10 @@ def _fake_adapter(_raw):
     ]
 
 
-def test_iter_message_windows_from_rows_is_deterministic_and_role_aware():
+def test_iter_message_windows_from_rows_is_deterministic_and_uses_normalized_roles():
     rows = [
-        _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),
-        _canonical_message("conv-1", "m2", "system", 1704067202000, "second"),
+        _canonical_message("conv-1", "m1", "User", 1704067201000, "first"),
+        _canonical_message("conv-1", "m2", " SYSTEM ", 1704067202000, "second"),
         _canonical_message("conv-1", "m3", "assistant", 1704067203000, "third"),
         _canonical_message("conv-1", "m4", "tool", 1704067204000, "tool-output"),
         _canonical_message("conv-1", "m5", None, 1704067205000, "fifth"),
@@ -112,6 +112,27 @@ def test_iter_message_windows_from_rows_is_deterministic_and_role_aware():
     assert "system: second" in first[0]["text"]
     assert "tool: tool-output" in first[1]["text"]
     assert "unknown: fifth" in first[1]["text"]
+    assert "User: first" not in first[0]["text"]
+    assert " SYSTEM : second" not in first[0]["text"]
+
+
+def test_message_windows_do_not_leak_raw_provider_roles():
+    rows = [
+        _canonical_message("conv-1", "m1", "USER", 1, "hello"),
+        _canonical_message("conv-1", "m2", "moderator", 2, "hidden"),
+    ]
+
+    artifact = build_message_window_artifact(
+        rows,
+        window_index=1,
+        window_size=2,
+        window_stride=2,
+    )
+
+    assert artifact["roles"] == ["user", "unknown"]
+    assert artifact["text"] == "user: hello\n\nunknown: hidden"
+    assert "USER:" not in artifact["text"]
+    assert "moderator:" not in artifact["text"]
 
 
 def test_iter_message_windows_from_rows_supports_sliding_stride():

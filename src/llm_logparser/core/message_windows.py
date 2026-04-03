@@ -7,8 +7,8 @@ from typing import Any, Iterable, Iterator
 from .l1_derivation import (
     iter_message_records,
     message_character_count,
-    message_role,
     message_text,
+    normalized_message_role,
 )
 
 DEFAULT_MESSAGE_WINDOW_SIZE = 4
@@ -27,7 +27,7 @@ def _window_id(index: int) -> str:
 def _window_text(rows: list[dict[str, Any]]) -> str:
     parts = []
     for row in rows:
-        parts.append(f"{message_role(row) or 'unknown'}: {message_text(row)}")
+        parts.append(f"{normalized_message_role(row)}: {message_text(row)}")
     return "\n\n".join(parts)
 
 
@@ -38,7 +38,7 @@ def build_message_window_artifact(
     window_size: int,
     window_stride: int,
 ) -> dict[str, Any]:
-    """Build a deterministic message window artifact from canonical message rows."""
+    """Build a deterministic L1 message-window artifact from canonical rows."""
     if not rows:
         raise ValueError("message window requires at least one message")
 
@@ -53,7 +53,7 @@ def build_message_window_artifact(
         "conversation_id": conversation_id,
         "window_id": _window_id(window_index),
         "message_ids": [row.get("message_id") for row in rows],
-        "roles": [message_role(row) or "unknown" for row in rows],
+        "roles": [normalized_message_role(row) for row in rows],
         "message_count": len(rows),
         "char_count": sum(message_character_count(row) for row in rows),
         "ts_start": min(timestamps) if timestamps else None,

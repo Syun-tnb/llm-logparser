@@ -131,11 +131,16 @@ def message_role(row: dict[str, Any]) -> str | None:
     """Return the raw provider role string when present.
 
     This is intentionally distinct from `normalize_role_value()`. Raw access is
-    still used by thread stats, timeline text, and SQLite/message-window
-    sidecars where preserving the provider-emitted role label is desirable.
+    still used by thread stats, timeline text, and selected pass-through views
+    where preserving the provider-emitted role label is desirable.
     """
     role = row.get("role")
     return role if isinstance(role, str) and role else None
+
+
+def normalized_message_role(row: dict[str, Any]) -> str:
+    """Return the canonical normalized role label for shared L1 consumers."""
+    return normalize_role_value(row.get("role"))
 
 
 @dataclass

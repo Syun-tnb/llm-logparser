@@ -134,8 +134,8 @@ thread-<conversation_id>/
     metrics.json
 ```
 
-`thread_stats.json` is a cheap deterministic thread-local artifact generated
-during parse from the same canonical message rows written to `parsed.jsonl`.
+`thread_stats.json` is a cheap deterministic thread-local artifact derived
+from the same canonical message rows written to `parsed.jsonl`.
 It provides lightweight counts and timestamp-derived metadata for downstream
 L3/local-LLM pipelines without requiring a later thread rescan.
 
@@ -160,7 +160,8 @@ Contract:
   - `characters_assistant`: characters from messages whose raw role is `assistant`
   - `other_role_breakdown`: sorted mapping of each non-`user`/`assistant` raw role label to its count, using `unknown` for missing roles
 - notes:
-  - `thread_stats.json` is parse-time metadata, not an analyzer-generated sidecar
+  - `thread_stats.json` is a deterministic L1 artifact, not canonical storage
+  - it may be materialized during parse for convenience, but its conceptual ownership remains L1
   - it now emits an explicit `schema_version` for contract stability
   - analyzers may consume it as a lightweight summary in the future, but it is not the canonical source for analysis
   - analyzer correctness must still come from `parsed.jsonl`, even if `thread_stats.json` is missing or stale
@@ -175,9 +176,10 @@ SQLite correspondence for downstream consumers:
 - `thread_stats.json.other_role_breakdown` is currently imported into SQLite
   `threads.other_role_breakdown` as JSON-serialized `TEXT`
 
-`message_windows.jsonl` is a deterministic thread-local text artifact derived
-only from canonical message rows. The first version uses simple fixed-size
-contiguous message windows with preserved role sequence and message traceability.
+`message_windows.jsonl` is a deterministic L1 thread-local segmentation artifact
+derived only from canonical message rows. The first version uses simple
+fixed-size contiguous message windows with preserved normalized role sequence
+and message traceability.
 
 Contract:
 
@@ -199,7 +201,9 @@ Contract:
   - `window_stride`: configured stride used to generate the row
   - `text`: deterministic concatenated window text
 - notes:
-  - `message_windows.jsonl` is a parse-time thread-local artifact, not canonical storage
+  - `message_windows.jsonl` is an L1 deterministic artifact, not canonical storage
+  - it may be materialized during parse for convenience or performance, but its conceptual ownership remains L1
+  - it is a deterministic segmentation substrate, not a semantic unit
   - rows now emit an explicit `schema_version` for contract stability
   - window IDs remain deterministic sequential IDs in emission order; changing
     size or stride changes which message spans receive those IDs, but not the
@@ -269,7 +273,8 @@ Current shared responsibilities include:
 - normalizing roles and small deterministic numeric helpers
 
 These helpers are intended to be reusable both from `analyze` subcommands and
-from future parse-time thread-local artifact generation.
+from deterministic L1 artifact materialization paths, including convenience
+writes that happen during parse.
 
 The primary contract remains the normalized top-level `text` emitted during
 parse. When downstream consumers fall back to `content.parts`, they are doing
@@ -293,7 +298,8 @@ does not emit per-message `text_source`.
 
 # 4. Parse Stage (Canonical Base)
 
-The `parse` stage performs provider normalization and generates thread-local artifacts.
+The `parse` stage performs provider normalization and may materialize
+deterministic thread-local L1 artifacts alongside canonical output.
 
 ### Design Goals
 
@@ -305,7 +311,7 @@ The `parse` stage performs provider normalization and generates thread-local art
 
 ### Allowed Operations
 
-During `parse`, the system **may generate artifacts that are naturally available during the parsing loop**.
+During `parse`, the system **may materialize deterministic L1 artifacts that are naturally available during the parsing loop**.
 
 These operations must be **O(1) incremental updates** or **thread-local calculations**.
 
@@ -316,10 +322,10 @@ Allowed categories:
 | normalization | provider → canonical schema |
 | thread-local metrics | message counts, char counts |
 | time extraction | first/last timestamps |
-| deterministic chunking | message windows |
+| deterministic L1 segmentation | message windows |
 | lightweight aggregation | counters and min/max updates |
 
-### Examples of Valid Parse-Time Artifacts
+### Examples of Valid Parse-Time Materialization
 
 Thread-local artifacts:
 
@@ -381,6 +387,8 @@ All chunking and message window artifacts must be derived from
 the canonical normalized dataset (`parsed.jsonl`).
 
 Chunking must never operate directly on raw provider exports.
+When `message_windows.jsonl` is materialized during parse, it still remains an
+L1 artifact built from canonical normalized fields rather than parse-owned meaning.
 
 ---
 

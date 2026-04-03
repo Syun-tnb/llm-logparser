@@ -81,6 +81,8 @@ No databases, no AI models.
 
 These analyses are fast, reproducible, and safe to run in any environment.
 Their outputs are deterministic artifacts or views derived from canonical data.
+L1 does not define semantic meaning: it consumes canonical normalized fields
+only and produces deterministic substrates, sidecars, and views.
 
 Current Layer 1 implementations include:
 
@@ -121,6 +123,8 @@ In this model:
 - Layer 2 adds an optional deterministic SQLite index
 - Layer 3 and Layer 4 outputs, when added, remain separate higher-layer artifacts
 - higher layers do not replace canonical data or deterministic sidecars/views
+- shared L1 artifacts must use canonical normalized fields rather than raw
+  provider-specific labels or structures
 
 Recommended workflow when you want the full analyze stack:
 
@@ -524,6 +528,9 @@ deterministic and model-derived capabilities.
 - `semantic-prototype` is an experimental bridge into future L3 work: it
   reads deterministic `message_windows.jsonl`, writes rebuildable embedding,
   neighbor, and minimal cluster artifacts, and does not perform topic labeling
+  `message_windows.jsonl` is an L1 deterministic segmentation substrate, not a
+  semantic unit, and its shared fields such as roles must remain canonical and
+  normalized rather than provider-specific.
   Window generation quality can now be improved upstream with deterministic
   sliding windows: `message_windows.jsonl` still defaults to
   non-overlapping windows, but parse/chain can opt into overlap by setting
