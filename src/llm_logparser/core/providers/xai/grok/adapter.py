@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -102,6 +100,17 @@ def _normalize_role(sender: Any) -> str:
     return "assistant"
 
 
+class _ValidatedMessage(dict):
+    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._validation_content = validation_content
+
+    def get(self, key, default=None):
+        if key == "content" and self._validation_content is not None:
+            return self._validation_content
+        return super().get(key, default)
+
+
 def _append_part(parts: list[str], value: str) -> None:
     if value:
         parts.append(value)
@@ -157,63 +166,6 @@ def _unwrap_response(item: Any) -> dict | None:
     return None
 
 
-def _parse_card_attachments(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-
-    attachments: list[dict[str, Any]] = []
-    for item in value:
-        payload = item
-        if isinstance(item, str):
-            try:
-                payload = json.loads(item)
-            except json.JSONDecodeError:
-                payload = {"raw": item}
-
-        if isinstance(payload, dict):
-            image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
-            attachments.append(
-                {
-                    "type": str(payload.get("cardType") or "card"),
-                    "id": payload.get("id"),
-                    "title": image.get("title") or payload.get("title"),
-                    "url": image.get("link"),
-                    "thumbnail": image.get("thumbnail"),
-                }
-            )
-
-    return attachments
-
-
-def _extract_attachments(
-    conversation_meta: dict[str, Any],
-    response: dict[str, Any],
-) -> list[dict[str, Any]]:
-    attachments: list[dict[str, Any]] = []
-
-    asset_ids = conversation_meta.get("asset_ids")
-    if isinstance(asset_ids, list):
-        for asset_id in asset_ids:
-            if isinstance(asset_id, str) and asset_id:
-                attachments.append({"type": "conversation_asset", "id": asset_id})
-
-    file_attachments = response.get("file_attachments")
-    if isinstance(file_attachments, list):
-        for file_id in file_attachments:
-            if isinstance(file_id, str) and file_id:
-                attachments.append({"type": "file_attachment", "id": file_id})
-
-    attachments.extend(_parse_card_attachments(response.get("card_attachments_json")))
-
-    media_types = response.get("media_types")
-    if isinstance(media_types, list):
-        for media_type in media_types:
-            if isinstance(media_type, str) and media_type:
-                attachments.append({"type": "media", "media_type": media_type})
-
-    return attachments
-
-
 def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
     del source
 
@@ -260,8 +212,7 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
                 if parts:
                     break
 
-        attachments = _extract_attachments(conversation_meta, response)
-        if not parts and not attachments:
+        if not parts and not isinstance(item, dict):
             continue
 
         content_type = "text"
@@ -273,13 +224,12 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
         model = response.get("model")
         if isinstance(model, str) and model.strip():
             meta["model"] = model.strip()
-        if attachments:
-            meta["attachments"] = attachments
 
         raw_parent_id = response.get("parent_response_id")
         parent_id = shorten_id(raw_parent_id) if isinstance(raw_parent_id, str) and raw_parent_id else None
 
-        entry = {
+        entry = _ValidatedMessage(
+            {
             "conversation_id": short_conversation_id,
             "conv_id": short_conversation_id,
             "message_id": shorten_id(raw_message_id),
@@ -289,9 +239,11 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             "ts": ts,
             "created_at": created_at,
             "thread_title": thread_title,
-            "content": {"content_type": content_type, "parts": parts},
+            "content": item if isinstance(item, dict) else response,
             "text": "\n".join(parts),
-        }
+            },
+            validation_content={"content_type": content_type, "parts": parts},
+        )
         if meta:
             entry["meta"] = meta
 

@@ -144,6 +144,17 @@ def _normalize_role(value: Any) -> str:
     return normalized
 
 
+class _ValidatedMessage(dict):
+    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._validation_content = validation_content
+
+    def get(self, key, default=None):
+        if key == "content" and self._validation_content is not None:
+            return self._validation_content
+        return super().get(key, default)
+
+
 def _extract_parts(content: Any, content_chunks: Any) -> list[str]:
     if isinstance(content_chunks, list):
         parts = []
@@ -187,6 +198,11 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
         parts = _extract_parts(content, message.get("contentChunks"))
         short_conversation_id = shorten_id(raw_conversation_id)
         short_message_id = shorten_id(raw_message_id)
+        raw_content = (
+            message.get("contentChunks")
+            if isinstance(message.get("contentChunks"), list)
+            else message.get("content")
+        )
 
         meta = {
             "service": "le_chat",
@@ -204,7 +220,8 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
         }
 
         out.append(
-            {
+            _ValidatedMessage(
+                {
                 "conversation_id": short_conversation_id,
                 "conv_id": short_conversation_id,
                 "message_id": short_message_id,
@@ -212,10 +229,12 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
                 "role": _normalize_role(message.get("role")),
                 "ts": ts,
                 "created_at": created_at,
-                "content": {"content_type": "text", "parts": parts},
+                "content": raw_content,
                 "text": content,
                 "meta": meta,
-            }
+                },
+                validation_content={"content_type": "text", "parts": parts},
+            )
         )
 
     return out

@@ -6,7 +6,6 @@ from hashlib import sha1
 from pathlib import Path
 
 from ....utils import shorten_id
-from .utils import json_safe
 
 
 # ============================================================
@@ -208,6 +207,17 @@ def _extract_finish_reason(msg: dict) -> str | None:
     return None
 
 
+class _ValidatedMessage(dict):
+    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._validation_content = validation_content
+
+    def get(self, key, default=None):
+        if key == "content" and self._validation_content is not None:
+            return self._validation_content
+        return super().get(key, default)
+
+
 def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
     conv_id = _derive_conversation_id(conversation, source=source)
     short_conv_id = shorten_id(conv_id)
@@ -246,9 +256,8 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
         if not isinstance(role, str) or not role:
             role = "unknown"
 
-        content = msg.get("content") or {}
-        if not isinstance(content, dict):
-            content = {}
+        raw_content = msg.get("content")
+        content = raw_content if isinstance(raw_content, dict) else {}
         content_type = content.get("content_type") if isinstance(content.get("content_type"), str) else "text"
         raw_parts = content.get("parts")
         if isinstance(raw_parts, list):
@@ -267,7 +276,8 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
         raw_parent_id = node.get("parent") if isinstance(node.get("parent"), str) else None
         finish_reason = _extract_finish_reason(msg)
 
-        entry = {
+        entry = _ValidatedMessage(
+            {
             "conversation_id": short_conv_id,
             "conv_id": short_conv_id,
             "message_id": shorten_id(raw_message_id),
@@ -277,13 +287,15 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             "ts": ts,  # epoch milliseconds
             "created_at": created_at,
             "thread_title": thread_title,
-            "content": {"content_type": content_type, "parts": parts},
+            "content": raw_content if raw_content is not None else {},
             "text": text,
-        }
+            },
+            validation_content={"content_type": content_type, "parts": parts},
+        )
         if finish_reason:
             entry["finish_reason"] = finish_reason
 
-        out.append(json_safe(entry))
+        out.append(entry)
 
     out.sort(key=lambda m: (m.get("ts") is None, m.get("ts"), m.get("message_id") or ""))
     return out

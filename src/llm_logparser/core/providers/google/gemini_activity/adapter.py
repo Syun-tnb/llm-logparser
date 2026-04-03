@@ -317,6 +317,17 @@ def _warn_unrecognized_title_prefix_once(
     warning_state["gemini_title_prefix_unrecognized"] = True
 
 
+class _ValidatedMessage(dict):
+    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._validation_content = validation_content
+
+    def get(self, key, default=None):
+        if key == "content" and self._validation_content is not None:
+            return self._validation_content
+        return super().get(key, default)
+
+
 def adapter(
     record: Any,
     *,
@@ -362,7 +373,8 @@ def adapter(
     if user_text:
         user_message_id = synthetic_message_id(record, "user")
         out.append(
-            {
+            _ValidatedMessage(
+                {
                 "conversation_id": conversation_id,
                 "conv_id": conversation_id,
                 "message_id": user_message_id,
@@ -371,15 +383,18 @@ def adapter(
                 "role": "user",
                 "ts": ts,
                 "created_at": created_at,
-                "content": {"content_type": "text", "parts": [user_text]},
+                "content": raw_title if isinstance(raw_title, str) else "",
                 "text": user_text,
                 "meta": meta,
-            }
+                },
+                validation_content={"content_type": "text", "parts": [user_text]},
+            )
         )
 
     if assistant_text:
         assistant_message_id = synthetic_message_id(record, "assistant")
-        assistant_doc = {
+        assistant_doc = _ValidatedMessage(
+            {
             "conversation_id": conversation_id,
             "conv_id": conversation_id,
             "message_id": assistant_message_id,
@@ -388,13 +403,12 @@ def adapter(
             "role": "assistant",
             "ts": ts,
             "created_at": created_at,
-            "content": {
-                "content_type": "text",
-                "parts": [assistant_text],
-            },
+            "content": record.get("safeHtmlItem"),
             "text": assistant_text,
             "meta": meta,
-        }
+            },
+            validation_content={"content_type": "text", "parts": [assistant_text]},
+        )
         if user_message_id is not None:
             assistant_doc["parent_id"] = user_message_id
         out.append(assistant_doc)

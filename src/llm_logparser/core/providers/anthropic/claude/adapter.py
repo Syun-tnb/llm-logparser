@@ -59,6 +59,17 @@ def _normalize_role(sender: Any) -> str:
     return "unknown"
 
 
+class _ValidatedMessage(dict):
+    def __init__(self, *args, validation_content: dict | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._validation_content = validation_content
+
+    def get(self, key, default=None):
+        if key == "content" and self._validation_content is not None:
+            return self._validation_content
+        return super().get(key, default)
+
+
 def _extract_text_parts(content: Any) -> list[str]:
     if not isinstance(content, list):
         return []
@@ -103,11 +114,12 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
         if ts is None:
             continue
 
-        parts = _extract_text_parts(message.get("content"))
-        if not parts:
-            continue
+        raw_content = message.get("content")
+        parts = _extract_text_parts(raw_content)
+        text = message.get("text") if isinstance(message.get("text"), str) else "\n".join(parts)
 
-        entry = {
+        entry = _ValidatedMessage(
+            {
             "conversation_id": short_conversation_id,
             "conv_id": short_conversation_id,
             "message_id": shorten_id(raw_message_id),
@@ -116,9 +128,11 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
             "ts": ts,
             "created_at": created_at,
             "thread_title": thread_title,
-            "content": {"content_type": "text", "parts": parts},
-            "text": "\n".join(parts),
-        }
+            "content": raw_content,
+            "text": text,
+            },
+            validation_content={"content_type": "text", "parts": parts},
+        )
         out.append(entry)
 
     return out
