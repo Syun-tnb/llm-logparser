@@ -19,14 +19,14 @@
 | `parent` (node) | `parent_id` | `null` if no parent |
 | `message.author.role` | `role` | Falls back to `"unknown"` |
 | `message.create_time` | `ts` | Epoch milliseconds |
-| `message.content` | `content` | `{ "content_type": "…", "parts": [...] }` |
-| *(derived from parts)* | `text` | `"\n".join(content.parts)` |
+| `message.content` | `content` | Provider-native content payload is preserved |
+| provider text-bearing raw fields | `text` | Canonical top-level text is derived by the adapter/parser |
 
 Adapter responsibility note:
 
 - adapters are the primary boundary that produces normalized top-level `text`
-- exporter-side reconstruction from `content.parts` is only a defensive fallback for malformed or incomplete normalized rows
-- that fallback does not redefine the canonical contract or move normalization responsibility out of adapters
+- parse/adapters are the only authority for canonical `text`
+- downstream L1/export/analyzer code must not reconstruct text from provider-native `content`
 
 > **Note:** In the current MVP, normalization is handled internally by Python code.
 > The file `mapping.sample.yaml` in `docs/examples/` is provided only as a **sample** for future external mapping support.
@@ -100,8 +100,8 @@ They are not active runtime config until external provider mapping support is im
 | *(not available in export)* | `parent_id` | Always `null` in v1 |
 | `role` | `role` | Lowercased with small alias handling |
 | `createdAt` | `ts` | ISO-8601 → epoch milliseconds |
-| `content` | `text` | Canonical top-level text comes directly from `content` |
-| `contentChunks[*].text` / `content` | `content.parts` | Uses chunk texts first, then falls back to `[content]`, then `[]` |
+| `content` / `contentChunks[*].text` | `text` | Canonical top-level text comes from `content`, or ordered chunk text when `content` is empty |
+| `content` / `contentChunks` | `content` | Provider-native payload is preserved without flattening |
 | provider-specific fields | `meta` | Includes `service="le_chat"` plus raw IDs and extra provider fields |
 
 ## Google (Gemini My Activity)

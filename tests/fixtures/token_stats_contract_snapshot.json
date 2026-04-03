@@ -29,23 +29,22 @@
     {
       "message_id": "m2",
       "role": "assistant",
-      "text_source": "content.parts",
+      "text_source": "text",
       "token_count": 5
     },
     {
       "message_id": "m3",
       "role": "assistant",
-      "text_source": "empty",
+      "text_source": "text",
       "token_count": 0
     }
   ],
   "provider_id": "openai",
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "summary": {
     "avg_tokens_per_message": 2.33,
     "avg_tokens_per_turn": 7.0,
-    "empty_text_messages": 1,
-    "fallback_text_from_parts": 1,
+    "empty_text_messages": 0,
     "message_count": 3,
     "tokens_assistant": 5,
     "tokens_total": 7,

@@ -185,8 +185,7 @@ def export_thread_md(
         role = m.get("role", "unknown")
         ts_human = _to_local_human(m.get("ts"), tz=tz)
 
-        # Downstream rendering uses canonical top-level `text`.
-        # `content.parts` is legacy fallback support for older parsed artifacts only.
+        # Downstream rendering uses canonical top-level `text` only.
         raw_text, _text_source = resolve_message_text(m)
         text = _render_message_text(raw_text, policy)
 

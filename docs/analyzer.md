@@ -251,8 +251,8 @@ The additive `analyze stats` research summary is intentionally lightweight:
   and exclude zero assistant denominators
 - safety aggregates count threads with refusal or intervention signals, reusing
   existing locale-independent `metrics.json` when present but still working without it
-- structural aggregates use simple local heuristics such as `content.parts`
-  length and fenced code block markers; they are not a Markdown or multimodal parser
+- structural aggregates use canonical top-level `text` and simple fenced code
+  block markers; they are not a Markdown or multimodal parser
 
 `analyze datasheet` builds on those same deterministic concepts, but presents
 them as a stable report layer:

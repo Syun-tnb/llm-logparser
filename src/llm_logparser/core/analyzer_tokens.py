@@ -10,14 +10,13 @@ from .i18n import _
 from .analyzer_common import (
     ROLE_ORDER,
     UNKNOWN_ROLE,
-    normalize_role,
     plan_sidecar_actions,
     render_artifact_json,
     resolve_canonical_text,
     string_or_none,
     write_json_artifact,
 )
-from .l1_derivation import discover_parsed_jsonl, iter_parsed_records
+from .l1_derivation import canonical_role_or_unknown, discover_parsed_jsonl, iter_parsed_records
 
 
 @dataclass(frozen=True)
@@ -165,7 +164,6 @@ def build_token_stats_artifact(
     tokens_total = 0
     tokens_user = 0
     tokens_assistant = 0
-    fallback_text_from_parts = 0
     empty_text_messages = 0
 
     for row in iter_parsed_records(parsed_path):
@@ -190,7 +188,7 @@ def build_token_stats_artifact(
                 thread_model = string_or_none(meta.get("model"))
 
         # L1 invariant: must use canonical normalized roles only
-        role = normalize_role(row.get("role"))
+        role = canonical_role_or_unknown(row.get("role"))
         text, text_source = resolve_canonical_text(row)
         buffered_messages.append(
             {
@@ -216,9 +214,7 @@ def build_token_stats_artifact(
         text = row["text"]
         text_source = row["text_source"]
 
-        if text_source == "content.parts":
-            fallback_text_from_parts += 1
-        elif text_source == "empty":
+        if text_source == "empty":
             empty_text_messages += 1
 
         token_count = tokenizer.count_text(text)
@@ -244,7 +240,7 @@ def build_token_stats_artifact(
 
     artifact = {
         "artifact_type": "token_stats",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "provider_id": provider_id or "unknown",
         "conversation_id": conversation_id,
         "tokenizer": tokenizer.metadata(),
@@ -260,7 +256,6 @@ def build_token_stats_artifact(
             "avg_tokens_per_turn": round(tokens_total / turn_count, 2)
             if turn_count
             else 0.0,
-            "fallback_text_from_parts": fallback_text_from_parts,
             "empty_text_messages": empty_text_messages,
         },
         "by_role": {

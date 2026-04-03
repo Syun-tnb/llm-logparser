@@ -7,10 +7,10 @@ from typing import Any
 
 from .l1_derivation import (
     assert_normalized_role,
+    canonical_role_or_unknown,
     discover_parsed_jsonl,
     iter_message_records,
     message_character_count,
-    normalized_message_role,
     ts_to_seconds,
 )
 
@@ -66,7 +66,7 @@ def analyze_timeline(input_path: Path, bucket: str = "day") -> dict[str, Any]:
             item["characters_total"] += message_character_count(row)
 
             # L1 invariant: must use canonical normalized roles only
-            role = normalized_message_role(row)
+            role = canonical_role_or_unknown(row.get("role"))
             assert_normalized_role(role)
             if role == "user":
                 item["user_messages"] += 1

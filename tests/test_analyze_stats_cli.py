@@ -529,7 +529,7 @@ def test_analyze_stats_json_output_is_deterministic(tmp_path, monkeypatch, capsy
     assert "seed" not in keys
 
 
-def test_analyze_stats_uses_normalized_roles_for_counts_breakdown_and_assistant_research(
+def test_analyze_stats_uses_canonical_roles_without_normalizing_variants(
     tmp_path, monkeypatch, capsys
 ):
     parsed = tmp_path / "thread-conv-role-normalized" / "parsed.jsonl"
@@ -568,15 +568,15 @@ def test_analyze_stats_uses_normalized_roles_for_counts_breakdown_and_assistant_
 
     assert payload["threads"] == 1
     assert payload["messages"] == 5
-    assert payload["user_messages"] == 1
-    assert payload["assistant_messages"] == 1
-    assert payload["other_roles"] == 3
-    assert payload["other_role_breakdown"] == {"tool": 1, "unknown": 2}
-    assert payload["threads_detail"][0]["user_messages"] == 1
-    assert payload["threads_detail"][0]["assistant_messages"] == 1
-    assert payload["threads_detail"][0]["other_roles"] == 3
-    assert payload["research_summary"]["safety"]["threads_with_refusal"] == 1
-    assert payload["research_summary"]["safety"]["threads_with_intervention"] == 1
+    assert payload["user_messages"] == 0
+    assert payload["assistant_messages"] == 0
+    assert payload["other_roles"] == 5
+    assert payload["other_role_breakdown"] == {"tool": 1, "unknown": 4}
+    assert payload["threads_detail"][0]["user_messages"] == 0
+    assert payload["threads_detail"][0]["assistant_messages"] == 0
+    assert payload["threads_detail"][0]["other_roles"] == 5
+    assert payload["research_summary"]["safety"]["threads_with_refusal"] == 0
+    assert payload["research_summary"]["safety"]["threads_with_intervention"] == 0
 
 
 def test_analyze_stats_research_summary_temporal_aggregates_valid_durations(
@@ -588,15 +588,15 @@ def test_analyze_stats_research_summary_temporal_aggregates_valid_durations(
         "conv-a",
         [
             {"message_id": "m1", "role": "user", "ts": 0, "text": "a"},
-            {"message_id": "m2", "role": "assistant", "ts": 3600, "text": "b"},
+            {"message_id": "m2", "role": "assistant", "ts": 3_600_000, "text": "b"},
         ],
     )
     _write_parsed_jsonl(
         root / "b" / "thread-conv-b" / "parsed.jsonl",
         "conv-b",
         [
-            {"message_id": "m1", "role": "user", "ts": 10, "text": "a"},
-            {"message_id": "m2", "role": "assistant", "ts": 90010, "text": "b"},
+            {"message_id": "m1", "role": "user", "ts": 10_000, "text": "a"},
+            {"message_id": "m2", "role": "assistant", "ts": 90_010_000, "text": "b"},
         ],
     )
 
@@ -631,8 +631,8 @@ def test_analyze_stats_research_summary_excludes_missing_timestamps(
         root / "b" / "thread-conv-b" / "parsed.jsonl",
         "conv-b",
         [
-            {"message_id": "m1", "role": "user", "ts": 100, "text": "a"},
-            {"message_id": "m2", "role": "assistant", "ts": 130, "text": "b"},
+            {"message_id": "m1", "role": "user", "ts": 100_000, "text": "a"},
+            {"message_id": "m2", "role": "assistant", "ts": 130_000, "text": "b"},
         ],
     )
 

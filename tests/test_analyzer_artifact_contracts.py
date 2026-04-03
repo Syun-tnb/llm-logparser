@@ -84,11 +84,13 @@ def test_token_stats_artifact_matches_schema_and_snapshot(tmp_path):
             {
                 "message_id": "m2",
                 "role": "assistant",
+                "text": "line one\nline two",
                 "content": {"content_type": "text", "parts": ["line one", "line two"]},
             },
             {
                 "message_id": "m3",
                 "role": "assistant",
+                "text": "",
                 "content": {"content_type": "text", "parts": []},
             },
         ],
@@ -97,7 +99,7 @@ def test_token_stats_artifact_matches_schema_and_snapshot(tmp_path):
     artifact = build_token_stats_artifact(parsed, encoding_override="o200k_base")
     validator = load_token_stats_validator()
     assert list(validator.iter_errors(artifact)) == []
-    assert artifact["schema_version"] == "1.0"
+    assert artifact["schema_version"] == "2.0"
     assert _normalize_token_stats_snapshot_fields(artifact) == _load_snapshot(
         "token_stats_contract_snapshot.json"
     )

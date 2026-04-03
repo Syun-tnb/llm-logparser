@@ -98,15 +98,15 @@ def test_no_provider_role_leakage_in_l1_artifacts(tmp_path):
     _write_parsed_jsonl(parsed, "conv-role-boundary", _messy_role_messages())
     stats = analyze_stats(parsed)
 
-    assert thread_stats["user_messages"] == 1
-    assert thread_stats["assistant_messages"] == 2
-    assert thread_stats["other_roles"] == 5
-    assert thread_stats["other_role_breakdown"] == {"system": 1, "tool": 1, "unknown": 3}
+    assert thread_stats["user_messages"] == 0
+    assert thread_stats["assistant_messages"] == 1
+    assert thread_stats["other_roles"] == 7
+    assert thread_stats["other_role_breakdown"] == {"system": 1, "tool": 1, "unknown": 5}
     assert set(thread_stats["other_role_breakdown"]) <= NORMALIZED_ROLE_SET
 
     assert window["roles"] == [
-        "user",
-        "assistant",
+        "unknown",
+        "unknown",
         "assistant",
         "unknown",
         "unknown",
@@ -132,13 +132,13 @@ def test_no_provider_role_leakage_in_l1_artifacts(tmp_path):
     assert "model:" not in window["text"]
     assert "user:" not in window["text"]
 
-    assert stats["user_messages"] == 1
-    assert stats["assistant_messages"] == 2
-    assert stats["other_roles"] == 5
-    assert stats["other_role_breakdown"] == {"system": 1, "tool": 1, "unknown": 3}
+    assert stats["user_messages"] == 0
+    assert stats["assistant_messages"] == 1
+    assert stats["other_roles"] == 7
+    assert stats["other_role_breakdown"] == {"system": 1, "tool": 1, "unknown": 5}
     assert set(stats["other_role_breakdown"]) <= NORMALIZED_ROLE_SET
-    assert stats["research_summary"]["safety"]["threads_with_refusal"] == 1
-    assert stats["research_summary"]["safety"]["threads_with_intervention"] == 1
+    assert stats["research_summary"]["safety"]["threads_with_refusal"] == 0
+    assert stats["research_summary"]["safety"]["threads_with_intervention"] == 0
 
 
 def test_analyzer_timeline_normalizes_role_variants(tmp_path):
@@ -152,9 +152,9 @@ def test_analyzer_timeline_normalizes_role_variants(tmp_path):
         {
             "bucket_start": "1970-01-01T00:00:00Z",
             "message_count": 8,
-            "user_messages": 1,
-            "assistant_messages": 2,
-            "other_roles": 5,
+            "user_messages": 0,
+            "assistant_messages": 1,
+            "other_roles": 7,
             "characters_total": sum(len(message["text"]) for message in messages),
         }
     ]

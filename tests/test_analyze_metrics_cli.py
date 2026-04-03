@@ -319,6 +319,34 @@ def test_analyze_metrics_user_effort_ignores_missing_timestamps_safely(
     }
 
 
+def test_analyze_metrics_does_not_parse_iso_timestamp_strings(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-user-effort-iso-ts" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-user-effort-iso-ts",
+        [
+            {
+                "message_id": "m1",
+                "role": "assistant",
+                "text": "hello",
+                "ts": "2024-01-01T00:00:00Z",
+            },
+            {
+                "message_id": "m2",
+                "role": "user",
+                "text": "reply",
+                "ts": "2024-01-01T00:00:30Z",
+            },
+        ],
+    )
+
+    _token_stats, metrics = _build_metrics_fixture(parsed, monkeypatch)
+
+    assert metrics["user_effort"]["rapid_revisions"] == 0
+    assert metrics["user_effort"]["negative_deltas"] == 0
+    assert metrics["user_effort"]["human_read_time"]["sample_count"] == 0
+
+
 def test_analyze_metrics_user_effort_handles_non_alternating_roles(
     tmp_path, monkeypatch
 ):

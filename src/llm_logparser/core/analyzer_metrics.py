@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -11,7 +10,6 @@ from .analyzer_common import (
     has_min_normalized_length,
     normalize_analysis_text,
     normalized_similarity,
-    normalize_role,
     plan_sidecar_actions,
     render_artifact_json,
     resolve_canonical_text,
@@ -22,9 +20,9 @@ from .analyzer_common import (
 )
 from .i18n import _
 from .l1_derivation import (
+    canonical_role_or_unknown,
     discover_parsed_jsonl,
     iter_parsed_records,
-    normalized_message_role,
     ts_to_seconds,
 )
 
@@ -277,15 +275,7 @@ def _classify_safety_interventions(
 
 
 def _timestamp_seconds(value: Any) -> float | None:
-    numeric_seconds = ts_to_seconds(value)
-    if numeric_seconds is not None:
-        return numeric_seconds
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
+    return ts_to_seconds(value)
 
 
 def _round_seconds(value: float | None) -> int | float | None:
@@ -308,7 +298,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
 
     for message in messages:
         # L1 invariant: must use canonical normalized roles only
-        role = normalize_role(message.get("role"))
+        role = canonical_role_or_unknown(message.get("role"))
         text = message.get("text")
         char_count = len(text) if isinstance(text, str) else 0
 
@@ -319,7 +309,7 @@ def compute_user_effort(messages: list[dict[str, Any]]) -> dict[str, Any]:
 
         if previous_message is not None:
             # L1 invariant: must use canonical normalized roles only
-            previous_role = normalize_role(previous_message.get("role"))
+            previous_role = canonical_role_or_unknown(previous_message.get("role"))
             if previous_role == "assistant" and role == "user":
                 previous_ts = _timestamp_seconds(previous_message.get("ts"))
                 current_ts = _timestamp_seconds(message.get("ts"))
@@ -405,7 +395,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         effort_messages.append(
             {
                 # L1 invariant: must use canonical normalized roles only
-                "role": normalized_message_role(row),
+                "role": canonical_role_or_unknown(row.get("role")),
                 "ts": row.get("ts"),
                 "text": text,
             }
@@ -414,7 +404,7 @@ def build_metrics_artifact(parsed_path: Path) -> dict[str, Any]:
         char_count_total += char_count
 
         # L1 invariant: must use canonical normalized roles only
-        role = normalized_message_role(row)
+        role = canonical_role_or_unknown(row.get("role"))
         if role == "user":
             message_count_user += 1
             char_count_user += char_count

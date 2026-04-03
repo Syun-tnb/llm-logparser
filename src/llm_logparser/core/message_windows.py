@@ -6,10 +6,10 @@ from typing import Any, Iterable, Iterator
 
 from .l1_derivation import (
     assert_normalized_role,
+    canonical_role_or_unknown,
     iter_message_records,
     message_character_count,
     message_text,
-    normalized_message_role,
 )
 
 DEFAULT_MESSAGE_WINDOW_SIZE = 4
@@ -52,7 +52,7 @@ def build_message_window_artifact(
     provider_id = rows[0].get("provider_id")
     conversation_id = rows[0].get("conversation_id")
     timestamps = [ts for row in rows if (ts := _message_timestamp(row)) is not None]
-    roles = [normalized_message_role(row) for row in rows]
+    roles = [canonical_role_or_unknown(row.get("role")) for row in rows]
     for role in roles:
         assert_normalized_role(role)
 

@@ -127,7 +127,7 @@ def test_analyze_timeline_json_output(tmp_path, monkeypatch, capsys):
         parsed,
         "conv-1",
         [
-            {"role": "user", "ts": 1704067200, "text": "hi"},
+            {"role": "user", "ts": 1704067200000, "text": "hi"},
             {"role": "assistant", "ts": 1704067260000, "text": "there"},
             {"role": "system", "ts": 1704153600000, "text": "abc"},
         ],

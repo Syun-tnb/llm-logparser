@@ -268,12 +268,14 @@ Current shared responsibilities include:
 
 - discovering `parsed.jsonl` files from a file or directory input
 - iterating canonical message records
-- extracting timestamps in a normalized way
 - computing cheap thread-local metrics such as message counts, character counts,
   role counts, and first/last timestamps
 - detecting canonical header metadata
-- resolving canonical message text from `text` with `content.parts` fallback
-- normalizing roles and small deterministic numeric helpers
+- reading canonical top-level `text`
+- reading canonical normalized roles
+- converting canonical epoch-millisecond timestamps into derived UTC ISO 8601
+  strings or span seconds
+- small deterministic numeric helpers
 
 These helpers are intended to be reusable both from `analyze` subcommands and
 from deterministic L1 artifact materialization paths, including convenience
@@ -288,22 +290,19 @@ For deterministic L1 artifacts and metrics:
 - raw roles may survive only in explicitly non-semantic pass-through paths
   outside L1, such as indexing or display-only utilities
 
-The primary contract remains the normalized top-level `text` emitted during
-parse. When downstream consumers fall back to `content.parts`, they are doing
-defensive recovery over an already normalized artifact. That fallback is for
-resilience only; it does not redefine canonical text semantics or move text
-normalization responsibility away from adapters/parser.
+The primary contract is the top-level canonical `text` emitted during parse.
+L1 deterministic consumers must read that field directly. They do not rebuild
+text from provider-native `content`.
 
 For analyzer-generated sidecars, canonical text resolution is:
 
 1. use top-level `text` when it is a string
-2. otherwise, if `content.parts` is a list, join its string elements with `"\n"`
-3. otherwise use `""`
+2. otherwise use `""`
 
 `token_stats.json` exposes this per message as `text_source` with values
-`text`, `content.parts`, or `empty`. `metrics.json` uses the same canonical
-text fallback chain internally for character/diversity/heuristic inputs, but
-does not emit per-message `text_source`.
+`text` or `empty`. `metrics.json` uses the same canonical text access
+internally for character/diversity/heuristic inputs, but does not emit
+per-message `text_source`.
 
 
 ---
@@ -467,7 +466,7 @@ Contract:
   `conversation_id`, `tokenizer`, `summary`, `by_role`, `messages`
 - important nested structures:
   - `tokenizer`: tokenizer family/library metadata plus the resolved model or encoding
-  - `summary`: message, turn, and token totals plus average and text-fallback counters
+  - `summary`: message, turn, and token totals plus average and empty-text counters
   - `by_role`: per-role `messages` / `tokens` counters
   - `messages`: per-message `message_id`, normalized `role`, `token_count`, and `text_source`
 - incremental behavior:
@@ -675,7 +674,7 @@ and a matching compact text section. This summary remains deterministic and loca
   refusal/intervention counts, but must still work without them by recomputing
   deterministic canonical heuristics
 - structural aggregates are intentionally lightweight heuristics based on
-  canonical message text and `content.parts`, including fenced code block detection
+  canonical message text, including fenced code block detection
 
 `analyze datasheet` builds on the same research-oriented summary concepts, but
 renders them as an appendix-ready Markdown report by default, with optional JSON.

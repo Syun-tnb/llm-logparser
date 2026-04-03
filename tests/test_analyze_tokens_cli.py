@@ -181,6 +181,7 @@ def test_analyze_tokens_role_aggregation_and_turn_count(tmp_path, monkeypatch):
     }
 
     assert artifact["artifact_type"] == "token_stats"
+    assert artifact["schema_version"] == "2.0"
     assert artifact["conversation_id"] == "conv-roles"
     assert artifact["summary"]["message_count"] == 6
     assert artifact["summary"]["turn_count"] == 2
@@ -217,7 +218,7 @@ def test_analyze_tokens_role_aggregation_and_turn_count(tmp_path, monkeypatch):
     assert artifact["messages"][1]["token_count"] == expected_counts["m2"]
 
 
-def test_analyze_tokens_falls_back_to_content_parts(tmp_path, monkeypatch):
+def test_analyze_tokens_uses_empty_text_when_canonical_text_is_missing(tmp_path, monkeypatch):
     parsed = tmp_path / "thread-conv-fallback" / "parsed.jsonl"
     _write_parsed_jsonl(
         parsed,
@@ -245,17 +246,14 @@ def test_analyze_tokens_falls_back_to_content_parts(tmp_path, monkeypatch):
     )
 
     artifact = _load_artifact(parsed)
-    enc = tiktoken.get_encoding("o200k_base")
-    expected = len(enc.encode_ordinary("alpha\nbeta"))
-
-    assert artifact["summary"]["fallback_text_from_parts"] == 1
-    assert artifact["summary"]["empty_text_messages"] == 0
+    assert artifact["summary"]["tokens_total"] == 0
+    assert artifact["summary"]["empty_text_messages"] == 1
     assert artifact["messages"] == [
         {
             "message_id": "m1",
             "role": "user",
-            "token_count": expected,
-            "text_source": "content.parts",
+            "token_count": 0,
+            "text_source": "empty",
         }
     ]
 
@@ -289,7 +287,6 @@ def test_analyze_tokens_prefers_text_over_legacy_content_parts(tmp_path, monkeyp
     )
 
     artifact = _load_artifact(parsed)
-    assert artifact["summary"]["fallback_text_from_parts"] == 0
     assert artifact["messages"][0]["text_source"] == "text"
 
 
@@ -327,6 +324,39 @@ def test_analyze_tokens_counts_empty_text_messages(tmp_path, monkeypatch):
     assert artifact["summary"]["empty_text_messages"] == 1
     assert artifact["messages"][0]["text_source"] == "empty"
     assert artifact["messages"][0]["token_count"] == 0
+
+
+def test_analyze_tokens_does_not_normalize_noncanonical_role_variants(tmp_path, monkeypatch):
+    parsed = tmp_path / "thread-conv-role-strict" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed,
+        "conv-role-strict",
+        [
+            {"message_id": "m1", "role": " USER ", "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "text": "world"},
+        ],
+    )
+
+    _run_cli(
+        monkeypatch,
+        [
+            "llm-logparser",
+            "analyze",
+            "tokens",
+            "--input",
+            str(parsed),
+            "--encoding",
+            "o200k_base",
+        ],
+    )
+
+    artifact = _load_artifact(parsed)
+
+    assert artifact["summary"]["turn_count"] == 0
+    assert artifact["by_role"]["assistant"]["messages"] == 1
+    assert artifact["by_role"]["unknown"]["messages"] == 1
+    assert artifact["messages"][0]["role"] == "unknown"
+    assert artifact["messages"][1]["role"] == "assistant"
 
 
 def test_analyze_tokens_fails_for_unsupported_provider_without_override(
@@ -539,7 +569,7 @@ def test_analyze_tokens_without_skip_existing_overwrites_existing_artifact(
     payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert payload["artifact_type"] == "token_stats"
     assert payload["conversation_id"] == "conv-overwrite"
-    assert payload["schema_version"] == "1.0"
+    assert payload["schema_version"] == "2.0"
 
 
 def test_analyze_tokens_skip_existing_supports_directory_input(tmp_path, monkeypatch):

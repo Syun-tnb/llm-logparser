@@ -10,7 +10,6 @@ from .l1_derivation import (
     ROLE_ORDER,
     UNKNOWN_ROLE,
     iter_parsed_records,
-    normalize_role_value,
     resolve_message_text,
 )
 
@@ -21,10 +20,6 @@ ZERO_DIVISION_FALLBACK = 0.0
 
 def string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
-
-
-def normalize_role(value: Any) -> str:
-    return normalize_role_value(value)
 
 
 def resolve_canonical_text(row: dict[str, Any]) -> tuple[str, str]:

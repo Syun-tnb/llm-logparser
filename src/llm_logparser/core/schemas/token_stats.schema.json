@@ -14,7 +14,7 @@
   ],
   "properties": {
     "artifact_type": { "const": "token_stats" },
-    "schema_version": { "type": "string", "const": "1.0" },
+    "schema_version": { "type": "string", "const": "2.0" },
     "provider_id": { "type": "string", "minLength": 1 },
     "conversation_id": { "type": "string", "minLength": 1 },
     "tokenizer": {
@@ -50,7 +50,6 @@
         "tokens_assistant",
         "avg_tokens_per_message",
         "avg_tokens_per_turn",
-        "fallback_text_from_parts",
         "empty_text_messages"
       ],
       "properties": {
@@ -61,7 +60,6 @@
         "tokens_assistant": { "$ref": "#/$defs/nonNegativeInteger" },
         "avg_tokens_per_message": { "$ref": "#/$defs/nonNegativeNumber" },
         "avg_tokens_per_turn": { "$ref": "#/$defs/nonNegativeNumber" },
-        "fallback_text_from_parts": { "$ref": "#/$defs/nonNegativeInteger" },
         "empty_text_messages": { "$ref": "#/$defs/nonNegativeInteger" }
       },
       "additionalProperties": true
@@ -103,7 +101,7 @@
         "token_count": { "$ref": "#/$defs/nonNegativeInteger" },
         "text_source": {
           "type": "string",
-          "enum": ["text", "content.parts", "empty"]
+          "enum": ["text", "empty"]
         }
       },
       "additionalProperties": true

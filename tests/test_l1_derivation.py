@@ -5,6 +5,7 @@ import pytest
 
 from llm_logparser.core.l1_derivation import (
     UNKNOWN_ROLE,
+    canonical_role_or_unknown,
     derive_thread_metrics,
     derive_thread_metrics_from_rows,
     discover_parsed_jsonl,
@@ -12,7 +13,6 @@ from llm_logparser.core.l1_derivation import (
     message_character_count,
     message_role,
     message_text,
-    normalize_role_value,
     resolve_message_text,
     to_iso_utc,
     ts_to_seconds,
@@ -126,48 +126,47 @@ def test_message_helpers_handle_partial_rows_without_exceptions():
     assert message_text({}) == ""
     assert message_text({"text": None}) == ""
     assert message_text({"text": "hello"}) == "hello"
-    assert message_text({"content": {"parts": ["alpha", "beta"]}}) == "alpha\nbeta"
+    assert message_text({"content": {"parts": ["alpha", "beta"]}}) == ""
     assert message_character_count({}) == 0
     assert message_character_count({"text": None}) == 0
     assert message_character_count({"text": "hello"}) == 5
     assert message_role({}) is None
     assert message_role({"role": ""}) is None
     assert message_role({"role": "User"}) == "User"
-    assert normalize_role_value("User") == "user"
-    assert normalize_role_value(" assistant ") == "assistant"
-    assert normalize_role_value("moderator") == UNKNOWN_ROLE
-    assert normalize_role_value("") == UNKNOWN_ROLE
-    assert normalize_role_value(None) == UNKNOWN_ROLE
+    assert canonical_role_or_unknown("user") == "user"
+    assert canonical_role_or_unknown("assistant") == "assistant"
+    assert canonical_role_or_unknown("User") == UNKNOWN_ROLE
+    assert canonical_role_or_unknown(" assistant ") == UNKNOWN_ROLE
+    assert canonical_role_or_unknown("moderator") == UNKNOWN_ROLE
+    assert canonical_role_or_unknown("") == UNKNOWN_ROLE
+    assert canonical_role_or_unknown(None) == UNKNOWN_ROLE
 
 
-def test_resolve_message_text_prefers_text_then_legacy_content_parts():
+def test_resolve_message_text_reads_top_level_text_only():
     assert resolve_message_text({"text": "hello", "content": {"parts": ["ignored"]}}) == (
         "hello",
         "text",
     )
-    assert resolve_message_text({"content": {"parts": ["alpha", "beta"]}}) == (
-        "alpha\nbeta",
-        "content.parts",
-    )
+    assert resolve_message_text({"content": {"parts": ["alpha", "beta"]}}) == ("", "empty")
     assert resolve_message_text({"content": ["provider-native"]}) == ("", "empty")
 
 
-def test_message_role_preserves_raw_role_while_normalization_is_canonical():
+def test_message_role_preserves_raw_role_while_canonical_role_handling_is_strict():
     row = {"role": "User"}
 
     assert message_role(row) == "User"
-    assert normalize_role_value(row["role"]) == "user"
+    assert canonical_role_or_unknown(row["role"]) == UNKNOWN_ROLE
 
 
-def test_ts_conversion_utilities_handle_seconds_milliseconds_and_invalid_values():
+def test_ts_conversion_utilities_assume_canonical_epoch_milliseconds_only():
     assert ts_to_seconds(1_704_067_200_000) == 1_704_067_200.0
-    assert ts_to_seconds(1_704_067_200) == 1_704_067_200.0
+    assert ts_to_seconds(1_704_067_200) == 1_704_067.2
     assert ts_to_seconds("1704067200") is None
     assert to_iso_utc(1_704_067_200.0) == "2024-01-01T00:00:00Z"
     assert to_iso_utc(None) is None
 
 
-def test_derive_thread_metrics_from_rows_uses_normalized_roles_for_counters_and_breakdown():
+def test_derive_thread_metrics_from_rows_uses_canonical_roles_without_normalizing_variants():
     metrics = derive_thread_metrics_from_rows(
         [
             {
@@ -211,10 +210,10 @@ def test_derive_thread_metrics_from_rows_uses_normalized_roles_for_counters_and_
 
     assert metrics.conversation_id == "conv-mixed"
     assert metrics.message_count == 5
-    assert metrics.user_messages == 1
-    assert metrics.assistant_messages == 1
-    assert metrics.other_roles == 3
+    assert metrics.user_messages == 0
+    assert metrics.assistant_messages == 0
+    assert metrics.other_roles == 5
     assert metrics.character_count == 18
-    assert metrics.other_role_breakdown == {"tool": 1, "unknown": 2}
+    assert metrics.other_role_breakdown == {"tool": 1, "unknown": 4}
     assert metrics.first_ts == 1704067200.0
     assert metrics.last_ts == 1704067210.0

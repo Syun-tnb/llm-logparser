@@ -12,10 +12,10 @@ from .analyzer_metrics import (
     _load_refusal_indicators,
 )
 from .l1_derivation import (
+    canonical_role_or_unknown,
     derive_thread_metrics,
     discover_parsed_jsonl,
     iter_parsed_records,
-    normalized_message_role,
     span_seconds,
     to_iso_utc,
 )
@@ -162,7 +162,7 @@ def _analyze_thread_research(
             code_block_message_count += 1
 
         # L1 invariant: must use canonical normalized roles only
-        if normalized_message_role(row) == "assistant":
+        if canonical_role_or_unknown(row.get("role")) == "assistant":
             assistant_texts.append(text)
 
     sidecar_safety = _load_thread_safety_from_metrics(parsed_path)

@@ -63,8 +63,7 @@ def iter_input_message_records(input_path: Path) -> Iterator[dict[str, Any]]:
 def ts_to_seconds(ts: Any) -> float | None:
     if not isinstance(ts, (int, float)):
         return None
-    value = float(ts)
-    return value / 1000.0 if value >= 1e11 else value
+    return float(ts) / 1000.0
 
 
 def to_iso_utc(ts: float | None) -> str | None:
@@ -84,24 +83,14 @@ def span_seconds(start: float | None, end: float | None) -> int | None:
 
 
 def resolve_message_text(row: dict[str, Any]) -> tuple[str, str]:
-    """
-    Canonical downstream text access prefers top-level `text`.
+    """Return canonical top-level text only.
 
-    `content.parts` fallback exists only for backward compatibility with older
-    parsed artifacts that predate the explicit top-level `text` contract.
+    Parse owns canonical text construction. L1 does not reconstruct or repair
+    text from provider-native `content`.
     """
     value = row.get("text")
     if isinstance(value, str):
         return value, "text"
-
-    content = row.get("content")
-    if isinstance(content, dict):
-        parts = content.get("parts")
-        if isinstance(parts, list):
-            string_parts = [part for part in parts if isinstance(part, str)]
-            if string_parts:
-                return "\n".join(string_parts), "content.parts"
-
     return "", "empty"
 
 
@@ -113,18 +102,15 @@ def message_character_count(row: dict[str, Any]) -> int:
     return len(message_text(row))
 
 
-def normalize_role_value(value: Any) -> str:
-    """Return the canonical analyzer role label.
+def canonical_role_or_unknown(value: Any) -> str:
+    """Return a canonical role label without performing normalization.
 
-    Analyzer artifacts normalize the small standard role set to lowercase and
-    collapse everything else, including empty/missing values, to `unknown`.
-    Some L1 consumers still need the raw provider role string for display or
-    pass-through indexing, so that path stays separate in `message_role()`.
+    Parse is the sole normalization authority. L1 accepts the canonical role set
+    as-is and collapses anything else to `unknown` instead of correcting raw
+    provider variants.
     """
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in ROLE_ORDER:
-            return normalized
+    if isinstance(value, str) and value in NORMALIZED_ROLE_SET:
+        return value
     return UNKNOWN_ROLE
 
 
@@ -135,21 +121,13 @@ def assert_normalized_role(role: str) -> None:
 def message_role(row: dict[str, Any]) -> str | None:
     """Return the raw provider role string when present.
 
-    This is intentionally distinct from `normalize_role_value()`. Raw access is
-    still used only in selected pass-through views such as L2 indexing where
+    This is intentionally distinct from canonical L1 role handling. Raw access
+    is still used only in selected pass-through views such as L2 indexing where
     preserving the provider-emitted role label is desirable.
     """
     # raw-role access allowed: pass-through / display only (NOT L1 semantics)
     role = row.get("role")
     return role if isinstance(role, str) and role else None
-
-
-def normalized_message_role(row: dict[str, Any]) -> str:
-    """Return the canonical normalized role label for shared L1 consumers."""
-    # L1 invariant: must use canonical normalized roles only
-    role = normalize_role_value(row.get("role"))
-    assert_normalized_role(role)
-    return role
 
 
 @dataclass
@@ -173,7 +151,7 @@ class ThreadMetrics:
         char_count = message_character_count(row)
         self.character_count += char_count
 
-        role = normalized_message_role(row)
+        role = canonical_role_or_unknown(row.get("role"))
         assert_normalized_role(role)
         if role == "user":
             self.user_messages += 1

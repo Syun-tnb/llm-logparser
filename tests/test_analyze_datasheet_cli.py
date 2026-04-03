@@ -123,7 +123,7 @@ def test_analyze_datasheet_markdown_contains_required_sections_and_rows(
             {
                 "message_id": "m2",
                 "role": "assistant",
-                "ts": 30,
+                "ts": 30_000,
                 "text": "```python\nprint('hi')\n```",
                 "content": {"content_type": "text", "parts": ["```python", "print('hi')\n```"]},
             },
@@ -198,7 +198,7 @@ def test_analyze_datasheet_works_when_sidecars_are_present(
         "conv-sidecars",
         [
             {"message_id": "m1", "role": "user", "ts": 0, "text": "hello"},
-            {"message_id": "m2", "role": "assistant", "ts": 60, "text": "I can't help with that request."},
+            {"message_id": "m2", "role": "assistant", "ts": 60_000, "text": "I can't help with that request."},
         ],
     )
     _write_thread_stats_sidecar(parsed)
@@ -249,8 +249,8 @@ def test_analyze_datasheet_output_is_deterministic(tmp_path, monkeypatch, capsys
         parsed,
         "conv-deterministic",
         [
-            {"message_id": "m1", "role": "user", "ts": 100, "text": "hello"},
-            {"message_id": "m2", "role": "assistant", "ts": 130, "text": "Be careful when sharing secrets."},
+            {"message_id": "m1", "role": "user", "ts": 100_000, "text": "hello"},
+            {"message_id": "m2", "role": "assistant", "ts": 130_000, "text": "Be careful when sharing secrets."},
         ],
     )
 

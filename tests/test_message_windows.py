@@ -76,10 +76,10 @@ def _fake_adapter(_raw):
     ]
 
 
-def test_iter_message_windows_from_rows_is_deterministic_and_uses_normalized_roles():
+def test_iter_message_windows_from_rows_is_deterministic_and_uses_canonical_roles():
     rows = [
-        _canonical_message("conv-1", "m1", "User", 1704067201000, "first"),
-        _canonical_message("conv-1", "m2", " SYSTEM ", 1704067202000, "second"),
+        _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),
+        _canonical_message("conv-1", "m2", "system", 1704067202000, "second"),
         _canonical_message("conv-1", "m3", "assistant", 1704067203000, "third"),
         _canonical_message("conv-1", "m4", "tool", 1704067204000, "tool-output"),
         _canonical_message("conv-1", "m5", None, 1704067205000, "fifth"),
@@ -126,7 +126,7 @@ def test_message_windows_do_not_leak_raw_provider_roles():
         window_stride=2,
     )
 
-    assert artifact["roles"] == ["user", "unknown"]
+    assert artifact["roles"] == ["unknown", "unknown"]
     assert artifact["text"] == "hello\n\nhidden"
     assert "USER:" not in artifact["text"]
     assert "moderator:" not in artifact["text"]
@@ -229,7 +229,7 @@ def test_message_windows_prefer_text_over_legacy_content_parts():
     assert artifact["text"] == "canonical"
 
 
-def test_message_windows_support_legacy_content_parts_fallback():
+def test_message_windows_do_not_reconstruct_text_from_provider_content():
     rows = [
         {
             "record_type": "message",
@@ -243,7 +243,7 @@ def test_message_windows_support_legacy_content_parts_fallback():
     ]
 
     artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
-    assert artifact["text"] == "legacy"
+    assert artifact["text"] == ""
 
 
 def test_message_window_schema_rejects_malformed_row():
