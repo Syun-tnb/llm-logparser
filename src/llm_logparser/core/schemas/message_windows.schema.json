@@ -9,16 +9,15 @@
     "conversation_id",
     "window_id",
     "message_ids",
-    "roles",
-    "message_count",
     "char_count",
     "ts_start",
     "ts_end",
-    "text"
+    "window_size",
+    "window_stride"
   ],
   "properties": {
     "record_type": { "type": "string", "const": "message_window" },
-    "schema_version": { "type": "string", "const": "2.0" },
+    "schema_version": { "type": "string", "const": "3.0" },
     "provider_id": { "type": "string", "minLength": 1 },
     "conversation_id": { "type": "string", "minLength": 1 },
     "window_id": { "type": "string", "minLength": 1 },
@@ -27,18 +26,11 @@
       "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     },
-    "roles": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "type": "string", "minLength": 1 }
-    },
-    "message_count": { "$ref": "#/$defs/nonNegativeInteger" },
     "char_count": { "$ref": "#/$defs/nonNegativeInteger" },
     "ts_start": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
     "ts_end": { "$ref": "#/$defs/nonNegativeIntegerOrNull" },
     "window_size": { "$ref": "#/$defs/positiveInteger" },
-    "window_stride": { "$ref": "#/$defs/positiveInteger" },
-    "text": { "type": "string" }
+    "window_stride": { "$ref": "#/$defs/positiveInteger" }
   },
   "$defs": {
     "nonNegativeInteger": {
@@ -54,5 +46,5 @@
       "minimum": 0
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

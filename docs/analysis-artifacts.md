@@ -177,9 +177,8 @@ SQLite correspondence for downstream consumers:
   `threads.other_role_breakdown` as JSON-serialized `TEXT`
 
 `message_windows.jsonl` is a deterministic L1 thread-local segmentation artifact
-derived only from canonical message rows. The first version uses simple
-fixed-size contiguous message windows with preserved normalized role sequence
-and message traceability.
+derived only from canonical message rows. It is intentionally a thin
+message-membership substrate rather than a rendered semantic window.
 
 Contract:
 
@@ -187,32 +186,30 @@ Contract:
 - purpose: stable machine-readable row contract for one deterministic candidate span
 - required per-row fields emitted today:
   - `record_type`: always `message_window`
-  - `schema_version`: currently `"2.0"`
+  - `schema_version`: currently `"3.0"`
   - `provider_id`: provider identifier for the source thread
   - `conversation_id`: canonical thread/conversation identifier
   - `window_id`: deterministic window identifier within the thread
   - `message_ids`: ordered canonical message identifiers included in the window
-  - `roles`: ordered normalized roles for the included messages, using `unknown` when needed
-  - `message_count`: number of messages in the window
   - `char_count`: total characters across the included canonical message text
   - `ts_start`: earliest message timestamp in the window as epoch milliseconds, or `null`
   - `ts_end`: latest message timestamp in the window as epoch milliseconds, or `null`
   - `window_size`: configured window size used to generate the row
   - `window_stride`: configured stride used to generate the row
-  - `text`: deterministic canonical text projection retained for current downstream compatibility; this is not the semantic meaning of the span
 - notes:
   - `message_windows.jsonl` is an L1 deterministic artifact, not canonical storage
   - it may be materialized during parse for convenience or performance, but its conceptual ownership remains L1
   - it is a deterministic candidate-span substrate, not a semantic unit
-  - `message_ids` are the primary meaning-bearing anchor of the artifact; `text` is secondary compatibility projection only
-  - the `text` projection no longer renders role-prefixed or presentation-oriented window text
+  - `message_ids` are the primary deterministic anchor of the artifact
+  - semantic consumers must reconstruct message text and roles from canonical `parsed.jsonl` using the ordered `message_ids`
+  - the artifact intentionally does not carry rendered semantic text, role sequences, or other convenience fields that duplicate canonical message storage
   - rows now emit an explicit `schema_version` for contract stability
   - window IDs remain deterministic sequential IDs in emission order; changing
     size or stride changes which message spans receive those IDs, but not the
     deterministic ordering rule itself
   - omitted stride preserves legacy non-overlapping behavior by defaulting the
     stride to the configured size
-  - this Step 2 contract change is intentionally breaking; previously generated downstream L3 artifacts that depended on older rendered window text should be regenerated
+  - this Step 3 contract change is intentionally breaking; previously generated downstream L3 artifacts that depended on older `message_windows.jsonl` convenience fields should be regenerated
   - the schema describes the emitted row contract as it exists today; it does not imply future chunking or L3 structure
 
 The `parsed.jsonl` file contains:
@@ -400,6 +397,8 @@ the canonical normalized dataset (`parsed.jsonl`).
 Chunking must never operate directly on raw provider exports.
 When `message_windows.jsonl` is materialized during parse, it still remains an
 L1 artifact built from canonical normalized fields rather than parse-owned meaning.
+Semantic text belongs downstream: L3 consumers must rebuild excerpts or preview
+text from canonical parsed messages when needed.
 
 ---
 
@@ -863,10 +862,10 @@ Experimental prototype note:
 - browse-time filters such as singleton suppression or minimum topic size are
   runtime-only UX controls; they improve navigation but do not rewrite
   `topics.json` or `topic_membership.jsonl`
-- because `message_windows.jsonl` carries `message_ids`, timestamps, and a
-  minimal canonical text projection, the explorer can join reverse membership
-  rows back to excerpts and temporal order without touching clustering logic or
-  making any LLM calls
+- because `message_windows.jsonl` carries `message_ids` and deterministic
+  provenance, the explorer can join reverse membership rows back to canonical
+  messages, reconstruct excerpts, and preserve temporal order without touching
+  clustering logic or making any LLM calls
 - model-derived fields remain additive only; if `semantic-topics` runs without
   `--model`, it still writes the structural topic index and reverse membership
   rows with label/summary fields left empty

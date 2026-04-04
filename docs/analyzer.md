@@ -536,11 +536,11 @@ deterministic and model-derived capabilities.
   reads deterministic `message_windows.jsonl`, writes rebuildable embedding,
   neighbor, and minimal cluster artifacts, and does not perform topic labeling
   `message_windows.jsonl` is an L1 deterministic segmentation substrate, not a
-  semantic unit, and its shared fields such as roles must remain canonical and
-  normalized rather than provider-specific. In the current Step 2 contract,
-  window rows are message-ids-centric candidate spans; the retained `text`
-  field is only a minimal canonical projection kept for downstream
-  compatibility and must not be treated as the meaning of the window itself.
+  semantic unit. In the current contract, window rows are message-ids-first
+  candidate spans containing only deterministic membership and provenance
+  fields. When semantic text is needed, L3 reconstructs it from canonical
+  `parsed.jsonl` messages using the ordered `message_ids`; no semantic meaning
+  is stored in L1 convenience fields.
   Window generation quality can now be improved upstream with deterministic
   sliding windows: `message_windows.jsonl` still defaults to
   non-overlapping windows, but parse/chain can opt into overlap by setting
@@ -585,7 +585,9 @@ deterministic and model-derived capabilities.
 - `semantic-preview` is a read-only companion to `semantic-prototype`: it
   reads stored `message_windows.jsonl`, `window_clusters.jsonl`, and optional
   `window_neighbors.jsonl` and provides three inspection modes without
-  recomputing embeddings or modifying artifacts:
+  recomputing embeddings or modifying artifacts. Preview text is reconstructed
+  from canonical parsed messages keyed by `message_ids`, not read from L1 as a
+  semantic source of truth:
   cluster list view by default, cluster detail via `--cluster-id`, and
   conversation-centric lookup via `--conversation-id`. The older
   conversation-plus-window neighbor preview remains available when
@@ -595,8 +597,9 @@ deterministic and model-derived capabilities.
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus
   `window_clusters.jsonl`, selects representative windows per cluster, and
-  sends them to a local Ollama generation model for a short label, summary,
-  and keywords. Production keeps the prompt/template fixed from the repository
+  reconstructs canonical window text from `parsed.jsonl` before sending
+  representative spans to a local Ollama generation model for a short label,
+  summary, and keywords. Production keeps the prompt/template fixed from the repository
   prompt-selection experiment under `./tmp`: Prompt B, an 8-window cap per
   cluster, and 300-character normalized window excerpts. Representative
   windows are chosen deterministically by preferring stronger retained
@@ -618,6 +621,9 @@ deterministic and model-derived capabilities.
   `representative_spans`; `window_refs` and `representative_windows` remain as
   compatibility/presentation overlays only. `topic_membership.jsonl` now uses
   `membership_type=cluster|span|message`, so semantic membership is no longer
+  inferred from L1 window text; semantic excerpts are reconstructed from
+  canonical message rows via `message_ids` when needed for prompting or browse
+  output.
   window-based. Topic records still include `cluster_ids` for provenance and
   include `state`, which is currently emitted as `null` for every topic.
   Provenance is execution-oriented: structural-only

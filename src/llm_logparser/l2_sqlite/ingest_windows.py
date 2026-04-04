@@ -44,12 +44,11 @@ def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 row.get("conversation_id"),
                 row.get("window_id"),
                 _json_text(row.get("message_ids")),
-                _json_text(row.get("roles")),
-                row.get("message_count"),
                 row.get("char_count"),
                 row.get("ts_start"),
                 row.get("ts_end"),
-                row.get("text"),
+                row.get("window_size"),
+                row.get("window_stride"),
             )
         )
         if len(batch) < BATCH_SIZE:
@@ -61,13 +60,12 @@ def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 conversation_id,
                 window_id,
                 message_ids,
-                roles,
-                message_count,
                 char_count,
                 ts_start,
                 ts_end,
-                text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                window_size,
+                window_stride
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             batch,
         )
@@ -82,13 +80,12 @@ def ingest_message_windows(conn: sqlite3.Connection, thread_dir: Path) -> int:
                 conversation_id,
                 window_id,
                 message_ids,
-                roles,
-                message_count,
                 char_count,
                 ts_start,
                 ts_end,
-                text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                window_size,
+                window_stride
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             batch,
         )

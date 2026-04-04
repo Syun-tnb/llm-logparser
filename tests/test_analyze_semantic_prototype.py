@@ -44,6 +44,7 @@ from llm_logparser.core.schema_validation import (
     load_window_clusters_validator,
     load_window_neighbors_validator,
 )
+from llm_logparser.core.i18n import set_locale
 from llm_logparser.l2_sqlite.schema import create_schema, insert_metadata
 
 
@@ -56,24 +57,64 @@ def _window_row(
     ts_start: int | None = None,
     ts_end: int | None = None,
 ) -> dict:
+    message_id = f"{window_id}-m1"
     return {
         "record_type": "message_window",
-        "schema_version": "2.0",
+        "schema_version": "3.0",
         "provider_id": provider_id,
         "conversation_id": conversation_id,
         "window_id": window_id,
-        "message_ids": [f"{window_id}-m1"],
-        "roles": ["user"],
-        "message_count": 1,
+        "message_ids": [message_id],
         "char_count": len(text),
         "ts_start": ts_start,
         "ts_end": ts_end,
-        "text": text,
+        "window_size": 1,
+        "window_stride": 1,
+        "__parsed_messages": [
+            {
+                "record_type": "message",
+                "provider_id": provider_id,
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+                "role": "user",
+                "ts": ts_start,
+                "text": text,
+                "content": {"content_type": "text", "parts": [text]},
+            }
+        ],
     }
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.name == "message_windows.jsonl":
+        parsed_rows: list[dict] = []
+        seen_message_ids: set[str] = set()
+        clean_rows: list[dict] = []
+        for row in rows:
+            clean_rows.append({key: value for key, value in row.items() if not key.startswith("__")})
+            for message in row.get("__parsed_messages", []):
+                message_id = message["message_id"]
+                if message_id in seen_message_ids:
+                    continue
+                seen_message_ids.add(message_id)
+                parsed_rows.append(message)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in clean_rows:
+                handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+        if clean_rows:
+            parsed_path = path.with_name("parsed.jsonl")
+            thread_row = {
+                "record_type": "thread",
+                "provider_id": clean_rows[0]["provider_id"],
+                "conversation_id": clean_rows[0]["conversation_id"],
+                "message_count": len(parsed_rows),
+            }
+            with parsed_path.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(thread_row, ensure_ascii=True) + "\n")
+                for row in parsed_rows:
+                    handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+        return
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
@@ -136,13 +177,12 @@ def _write_candidate_db(
                 conversation_id,
                 window_id,
                 message_ids,
-                roles,
-                message_count,
                 char_count,
                 ts_start,
                 ts_end,
-                text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                window_size,
+                window_stride
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -150,12 +190,11 @@ def _write_candidate_db(
                     row["conversation_id"],
                     row["window_id"],
                     json.dumps(row.get("message_ids", []), ensure_ascii=True),
-                    json.dumps(row.get("roles", []), ensure_ascii=True),
-                    row.get("message_count", 1),
                     row.get("char_count"),
                     row.get("ts_start"),
                     row.get("ts_end"),
-                    row.get("text", ""),
+                    row.get("window_size"),
+                    row.get("window_stride"),
                 )
                 for row in window_rows
             ],
@@ -570,6 +609,7 @@ def test_min_score_preserves_deterministic_tie_breaks():
 
 
 def test_build_window_neighbor_rows_progress_callback():
+    set_locale("en-US")
     embeddings = build_window_embedding_records(
         [
             MessageWindowRecord(
@@ -1239,7 +1279,13 @@ def test_sliding_windows_improve_boundary_recoverability_for_mutual_clustering()
             window_id=row["window_id"],
             ts_start=row["ts_start"],
             ts_end=row["ts_end"],
-            text=row["text"],
+            message_ids=tuple(row["message_ids"]),
+            text="\n\n".join(
+                message_row["text"]
+                for message_id in row["message_ids"]
+                for message_row in message_rows
+                if message_row["message_id"] == message_id
+            ),
         )
         for row in non_overlapping_windows
     ]
@@ -1251,7 +1297,13 @@ def test_sliding_windows_improve_boundary_recoverability_for_mutual_clustering()
             window_id=row["window_id"],
             ts_start=row["ts_start"],
             ts_end=row["ts_end"],
-            text=row["text"],
+            message_ids=tuple(row["message_ids"]),
+            text="\n\n".join(
+                message_row["text"]
+                for message_id in row["message_ids"]
+                for message_row in message_rows
+                if message_row["message_id"] == message_id
+            ),
         )
         for row in sliding_windows
     ]

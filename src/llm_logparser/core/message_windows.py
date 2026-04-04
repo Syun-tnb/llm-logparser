@@ -5,16 +5,13 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .l1_derivation import (
-    assert_normalized_role,
-    canonical_role_or_unknown,
     iter_message_records,
     message_character_count,
-    message_text,
 )
 
 DEFAULT_MESSAGE_WINDOW_SIZE = 4
 DEFAULT_MESSAGE_WINDOW_STRIDE: int | None = None
-MESSAGE_WINDOWS_SCHEMA_VERSION = "2.0"
+MESSAGE_WINDOWS_SCHEMA_VERSION = "3.0"
 
 
 def _message_timestamp(row: dict[str, Any]) -> int | float | None:
@@ -25,19 +22,6 @@ def _message_timestamp(row: dict[str, Any]) -> int | float | None:
 def _window_id(index: int) -> str:
     return f"window-{index:04d}"
 
-
-def _window_text_projection(rows: list[dict[str, Any]]) -> str:
-    """Return a minimal canonical text projection for current downstream compatibility.
-
-    This is intentionally not the semantic meaning of the window. The artifact
-    remains message-ids-centric; `text` is retained only as a deterministic
-    projection of canonical message text so current L3 consumers do not require
-    a larger redesign during Step 2.
-    """
-    parts = [text for row in rows if (text := message_text(row))]
-    return "\n\n".join(parts)
-
-
 def build_message_window_artifact(
     rows: list[dict[str, Any]],
     *,
@@ -45,16 +29,13 @@ def build_message_window_artifact(
     window_size: int,
     window_stride: int,
 ) -> dict[str, Any]:
-    """Build a deterministic L1 message-window artifact from canonical rows."""
+    """Build a deterministic message-membership artifact from canonical rows."""
     if not rows:
         raise ValueError("message window requires at least one message")
 
     provider_id = rows[0].get("provider_id")
     conversation_id = rows[0].get("conversation_id")
     timestamps = [ts for row in rows if (ts := _message_timestamp(row)) is not None]
-    roles = [canonical_role_or_unknown(row.get("role")) for row in rows]
-    for role in roles:
-        assert_normalized_role(role)
 
     return {
         "record_type": "message_window",
@@ -63,16 +44,11 @@ def build_message_window_artifact(
         "conversation_id": conversation_id,
         "window_id": _window_id(window_index),
         "message_ids": [row.get("message_id") for row in rows],
-        "roles": roles,
-        "message_count": len(rows),
         "char_count": sum(message_character_count(row) for row in rows),
         "ts_start": min(timestamps) if timestamps else None,
         "ts_end": max(timestamps) if timestamps else None,
         "window_size": window_size,
         "window_stride": window_stride,
-        # Compatibility-only projection: current L3 readers still consume a
-        # text field, but it must remain a non-semantic canonical projection.
-        "text": _window_text_projection(rows),
     }
 
 

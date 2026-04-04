@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from .analyzer_semantic_prototype import _derive_span_id
+from .message_window_reconstruction import load_reconstructed_message_windows
 from .schema_validation import (
-    load_message_windows_validator,
     load_window_clusters_validator,
     load_window_neighbors_validator,
 )
@@ -30,6 +30,7 @@ class WindowPreviewRecord:
     ts_end: int | None
     roles: tuple[str, ...]
     text: str
+    message_texts: tuple[str, ...] = ()
     span_id: str = ""
 
     def __post_init__(self) -> None:
@@ -92,32 +93,30 @@ def _discover_artifacts(root: Path, name: str) -> list[Path]:
 
 
 def load_window_preview_index(input_root: Path) -> dict[WindowRef, WindowPreviewRecord]:
-    validator = load_message_windows_validator()
     index: dict[WindowRef, WindowPreviewRecord] = {}
     paths = _discover_artifacts(input_root, "message_windows.jsonl")
     if not paths:
         raise SemanticPreviewError(f"no message_windows.jsonl found under: {input_root}")
 
     for path in paths:
-        for line_no, row in enumerate(_load_jsonl(path), start=1):
-            errors = list(validator.iter_errors(row))
-            if errors:
-                raise SemanticPreviewError(
-                    f"message window schema validation failed for "
-                    f"{path}:{line_no}: {errors[0].message}"
-                )
-            key = (row["conversation_id"], row["window_id"])
+        try:
+            windows = load_reconstructed_message_windows(path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise SemanticPreviewError(str(exc)) from exc
+        for window in windows:
+            key = (window.conversation_id, window.window_id)
             index[key] = WindowPreviewRecord(
-                provider_id=row["provider_id"],
-                conversation_id=row["conversation_id"],
-                window_id=row["window_id"],
-                message_ids=tuple(row.get("message_ids", [])),
-                message_count=row["message_count"],
-                char_count=row["char_count"],
-                ts_start=row.get("ts_start"),
-                ts_end=row.get("ts_end"),
-                roles=tuple(row["roles"]),
-                text=row["text"],
+                provider_id=window.provider_id,
+                conversation_id=window.conversation_id,
+                window_id=window.window_id,
+                message_ids=window.message_ids,
+                message_count=window.message_count,
+                char_count=window.char_count,
+                ts_start=window.ts_start,
+                ts_end=window.ts_end,
+                roles=window.roles,
+                text=window.text,
+                message_texts=window.message_texts,
             )
     return index
 
@@ -366,6 +365,15 @@ def _display_turn_role(role: str) -> str:
 
 
 def _window_messages(record: WindowPreviewRecord) -> list[tuple[str, str]]:
+    if record.message_texts:
+        return [
+            (
+                record.roles[index] if index < len(record.roles) else "unknown",
+                record.message_texts[index],
+            )
+            for index in range(len(record.message_texts))
+        ]
+
     if not record.text:
         return []
 

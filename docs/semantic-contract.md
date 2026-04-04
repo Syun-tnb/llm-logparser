@@ -135,6 +135,12 @@ SQLite still contains provider-specific query logic inside the SQLite candidate
 provider implementation, but that coupling is bounded to provider helpers and
 is not part of semantic computation itself.
 
+For the same reason, `message_windows.jsonl` is not semantic truth. It is a
+deterministic L1 candidate-span membership artifact keyed by ordered
+`message_ids`. Semantic consumers may use it to choose spans, but any text or
+role sequence needed for semantic work must be reconstructed from canonical
+`parsed.jsonl` messages.
+
 ## 6. Presentation vs Semantics
 
 Preview formatting must not change semantic outcomes.
@@ -231,7 +237,9 @@ This contract does **not** mean:
 It also does not mean every upstream semantic artifact is already fully
 span-native. For example, the semantic prototype still emits window-shaped
 neighbor and cluster artifacts for current compatibility even though internal
-semantic identity is span-based.
+semantic identity is span-based. That compatibility does not permit L1 to store
+semantic window renderings; window-shaped outputs still trace back through
+canonical message IDs.
 
 ## 10. Practical Rules for Future Changes
 

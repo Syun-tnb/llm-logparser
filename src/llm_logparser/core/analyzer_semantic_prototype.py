@@ -17,7 +17,7 @@ from .embedding_backend import (
     resolve_embedding_model_settings,
 )
 from .i18n import _
-from .schema_validation import load_message_windows_validator
+from .message_window_reconstruction import load_reconstructed_message_windows
 
 EMBEDDING_SCHEMA_VERSION = "0.1"
 NEIGHBORS_SCHEMA_VERSION = "0.1"
@@ -169,50 +169,19 @@ def discover_message_windows_jsonl(input_path: Path) -> list[Path]:
 
 
 def load_message_window_records(windows_path: Path) -> list[MessageWindowRecord]:
-    validator = load_message_windows_validator()
-    records: list[MessageWindowRecord] = []
-
-    with windows_path.open("r", encoding="utf-8") as handle:
-        for line_no, raw_line in enumerate(handle, start=1):
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"invalid JSON in {windows_path}:{line_no}: {exc.msg}"
-                ) from exc
-            if not isinstance(row, dict):
-                raise ValueError(
-                    f"invalid record in {windows_path}:{line_no}: expected object"
-                )
-
-            errors = list(validator.iter_errors(row))
-            if errors:
-                raise ValueError(
-                    f"message window schema validation failed for "
-                    f"{windows_path}:{line_no}: {errors[0].message}"
-                )
-
-            records.append(
-                MessageWindowRecord(
-                    source_path=windows_path,
-                    provider_id=row["provider_id"],
-                    conversation_id=row["conversation_id"],
-                    window_id=row["window_id"],
-                    message_ids=tuple(
-                        str(message_id)
-                        for message_id in row.get("message_ids", [])
-                        if message_id is not None
-                    ),
-                    ts_start=row.get("ts_start"),
-                    ts_end=row.get("ts_end"),
-                    text=row["text"],
-                )
-            )
-
-    return records
+    return [
+        MessageWindowRecord(
+            source_path=window.source_path,
+            provider_id=window.provider_id,
+            conversation_id=window.conversation_id,
+            window_id=window.window_id,
+            message_ids=window.message_ids,
+            ts_start=window.ts_start,
+            ts_end=window.ts_end,
+            text=window.text,
+        )
+        for window in load_reconstructed_message_windows(windows_path)
+    ]
 
 
 def build_window_embedding_records(

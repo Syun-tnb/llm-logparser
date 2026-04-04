@@ -108,8 +108,9 @@ Typical L3 inputs may include:
 
 When L3 consumes `message_windows.jsonl`, it is consuming a deterministic L1
 candidate-span substrate. The window rows are not semantic units themselves.
-Their `text` field, when present, is only a minimal canonical projection kept
-for current downstream compatibility rather than a semantic rendering contract.
+They should be treated as ordered `message_ids` plus deterministic provenance.
+When L3 needs text, roles, or excerpts, it must reconstruct them from
+canonical `parsed.jsonl` message rows.
 
 Architectural rules:
 
@@ -395,7 +396,8 @@ spans, not over provider-native raw exports.
 When current L3 code consumes `message_windows.jsonl`, it is consuming an L1
 candidate-span substrate rather than semantic ground truth. Semantic grouping
 is established later by the semantic computation layer and topic artifact
-builders.
+builders, and semantic excerpts should be rebuilt from canonical messages
+rather than read from L1 convenience fields.
 
 ## 8.2 Embedding-Based Similarity
 

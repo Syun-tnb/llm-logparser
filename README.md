@@ -84,7 +84,7 @@ artifacts/output/openai/
   thread-abc123/
     parsed.jsonl                       ← structured conversation data
     thread_stats.json                  ← message counts, timestamps, etc.
-    message_windows.jsonl              ← grouped message segments
+    message_windows.jsonl              ← deterministic message-span membership
     thread-abc123__gpt-4o.md           ← readable Markdown transcript
 ```
 
@@ -320,6 +320,9 @@ uv run llm-logparser parse \
 non-overlapping windows because omitted stride falls back to the window size.
 Use `--message-window-stride` smaller than `--message-window-size` to opt into
 deterministic overlapping/sliding windows.
+The artifact keeps only deterministic span membership and provenance fields;
+semantic consumers reconstruct text from canonical `parsed.jsonl` messages when
+needed.
 
 ### Export
 
@@ -622,7 +625,8 @@ uv run llm-logparser analyze semantic-preview \
 `semantic-preview` is read-only. It reuses stored `message_windows.jsonl`,
 `window_clusters.jsonl`, and optional `window_neighbors.jsonl`; it does not
 recompute embeddings or write new files. `--json` emits machine-readable output
-for downstream tooling.
+for downstream tooling. Preview text is reconstructed from canonical messages
+referenced by `message_ids`.
 
 ### Analyze Semantic Topics
 
@@ -707,6 +711,9 @@ uv run llm-logparser analyze semantic-topic-explore \
 - `message -> topic`
 - `topic -> timeline`
 
+The browse layer reconstructs excerpts from canonical messages; it does not
+treat `message_windows.jsonl` as semantic text storage.
+
 Its default topic list is tuned for scanning rather than exhaustiveness: it
 surfaces larger topics first, then broader conversation coverage, then higher
 observed intra-cluster scores when available, and shows one representative
@@ -779,7 +786,8 @@ new artifacts. The current production prompt is fixed from the repository's
 tmp-based prompt experiment winner: Prompt B with an 8-window per-cluster cap
 and 300-character per-window truncation. `--json` emits the same result in a
 machine-readable form. Use `semantic-topics` when you need durable topic
-artifacts and reverse lookup.
+artifacts and reverse lookup. Prompt input is reconstructed from canonical
+messages referenced by the window `message_ids`.
 
 ---
 

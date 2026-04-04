@@ -17,9 +17,46 @@ from llm_logparser.core.analyzer_semantic_preview import (
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.name == "message_windows.jsonl":
+        parsed_rows: list[dict] = []
+        seen_message_ids: set[str] = set()
+        clean_rows: list[dict] = []
+        for row in rows:
+            clean_rows.append({key: value for key, value in row.items() if not key.startswith("__")})
+            for message in row.get("__parsed_messages", []):
+                message_id = message["message_id"]
+                if message_id in seen_message_ids:
+                    continue
+                seen_message_ids.add(message_id)
+                parsed_rows.append(message)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in clean_rows:
+                handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+        if clean_rows:
+            parsed_path = path.with_name("parsed.jsonl")
+            thread_row = {
+                "record_type": "thread",
+                "provider_id": clean_rows[0]["provider_id"],
+                "conversation_id": clean_rows[0]["conversation_id"],
+                "message_count": len(parsed_rows),
+            }
+            with parsed_path.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(thread_row, ensure_ascii=True) + "\n")
+                for row in parsed_rows:
+                    handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+        return
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+
+
+def _message_texts_for_window(*, roles: list[str], text: str) -> list[str]:
+    parts = text.split("\n\n") if text else [""]
+    if len(parts) == len(roles):
+        return parts
+    if len(roles) == 1:
+        return [text]
+    raise ValueError("window test fixture text must align with roles")
 
 
 def _message_window_row(
@@ -31,19 +68,36 @@ def _message_window_row(
     message_count: int | None = None,
     char_count: int | None = None,
 ) -> dict:
+    message_ids = [f"{window_id}-m{index}" for index, _ in enumerate(roles, start=1)]
+    message_texts = _message_texts_for_window(roles=roles, text=text)
+    total_chars = sum(len(part) for part in message_texts)
     return {
         "record_type": "message_window",
-        "schema_version": "2.0",
+        "schema_version": "3.0",
         "provider_id": "openai",
         "conversation_id": conversation_id,
         "window_id": window_id,
-        "message_ids": [f"{window_id}-m{index}" for index, _ in enumerate(roles, start=1)],
-        "roles": roles,
-        "message_count": message_count if message_count is not None else len(roles),
-        "char_count": char_count if char_count is not None else len(text),
+        "message_ids": message_ids,
+        "char_count": char_count if char_count is not None else total_chars,
         "ts_start": 1,
         "ts_end": 2,
-        "text": text,
+        "window_size": message_count if message_count is not None else len(message_ids),
+        "window_stride": message_count if message_count is not None else len(message_ids),
+        "__parsed_messages": [
+            {
+                "record_type": "message",
+                "provider_id": "openai",
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+                "role": role,
+                "ts": 1 + index,
+                "text": body,
+                "content": {"content_type": "text", "parts": [body]},
+            }
+            for index, (message_id, role, body) in enumerate(
+                zip(message_ids, roles, message_texts, strict=True)
+            )
+        ],
     }
 
 

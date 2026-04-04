@@ -104,13 +104,11 @@ def test_iter_message_windows_from_rows_is_deterministic_and_uses_canonical_role
         ),
     ]
     assert first[0]["message_ids"] == ["m1", "m2", "m3"]
-    assert first[0]["roles"] == ["user", "system", "assistant"]
     assert first[1]["message_ids"] == ["m4", "m5"]
-    assert first[1]["roles"] == ["tool", "unknown"]
     assert first[0]["window_size"] == 3
     assert first[0]["window_stride"] == 3
-    assert first[0]["text"] == "first\n\nsecond\n\nthird"
-    assert first[1]["text"] == "tool-output\n\nfifth"
+    assert first[0]["char_count"] == len("firstsecondthird")
+    assert first[1]["char_count"] == len("tool-outputfifth")
 
 
 def test_message_windows_do_not_leak_raw_provider_roles():
@@ -126,12 +124,10 @@ def test_message_windows_do_not_leak_raw_provider_roles():
         window_stride=2,
     )
 
-    assert artifact["roles"] == ["unknown", "unknown"]
-    assert artifact["text"] == "hello\n\nhidden"
-    assert "USER:" not in artifact["text"]
-    assert "moderator:" not in artifact["text"]
-    assert "user:" not in artifact["text"]
-    assert "unknown:" not in artifact["text"]
+    assert "roles" not in artifact
+    assert "text" not in artifact
+    assert artifact["message_ids"] == ["m1", "m2"]
+    assert artifact["char_count"] == len("hellohidden")
 
 
 def test_iter_message_windows_from_rows_supports_sliding_stride():
@@ -160,11 +156,6 @@ def test_iter_message_windows_from_rows_supports_sliding_stride():
         ["m1", "m2", "m3"],
         ["m3", "m4", "m5"],
         ["m5"],
-    ]
-    assert [window["roles"] for window in windows] == [
-        ["user", "assistant", "user"],
-        ["user", "assistant", "user"],
-        ["user"],
     ]
     assert all(window["window_size"] == 3 for window in windows)
     assert all(window["window_stride"] == 2 for window in windows)
@@ -208,10 +199,10 @@ def test_message_window_artifact_matches_schema():
 
     assert list(validator.iter_errors(artifact)) == []
     assert artifact["record_type"] == "message_window"
-    assert artifact["schema_version"] == "2.0"
+    assert artifact["schema_version"] == "3.0"
 
 
-def test_message_windows_prefer_text_over_legacy_content_parts():
+def test_message_windows_char_count_uses_canonical_text_only():
     rows = [
         {
             "record_type": "message",
@@ -226,10 +217,10 @@ def test_message_windows_prefer_text_over_legacy_content_parts():
     ]
 
     artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
-    assert artifact["text"] == "canonical"
+    assert artifact["char_count"] == len("canonical")
 
 
-def test_message_windows_do_not_reconstruct_text_from_provider_content():
+def test_message_windows_do_not_count_provider_content_without_canonical_text():
     rows = [
         {
             "record_type": "message",
@@ -243,7 +234,7 @@ def test_message_windows_do_not_reconstruct_text_from_provider_content():
     ]
 
     artifact = build_message_window_artifact(rows, window_index=1, window_size=1, window_stride=1)
-    assert artifact["text"] == ""
+    assert artifact["char_count"] == 0
 
 
 def test_message_window_schema_rejects_malformed_row():
@@ -300,14 +291,13 @@ def test_parse_writes_message_windows_jsonl_next_to_parsed_jsonl(monkeypatch, tm
     ]
 
     assert windows[0]["message_ids"] == ["m1", "m2", "m3", "m4"]
-    assert windows[0]["roles"] == ["user", "system", "assistant", "tool"]
-    assert windows[0]["schema_version"] == "2.0"
+    assert windows[0]["schema_version"] == "3.0"
     assert windows[0]["window_size"] == 4
     assert windows[0]["window_stride"] == 4
     assert windows[1]["message_ids"] == ["m5"]
-    assert windows[1]["roles"] == ["assistant"]
     assert windows[0]["ts_start"] == 1704067201000
     assert windows[0]["ts_end"] == 1704067204000
+    assert windows[0]["char_count"] == len("firstsecondthirdtool-output")
 
     canonical_rows = [
         _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),

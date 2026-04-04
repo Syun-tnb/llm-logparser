@@ -6,11 +6,12 @@
 
 * Hardened parse-time L1 artifact contracts:
   * `thread_stats.json` now emits `schema_version: "1.0"`
-  * `message_windows.jsonl` rows now emit `schema_version: "2.0"`
+  * `message_windows.jsonl` rows now emit `schema_version: "3.0"`
   * added formal JSON Schema for `message_windows.jsonl` rows
   * `message_windows.jsonl` now supports deterministic sliding windows via size/stride controls while preserving legacy non-overlapping defaults
-  * BREAKING: `message_windows.jsonl.text` is no longer role-prefixed rendered window text; it is now a minimal canonical text projection for a candidate span
-  * BREAKING: existing downstream L3 artifacts derived from older `message_windows.jsonl` text should be regenerated
+  * BREAKING: `message_windows.jsonl` is now a thinner message-IDs-first L1 contract containing only deterministic membership/provenance fields
+  * BREAKING: `message_windows.jsonl` no longer stores `roles`, `message_count`, or `text`; L3 consumers now reconstruct semantic text from canonical `parsed.jsonl`
+  * BREAKING: existing downstream L3 artifacts derived from older `message_windows.jsonl` convenience fields should be regenerated
 * Added experimental `analyze semantic-prototype`:
   * reads `message_windows.jsonl`
   * writes rebuildable `window_embeddings.jsonl`, `window_neighbors.jsonl`, and `window_clusters.jsonl`

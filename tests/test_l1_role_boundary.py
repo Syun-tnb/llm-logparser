@@ -104,33 +104,11 @@ def test_no_provider_role_leakage_in_l1_artifacts(tmp_path):
     assert thread_stats["other_role_breakdown"] == {"system": 1, "tool": 1, "unknown": 5}
     assert set(thread_stats["other_role_breakdown"]) <= NORMALIZED_ROLE_SET
 
-    assert window["roles"] == [
-        "unknown",
-        "unknown",
-        "assistant",
-        "unknown",
-        "unknown",
-        "unknown",
-        "system",
-        "tool",
-    ]
-    assert set(window["roles"]) <= NORMALIZED_ROLE_SET
-    assert window["schema_version"] == "2.0"
-    assert window["text"] == (
-        "hello\n\n"
-        "I can't help with that request.\n\n"
-        "plain assistant\n\n"
-        "internal\n\n"
-        "moderated\n\n"
-        "missing\n\n"
-        "sys\n\n"
-        "tool"
-    )
-    assert " USER " not in window["text"]
-    assert "Assistant:" not in window["text"]
-    assert "moderator:" not in window["text"]
-    assert "model:" not in window["text"]
-    assert "user:" not in window["text"]
+    assert window["message_ids"] == [f"m{index}" for index in range(1, 9)]
+    assert window["schema_version"] == "3.0"
+    assert "roles" not in window
+    assert "text" not in window
+    assert window["char_count"] == sum(len(message["text"]) for message in _messy_role_messages())
 
     assert stats["user_messages"] == 0
     assert stats["assistant_messages"] == 1

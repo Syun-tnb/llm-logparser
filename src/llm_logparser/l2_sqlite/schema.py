@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SQLITE_SCHEMA_VERSION = "2"
+SQLITE_SCHEMA_VERSION = "3"
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -54,12 +54,11 @@ def create_schema(conn: sqlite3.Connection) -> None:
             conversation_id TEXT NOT NULL,
             window_id TEXT,
             message_ids TEXT,
-            roles TEXT,
-            message_count INTEGER,
             char_count INTEGER,
             ts_start INTEGER,
             ts_end INTEGER,
-            text TEXT
+            window_size INTEGER,
+            window_stride INTEGER
         );
 
         CREATE INDEX idx_windows_conversation

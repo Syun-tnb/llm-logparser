@@ -122,7 +122,7 @@ def _dump_db(db_path: Path) -> dict[str, list[tuple]]:
             "message_windows": conn.execute(
                 """
                 SELECT provider_id, conversation_id, window_id, message_ids,
-                       roles, message_count, char_count, ts_start, ts_end, text
+                       char_count, ts_start, ts_end, window_size, window_stride
                 FROM message_windows
                 ORDER BY conversation_id, window_id
                 """
@@ -241,14 +241,14 @@ def test_l2_sqlite_builder_preserves_thread_and_window_fidelity(tmp_path):
 
         windows = conn.execute(
             """
-            SELECT conversation_id, message_ids, roles
+            SELECT conversation_id, message_ids, char_count, window_size, window_stride
             FROM message_windows
             ORDER BY conversation_id, window_id
             """
         ).fetchall()
         assert windows == [
-            ("conv-a", '["m1","m2","m3"]', '["user","assistant","tool"]'),
-            ("conv-b", '["m1","m2"]', '["system","assistant"]'),
+            ("conv-a", '["m1","m2","m3"]', 21, 4, 4),
+            ("conv-b", '["m1","m2"]', 12, 4, 4),
         ]
     finally:
         conn.close()
