@@ -709,12 +709,13 @@ def test_semantic_topic_explore_topic_list_output(tmp_path):
     rendered = render_semantic_topic_explore(input_root=root)
 
     first_topic_id = topics_payload["topics"][0]["topic_id"]
+    first_span_id = topics_payload["topics"][0]["representative_spans"][0]["span_id"]
     assert first_topic_id in rendered
     assert "stats: clusters=1 windows=3 messages=5 conversations=2" in rendered
     assert "avg_intra_cluster_score=?" in rendered
     assert "range=100 -> 170" in rendered
     assert "(unlabeled)" in rendered
-    assert "preview: [conv-a / window-0001]" in rendered
+    assert f"preview: [conv-a / {first_span_id} (window-0001)]" in rendered
 
 
 def test_semantic_topic_explore_topic_detail_view(tmp_path):
@@ -732,16 +733,27 @@ def test_semantic_topic_explore_topic_detail_view(tmp_path):
         topic_id=topic_id,
     )
 
+    representative_span_id = topics_payload["topics"][0]["representative_spans"][0]["span_id"]
+    timeline_span_ids = [
+        row["span_id"]
+        for row in topics_payload["topics"][0]["representative_spans"]
+    ]
     assert f"Topic {topic_id}" in rendered
     assert "Summary: (none)" in rendered
     assert "Stats: clusters=1 windows=3 messages=5" in rendered
     assert "Quality: windows=3 conversations=2 avg_intra_cluster_score=?" in rendered
     assert "Conversations: conv-a, conv-b" in rendered
     assert "Representative:" in rendered
-    assert '- [conv-a / window-0001] "Draft the production migration checklist Include schema audit and rollback steps"' in rendered
+    assert (
+        f'- [conv-a / {representative_span_id} (window-0001)] '
+        '"Draft the production migration checklist Include schema audit and rollback steps"'
+    ) in rendered
     assert "Timeline:" in rendered
-    assert "- 100 | conv-a / window-0001" in rendered
-    assert '- 150 | conv-b / window-0001 | "Review launch risk controls Add deployment rollback checks"' in rendered
+    assert f"- 100 | conv-a / {timeline_span_ids[0]} (window-0001)" in rendered
+    assert (
+        f'- 150 | conv-b / {timeline_span_ids[1]} (window-0001) '
+        '| "Review launch risk controls Add deployment rollback checks"'
+    ) in rendered
 
 
 def test_semantic_topic_explore_message_reverse_lookup(tmp_path):
@@ -984,7 +996,7 @@ def test_semantic_topic_explore_topic_list_rendering_surfaces_preview_and_qualit
     assert "topic-zeta | Zeta" in rendered
     assert "summary: Large but low-score topic." in rendered
     assert "avg_intra_cluster_score=0.40" in rendered
-    assert 'preview: [conv-a / window-0001] "alpha rollout checklist"' in rendered
+    assert 'preview: [conv-a / span-a1 (window-0001)] "alpha rollout checklist"' in rendered
 
 
 def test_semantic_topic_explore_rejects_legacy_topics_contract_with_regeneration_guidance(tmp_path):

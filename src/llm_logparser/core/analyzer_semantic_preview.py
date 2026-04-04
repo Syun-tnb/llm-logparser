@@ -19,21 +19,31 @@ class SemanticPreviewError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class PreviewMessage:
+    message_id: str
+    role: str
+    text: str
+    ts: int | None
+
+
+@dataclass(frozen=True)
 class WindowPreviewRecord:
     provider_id: str
     conversation_id: str
     window_id: str
     message_ids: tuple[str, ...]
-    message_count: int
     char_count: int
     ts_start: int | None
     ts_end: int | None
-    roles: tuple[str, ...]
-    text: str
-    message_texts: tuple[str, ...] = ()
+    messages: tuple[PreviewMessage, ...]
     span_id: str = ""
 
     def __post_init__(self) -> None:
+        if len(self.message_ids) != len(self.messages):
+            raise ValueError("message_ids/messages length mismatch")
+        for message_id, message in zip(self.message_ids, self.messages, strict=True):
+            if message.message_id != message_id:
+                raise ValueError("message_ids/messages order mismatch")
         object.__setattr__(
             self,
             "span_id",
@@ -44,6 +54,22 @@ class WindowPreviewRecord:
                 window_id=self.window_id,
             ),
         )
+
+    @property
+    def message_count(self) -> int:
+        return len(self.message_ids)
+
+    @property
+    def roles(self) -> tuple[str, ...]:
+        return tuple(message.role for message in self.messages)
+
+    @property
+    def message_texts(self) -> tuple[str, ...]:
+        return tuple(message.text for message in self.messages)
+
+    @property
+    def text(self) -> str:
+        return "\n\n".join(text for text in self.message_texts if text)
 
 
 @dataclass(frozen=True)
@@ -110,13 +136,18 @@ def load_window_preview_index(input_root: Path) -> dict[WindowRef, WindowPreview
                 conversation_id=window.conversation_id,
                 window_id=window.window_id,
                 message_ids=window.message_ids,
-                message_count=window.message_count,
                 char_count=window.char_count,
                 ts_start=window.ts_start,
                 ts_end=window.ts_end,
-                roles=window.roles,
-                text=window.text,
-                message_texts=window.message_texts,
+                messages=tuple(
+                    PreviewMessage(
+                        message_id=message.message_id,
+                        role=message.role,
+                        text=message.text,
+                        ts=message.ts,
+                    )
+                    for message in window.messages
+                ),
             )
     return index
 
@@ -294,7 +325,7 @@ def select_representative_cluster_windows(
     neighbor_index: dict[WindowRef, list[WindowNeighborReference]] | None,
     window_cap: int,
     max_window_chars: int,
-) -> tuple[dict[str, str], ...]:
+) -> tuple[dict[str, Any], ...]:
     if max_window_chars <= 0:
         raise ValueError("max_window_chars must be > 0")
 
@@ -312,8 +343,10 @@ def select_representative_cluster_windows(
         rendered.append(
             {
                 "conversation_id": conversation_id,
+                "span_id": record.span_id,
+                "message_ids": list(record.message_ids),
                 "window_id": window_id,
-                "text": _representative_window_text(
+                "excerpt": _representative_window_text(
                     record,
                     max_chars=max_window_chars,
                 ),
@@ -365,29 +398,7 @@ def _display_turn_role(role: str) -> str:
 
 
 def _window_messages(record: WindowPreviewRecord) -> list[tuple[str, str]]:
-    if record.message_texts:
-        return [
-            (
-                record.roles[index] if index < len(record.roles) else "unknown",
-                record.message_texts[index],
-            )
-            for index in range(len(record.message_texts))
-        ]
-
-    if not record.text:
-        return []
-
-    parts = record.text.split("\n\n")
-    message_count = max(len(parts), len(record.roles))
-    messages: list[tuple[str, str]] = []
-    for index in range(message_count):
-        role = record.roles[index] if index < len(record.roles) else "unknown"
-        body = parts[index] if index < len(parts) else ""
-        prefix = f"{role}:"
-        if body.casefold().startswith(prefix.casefold()):
-            body = body[len(prefix) :].lstrip()
-        messages.append((role, body))
-    return messages
+    return [(message.role, message.text) for message in record.messages]
 
 
 def format_window_turns(record: WindowPreviewRecord) -> str:
@@ -706,12 +717,10 @@ def _build_window_view_payload(
         conversation_id="",
         window_id="",
         message_ids=(),
-        message_count=0,
         char_count=0,
         ts_start=None,
         ts_end=None,
-        roles=(),
-        text="",
+        messages=(),
     )
 
     return {

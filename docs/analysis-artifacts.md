@@ -202,6 +202,8 @@ Contract:
   - it is a deterministic candidate-span substrate, not a semantic unit
   - `message_ids` are the primary deterministic anchor of the artifact
   - semantic consumers must reconstruct message text and roles from canonical `parsed.jsonl` using the ordered `message_ids`
+  - current L3 preview/topic flows use an explicit reconstruction layer rather
+    than inferring message boundaries by splitting rendered window text
   - the artifact intentionally does not carry rendered semantic text, role sequences, or other convenience fields that duplicate canonical message storage
   - rows now emit an explicit `schema_version` for contract stability
   - window IDs remain deterministic sequential IDs in emission order; changing

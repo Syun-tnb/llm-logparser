@@ -587,7 +587,9 @@ deterministic and model-derived capabilities.
   `window_neighbors.jsonl` and provides three inspection modes without
   recomputing embeddings or modifying artifacts. Preview text is reconstructed
   from canonical parsed messages keyed by `message_ids`, not read from L1 as a
-  semantic source of truth:
+  semantic source of truth. Current preview formatting operates over explicit
+  reconstructed message sequences rather than inferring turns by splitting a
+  stored window text projection:
   cluster list view by default, cluster detail via `--cluster-id`, and
   conversation-centric lookup via `--conversation-id`. The older
   conversation-plus-window neighbor preview remains available when
@@ -604,8 +606,10 @@ deterministic and model-derived capabilities.
   cluster, and 300-character normalized window excerpts. Representative
   windows are chosen deterministically by preferring stronger retained
   intra-cluster connectedness first, then larger message/character footprints
-  as lightweight tie-breaks. It does not write any new artifacts and does not
-  alter L3 clustering.
+  as lightweight tie-breaks. Prompt inputs and representative excerpts are L3
+  reconstructions from canonical messages, while `window_id` remains only a
+  compatibility/display overlay. It does not write any new artifacts and does
+  not alter L3 clustering.
 
 - `semantic-topics` is the formal L3/L4 boundary artifact builder: it reads
   stored `message_windows.jsonl` plus `window_clusters.jsonl` and writes
@@ -647,6 +651,8 @@ deterministic and model-derived capabilities.
   now prefers larger topics first, then broader conversation coverage, then
   higher observed intra-cluster scores when those scores exist, and the text
   view surfaces one representative preview plus lightweight quality hints.
+  When span IDs are available, browse labels prefer span-grounded references
+  and keep `window_id` only as a compatibility overlay.
 
 Current limitations remain explicit:
 

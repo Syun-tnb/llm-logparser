@@ -229,25 +229,30 @@ def _window_refs(members: list[WindowClusterMember]) -> list[dict[str, str]]:
 
 
 def _representative_spans(
-    prompt_windows: list[dict[str, str]],
-    windows: dict[WindowRef, WindowPreviewRecord],
+    prompt_windows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    spans: list[dict[str, Any]] = []
-    for row in prompt_windows[:3]:
-        record = windows.get((row["conversation_id"], row["window_id"]))
-        if record is None:
-            continue
-        spans.append(
-            {
-                "conversation_id": row["conversation_id"],
-                "span_id": record.span_id,
-                "message_ids": list(record.message_ids),
-                "excerpt": row["excerpt"],
-                # Compatibility overlay only; semantic identity is span-based.
-                "window_id": row["window_id"],
-            }
-        )
-    return spans
+    return [
+        {
+            "conversation_id": row["conversation_id"],
+            "span_id": row["span_id"],
+            "message_ids": list(row["message_ids"]),
+            "excerpt": row["excerpt"],
+            # Compatibility overlay only; semantic identity is span-based.
+            "window_id": row["window_id"],
+        }
+        for row in prompt_windows[:3]
+    ]
+
+
+def _representative_windows(prompt_windows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return [
+        {
+            "conversation_id": row["conversation_id"],
+            "window_id": row["window_id"],
+            "excerpt": row["excerpt"],
+        }
+        for row in prompt_windows[:3]
+    ]
 
 
 def _time_bounds(
@@ -291,7 +296,7 @@ def _topic_prompt(
     *,
     cluster_id: str,
     members: list[WindowClusterMember],
-    prompt_windows: list[dict[str, str]],
+    prompt_windows: list[dict[str, Any]],
 ) -> str:
     windows_block = "\n\n".join(
         f"[{row['conversation_id']} / {row['window_id']}]\n{row['excerpt']}"
@@ -311,7 +316,7 @@ def _topic_model_fields(
     model: str | None,
     cluster_id: str,
     members: list[WindowClusterMember],
-    prompt_windows: list[dict[str, str]],
+    prompt_windows: list[dict[str, Any]],
     base_url: str,
     timeout_seconds: float,
 ) -> dict[str, Any]:
@@ -420,27 +425,22 @@ def build_semantic_topics_artifact(
     topics: list[dict[str, Any]] = []
     membership_rows: list[dict[str, Any]] = []
     for item_cluster_id, members in items:
-        prompt_windows = [
-            {
-                "conversation_id": row["conversation_id"],
-                "window_id": row["window_id"],
-                "excerpt": row["text"],
-            }
-            for row in select_representative_cluster_windows(
+        prompt_windows = list(
+            select_representative_cluster_windows(
                 members=members,
                 windows=windows,
                 neighbor_index=neighbor_index,
                 window_cap=DEFAULT_TOPIC_WINDOW_CAP,
                 max_window_chars=DEFAULT_TOPIC_MAX_WINDOW_CHARS,
             )
-        ]
+        )
         if not prompt_windows:
             continue
 
         first_seen, last_seen = _time_bounds(members, windows)
         span_refs = _span_refs(members, windows)
         message_refs = _message_refs(members, windows)
-        representative_spans = _representative_spans(prompt_windows, windows)
+        representative_spans = _representative_spans(prompt_windows)
         topic_id = _topic_id(provider_id, members, windows)
         topic_fields = _topic_model_fields(
             model=normalized_model,
@@ -476,7 +476,7 @@ def build_semantic_topics_artifact(
             # Compatibility overlays: retained for browse/render paths that still
             # expect window-shaped references.
             "window_refs": _window_refs(members),
-            "representative_windows": prompt_windows[:3],
+            "representative_windows": _representative_windows(prompt_windows),
         }
         topics.append(topic)
         membership_rows.append(

@@ -139,7 +139,9 @@ For the same reason, `message_windows.jsonl` is not semantic truth. It is a
 deterministic L1 candidate-span membership artifact keyed by ordered
 `message_ids`. Semantic consumers may use it to choose spans, but any text or
 role sequence needed for semantic work must be reconstructed from canonical
-`parsed.jsonl` messages.
+`parsed.jsonl` messages. L3 should operate on explicit reconstructed message
+sequences, not on message boundaries re-inferred from a flattened window text
+projection.
 
 ## 6. Presentation vs Semantics
 

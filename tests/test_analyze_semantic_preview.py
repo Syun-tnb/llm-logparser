@@ -8,8 +8,10 @@ import pytest
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_semantic_preview import (
+    PreviewMessage,
     WindowClusterMember,
     WindowPreviewRecord,
+    format_window_turns,
     render_semantic_preview,
     select_representative_cluster_windows,
 )
@@ -583,24 +585,34 @@ def test_representative_selection_is_independent_of_excerpt_truncation():
             conversation_id="conv-a",
             window_id="window-0001",
             message_ids=("m1",),
-            message_count=1,
             char_count=64,
             ts_start=1,
             ts_end=2,
-            roles=("user",),
-            text="Shared prefix for preview A with a distinct semantic suffix",
+            messages=(
+                PreviewMessage(
+                    message_id="m1",
+                    role="user",
+                    text="Shared prefix for preview A with a distinct semantic suffix",
+                    ts=1,
+                ),
+            ),
         ),
         ("conv-b", "window-0001"): WindowPreviewRecord(
             provider_id="openai",
             conversation_id="conv-b",
             window_id="window-0001",
             message_ids=("m2",),
-            message_count=1,
             char_count=64,
             ts_start=3,
             ts_end=4,
-            roles=("assistant",),
-            text="Shared prefix for preview B with another distinct ending",
+            messages=(
+                PreviewMessage(
+                    message_id="m2",
+                    role="assistant",
+                    text="Shared prefix for preview B with another distinct ending",
+                    ts=3,
+                ),
+            ),
         ),
     }
 
@@ -627,6 +639,41 @@ def test_representative_selection_is_independent_of_excerpt_truncation():
         ("conv-a", "window-0001"),
         ("conv-b", "window-0001"),
     ]
+    assert short[0]["span_id"]
+    assert short[0]["message_ids"] == ["m1"]
+    assert "text" not in short[0]
+
+
+def test_format_window_turns_preserves_embedded_blank_lines_with_reconstructed_messages():
+    record = WindowPreviewRecord(
+        provider_id="openai",
+        conversation_id="conv-a",
+        window_id="window-0001",
+        message_ids=("m1", "m2"),
+        char_count=49,
+        ts_start=1,
+        ts_end=2,
+        messages=(
+            PreviewMessage(
+                message_id="m1",
+                role="user",
+                text="First paragraph\n\nStill the same user message",
+                ts=1,
+            ),
+            PreviewMessage(
+                message_id="m2",
+                role="assistant",
+                text="Acknowledged",
+                ts=2,
+            ),
+        ),
+    )
+
+    assert format_window_turns(record) == (
+        "Turn 1\n"
+        "U: First paragraph\n\nStill the same user message\n"
+        "A: Acknowledged"
+    )
 
 
 def test_render_semantic_preview_cli_cluster_list_default_view(tmp_path, capsys):

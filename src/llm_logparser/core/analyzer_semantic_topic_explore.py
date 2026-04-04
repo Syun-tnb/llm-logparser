@@ -315,10 +315,12 @@ def _render_ref_label(
     window_id: str | None,
 ) -> str:
     conversation = conversation_id or "?"
+    if isinstance(span_id, str) and span_id:
+        if isinstance(window_id, str) and window_id:
+            return f"{conversation} / {span_id} ({window_id})"
+        return f"{conversation} / {span_id}"
     if isinstance(window_id, str) and window_id:
         return f"{conversation} / {window_id}"
-    if isinstance(span_id, str) and span_id:
-        return f"{conversation} / {span_id}"
     return conversation
 
 

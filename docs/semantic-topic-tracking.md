@@ -110,7 +110,9 @@ When L3 consumes `message_windows.jsonl`, it is consuming a deterministic L1
 candidate-span substrate. The window rows are not semantic units themselves.
 They should be treated as ordered `message_ids` plus deterministic provenance.
 When L3 needs text, roles, or excerpts, it must reconstruct them from
-canonical `parsed.jsonl` message rows.
+canonical `parsed.jsonl` message rows. Preview and topic prompts therefore
+operate on explicit reconstructed message sequences rather than on legacy
+window-text splitting behavior.
 
 Architectural rules:
 

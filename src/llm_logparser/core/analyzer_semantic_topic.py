@@ -54,7 +54,7 @@ class TopicClusterInput:
     cluster_size: int
     conversation_count: int
     quality_signals: dict[str, Any]
-    windows: tuple[dict[str, str], ...]
+    windows: tuple[dict[str, Any], ...]
     representative_spans: tuple[dict[str, Any], ...]
 
 
@@ -128,16 +128,13 @@ def _build_topic_clusters(
             continue
         representative_spans: list[dict[str, Any]] = []
         for row in topic_windows[:3]:
-            record = windows.get((row["conversation_id"], row["window_id"]))
-            if record is None:
-                continue
             representative_spans.append(
                 {
                     "conversation_id": row["conversation_id"],
-                    "span_id": record.span_id,
-                    "message_ids": list(record.message_ids),
+                    "span_id": row["span_id"],
+                    "message_ids": list(row["message_ids"]),
                     "window_id": row["window_id"],
-                    "text": row["text"],
+                    "excerpt": row["excerpt"],
                 }
             )
         topic_clusters.append(
@@ -160,7 +157,7 @@ def _build_topic_clusters(
 
 def _build_prompt(cluster: TopicClusterInput) -> str:
     windows_block = "\n\n".join(
-        f"[{row['conversation_id']} / {row['window_id']}]\n{row['text']}"
+        f"[{row['conversation_id']} / {row['window_id']}]\n{row['excerpt']}"
         for row in cluster.windows
     )
     return (
@@ -295,7 +292,14 @@ def _topic_payload(
         "summary": " ".join(summary.split()),
         "keywords": _normalize_keywords(output.get("keywords")),
         "representative_spans": list(cluster.representative_spans[:3]),
-        "representative_windows": list(cluster.windows[:3]),
+        "representative_windows": [
+            {
+                "conversation_id": row["conversation_id"],
+                "window_id": row["window_id"],
+                "excerpt": row["excerpt"],
+            }
+            for row in cluster.windows[:3]
+        ],
     }
 
 
@@ -368,7 +372,7 @@ def _render_text(result: dict[str, Any]) -> str:
         for row in topic["representative_windows"]:
             lines.append(
                 f"- [{row['conversation_id']} / {row['window_id']}] "
-                f"\"{row['text']}\""
+                f"\"{row['excerpt']}\""
             )
     return "\n".join(lines)
 
