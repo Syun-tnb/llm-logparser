@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from llm_logparser.cli.cli import main
-from llm_logparser.core.analyzer_semantic_preview import render_semantic_preview
+from llm_logparser.core.analyzer_semantic_preview import (
+    WindowClusterMember,
+    WindowPreviewRecord,
+    render_semantic_preview,
+    select_representative_cluster_windows,
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -497,6 +502,77 @@ def test_render_semantic_preview_cluster_list_view(tmp_path):
     assert '[conv-a / window-0001] "Draft migration runbook for the production rollout"' in rendered
     assert '[conv-b / window-0001] "Build rollback steps and migration safety checks"' in rendered
     assert '[conv-c / window-0001] "Capture launch checklist follow-ups and audit reminders"' in rendered
+
+
+def test_representative_selection_is_independent_of_excerpt_truncation():
+    members = [
+        WindowClusterMember(
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            cluster_id="cluster_000001",
+            cluster_size=2,
+            edge_policy="mutual-only",
+        ),
+        WindowClusterMember(
+            provider_id="openai",
+            conversation_id="conv-b",
+            window_id="window-0001",
+            cluster_id="cluster_000001",
+            cluster_size=2,
+            edge_policy="mutual-only",
+        ),
+    ]
+    windows = {
+        ("conv-a", "window-0001"): WindowPreviewRecord(
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            message_ids=("m1",),
+            message_count=1,
+            char_count=64,
+            ts_start=1,
+            ts_end=2,
+            roles=("user",),
+            text="Shared prefix for preview A with a distinct semantic suffix",
+        ),
+        ("conv-b", "window-0001"): WindowPreviewRecord(
+            provider_id="openai",
+            conversation_id="conv-b",
+            window_id="window-0001",
+            message_ids=("m2",),
+            message_count=1,
+            char_count=64,
+            ts_start=3,
+            ts_end=4,
+            roles=("assistant",),
+            text="Shared prefix for preview B with another distinct ending",
+        ),
+    }
+
+    short = select_representative_cluster_windows(
+        members=members,
+        windows=windows,
+        neighbor_index=None,
+        window_cap=2,
+        max_window_chars=20,
+    )
+    long = select_representative_cluster_windows(
+        members=members,
+        windows=windows,
+        neighbor_index=None,
+        window_cap=2,
+        max_window_chars=200,
+    )
+
+    assert [(row["conversation_id"], row["window_id"]) for row in short] == [
+        ("conv-a", "window-0001"),
+        ("conv-b", "window-0001"),
+    ]
+    assert [(row["conversation_id"], row["window_id"]) for row in long] == [
+        ("conv-a", "window-0001"),
+        ("conv-b", "window-0001"),
+    ]
 
 
 def test_render_semantic_preview_cli_cluster_list_default_view(tmp_path, capsys):

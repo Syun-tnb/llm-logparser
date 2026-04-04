@@ -188,18 +188,34 @@ def truncate_text(text: str, *, max_chars: int) -> str:
     return text[: max_chars - 3] + "..."
 
 
-def select_representative_cluster_windows(
+def _canonical_preview_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _representative_window_text(
+    record: WindowPreviewRecord,
+    *,
+    max_chars: int,
+) -> str:
+    # Presentation-only projection for already selected representative windows.
+    return truncate_text(_canonical_preview_text(record.text), max_chars=max_chars)
+
+
+def _representative_text_key(record: WindowPreviewRecord) -> str:
+    # Semantic selection may dedupe identical canonical text, but it must not
+    # depend on truncated display excerpts.
+    return _canonical_preview_text(record.text)
+
+
+def _select_representative_window_refs(
     *,
     members: list[WindowClusterMember],
     windows: dict[WindowRef, WindowPreviewRecord],
     neighbor_index: dict[WindowRef, list[WindowNeighborReference]] | None,
     window_cap: int,
-    max_window_chars: int,
-) -> tuple[dict[str, str], ...]:
+) -> tuple[WindowRef, ...]:
     if window_cap <= 0:
         raise ValueError("window_cap must be > 0")
-    if max_window_chars <= 0:
-        raise ValueError("max_window_chars must be > 0")
 
     cluster_keys = {
         (member.conversation_id, member.window_id)
@@ -225,7 +241,6 @@ def select_representative_cluster_windows(
             if link_count > 0
             else 0.0
         )
-        compact_text = " ".join(record.text.split())
         candidates.append(
             (
                 -link_count,
@@ -234,12 +249,12 @@ def select_representative_cluster_windows(
                 -record.char_count,
                 member.conversation_id,
                 member.window_id,
-                truncate_text(compact_text, max_chars=max_window_chars),
+                _representative_text_key(record),
             )
         )
 
-    deduped: list[dict[str, str]] = []
-    seen_hashes: set[str] = set()
+    selected: list[WindowRef] = []
+    seen_text_keys: set[str] = set()
     for (
         _neg_link_count,
         _neg_average_score,
@@ -247,23 +262,51 @@ def select_representative_cluster_windows(
         _neg_char_count,
         conversation_id,
         window_id,
-        text,
+        text_key,
     ) in sorted(candidates):
-        text_hash = json.dumps(text, ensure_ascii=False)
-        if text_hash in seen_hashes:
+        if text_key in seen_text_keys:
             continue
-        seen_hashes.add(text_hash)
-        deduped.append(
+        seen_text_keys.add(text_key)
+        selected.append((conversation_id, window_id))
+        if len(selected) == window_cap:
+            break
+
+    return tuple(selected)
+
+
+def select_representative_cluster_windows(
+    *,
+    members: list[WindowClusterMember],
+    windows: dict[WindowRef, WindowPreviewRecord],
+    neighbor_index: dict[WindowRef, list[WindowNeighborReference]] | None,
+    window_cap: int,
+    max_window_chars: int,
+) -> tuple[dict[str, str], ...]:
+    if max_window_chars <= 0:
+        raise ValueError("max_window_chars must be > 0")
+
+    selected_refs = _select_representative_window_refs(
+        members=members,
+        windows=windows,
+        neighbor_index=neighbor_index,
+        window_cap=window_cap,
+    )
+    rendered: list[dict[str, str]] = []
+    for conversation_id, window_id in selected_refs:
+        record = windows.get((conversation_id, window_id))
+        if record is None:
+            continue
+        rendered.append(
             {
                 "conversation_id": conversation_id,
                 "window_id": window_id,
-                "text": text,
+                "text": _representative_window_text(
+                    record,
+                    max_chars=max_window_chars,
+                ),
             }
         )
-        if len(deduped) == window_cap:
-            break
-
-    return tuple(deduped)
+    return tuple(rendered)
 
 
 def compute_cluster_quality_signals(
