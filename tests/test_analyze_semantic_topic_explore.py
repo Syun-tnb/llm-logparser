@@ -762,6 +762,24 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
 
     assert payload["view"] == "topic-detail"
     assert payload["topic"]["topic_id"] == topic_id
+    assert payload["topic"]["span_refs"]
+    assert payload["topic"]["span_count"] == 2
+    assert payload["topic"]["representative_spans"] == [
+        {
+            "conversation_id": "conv-c",
+            "span_id": payload["topic"]["representative_spans"][0]["span_id"],
+            "message_ids": ["c-2"],
+            "window_id": "window-0002",
+            "excerpt": "Compare ramen shops and cafe seating",
+        },
+        {
+            "conversation_id": "conv-c",
+            "span_id": payload["topic"]["representative_spans"][1]["span_id"],
+            "message_ids": ["c-1"],
+            "window_id": "window-0001",
+            "excerpt": "Plan lunch options for next week",
+        },
+    ]
     assert payload["topic"]["message_count"] == 2
     assert payload["topic"]["representative_windows"] == [
         {
@@ -783,6 +801,7 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
         "single_window": False,
     }
     assert len(payload["topic"]["timeline"]) == 2
+    assert all("span_id" in row for row in payload["topic"]["timeline"])
 
 
 def test_semantic_topic_explore_topic_list_refined_ordering_and_null_score_handling(tmp_path):

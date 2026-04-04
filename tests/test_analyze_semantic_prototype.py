@@ -9,15 +9,20 @@ import pytest
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_semantic_prototype import (
+    CandidateProviderSelection,
     MessageWindowRecord,
+    SemanticStructureResult,
     SqliteCandidateConfig,
     WindowEmbeddingRecord,
     analyze_semantic_prototype,
+    build_full_scan_candidate_pools,
     build_sqlite_candidate_pools,
     build_window_embedding_records,
     build_window_cluster_rows,
     build_window_neighbor_rows,
     build_window_neighbor_rows_with_sqlite_candidates,
+    compute_semantic_structure,
+    compute_semantic_structure_from_provider,
     cosine_similarity,
     discover_message_windows_jsonl,
     load_message_window_records,
@@ -280,6 +285,56 @@ def test_span_identity_uses_ordered_message_ids_not_window_id():
 
     assert first.span_id == second.span_id
     assert first.span_id != reordered.span_id
+
+
+def test_compute_semantic_structure_from_provider_uses_supplied_candidate_provider():
+    embeddings = build_window_embedding_records(
+        [
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0001",
+                message_ids=("m1",),
+                ts_start=1,
+                ts_end=2,
+                text="alpha beta",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-b",
+                window_id="window-0001",
+                message_ids=("m2",),
+                ts_start=3,
+                ts_end=4,
+                text="alpha gamma",
+            ),
+        ],
+        backend=StaticEmbeddingBackend([[1.0, 0.0], [0.9, 0.1]]),
+    )
+    candidate_pools = [tuple(range(len(embeddings))) for _ in embeddings]
+    observed_calls: list[int] = []
+
+    def _provider(records: list[WindowEmbeddingRecord]):
+        observed_calls.append(len(records))
+        return candidate_pools
+
+    from_provider = compute_semantic_structure_from_provider(
+        embeddings,
+        top_k=1,
+        min_score=0.0,
+        candidate_provider=_provider,
+    )
+    direct = compute_semantic_structure(
+        embeddings,
+        top_k=1,
+        min_score=0.0,
+        candidate_pools=candidate_pools,
+    )
+
+    assert observed_calls == [2]
+    assert from_provider == direct
 
 
 def test_build_window_embedding_records_uses_backend_vectors():
@@ -550,6 +605,117 @@ def test_build_window_neighbor_rows_progress_callback():
         "semantic prototype: neighbors 2 / 3",
         "semantic prototype: neighbors 3 / 3",
     ]
+
+
+def test_build_window_neighbor_rows_uses_full_scan_provider_orchestration(monkeypatch):
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            message_ids=("m1",),
+            ts_start=1,
+            ts_end=2,
+            embedding_model="local/test-static",
+            text_char_count=5,
+            embedding=(1.0, 0.0),
+        )
+    ]
+    observed: dict[str, object] = {}
+
+    def _fake_compute(
+        embeddings_arg,
+        *,
+        top_k,
+        min_score,
+        candidate_provider,
+        prefer_same_thread=False,
+        cross_thread_score_percentile=0.75,
+        progress=None,
+        progress_every=None,
+    ):
+        observed["embeddings"] = embeddings_arg
+        observed["top_k"] = top_k
+        observed["min_score"] = min_score
+        observed["candidate_provider"] = candidate_provider
+        observed["prefer_same_thread"] = prefer_same_thread
+        return SemanticStructureResult(neighbor_rows=[{"ok": True}], cluster_rows=[])
+
+    monkeypatch.setattr(
+        "llm_logparser.core.analyzer_semantic_prototype.compute_semantic_structure_from_provider",
+        _fake_compute,
+    )
+
+    rows = build_window_neighbor_rows(embeddings, top_k=1, min_score=0.5)
+
+    assert rows == [{"ok": True}]
+    assert observed["embeddings"] == embeddings
+    assert observed["top_k"] == 1
+    assert observed["min_score"] == 0.5
+    assert observed["candidate_provider"] is build_full_scan_candidate_pools
+    assert observed["prefer_same_thread"] is False
+
+
+def test_build_window_neighbor_rows_with_sqlite_candidates_uses_provider_orchestration(
+    monkeypatch, tmp_path
+):
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            message_ids=("m1",),
+            ts_start=1,
+            ts_end=2,
+            embedding_model="local/test-static",
+            text_char_count=5,
+            embedding=(1.0, 0.0),
+        )
+    ]
+    observed: dict[str, object] = {}
+
+    def _fake_compute(
+        embeddings_arg,
+        *,
+        top_k,
+        min_score,
+        candidate_provider,
+        prefer_same_thread=False,
+        cross_thread_score_percentile=0.75,
+        progress=None,
+        progress_every=None,
+    ):
+        observed["embeddings"] = embeddings_arg
+        observed["top_k"] = top_k
+        observed["min_score"] = min_score
+        observed["candidate_provider"] = candidate_provider
+        observed["prefer_same_thread"] = prefer_same_thread
+        return SemanticStructureResult(neighbor_rows=[{"ok": True}], cluster_rows=[])
+
+    monkeypatch.setattr(
+        "llm_logparser.core.analyzer_semantic_prototype.compute_semantic_structure_from_provider",
+        _fake_compute,
+    )
+
+    rows = build_window_neighbor_rows_with_sqlite_candidates(
+        embeddings,
+        top_k=1,
+        min_score=0.5,
+        candidate_config=SqliteCandidateConfig(
+            db_path=tmp_path / "analysis.db",
+            candidate_same_thread="prefer",
+        ),
+    )
+
+    assert rows == [{"ok": True}]
+    assert observed["embeddings"] == embeddings
+    assert observed["top_k"] == 1
+    assert observed["min_score"] == 0.5
+    assert callable(observed["candidate_provider"])
+    assert observed["candidate_provider"] is not build_full_scan_candidate_pools
+    assert observed["prefer_same_thread"] is True
 
 
 def test_embedding_and_neighbor_rows_match_schema():

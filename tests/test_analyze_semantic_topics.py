@@ -519,7 +519,12 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     assert topics_payload["topics"][0]["span_count"] == 3
     assert len(topics_payload["topics"][0]["span_refs"]) == 3
     assert all("span_id" in row for row in topics_payload["topics"][0]["span_refs"])
+    assert all("message_ids" in row for row in topics_payload["topics"][0]["span_refs"])
+    assert topics_payload["topics"][0]["message_refs"]
+    assert topics_payload["topics"][0]["representative_spans"]
     assert topics_payload["topics"][0]["representative_spans"][0]["window_id"] == "window-0001"
+    assert all(row["membership_type"] != "window" for row in membership_rows)
+    assert {row["membership_type"] for row in membership_rows} == {"cluster", "span", "message"}
     assert topics_payload["topics"][0]["quality_signals"]["cluster_size"] == 3
     assert topics_payload["topics"][0]["quality_signals"]["conversation_count"] == 2
     assert topics_payload["topics"][0]["quality_signals"]["single_window"] is False
@@ -611,6 +616,10 @@ def test_semantic_topics_representative_window_selection_is_deterministic(tmp_pa
     assert (
         artifact_a["topics"][0]["representative_windows"]
         == artifact_b["topics"][0]["representative_windows"]
+    )
+    assert (
+        artifact_a["topics"][0]["representative_spans"]
+        == artifact_b["topics"][0]["representative_spans"]
     )
 
 
