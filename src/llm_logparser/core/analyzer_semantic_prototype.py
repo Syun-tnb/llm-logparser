@@ -109,6 +109,12 @@ class SemanticStructureResult:
     cluster_rows: list[dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class CandidateProviderSelection:
+    candidate_provider: CandidatePoolProvider
+    prefer_same_thread: bool = False
+
+
 SpanId = str
 WindowLookupKey = tuple[str, str, str]
 CandidatePools = list[tuple[int, ...]]
@@ -605,84 +611,108 @@ def _validate_sqlite_candidate_config(config: SqliteCandidateConfig) -> Path:
     return db_path
 
 
-def _candidate_query(
-    record: WindowEmbeddingRecord,
-    *,
-    config: SqliteCandidateConfig,
-) -> tuple[str, list[Any]]:
-    clauses = ["mw.provider_id = ?", "NOT (mw.provider_id = ? AND mw.conversation_id = ? AND mw.window_id = ?)"]
-    params: list[Any] = [
-        record.provider_id,
-        record.provider_id,
-        record.conversation_id,
-        record.window_id,
-    ]
+@dataclass(frozen=True)
+class SqliteCandidatePoolProvider:
+    config: SqliteCandidateConfig
 
-    if record.ts_start is not None:
-        days_ms = config.candidate_window_days * 24 * 60 * 60 * 1000
-        clauses.append("mw.ts_start IS NOT NULL")
-        clauses.append("mw.ts_start BETWEEN ? AND ?")
-        params.extend([record.ts_start - days_ms, record.ts_start + days_ms])
+    def _candidate_query(self, record: WindowEmbeddingRecord) -> tuple[str, list[Any]]:
+        clauses = [
+            "mw.provider_id = ?",
+            "NOT (mw.provider_id = ? AND mw.conversation_id = ? AND mw.window_id = ?)",
+        ]
+        params: list[Any] = [
+            record.provider_id,
+            record.provider_id,
+            record.conversation_id,
+            record.window_id,
+        ]
 
-    if config.candidate_min_chars > 0:
-        clauses.append("COALESCE(mw.char_count, 0) >= ?")
-        params.append(config.candidate_min_chars)
+        if record.ts_start is not None:
+            days_ms = self.config.candidate_window_days * 24 * 60 * 60 * 1000
+            clauses.append("mw.ts_start IS NOT NULL")
+            clauses.append("mw.ts_start BETWEEN ? AND ?")
+            params.extend([record.ts_start - days_ms, record.ts_start + days_ms])
 
-    if config.candidate_min_assistant_ratio > 0.0:
-        clauses.append("COALESCE(t.message_count, 0) > 0")
-        clauses.append(
-            "(CAST(COALESCE(t.assistant_messages, 0) AS REAL) / "
-            "CAST(t.message_count AS REAL)) >= ?"
-        )
-        params.append(config.candidate_min_assistant_ratio)
+        if self.config.candidate_min_chars > 0:
+            clauses.append("COALESCE(mw.char_count, 0) >= ?")
+            params.append(self.config.candidate_min_chars)
 
-    if config.candidate_same_thread == "only":
-        clauses.append("mw.conversation_id = ?")
-        params.append(record.conversation_id)
-    elif config.candidate_same_thread == "exclude":
-        clauses.append("mw.conversation_id != ?")
-        params.append(record.conversation_id)
+        if self.config.candidate_min_assistant_ratio > 0.0:
+            clauses.append("COALESCE(t.message_count, 0) > 0")
+            clauses.append(
+                "(CAST(COALESCE(t.assistant_messages, 0) AS REAL) / "
+                "CAST(t.message_count AS REAL)) >= ?"
+            )
+            params.append(self.config.candidate_min_assistant_ratio)
 
-    order_by = [
-        "mw.provider_id ASC",
-        "mw.conversation_id ASC",
-        "mw.window_id ASC",
-    ]
-    if record.ts_start is not None:
-        order_by.insert(0, "ABS(mw.ts_start - ?) ASC")
-        params.append(record.ts_start)
-    elif config.candidate_same_thread == "prefer":
-        order_by.insert(0, "(mw.conversation_id != ?) ASC")
-        params.append(record.conversation_id)
+        if self.config.candidate_same_thread == "only":
+            clauses.append("mw.conversation_id = ?")
+            params.append(record.conversation_id)
+        elif self.config.candidate_same_thread == "exclude":
+            clauses.append("mw.conversation_id != ?")
+            params.append(record.conversation_id)
 
-    query = f"""
-        SELECT mw.provider_id, mw.conversation_id, mw.window_id
-        FROM message_windows AS mw
-        JOIN threads AS t
-          ON t.conversation_id = mw.conversation_id
-        WHERE {" AND ".join(clauses)}
-        ORDER BY {", ".join(order_by)}
-    """
-    return query, params
+        order_by = [
+            "mw.provider_id ASC",
+            "mw.conversation_id ASC",
+            "mw.window_id ASC",
+        ]
+        if record.ts_start is not None:
+            order_by.insert(0, "ABS(mw.ts_start - ?) ASC")
+            params.append(record.ts_start)
+        elif self.config.candidate_same_thread == "prefer":
+            order_by.insert(0, "(mw.conversation_id != ?) ASC")
+            params.append(record.conversation_id)
 
+        query = f"""
+            SELECT mw.provider_id, mw.conversation_id, mw.window_id
+            FROM message_windows AS mw
+            JOIN threads AS t
+              ON t.conversation_id = mw.conversation_id
+            WHERE {" AND ".join(clauses)}
+            ORDER BY {", ".join(order_by)}
+        """
+        return query, params
 
-def _candidate_indices_for_record(
-    conn: sqlite3.Connection,
-    *,
-    record: WindowEmbeddingRecord,
-    record_index: int,
-    config: SqliteCandidateConfig,
-    index_by_key: dict[WindowLookupKey, int],
-) -> list[int]:
-    query, params = _candidate_query(record, config=config)
-    candidate_indices: list[int] = []
-    for row in conn.execute(query, params):
-        key = (row["provider_id"], row["conversation_id"], row["window_id"])
-        candidate_index = index_by_key.get(key)
-        if candidate_index is None or candidate_index == record_index:
-            continue
-        candidate_indices.append(candidate_index)
-    return sorted(set(candidate_indices))
+    def _candidate_indices_for_record(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        record: WindowEmbeddingRecord,
+        record_index: int,
+        index_by_key: dict[WindowLookupKey, int],
+    ) -> list[int]:
+        query, params = self._candidate_query(record)
+        candidate_indices: list[int] = []
+        for row in conn.execute(query, params):
+            key = (row["provider_id"], row["conversation_id"], row["window_id"])
+            candidate_index = index_by_key.get(key)
+            if candidate_index is None or candidate_index == record_index:
+                continue
+            candidate_indices.append(candidate_index)
+        return sorted(set(candidate_indices))
+
+    def __call__(self, embeddings: list[WindowEmbeddingRecord]) -> CandidatePools:
+        if not embeddings:
+            return []
+
+        db_path = _validate_sqlite_candidate_config(self.config)
+        index_by_key, _ = _embedding_lookup(embeddings)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            pools: CandidatePools = []
+            for index, record in enumerate(embeddings):
+                candidate_indices = self._candidate_indices_for_record(
+                    conn,
+                    record=record,
+                    record_index=index,
+                    index_by_key=index_by_key,
+                )
+                pools.append(tuple(sorted({index, *candidate_indices})))
+            return pools
+        finally:
+            conn.close()
 
 
 def build_sqlite_candidate_pools(
@@ -690,40 +720,41 @@ def build_sqlite_candidate_pools(
     *,
     candidate_config: SqliteCandidateConfig,
 ) -> CandidatePools:
-    if not embeddings:
-        return []
-
-    db_path = _validate_sqlite_candidate_config(candidate_config)
-    index_by_key, _ = _embedding_lookup(embeddings)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        pools: list[tuple[int, ...]] = []
-        for index, record in enumerate(embeddings):
-            candidate_indices = _candidate_indices_for_record(
-                conn,
-                record=record,
-                record_index=index,
-                config=candidate_config,
-                index_by_key=index_by_key,
-            )
-            pools.append(tuple(sorted({index, *candidate_indices})))
-        return pools
-    finally:
-        conn.close()
+    return SqliteCandidatePoolProvider(candidate_config)(embeddings)
 
 
 def build_sqlite_candidate_provider(
     *,
     candidate_config: SqliteCandidateConfig,
 ) -> CandidatePoolProvider:
-    def _provider(embeddings: list[WindowEmbeddingRecord]) -> CandidatePools:
-        return build_sqlite_candidate_pools(
-            embeddings,
-            candidate_config=candidate_config,
-        )
+    return SqliteCandidatePoolProvider(candidate_config)
 
-    return _provider
+
+def _resolve_candidate_provider(
+    *,
+    sqlite_db: Path | None,
+    candidate_window_days: int,
+    candidate_min_chars: int,
+    candidate_min_assistant_ratio: float,
+    candidate_same_thread: str,
+) -> CandidateProviderSelection:
+    if sqlite_db is None:
+        return CandidateProviderSelection(
+            candidate_provider=build_full_scan_candidate_pools
+        )
+    candidate_config = SqliteCandidateConfig(
+        db_path=sqlite_db,
+        candidate_window_days=candidate_window_days,
+        candidate_min_chars=candidate_min_chars,
+        candidate_min_assistant_ratio=candidate_min_assistant_ratio,
+        candidate_same_thread=candidate_same_thread,
+    )
+    return CandidateProviderSelection(
+        candidate_provider=build_sqlite_candidate_provider(
+            candidate_config=candidate_config
+        ),
+        prefer_same_thread=candidate_same_thread == "prefer",
+    )
 
 
 def _build_pool_score_lookup(
@@ -1042,40 +1073,24 @@ def analyze_semantic_prototype(
     )
     embedding_rows = [render_window_embedding_row(record) for record in embeddings]
     _emit_progress(progress, "runtime.analyze.semantic_prototype.building_neighbors")
-    if sqlite_db is None:
-        candidate_provider: CandidatePoolProvider = build_full_scan_candidate_pools
-        semantic_result = compute_semantic_structure_from_provider(
-            embeddings,
-            top_k=top_k,
-            min_score=min_score,
-            candidate_provider=candidate_provider,
-            progress=progress,
-            progress_every=NEIGHBOR_PROGRESS_INTERVAL
-            if len(embeddings) >= NEIGHBOR_PROGRESS_INTERVAL
-            else None,
-        )
-    else:
-        candidate_config = SqliteCandidateConfig(
-            db_path=sqlite_db,
-            candidate_window_days=candidate_window_days,
-            candidate_min_chars=candidate_min_chars,
-            candidate_min_assistant_ratio=candidate_min_assistant_ratio,
-            candidate_same_thread=candidate_same_thread,
-        )
-        candidate_provider = build_sqlite_candidate_provider(
-            candidate_config=candidate_config
-        )
-        semantic_result = compute_semantic_structure_from_provider(
-            embeddings,
-            top_k=top_k,
-            min_score=min_score,
-            candidate_provider=candidate_provider,
-            prefer_same_thread=candidate_same_thread == "prefer",
-            progress=progress,
-            progress_every=NEIGHBOR_PROGRESS_INTERVAL
-            if len(embeddings) >= NEIGHBOR_PROGRESS_INTERVAL
-            else None,
-        )
+    candidate_selection = _resolve_candidate_provider(
+        sqlite_db=sqlite_db,
+        candidate_window_days=candidate_window_days,
+        candidate_min_chars=candidate_min_chars,
+        candidate_min_assistant_ratio=candidate_min_assistant_ratio,
+        candidate_same_thread=candidate_same_thread,
+    )
+    semantic_result = compute_semantic_structure_from_provider(
+        embeddings,
+        top_k=top_k,
+        min_score=min_score,
+        candidate_provider=candidate_selection.candidate_provider,
+        prefer_same_thread=candidate_selection.prefer_same_thread,
+        progress=progress,
+        progress_every=NEIGHBOR_PROGRESS_INTERVAL
+        if len(embeddings) >= NEIGHBOR_PROGRESS_INTERVAL
+        else None,
+    )
     neighbor_rows = semantic_result.neighbor_rows
     _emit_progress(progress, "runtime.analyze.semantic_prototype.building_clusters")
     cluster_rows = semantic_result.cluster_rows
