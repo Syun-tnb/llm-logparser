@@ -188,6 +188,8 @@ than canonical. The current MVP state engine is deterministic and rule-based:
   `state_confidence`, and diagnostic `state_signals`
 - classification runs on reconstructed ordered span messages, not on L1 window
   text projections
+- phrase resources are locale-aware L3 data inputs selected via explicit
+  `state_locale` when needed, with `en-US` fallback
 - topic aggregation is conservative: any `in_progress` span keeps the topic
   `in_progress`; otherwise any `unresolved` span keeps it `unresolved`
 

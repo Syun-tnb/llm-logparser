@@ -34,6 +34,10 @@
   * `semantic-topic-explore` now prefers span-grounded references in browse output while keeping `window_id` as an overlay
   * cluster construction now also derives the current run's P75 cross-thread mutual score from retained neighbor rows and drops weaker cross-thread mutual edges; that default was selected from the repository artifact corpus because it reduced broad cross-thread components with less fragmentation than stricter cross-thread cutoffs
   * still does not perform topic labeling, lifecycle modeling, or summarization
+* Refined the L3 span-state heuristic:
+  * moved phrase sets into locale-specific resource files under `resources/semantic_state/`
+  * added explicit `--state-locale` support to `analyze semantic-topic` and `analyze semantic-topics`
+  * kept locale handling scoped to L3 state interpretation; unsupported state locales fall back to `en-US`
 * Added experimental `analyze semantic-preview`:
   * reads stored `window_neighbors.jsonl` plus `message_windows.jsonl`
   * renders one target window and its nearest neighbors as human-readable text

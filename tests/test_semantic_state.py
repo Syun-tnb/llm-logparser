@@ -11,6 +11,10 @@ from llm_logparser.core.semantic_state import (
     aggregate_topic_state,
     classify_span_state,
 )
+from llm_logparser.core.semantic_state_phrases import (
+    load_semantic_state_phrases,
+    resolve_state_locale,
+)
 
 
 def _message(message_id: str, role: str, text: str, ts: int) -> PreviewMessage:
@@ -275,3 +279,53 @@ def test_classify_span_state_uses_structured_messages_not_rendered_text_splittin
 
     assert result.state == DONE_STATE
     assert "B1:trailing_question" not in result.state_signals
+
+
+def test_state_phrase_loader_resolves_supported_locale_and_falls_back():
+    assert resolve_state_locale("ja") == "ja-JP"
+    assert resolve_state_locale("fr-FR") == "en-US"
+
+    phrases = load_semantic_state_phrases("fr-FR")
+    assert phrases.locale == "en-US"
+    assert "thanks, that works" in phrases.closure_user
+
+
+def test_classify_span_state_uses_selected_state_locale_for_phrase_matching():
+    record = _record(
+        messages=[
+            _message(
+                "m1",
+                "user",
+                "ありがとうございます、それで大丈夫です。",
+                1_710_000_060_000,
+            ),
+        ]
+    )
+
+    default_result = classify_span_state(record, dataset_max_ts=record.ts_end)
+    japanese_result = classify_span_state(
+        record,
+        dataset_max_ts=record.ts_end,
+        state_locale="ja-JP",
+    )
+
+    assert default_result.state == IN_PROGRESS_STATE
+    assert japanese_result.state == DONE_STATE
+    assert "A1:explicit_confirmation" in japanese_result.state_signals
+
+
+def test_unknown_state_locale_falls_back_to_english_phrase_table():
+    record = _record(
+        messages=[
+            _message("m1", "assistant", "The implementation is complete.", 1_710_000_060_000),
+        ]
+    )
+
+    result = classify_span_state(
+        record,
+        dataset_max_ts=record.ts_end,
+        state_locale="fr-FR",
+    )
+
+    assert result.state == DONE_STATE
+    assert "A2:task_completion_statement" in result.state_signals

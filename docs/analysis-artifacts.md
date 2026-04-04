@@ -861,6 +861,9 @@ Experimental prototype note:
   it operates on reconstructed canonical span messages, uses tail-priority
   last-message-wins conflict handling, and treats recency as a modifier rather
   than a primary classifier
+- span-state phrase sets now live in locale-scoped L3 resource files rather
+  than hardcoded Python tuples; `semantic-topic` / `semantic-topics` accept an
+  explicit `state_locale`, and unsupported locales fall back to `en-US`
 - `topic_membership.jsonl` is the reverse lookup index: it now uses
   `schema_version: "1.0"` and emits explicit `membership_type=cluster|span|message`
   rows so cluster provenance, span membership, and message membership are all

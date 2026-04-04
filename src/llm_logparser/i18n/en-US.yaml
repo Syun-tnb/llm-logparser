@@ -89,6 +89,7 @@ messages:
   cli.analyze.semantic_topic.opt.cross_thread_only.help: Restrict topic generation to clusters spanning more than one conversation
   cli.analyze.semantic_topic.opt.base_url.help: Base URL for the local Ollama server
   cli.analyze.semantic_topic.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds
+  cli.analyze.semantic_topic.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
   cli.analyze.semantic_topic.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.analyze.semantic_topics.help: Build formal semantic topic artifacts with forward and reverse lookup from stored L3 clusters
   cli.analyze.semantic_topics.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
@@ -98,6 +99,7 @@ messages:
   cli.analyze.semantic_topics.opt.cross_thread_only.help: Restrict the generated topic set to clusters spanning more than one conversation
   cli.analyze.semantic_topics.opt.base_url.help: Base URL for the local Ollama server
   cli.analyze.semantic_topics.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds when --model is used
+  cli.analyze.semantic_topics.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: Artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline

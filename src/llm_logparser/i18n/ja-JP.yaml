@@ -93,6 +93,7 @@ messages:
   cli.analyze.semantic_topic.opt.cross_thread_only.help: 複数 conversation にまたがる cluster のみに topic 生成を制限する
   cli.analyze.semantic_topic.opt.base_url.help: ローカル Ollama サーバーの base URL
   cli.analyze.semantic_topic.opt.timeout_seconds.help: cluster ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.semantic_topic.opt.state_locale.help: L3 span state 判定で使う phrase locale。UI locale とは分離され、未対応時は en-US に fallback する
   cli.analyze.semantic_topic.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.analyze.semantic_topics.help: 保存済み L3 cluster から forward / reverse lookup 可能な formal topic artifact を構築する
   cli.analyze.semantic_topics.opt.input.help: message_windows.jsonl と window_clusters.jsonl を含む provider 成果物ルート
@@ -102,6 +103,7 @@ messages:
   cli.analyze.semantic_topics.opt.cross_thread_only.help: 複数 conversation にまたがる cluster のみに生成対象を制限する
   cli.analyze.semantic_topics.opt.base_url.help: ローカル Ollama サーバーの base URL
   cli.analyze.semantic_topics.opt.timeout_seconds.help: --model 使用時の cluster ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.semantic_topics.opt.state_locale.help: L3 span state 判定で使う phrase locale。UI locale とは分離され、未対応時は en-US に fallback する
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する

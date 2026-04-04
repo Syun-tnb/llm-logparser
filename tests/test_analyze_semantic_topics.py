@@ -273,6 +273,35 @@ def _write_topics_fixture(root: Path) -> None:
     )
 
 
+def _write_japanese_state_fixture(root: Path) -> None:
+    thread_a = root / "thread-conv-ja"
+    _write_jsonl(
+        thread_a / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-ja",
+                "window-0001",
+                message_ids=["ja-1"],
+                roles=["user"],
+                text="ありがとうございます、それで大丈夫です。",
+                ts_start=100,
+                ts_end=100,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_a / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-ja",
+                "window-0001",
+                cluster_id="cluster_ja_000001",
+                cluster_size=1,
+            )
+        ],
+    )
+
+
 def _write_representative_selection_fixture(root: Path) -> None:
     thread_a = root / "thread-conv-a"
     thread_b = root / "thread-conv-b"
@@ -761,6 +790,23 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     assert {topic["quality_signals"]["cluster_size"] for topic in topics_payload["topics"]} == {2, 3}
 
 
+def test_semantic_topics_state_locale_changes_l3_state_matching(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_japanese_state_fixture(root)
+
+    default_artifact, _default_rows = build_semantic_topics_artifact(root)
+    japanese_artifact, _japanese_rows = build_semantic_topics_artifact(
+        root,
+        state_locale="ja-JP",
+    )
+
+    assert default_artifact["topics"][0]["state"] == "unresolved"
+    assert default_artifact["topics"][0]["span_refs"][0]["state"] == "unresolved"
+    assert japanese_artifact["topics"][0]["state"] == "done"
+    assert japanese_artifact["topics"][0]["span_refs"][0]["state"] == "done"
+    assert "A1:explicit_confirmation" in japanese_artifact["topics"][0]["span_refs"][0]["state_signals"]
+
+
 def test_analyze_semantic_topics_cli_happy_path(tmp_path, caplog):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)
@@ -787,3 +833,29 @@ def test_analyze_semantic_topics_cli_happy_path(tmp_path, caplog):
     assert str(membership_path) in caplog.text
     assert topics_path.exists()
     assert membership_path.exists()
+
+
+def test_analyze_semantic_topics_cli_accepts_state_locale(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_japanese_state_fixture(root)
+
+    main(
+        [
+            "--locale",
+            "en-US",
+            "analyze",
+            "semantic-topics",
+            "--input",
+            str(root),
+            "--cluster-id",
+            "cluster_ja_000001",
+            "--state-locale",
+            "ja-JP",
+        ]
+    )
+
+    payload = json.loads(
+        (root / "l3" / "semantic-topics" / "topics.json").read_text(encoding="utf-8")
+    )
+    assert payload["topics"][0]["state"] == "done"
+    assert payload["topics"][0]["span_refs"][0]["state"] == "done"

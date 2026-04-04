@@ -640,10 +640,12 @@ deterministic and model-derived capabilities.
   `state` with canonical values `unresolved|in_progress|done`,
   topic-level `state_confidence`, and per-span `state`, `state_confidence`,
   and `state_signals` on `span_refs` / `representative_spans`.
-  The current MVP path is deterministic, English-biased, and rule-based:
+  The current MVP path is deterministic and rule-based:
   it uses reconstructed span messages, tail-priority conflict resolution, and
-  recency only as a modifier. It does not use a model-enriched state
-  classifier.
+  recency only as a modifier. Phrase resources are now loaded from
+  locale-specific L3 data files, with explicit `state_locale` selection for
+  `semantic-topic` / `semantic-topics` and `en-US` as the fallback. It does
+  not use a model-enriched state classifier.
   Provenance is execution-oriented: structural-only
   runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
   while model-enriched runs populate them from the actually used local labeling

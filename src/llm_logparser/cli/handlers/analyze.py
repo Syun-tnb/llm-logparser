@@ -254,6 +254,7 @@ def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
             cross_thread_only=args.cross_thread_only,
             base_url=args.base_url,
             timeout_seconds=args.timeout_seconds,
+            state_locale=args.state_locale,
             json_output=args.json_output,
         )
     except SemanticTopicError as exc:
@@ -279,6 +280,7 @@ def run_analyze_semantic_topics(args, logger: logging.Logger) -> None:
             cross_thread_only=args.cross_thread_only,
             base_url=args.base_url,
             timeout_seconds=args.timeout_seconds,
+            state_locale=args.state_locale,
         )
     except SemanticTopicsError as exc:
         logger.error(str(exc))

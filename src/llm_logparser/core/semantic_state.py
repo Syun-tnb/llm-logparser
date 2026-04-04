@@ -6,6 +6,10 @@ from typing import Iterable
 from .analyzer_common import normalize_analysis_text
 from .analyzer_semantic_preview import PreviewMessage, WindowPreviewRecord
 from .l1_derivation import ts_to_seconds
+from .semantic_state_phrases import (
+    SemanticStatePhrases,
+    load_semantic_state_phrases,
+)
 
 DONE_STATE = "done"
 IN_PROGRESS_STATE = "in_progress"
@@ -21,104 +25,6 @@ SHORT_TEXT_CONFIDENCE_CAP = 0.40
 RECENCY_MODIFIER_CONFIDENCE_CAP = 0.65
 PLAUSIBLE_EPOCH_SECONDS = 946684800.0
 TOOL_HEAVY_CONFIDENCE_CAP = 0.35
-
-
-def _normalized_phrases(*phrases: str) -> tuple[str, ...]:
-    normalized: list[str] = []
-    for phrase in phrases:
-        folded = normalize_analysis_text(phrase)
-        if folded:
-            normalized.append(folded)
-    return tuple(normalized)
-
-
-SPAN_CLOSURE_USER_PHRASES = _normalized_phrases(
-    "thanks, that works",
-    "perfect, thanks",
-    "that's exactly what i needed",
-    "got it, thanks",
-    "looks good",
-    "that's correct",
-    "yes, that's right",
-    "great, thank you",
-    "problem solved",
-    "resolved now",
-    "all set now",
-    "that solved it",
-    "that fixes it",
-    "we're good now",
-    "ありがとう、それでいい",
-    "問題解決",
-)
-SPAN_COMPLETION_ASSISTANT_PHRASES = _normalized_phrases(
-    "here's the complete",
-    "here is the final",
-    "the implementation is complete",
-    "this should resolve",
-    "that completes",
-    "all done",
-    "i've finished",
-    "the changes have been applied",
-    "everything is now in place",
-    "that should do it",
-    "this is ready",
-)
-SPAN_DECISION_PHRASES = _normalized_phrases(
-    "let's go with",
-    "the decision is",
-    "we'll use",
-    "i'll proceed with",
-    "agreed",
-    "confirmed",
-    "approved",
-)
-SPAN_QUESTION_INDICATORS = _normalized_phrases(
-    "what do you think",
-    "how should we",
-    "can you",
-    "could you",
-    "would you",
-    "what about",
-    "any suggestions",
-    "is there a way to",
-    "what's the best",
-)
-SPAN_USER_REVISION_PHRASES = _normalized_phrases(
-    "let me rephrase",
-    "to clarify",
-    "i mean",
-    "in other words",
-    "what i mean is",
-    "actually",
-    "instead",
-    "can you also",
-    "one more thing",
-    "change that",
-    "update that",
-    "revise that",
-    "rewrite that",
-    "fix this",
-    "adjust this",
-)
-SPAN_UNCERTAINTY_PHRASES = _normalized_phrases(
-    "i'm not sure",
-    "it's unclear",
-    "this might not work",
-    "there could be issues",
-    "i'd need to investigate",
-    "this is speculative",
-    "i don't have enough context",
-)
-SPAN_NEXT_STEP_PHRASES = _normalized_phrases(
-    "next step",
-    "next, we should",
-    "after that",
-    "the remaining task",
-    "still need to",
-    "todo",
-    "we still need",
-    "the next thing to do",
-)
 
 SIGNAL_NAMES = {
     "A1": "explicit_confirmation",
@@ -191,15 +97,19 @@ def _latest_any_message_offset(
     return None
 
 
-def _is_trailing_question(message: PreviewMessage | None) -> bool:
+def _is_trailing_question(
+    message: PreviewMessage | None,
+    *,
+    phrases: SemanticStatePhrases,
+) -> bool:
     if message is None:
         return False
     stripped = message.text.strip()
     if not stripped:
         return False
-    if stripped.endswith("?"):
+    if stripped.endswith(("?", "？")):
         return True
-    return _matches_phrase(stripped, SPAN_QUESTION_INDICATORS)
+    return _matches_phrase(stripped, phrases.question)
 
 
 def _record_last_activity_ts(record: WindowPreviewRecord) -> int | None:
@@ -259,6 +169,7 @@ def _signal_offsets(
     record: WindowPreviewRecord,
     *,
     dataset_max_ts: int | None,
+    phrases: SemanticStatePhrases,
 ) -> dict[str, int | None]:
     tail = _tail_messages(record)
     last_message = tail[-1] if tail else None
@@ -268,31 +179,31 @@ def _signal_offsets(
         "A1": _latest_role_message_offset(
             tail,
             role="user",
-            phrases=SPAN_CLOSURE_USER_PHRASES,
+            phrases=phrases.closure_user,
         ),
         "A2": _latest_role_message_offset(
             tail,
             role="assistant",
-            phrases=SPAN_COMPLETION_ASSISTANT_PHRASES,
+            phrases=phrases.completion_assistant,
         ),
         "A3": _latest_any_message_offset(
             tail,
-            phrases=SPAN_DECISION_PHRASES,
+            phrases=phrases.decision,
         ),
-        "B1": 0 if _is_trailing_question(last_message) else None,
+        "B1": 0 if _is_trailing_question(last_message, phrases=phrases) else None,
         "B2": _latest_role_message_offset(
             tail,
             role="user",
-            phrases=SPAN_USER_REVISION_PHRASES,
+            phrases=phrases.user_revision,
         ),
         "B3": _latest_role_message_offset(
             tail,
             role="assistant",
-            phrases=SPAN_UNCERTAINTY_PHRASES,
+            phrases=phrases.uncertainty,
         ),
         "B4": _latest_any_message_offset(
             tail,
-            phrases=SPAN_NEXT_STEP_PHRASES,
+            phrases=phrases.next_step,
             limit=2,
         ),
         "C1": 0 if last_role == "user" else None,
@@ -371,8 +282,14 @@ def classify_span_state(
     record: WindowPreviewRecord,
     *,
     dataset_max_ts: int | None = None,
+    state_locale: str | None = None,
 ) -> SpanStateResult:
-    offsets = _signal_offsets(record, dataset_max_ts=dataset_max_ts)
+    phrases = load_semantic_state_phrases(state_locale)
+    offsets = _signal_offsets(
+        record,
+        dataset_max_ts=dataset_max_ts,
+        phrases=phrases,
+    )
     continuation_wins = _continuation_outranks_closure(offsets)
 
     if not continuation_wins and (offsets["A1"] is not None or offsets["A2"] is not None):

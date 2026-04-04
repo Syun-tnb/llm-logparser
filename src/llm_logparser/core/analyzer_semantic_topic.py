@@ -105,6 +105,7 @@ def _build_topic_clusters(
     cross_thread_only: bool,
     window_cap: int,
     max_window_chars: int,
+    state_locale: str | None = None,
 ) -> list[TopicClusterInput]:
     try:
         windows = load_window_preview_index(input_root)
@@ -138,6 +139,7 @@ def _build_topic_clusters(
             (member.conversation_id, member.window_id): classify_span_state(
                 windows[(member.conversation_id, member.window_id)],
                 dataset_max_ts=dataset_max_ts,
+                state_locale=state_locale,
             )
             for member in members
             if (member.conversation_id, member.window_id) in windows
@@ -340,6 +342,7 @@ def analyze_semantic_topic(
     cross_thread_only: bool = False,
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    state_locale: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(model, str) or not model.strip():
         raise SemanticTopicError("--model is required for semantic-topic")
@@ -358,6 +361,7 @@ def analyze_semantic_topic(
         cross_thread_only=cross_thread_only,
         window_cap=DEFAULT_TOPIC_WINDOW_CAP,
         max_window_chars=DEFAULT_TOPIC_MAX_WINDOW_CHARS,
+        state_locale=state_locale,
     )
 
     topics: list[dict[str, Any]] = []
@@ -423,6 +427,7 @@ def render_semantic_topic(
     cross_thread_only: bool = False,
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    state_locale: str | None = None,
     json_output: bool = False,
 ) -> str:
     result = analyze_semantic_topic(
@@ -434,6 +439,7 @@ def render_semantic_topic(
         cross_thread_only=cross_thread_only,
         base_url=base_url,
         timeout_seconds=timeout_seconds,
+        state_locale=state_locale,
     )
     if json_output:
         return json.dumps(result, ensure_ascii=False, indent=2)

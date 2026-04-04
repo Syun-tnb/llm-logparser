@@ -116,6 +116,10 @@ window-text splitting behavior.
 The prototype layer may now reach those candidate spans from either stored
 `message_windows.jsonl` or canonical `parsed.jsonl`, with `message_windows`
 remaining a convenience substrate rather than a mandatory gateway.
+Topic-state heuristics are now also locale-aware at L3: phrase tables are
+loaded from dedicated semantic-state resources, and `semantic-topic` /
+`semantic-topics` can select them explicitly via `state_locale` without being
+coupled to UI locale.
 
 Architectural rules:
 

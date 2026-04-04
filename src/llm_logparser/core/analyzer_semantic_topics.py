@@ -29,6 +29,7 @@ from .analyzer_semantic_topic import (
     _parse_topic_output,
 )
 from .semantic_state import (
+    SpanStateResult,
     aggregate_topic_state,
     classify_span_state,
     semantic_state_dataset_max_timestamp,
@@ -201,7 +202,7 @@ def _span_refs(
     members: list[WindowClusterMember],
     windows: dict[WindowRef, WindowPreviewRecord],
     *,
-    span_state_by_ref: dict[WindowRef, dict[str, Any]],
+    span_state_by_ref: dict[WindowRef, SpanStateResult],
 ) -> list[dict[str, Any]]:
     refs: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -219,9 +220,9 @@ def _span_refs(
                 "conversation_id": member.conversation_id,
                 "span_id": record.span_id,
                 "message_ids": list(record.message_ids),
-                "state": state_row["state"],
-                "state_confidence": state_row["state_confidence"],
-                "state_signals": list(state_row["state_signals"]),
+                "state": state_row.state,
+                "state_confidence": state_row.state_confidence,
+                "state_signals": list(state_row.state_signals),
                 # Compatibility overlay only; semantic identity is span-based.
                 "window_id": member.window_id,
             }
@@ -242,23 +243,23 @@ def _window_refs(members: list[WindowClusterMember]) -> list[dict[str, str]]:
 def _representative_spans(
     prompt_windows: list[dict[str, Any]],
     *,
-    span_state_by_ref: dict[WindowRef, dict[str, Any]],
+    span_state_by_ref: dict[WindowRef, SpanStateResult],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in prompt_windows[:3]:
         state_row = span_state_by_ref[(row["conversation_id"], row["window_id"])]
         rows.append(
             {
-            "conversation_id": row["conversation_id"],
-            "span_id": row["span_id"],
-            "message_ids": list(row["message_ids"]),
-            "excerpt": row["excerpt"],
-            "state": state_row["state"],
-            "state_confidence": state_row["state_confidence"],
-            "state_signals": list(state_row["state_signals"]),
-            # Compatibility overlay only; semantic identity is span-based.
-            "window_id": row["window_id"],
-        }
+                "conversation_id": row["conversation_id"],
+                "span_id": row["span_id"],
+                "message_ids": list(row["message_ids"]),
+                "excerpt": row["excerpt"],
+                "state": state_row.state,
+                "state_confidence": state_row.state_confidence,
+                "state_signals": list(state_row.state_signals),
+                # Compatibility overlay only; semantic identity is span-based.
+                "window_id": row["window_id"],
+            }
         )
     return rows
 
@@ -412,6 +413,7 @@ def build_semantic_topics_artifact(
     cross_thread_only: bool = False,
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    state_locale: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if min_cluster_size <= 0:
         raise SemanticTopicsError("--min-cluster-size must be > 0")
@@ -442,16 +444,16 @@ def build_semantic_topics_artifact(
     embedding_model, neighbor_k, has_neighbors = _semantic_neighbor_provenance(input_root)
     edge_policies = sorted({member.edge_policy for _cluster_id, members in items for member in members})
     dataset_max_ts = semantic_state_dataset_max_timestamp(windows.values())
-    span_state_by_ref: dict[WindowRef, dict[str, Any]] = {
-        key: {
-            "state": result.state,
-            "state_confidence": result.state_confidence,
-            "state_signals": result.state_signals,
-        }
+    span_state_by_ref: dict[WindowRef, SpanStateResult] = {
+        key: result
         for key, result in (
             (
                 key,
-                classify_span_state(record, dataset_max_ts=dataset_max_ts),
+                classify_span_state(
+                    record,
+                    dataset_max_ts=dataset_max_ts,
+                    state_locale=state_locale,
+                ),
             )
             for key, record in windows.items()
         )
@@ -485,10 +487,7 @@ def build_semantic_topics_artifact(
         topic_id = _topic_id(provider_id, members, windows)
         topic_state, topic_state_confidence = aggregate_topic_state(
             [
-                classify_span_state(
-                    windows[(member.conversation_id, member.window_id)],
-                    dataset_max_ts=dataset_max_ts,
-                )
+                span_state_by_ref[(member.conversation_id, member.window_id)]
                 for member in members
                 if (member.conversation_id, member.window_id) in windows
             ]
@@ -633,6 +632,7 @@ def write_semantic_topics_artifacts(
     cross_thread_only: bool = False,
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    state_locale: str | None = None,
 ) -> dict[str, Any]:
     artifact, membership_rows = build_semantic_topics_artifact(
         input_root,
@@ -642,6 +642,7 @@ def write_semantic_topics_artifacts(
         cross_thread_only=cross_thread_only,
         base_url=base_url,
         timeout_seconds=timeout_seconds,
+        state_locale=state_locale,
     )
 
     topics_validator = load_topics_validator()

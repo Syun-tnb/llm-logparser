@@ -229,6 +229,32 @@ def _write_topic_fixture(root: Path) -> None:
     )
 
 
+def _write_japanese_topic_fixture(root: Path) -> None:
+    thread_a = root / "thread-conv-ja"
+    _write_jsonl(
+        thread_a / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-ja",
+                "window-0001",
+                roles=["user"],
+                text="ありがとうございます、それで大丈夫です。",
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_a / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-ja",
+                "window-0001",
+                cluster_id="cluster_ja_000001",
+                cluster_size=1,
+            )
+        ],
+    )
+
+
 def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topic_fixture(root)
@@ -399,3 +425,85 @@ def test_analyze_semantic_topic_cli_happy_path(tmp_path, monkeypatch, capsys):
     assert "State: unresolved (0.50)" in output
     assert "Label: Launch Readiness" in output
     assert "Summary: Deployment readiness and rollback planning dominate the cluster." in output
+
+
+def test_render_semantic_topic_json_uses_state_locale_for_span_state(tmp_path, monkeypatch):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_japanese_topic_fixture(root)
+
+    monkeypatch.setattr(
+        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
+        lambda request, timeout: _FakeHTTPResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "topic_label": "Japanese Closure",
+                        "summary": "A resolved Japanese-language confirmation span.",
+                        "keywords": ["japanese", "closure"],
+                    }
+                )
+            }
+        ),
+    )
+
+    default_payload = json.loads(
+        render_semantic_topic(
+            input_root=root,
+            model="llama3.1:latest",
+            cluster_id="cluster_ja_000001",
+            json_output=True,
+        )
+    )
+    japanese_payload = json.loads(
+        render_semantic_topic(
+            input_root=root,
+            model="llama3.1:latest",
+            cluster_id="cluster_ja_000001",
+            state_locale="ja-JP",
+            json_output=True,
+        )
+    )
+
+    assert default_payload["topics"][0]["state"] == "unresolved"
+    assert japanese_payload["topics"][0]["state"] == "done"
+    assert japanese_payload["topics"][0]["representative_spans"][0]["state"] == "done"
+
+
+def test_analyze_semantic_topic_cli_accepts_state_locale(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_japanese_topic_fixture(root)
+
+    monkeypatch.setattr(
+        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
+        lambda request, timeout: _FakeHTTPResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "topic_label": "Japanese Closure",
+                        "summary": "A resolved Japanese-language confirmation span.",
+                        "keywords": ["japanese", "closure"],
+                    }
+                )
+            }
+        ),
+    )
+
+    main(
+        [
+            "--locale",
+            "en-US",
+            "analyze",
+            "semantic-topic",
+            "--input",
+            str(root),
+            "--model",
+            "llama3.1:latest",
+            "--cluster-id",
+            "cluster_ja_000001",
+            "--state-locale",
+            "ja-JP",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "State: done" in output

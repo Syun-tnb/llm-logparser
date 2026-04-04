@@ -580,6 +580,11 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topic.opt.timeout_seconds.help"),
     )
     analyze_semantic_topic_cmd.add_argument(
+        "--state-locale",
+        dest="state_locale",
+        help=_("cli.analyze.semantic_topic.opt.state_locale.help"),
+    )
+    analyze_semantic_topic_cmd.add_argument(
         "--json",
         dest="json_output",
         action="store_true",
@@ -624,6 +629,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="base_url",
         default="http://localhost:11434",
         help=_("cli.analyze.semantic_topics.opt.base_url.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--state-locale",
+        dest="state_locale",
+        help=_("cli.analyze.semantic_topics.opt.state_locale.help"),
     )
     analyze_semantic_topics_cmd.add_argument(
         "--timeout-seconds",
