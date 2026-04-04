@@ -7,7 +7,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -111,6 +111,16 @@ class SemanticStructureResult:
 
 SpanId = str
 WindowLookupKey = tuple[str, str, str]
+CandidatePools = list[tuple[int, ...]]
+
+
+class CandidatePoolProvider(Protocol):
+    """Return candidate pools for already prepared semantic candidates."""
+
+    def __call__(
+        self,
+        embeddings: list[WindowEmbeddingRecord],
+    ) -> CandidatePools: ...
 
 
 def _derive_span_id(
@@ -409,9 +419,9 @@ def _quantile(sorted_values: list[float], probability: float) -> float:
     return float(sorted_values[index])
 
 
-def build_dense_candidate_pools(
+def build_full_scan_candidate_pools(
     embeddings: list[WindowEmbeddingRecord],
-) -> list[tuple[int, ...]]:
+) -> CandidatePools:
     """Return the default dense candidate pool for each semantic candidate."""
     if not embeddings:
         return []
@@ -493,7 +503,7 @@ def compute_semantic_structure(
     *,
     top_k: int,
     min_score: float = DEFAULT_MIN_SCORE,
-    candidate_pools: list[tuple[int, ...]] | None = None,
+    candidate_pools: CandidatePools | None = None,
     prefer_same_thread: bool = False,
     cross_thread_score_percentile: float = DEFAULT_CROSS_THREAD_SCORE_PERCENTILE,
     progress: Callable[[str], None] | None = None,
@@ -506,7 +516,7 @@ def compute_semantic_structure(
     neighbor rows, and derives minimal mutual-link clusters.
     """
     resolved_candidate_pools = (
-        build_dense_candidate_pools(embeddings)
+        build_full_scan_candidate_pools(embeddings)
         if candidate_pools is None
         else candidate_pools
     )
@@ -530,6 +540,31 @@ def compute_semantic_structure(
     )
 
 
+def compute_semantic_structure_from_provider(
+    embeddings: list[WindowEmbeddingRecord],
+    *,
+    top_k: int,
+    min_score: float = DEFAULT_MIN_SCORE,
+    candidate_provider: CandidatePoolProvider = build_full_scan_candidate_pools,
+    prefer_same_thread: bool = False,
+    cross_thread_score_percentile: float = DEFAULT_CROSS_THREAD_SCORE_PERCENTILE,
+    progress: Callable[[str], None] | None = None,
+    progress_every: int | None = None,
+) -> SemanticStructureResult:
+    """Resolve candidates through a provider boundary before semantic scoring."""
+    candidate_pools = candidate_provider(embeddings)
+    return compute_semantic_structure(
+        embeddings,
+        top_k=top_k,
+        min_score=min_score,
+        candidate_pools=candidate_pools,
+        prefer_same_thread=prefer_same_thread,
+        cross_thread_score_percentile=cross_thread_score_percentile,
+        progress=progress,
+        progress_every=progress_every,
+    )
+
+
 def build_window_neighbor_rows(
     embeddings: list[WindowEmbeddingRecord],
     *,
@@ -538,10 +573,11 @@ def build_window_neighbor_rows(
     progress: Callable[[str], None] | None = None,
     progress_every: int | None = None,
 ) -> list[dict[str, Any]]:
-    return compute_semantic_structure(
+    return compute_semantic_structure_from_provider(
         embeddings,
         top_k=top_k,
         min_score=min_score,
+        candidate_provider=build_full_scan_candidate_pools,
         progress=progress,
         progress_every=progress_every,
     ).neighbor_rows
@@ -653,7 +689,7 @@ def build_sqlite_candidate_pools(
     embeddings: list[WindowEmbeddingRecord],
     *,
     candidate_config: SqliteCandidateConfig,
-) -> list[tuple[int, ...]]:
+) -> CandidatePools:
     if not embeddings:
         return []
 
@@ -675,6 +711,19 @@ def build_sqlite_candidate_pools(
         return pools
     finally:
         conn.close()
+
+
+def build_sqlite_candidate_provider(
+    *,
+    candidate_config: SqliteCandidateConfig,
+) -> CandidatePoolProvider:
+    def _provider(embeddings: list[WindowEmbeddingRecord]) -> CandidatePools:
+        return build_sqlite_candidate_pools(
+            embeddings,
+            candidate_config=candidate_config,
+        )
+
+    return _provider
 
 
 def _build_pool_score_lookup(
@@ -715,15 +764,13 @@ def build_window_neighbor_rows_with_sqlite_candidates(
     progress: Callable[[str], None] | None = None,
     progress_every: int | None = None,
 ) -> list[dict[str, Any]]:
-    candidate_pools = build_sqlite_candidate_pools(
-        embeddings,
-        candidate_config=candidate_config,
-    )
-    return compute_semantic_structure(
+    return compute_semantic_structure_from_provider(
         embeddings,
         top_k=top_k,
         min_score=min_score,
-        candidate_pools=candidate_pools,
+        candidate_provider=build_sqlite_candidate_provider(
+            candidate_config=candidate_config
+        ),
         prefer_same_thread=candidate_config.candidate_same_thread == "prefer",
         progress=progress,
         progress_every=progress_every,
@@ -996,10 +1043,12 @@ def analyze_semantic_prototype(
     embedding_rows = [render_window_embedding_row(record) for record in embeddings]
     _emit_progress(progress, "runtime.analyze.semantic_prototype.building_neighbors")
     if sqlite_db is None:
-        semantic_result = compute_semantic_structure(
+        candidate_provider: CandidatePoolProvider = build_full_scan_candidate_pools
+        semantic_result = compute_semantic_structure_from_provider(
             embeddings,
             top_k=top_k,
             min_score=min_score,
+            candidate_provider=candidate_provider,
             progress=progress,
             progress_every=NEIGHBOR_PROGRESS_INTERVAL
             if len(embeddings) >= NEIGHBOR_PROGRESS_INTERVAL
@@ -1007,21 +1056,20 @@ def analyze_semantic_prototype(
         )
     else:
         candidate_config = SqliteCandidateConfig(
-                db_path=sqlite_db,
-                candidate_window_days=candidate_window_days,
-                candidate_min_chars=candidate_min_chars,
-                candidate_min_assistant_ratio=candidate_min_assistant_ratio,
-                candidate_same_thread=candidate_same_thread,
-            )
-        candidate_pools = build_sqlite_candidate_pools(
-            embeddings,
-            candidate_config=candidate_config,
+            db_path=sqlite_db,
+            candidate_window_days=candidate_window_days,
+            candidate_min_chars=candidate_min_chars,
+            candidate_min_assistant_ratio=candidate_min_assistant_ratio,
+            candidate_same_thread=candidate_same_thread,
         )
-        semantic_result = compute_semantic_structure(
+        candidate_provider = build_sqlite_candidate_provider(
+            candidate_config=candidate_config
+        )
+        semantic_result = compute_semantic_structure_from_provider(
             embeddings,
             top_k=top_k,
             min_score=min_score,
-            candidate_pools=candidate_pools,
+            candidate_provider=candidate_provider,
             prefer_same_thread=candidate_same_thread == "prefer",
             progress=progress,
             progress_every=NEIGHBOR_PROGRESS_INTERVAL
