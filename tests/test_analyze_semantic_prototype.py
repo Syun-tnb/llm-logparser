@@ -246,6 +246,42 @@ def test_discover_and_load_message_window_records(tmp_path):
     ]
 
 
+def test_span_identity_uses_ordered_message_ids_not_window_id():
+    first = MessageWindowRecord(
+        source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+        provider_id="openai",
+        conversation_id="conv-a",
+        window_id="window-0001",
+        message_ids=("m1", "m2"),
+        ts_start=1,
+        ts_end=2,
+        text="alpha beta",
+    )
+    second = MessageWindowRecord(
+        source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+        provider_id="openai",
+        conversation_id="conv-a",
+        window_id="window-9999",
+        message_ids=("m1", "m2"),
+        ts_start=1,
+        ts_end=2,
+        text="alpha beta",
+    )
+    reordered = MessageWindowRecord(
+        source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+        provider_id="openai",
+        conversation_id="conv-a",
+        window_id="window-0002",
+        message_ids=("m2", "m1"),
+        ts_start=1,
+        ts_end=2,
+        text="alpha beta",
+    )
+
+    assert first.span_id == second.span_id
+    assert first.span_id != reordered.span_id
+
+
 def test_build_window_embedding_records_uses_backend_vectors():
     windows = [
         MessageWindowRecord(

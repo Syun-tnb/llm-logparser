@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha1
 import json
 import math
 import sqlite3
@@ -51,6 +52,19 @@ class MessageWindowRecord:
     ts_end: int | None
     text: str
     message_ids: tuple[str, ...] = field(default_factory=tuple)
+    span_id: SpanId = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "span_id",
+            _derive_span_id(
+                provider_id=self.provider_id,
+                conversation_id=self.conversation_id,
+                message_ids=self.message_ids,
+                window_id=self.window_id,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -65,6 +79,19 @@ class WindowEmbeddingRecord:
     text_char_count: int
     embedding: tuple[float, ...]
     message_ids: tuple[str, ...] = field(default_factory=tuple)
+    span_id: SpanId = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "span_id",
+            _derive_span_id(
+                provider_id=self.provider_id,
+                conversation_id=self.conversation_id,
+                message_ids=self.message_ids,
+                window_id=self.window_id,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -82,7 +109,29 @@ class SemanticStructureResult:
     cluster_rows: list[dict[str, Any]]
 
 
-WindowKey = tuple[str, str, str]
+SpanId = str
+WindowLookupKey = tuple[str, str, str]
+
+
+def _derive_span_id(
+    *,
+    provider_id: str,
+    conversation_id: str,
+    message_ids: tuple[str, ...],
+    window_id: str,
+) -> str:
+    """Return a stable semantic span identity from ordered message membership."""
+    if message_ids:
+        payload = [provider_id, conversation_id, list(message_ids)]
+    else:
+        # Older/partial rows may lack message_ids. Keep the prototype usable
+        # with a deterministic fallback, but semantic identity should prefer
+        # ordered message membership over window_id whenever it is available.
+        payload = ["legacy-window-fallback", provider_id, conversation_id, window_id]
+    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return sha1(encoded).hexdigest()
 
 
 def discover_message_windows_jsonl(input_path: Path) -> list[Path]:
@@ -222,8 +271,19 @@ def cosine_similarity(left: list[float] | tuple[float, ...], right: list[float] 
     return dot_product / (left_norm * right_norm)
 
 
-def _window_key(record: MessageWindowRecord | WindowEmbeddingRecord) -> WindowKey:
+def _window_lookup_key(
+    record: MessageWindowRecord | WindowEmbeddingRecord,
+) -> WindowLookupKey:
     return (record.provider_id, record.conversation_id, record.window_id)
+
+
+def _span_sort_key(
+    span_id: SpanId,
+    *,
+    record_by_span: dict[SpanId, WindowEmbeddingRecord],
+) -> WindowLookupKey:
+    record = record_by_span[span_id]
+    return _window_lookup_key(record)
 
 
 def _emit_progress(
@@ -252,9 +312,9 @@ def _normalized_embedding_matrix(embeddings: list[WindowEmbeddingRecord]) -> np.
 
 def _embedding_lookup(
     embeddings: list[WindowEmbeddingRecord],
-) -> tuple[dict[WindowKey, int], np.ndarray]:
+) -> tuple[dict[WindowLookupKey, int], np.ndarray]:
     return (
-        {_window_key(record): index for index, record in enumerate(embeddings)},
+        {_window_lookup_key(record): index for index, record in enumerate(embeddings)},
         _normalized_embedding_matrix(embeddings),
     )
 
@@ -576,7 +636,7 @@ def _candidate_indices_for_record(
     record: WindowEmbeddingRecord,
     record_index: int,
     config: SqliteCandidateConfig,
-    index_by_key: dict[WindowKey, int],
+    index_by_key: dict[WindowLookupKey, int],
 ) -> list[int]:
     query, params = _candidate_query(record, config=config)
     candidate_indices: list[int] = []
@@ -695,18 +755,29 @@ def build_window_cluster_rows(
     if not 0.0 <= cross_thread_score_percentile <= 1.0:
         raise ValueError("cross_thread_score_percentile must be between 0.0 and 1.0")
 
-    nodes = [_window_key(record) for record in embeddings]
+    # Semantic identity is span-based. window_id remains an output compatibility
+    # field, but internal graph nodes are keyed by deterministic span_id.
+    nodes = [record.span_id for record in embeddings]
     node_set = set(nodes)
-    record_by_key = {_window_key(record): record for record in embeddings}
-    neighbor_map: dict[WindowKey, set[WindowKey]] = {node: set() for node in nodes}
-    neighbor_scores: dict[WindowKey, dict[WindowKey, float]] = {node: {} for node in nodes}
+    record_by_span = {record.span_id: record for record in embeddings}
+    span_by_window_key = {
+        _window_lookup_key(record): record.span_id for record in embeddings
+    }
+    neighbor_map: dict[SpanId, set[SpanId]] = {node: set() for node in nodes}
+    neighbor_scores: dict[SpanId, dict[SpanId, float]] = {node: {} for node in nodes}
     for row in neighbor_rows:
-        source = (row["provider_id"], row["conversation_id"], row["window_id"])
+        source = span_by_window_key.get(
+            (row["provider_id"], row["conversation_id"], row["window_id"])
+        )
+        if source is None:
+            continue
         for neighbor in row["neighbors"]:
-            target = (
-                neighbor["provider_id"],
-                neighbor["conversation_id"],
-                neighbor["window_id"],
+            target = span_by_window_key.get(
+                (
+                    neighbor["provider_id"],
+                    neighbor["conversation_id"],
+                    neighbor["window_id"],
+                )
             )
             if target in node_set:
                 neighbor_map[source].add(target)
@@ -715,12 +786,23 @@ def build_window_cluster_rows(
                     neighbor_scores[source][target] = float(score)
 
     cross_thread_mutual_scores: list[float] = []
-    seen_pairs: set[tuple[WindowKey, WindowKey]] = set()
+    seen_pairs: set[tuple[SpanId, SpanId]] = set()
     for source in nodes:
-        for target in sorted(neighbor_map[source]):
-            if source[1] == target[1]:
+        for target in sorted(
+            neighbor_map[source],
+            key=lambda span_id: _span_sort_key(span_id, record_by_span=record_by_span),
+        ):
+            source_record = record_by_span[source]
+            target_record = record_by_span[target]
+            if source_record.conversation_id == target_record.conversation_id:
                 continue
-            pair = tuple(sorted((source, target)))
+            if _span_sort_key(source, record_by_span=record_by_span) <= _span_sort_key(
+                target,
+                record_by_span=record_by_span,
+            ):
+                pair = (source, target)
+            else:
+                pair = (target, source)
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)
@@ -739,12 +821,15 @@ def build_window_cluster_rows(
             cross_thread_score_percentile,
         )
 
-    adjacency: dict[WindowKey, set[WindowKey]] = {node: set() for node in nodes}
+    adjacency: dict[SpanId, set[SpanId]] = {node: set() for node in nodes}
     for source in nodes:
-        for target in sorted(neighbor_map[source]):
+        for target in sorted(
+            neighbor_map[source],
+            key=lambda span_id: _span_sort_key(span_id, record_by_span=record_by_span),
+        ):
             if source in neighbor_map.get(target, set()):
-                source_record = record_by_key[source]
-                target_record = record_by_key[target]
+                source_record = record_by_span[source]
+                target_record = record_by_span[target]
                 mutual_score: float | None = None
                 forward_score = neighbor_scores.get(source, {}).get(target)
                 reverse_score = neighbor_scores.get(target, {}).get(source)
@@ -760,41 +845,57 @@ def build_window_cluster_rows(
                 adjacency[source].add(target)
                 adjacency[target].add(source)
 
-    visited: set[WindowKey] = set()
-    components: list[list[WindowKey]] = []
-    for node in sorted(nodes):
+    visited: set[SpanId] = set()
+    components: list[list[SpanId]] = []
+    for node in sorted(
+        nodes,
+        key=lambda span_id: _span_sort_key(span_id, record_by_span=record_by_span),
+    ):
         if node in visited:
             continue
         stack = [node]
         visited.add(node)
-        component: list[WindowKey] = []
+        component: list[SpanId] = []
         while stack:
             current = stack.pop()
             component.append(current)
-            for neighbor in sorted(adjacency[current], reverse=True):
+            for neighbor in sorted(
+                adjacency[current],
+                key=lambda span_id: _span_sort_key(span_id, record_by_span=record_by_span),
+                reverse=True,
+            ):
                 if neighbor in visited:
                     continue
                 visited.add(neighbor)
                 stack.append(neighbor)
-        components.append(sorted(component))
+        components.append(
+            sorted(
+                component,
+                key=lambda span_id: _span_sort_key(
+                    span_id,
+                    record_by_span=record_by_span,
+                ),
+            )
+        )
 
-    cluster_rows_by_key: dict[WindowKey, dict[str, Any]] = {}
+    cluster_rows_by_span: dict[SpanId, dict[str, Any]] = {}
     for cluster_index, component in enumerate(components, start=1):
         cluster_id = f"cluster_{cluster_index:06d}"
         cluster_size = len(component)
-        for provider_id, conversation_id, window_id in component:
-            cluster_rows_by_key[(provider_id, conversation_id, window_id)] = {
+        for span_id in component:
+            record = record_by_span[span_id]
+            cluster_rows_by_span[span_id] = {
                 "record_type": "window_cluster_member",
                 "schema_version": CLUSTERS_SCHEMA_VERSION,
-                "provider_id": provider_id,
-                "conversation_id": conversation_id,
-                "window_id": window_id,
+                "provider_id": record.provider_id,
+                "conversation_id": record.conversation_id,
+                "window_id": record.window_id,
                 "cluster_id": cluster_id,
                 "cluster_size": cluster_size,
                 "edge_policy": CLUSTER_EDGE_POLICY,
             }
 
-    return [cluster_rows_by_key[_window_key(record)] for record in embeddings]
+    return [cluster_rows_by_span[record.span_id] for record in embeddings]
 
 
 def _cluster_edge_allowed(
