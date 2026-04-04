@@ -136,3 +136,63 @@ def test_analyzer_timeline_normalizes_role_variants(tmp_path):
             "characters_total": sum(len(message["text"]) for message in messages),
         }
     ]
+
+
+def test_l1_machine_outputs_are_locale_independent(tmp_path):
+    parsed = tmp_path / "thread-conv-role-boundary" / "parsed.jsonl"
+    rows = _canonical_rows()
+    _write_parsed_jsonl(parsed, "conv-role-boundary", _messy_role_messages())
+
+    set_locale("en-US")
+    metrics_en = derive_thread_metrics_from_rows(rows)
+    thread_stats_en = build_thread_stats_artifact(metrics_en, provider_id="openai")
+    window_en = build_message_window_artifact(
+        rows,
+        window_index=1,
+        window_size=len(rows),
+        window_stride=len(rows),
+    )
+    stats_en = analyze_stats(parsed)
+    timeline_en = analyze_timeline(parsed, bucket="day")
+
+    set_locale("ja-JP")
+    metrics_ja = derive_thread_metrics_from_rows(rows)
+    thread_stats_ja = build_thread_stats_artifact(metrics_ja, provider_id="openai")
+    window_ja = build_message_window_artifact(
+        rows,
+        window_index=1,
+        window_size=len(rows),
+        window_stride=len(rows),
+    )
+    stats_ja = analyze_stats(parsed)
+    timeline_ja = analyze_timeline(parsed, bucket="day")
+
+    assert thread_stats_en == thread_stats_ja
+    assert window_en == window_ja
+    assert stats_en == stats_ja
+    assert timeline_en == timeline_ja
+
+
+def test_thread_stats_are_rebuildable_from_canonical_rows_not_provider_content_shape():
+    rows = _canonical_rows()
+    alternate_rows = [
+        {
+            **row,
+            "content": {
+                "content_type": "text",
+                "parts": [f"provider-native-{index}"],
+            },
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
+
+    metrics = derive_thread_metrics_from_rows(rows)
+    alternate_metrics = derive_thread_metrics_from_rows(alternate_rows)
+
+    assert build_thread_stats_artifact(
+        metrics,
+        provider_id="openai",
+    ) == build_thread_stats_artifact(
+        alternate_metrics,
+        provider_id="openai",
+    )

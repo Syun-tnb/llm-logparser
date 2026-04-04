@@ -231,6 +231,83 @@ def _write_candidate_db(
     return db_path
 
 
+def _normalize_message_window_records(
+    records: list[MessageWindowRecord],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "provider_id": record.provider_id,
+            "conversation_id": record.conversation_id,
+            "window_id": record.window_id,
+            "message_ids": record.message_ids,
+            "span_id": record.span_id,
+            "ts_start": record.ts_start,
+            "ts_end": record.ts_end,
+            "text": record.text,
+        }
+        for record in records
+    ]
+
+
+def _normalize_embedding_records(
+    records: list[WindowEmbeddingRecord],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "provider_id": record.provider_id,
+            "conversation_id": record.conversation_id,
+            "window_id": record.window_id,
+            "message_ids": record.message_ids,
+            "span_id": record.span_id,
+            "ts_start": record.ts_start,
+            "ts_end": record.ts_end,
+            "embedding_model": record.embedding_model,
+            "text_char_count": record.text_char_count,
+            "embedding": record.embedding,
+        }
+        for record in records
+    ]
+
+
+def _normalize_semantic_structure(
+    result: SemanticStructureResult,
+    embeddings: list[WindowEmbeddingRecord],
+) -> dict[str, object]:
+    span_by_window_key = {
+        (record.provider_id, record.conversation_id, record.window_id): record.span_id
+        for record in embeddings
+    }
+    normalized_neighbors = {
+        span_by_window_key[(row["provider_id"], row["conversation_id"], row["window_id"])]: [
+            (
+                span_by_window_key[
+                    (
+                        neighbor["provider_id"],
+                        neighbor["conversation_id"],
+                        neighbor["window_id"],
+                    )
+                ],
+                neighbor["score"],
+            )
+            for neighbor in row["neighbors"]
+        ]
+        for row in result.neighbor_rows
+    }
+    cluster_members_by_id: dict[str, list[str]] = {}
+    for row in result.cluster_rows:
+        span_id = span_by_window_key[
+            (row["provider_id"], row["conversation_id"], row["window_id"])
+        ]
+        cluster_members_by_id.setdefault(row["cluster_id"], []).append(span_id)
+    normalized_clusters = sorted(
+        tuple(sorted(span_ids)) for span_ids in cluster_members_by_id.values()
+    )
+    return {
+        "neighbors": normalized_neighbors,
+        "clusters": normalized_clusters,
+    }
+
+
 class MockEmbeddingBackend:
     model_id = "local/test-backend"
 
@@ -441,6 +518,77 @@ def test_load_message_window_records_from_parsed_matches_message_windows_default
     ]
 
 
+def test_semantic_prototype_parsed_and_stored_window_inputs_are_equivalent(tmp_path):
+    parsed_only_path = tmp_path / "parsed-only" / "openai" / "thread-conv-a" / "parsed.jsonl"
+    windows_path = tmp_path / "with-windows" / "openai" / "thread-conv-a" / "message_windows.jsonl"
+    messages = [
+        {
+            "record_type": "message",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "message_id": f"m{index}",
+            "role": "user" if index % 2 else "assistant",
+            "ts": index,
+            "text": f"text {index}",
+            "content": {"content_type": "text", "parts": [f"text {index}"]},
+        }
+        for index in range(1, 7)
+    ]
+    _write_parsed_jsonl(
+        parsed_only_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=messages,
+    )
+    _write_parsed_jsonl(
+        windows_path.with_name("parsed.jsonl"),
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=messages,
+    )
+    window_rows = list(iter_message_windows_from_rows(messages))
+    for row in window_rows:
+        row["__parsed_messages"] = messages
+    _write_jsonl(windows_path, window_rows)
+
+    parsed_records = load_message_window_records(parsed_only_path)
+    window_records = load_message_window_records(windows_path)
+
+    assert _normalize_message_window_records(parsed_records) == _normalize_message_window_records(
+        window_records
+    )
+
+    backend_vectors = [[1.0, 0.0], [0.25, 0.968246]]
+    parsed_embeddings = build_window_embedding_records(
+        parsed_records,
+        backend=StaticEmbeddingBackend(backend_vectors),
+    )
+    window_embeddings = build_window_embedding_records(
+        window_records,
+        backend=StaticEmbeddingBackend(backend_vectors),
+    )
+
+    assert _normalize_embedding_records(parsed_embeddings) == _normalize_embedding_records(
+        window_embeddings
+    )
+
+    parsed_structure = compute_semantic_structure(
+        parsed_embeddings,
+        top_k=1,
+        min_score=0.0,
+    )
+    window_structure = compute_semantic_structure(
+        window_embeddings,
+        top_k=1,
+        min_score=0.0,
+    )
+
+    assert _normalize_semantic_structure(
+        parsed_structure,
+        parsed_embeddings,
+    ) == _normalize_semantic_structure(window_structure, window_embeddings)
+
+
 def test_span_identity_uses_ordered_message_ids_not_window_id():
     first = MessageWindowRecord(
         source_path=Path("/tmp/thread-a/message_windows.jsonl"),
@@ -475,6 +623,83 @@ def test_span_identity_uses_ordered_message_ids_not_window_id():
 
     assert first.span_id == second.span_id
     assert first.span_id != reordered.span_id
+
+
+def test_semantic_structure_is_invariant_to_window_id_overlay():
+    windows = [
+        MessageWindowRecord(
+            source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-a",
+            window_id="window-0001",
+            message_ids=("m1",),
+            ts_start=1,
+            ts_end=2,
+            text="alpha beta",
+        ),
+        MessageWindowRecord(
+            source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-b",
+            window_id="window-0002",
+            message_ids=("m2",),
+            ts_start=3,
+            ts_end=4,
+            text="alpha gamma",
+        ),
+        MessageWindowRecord(
+            source_path=Path("/tmp/thread-c/message_windows.jsonl"),
+            provider_id="openai",
+            conversation_id="conv-c",
+            window_id="window-0003",
+            message_ids=("m3",),
+            ts_start=5,
+            ts_end=6,
+            text="database migration",
+        ),
+    ]
+    overlay_windows = [
+        MessageWindowRecord(
+            source_path=record.source_path,
+            provider_id=record.provider_id,
+            conversation_id=record.conversation_id,
+            window_id=f"overlay-{index}",
+            message_ids=record.message_ids,
+            ts_start=record.ts_start,
+            ts_end=record.ts_end,
+            text=record.text,
+        )
+        for index, record in enumerate(windows, start=1)
+    ]
+    backend_vectors = [[1.0, 0.0], [0.95, 0.05], [0.0, 1.0]]
+    embeddings = build_window_embedding_records(
+        windows,
+        backend=StaticEmbeddingBackend(backend_vectors),
+    )
+    overlay_embeddings = build_window_embedding_records(
+        overlay_windows,
+        backend=StaticEmbeddingBackend(backend_vectors),
+    )
+
+    assert [record.span_id for record in embeddings] == [
+        record.span_id for record in overlay_embeddings
+    ]
+
+    semantic_structure = compute_semantic_structure(
+        embeddings,
+        top_k=1,
+        min_score=0.0,
+    )
+    overlay_structure = compute_semantic_structure(
+        overlay_embeddings,
+        top_k=1,
+        min_score=0.0,
+    )
+
+    assert _normalize_semantic_structure(
+        semantic_structure,
+        embeddings,
+    ) == _normalize_semantic_structure(overlay_structure, overlay_embeddings)
 
 
 def test_compute_semantic_structure_from_provider_uses_supplied_candidate_provider():
@@ -2144,6 +2369,103 @@ def test_analyze_semantic_prototype_cli_accepts_parsed_jsonl_directly(tmp_path):
     assert len(embedding_rows) == 1
     assert embedding_rows[0]["window_id"] == "window-0001"
     assert embedding_rows[0]["text_char_count"] == len("alpha beta\n\nrelease note draft")
+
+
+def test_semantic_prototype_machine_outputs_are_locale_independent(tmp_path):
+    def _build_artifacts(root: Path, *, locale: str) -> tuple[list[dict], list[dict], list[dict]]:
+        parsed_path = root / "openai" / "thread-conv-a" / "parsed.jsonl"
+        _write_parsed_jsonl(
+            parsed_path,
+            provider_id="openai",
+            conversation_id="conv-a",
+            messages=[
+                {
+                    "record_type": "message",
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "message_id": "m1",
+                    "role": "user",
+                    "ts": 1,
+                    "text": "alpha beta",
+                    "content": {"content_type": "text", "parts": ["alpha beta"]},
+                },
+                {
+                    "record_type": "message",
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "message_id": "m2",
+                    "role": "assistant",
+                    "ts": 2,
+                    "text": "release note draft",
+                    "content": {"content_type": "text", "parts": ["release note draft"]},
+                },
+                {
+                    "record_type": "message",
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "message_id": "m3",
+                    "role": "user",
+                    "ts": 3,
+                    "text": "database migration",
+                    "content": {"content_type": "text", "parts": ["database migration"]},
+                },
+                {
+                    "record_type": "message",
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "message_id": "m4",
+                    "role": "assistant",
+                    "ts": 4,
+                    "text": "rollback checklist",
+                    "content": {"content_type": "text", "parts": ["rollback checklist"]},
+                },
+                {
+                    "record_type": "message",
+                    "provider_id": "openai",
+                    "conversation_id": "conv-a",
+                    "message_id": "m5",
+                    "role": "user",
+                    "ts": 5,
+                    "text": "follow-up notes",
+                    "content": {"content_type": "text", "parts": ["follow-up notes"]},
+                },
+            ],
+        )
+        set_locale(locale)
+        analyze_semantic_prototype(
+            parsed_path,
+            top_k=1,
+            min_score=0.0,
+            backend=DeterministicHashEmbeddingBackend(dim=4),
+        )
+        return (
+            [
+                json.loads(line)
+                for line in parsed_path.with_name("window_embeddings.jsonl").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                if line.strip()
+            ],
+            [
+                json.loads(line)
+                for line in parsed_path.with_name("window_neighbors.jsonl").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                if line.strip()
+            ],
+            [
+                json.loads(line)
+                for line in parsed_path.with_name("window_clusters.jsonl").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                if line.strip()
+            ],
+        )
+
+    en_rows = _build_artifacts(tmp_path / "en", locale="en-US")
+    ja_rows = _build_artifacts(tmp_path / "ja", locale="ja-JP")
+
+    assert en_rows == ja_rows
 
 
 def test_analyze_semantic_prototype_logs_major_phases(tmp_path, caplog):

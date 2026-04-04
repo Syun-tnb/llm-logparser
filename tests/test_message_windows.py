@@ -237,6 +237,28 @@ def test_message_windows_do_not_count_provider_content_without_canonical_text():
     assert artifact["char_count"] == 0
 
 
+def test_message_windows_are_rebuildable_from_canonical_rows_not_provider_content_shape():
+    rows = [
+        _canonical_message("conv-1", "m1", "user", 1, "first"),
+        _canonical_message("conv-1", "m2", "assistant", 2, "second"),
+        _canonical_message("conv-1", "m3", "user", 3, "third"),
+    ]
+    alternate_rows = [
+        {
+            **row,
+            "content": {
+                "content_type": "text",
+                "parts": [f"provider-native-{index}"],
+            },
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
+
+    assert list(iter_message_windows_from_rows(rows, window_size=2)) == list(
+        iter_message_windows_from_rows(alternate_rows, window_size=2)
+    )
+
+
 def test_message_window_schema_rejects_malformed_row():
     rows = [
         _canonical_message("conv-1", "m1", "user", 1704067201000, "first"),
