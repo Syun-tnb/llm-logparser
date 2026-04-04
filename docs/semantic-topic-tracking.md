@@ -113,6 +113,9 @@ When L3 needs text, roles, or excerpts, it must reconstruct them from
 canonical `parsed.jsonl` message rows. Preview and topic prompts therefore
 operate on explicit reconstructed message sequences rather than on legacy
 window-text splitting behavior.
+The prototype layer may now reach those candidate spans from either stored
+`message_windows.jsonl` or canonical `parsed.jsonl`, with `message_windows`
+remaining a convenience substrate rather than a mandatory gateway.
 
 Architectural rules:
 

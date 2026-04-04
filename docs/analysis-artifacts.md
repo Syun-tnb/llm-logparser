@@ -816,6 +816,11 @@ Experimental prototype note:
   a default cluster list, one cluster in detail, one conversation's cluster
   participation, or the older single-window neighbor preview, all without
   writing new files
+- `analyze semantic-prototype` no longer requires stored `message_windows.jsonl`
+  as its only entry point: it can also derive the same default deterministic
+  candidate windows directly from canonical `parsed.jsonl`, treating
+  `message_windows.jsonl` as a convenience substrate rather than the sole
+  gateway into L3
 - `analyze semantic-topic` is a read-only L4 consumer of the same L3
   artifacts; it reads `message_windows.jsonl` and `window_clusters.jsonl`,
   selects representative windows from each cluster, and asks a local Ollama

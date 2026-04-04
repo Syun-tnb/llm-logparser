@@ -52,8 +52,8 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: Root directory containing per-provider artifact directories
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
-  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl
-  cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl file or a directory containing message_windows.jsonl files
+  cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl or canonical parsed.jsonl
+  cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl or parsed.jsonl file, or a directory containing those artifacts
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window

@@ -13,7 +13,8 @@
   * BREAKING: `message_windows.jsonl` no longer stores `roles`, `message_count`, or `text`; L3 consumers now reconstruct semantic text from canonical `parsed.jsonl`
   * BREAKING: existing downstream L3 artifacts derived from older `message_windows.jsonl` convenience fields should be regenerated
 * Added experimental `analyze semantic-prototype`:
-  * reads `message_windows.jsonl`
+  * now accepts either stored `message_windows.jsonl` or canonical `parsed.jsonl`
+  * directory mode prefers stored `message_windows.jsonl` per thread and falls back to `parsed.jsonl`
   * writes rebuildable `window_embeddings.jsonl`, `window_neighbors.jsonl`, and `window_clusters.jsonl`
   * uses a deterministic local hash backend by default
   * now also supports a local `ollama` embedding backend via `--backend ollama --model <name>`

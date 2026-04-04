@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .message_windows import (
+    DEFAULT_MESSAGE_WINDOW_SIZE,
+    DEFAULT_MESSAGE_WINDOW_STRIDE,
+    iter_message_windows,
+)
 from .l1_derivation import canonical_role_or_unknown, iter_message_records, message_text
 from .schema_validation import load_message_windows_validator
 
@@ -178,6 +183,56 @@ def load_reconstructed_message_windows(
         windows.append(
             ReconstructedMessageWindow(
                 source_path=windows_path,
+                parsed_path=parsed_path,
+                provider_id=row["provider_id"],
+                conversation_id=row["conversation_id"],
+                window_id=row["window_id"],
+                message_ids=message_ids,
+                window_size=row["window_size"],
+                window_stride=row["window_stride"],
+                char_count=row["char_count"],
+                ts_start=row["ts_start"],
+                ts_end=row["ts_end"],
+                messages=messages,
+            )
+        )
+
+    return windows
+
+
+def load_reconstructed_message_windows_from_parsed(
+    parsed_path: Path,
+    *,
+    window_size: int = DEFAULT_MESSAGE_WINDOW_SIZE,
+    window_stride: int | None = DEFAULT_MESSAGE_WINDOW_STRIDE,
+) -> list[ReconstructedMessageWindow]:
+    message_index = _load_parsed_message_index(parsed_path)
+    windows: list[ReconstructedMessageWindow] = []
+
+    for row in iter_message_windows(
+        parsed_path,
+        window_size=window_size,
+        window_stride=window_stride,
+    ):
+        message_ids = tuple(str(message_id) for message_id in row["message_ids"])
+        messages = _reconstruct_messages(
+            windows_path=parsed_path,
+            parsed_path=parsed_path,
+            line_no=0,
+            provider_id=row["provider_id"],
+            conversation_id=row["conversation_id"],
+            message_ids=message_ids,
+            message_index=message_index,
+        )
+        _validate_provenance(
+            windows_path=parsed_path,
+            line_no=0,
+            row=row,
+            messages=messages,
+        )
+        windows.append(
+            ReconstructedMessageWindow(
+                source_path=parsed_path,
                 parsed_path=parsed_path,
                 provider_id=row["provider_id"],
                 conversation_id=row["conversation_id"],

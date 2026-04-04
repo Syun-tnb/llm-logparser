@@ -17,7 +17,10 @@ from .embedding_backend import (
     resolve_embedding_model_settings,
 )
 from .i18n import _
-from .message_window_reconstruction import load_reconstructed_message_windows
+from .message_window_reconstruction import (
+    load_reconstructed_message_windows,
+    load_reconstructed_message_windows_from_parsed,
+)
 
 EMBEDDING_SCHEMA_VERSION = "0.1"
 NEIGHBORS_SCHEMA_VERSION = "0.1"
@@ -168,7 +171,43 @@ def discover_message_windows_jsonl(input_path: Path) -> list[Path]:
     return windows_files
 
 
-def load_message_window_records(windows_path: Path) -> list[MessageWindowRecord]:
+def discover_semantic_prototype_inputs(input_path: Path) -> list[Path]:
+    """Return prototype input files, preferring message_windows over parsed per thread."""
+    path = input_path.expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"input not found: {path}")
+    if path.is_file():
+        if path.name not in {"message_windows.jsonl", "parsed.jsonl"}:
+            raise FileNotFoundError(
+                f"expected message_windows.jsonl or parsed.jsonl file: {path}"
+            )
+        return [path]
+    if not path.is_dir():
+        raise FileNotFoundError(f"input not found: {path}")
+
+    windows_files = sorted(path.rglob("message_windows.jsonl"))
+    selected_by_parent: dict[Path, Path] = {
+        windows_path.parent: windows_path for windows_path in windows_files
+    }
+    for parsed_path in sorted(path.rglob("parsed.jsonl")):
+        selected_by_parent.setdefault(parsed_path.parent, parsed_path)
+    selected = [selected_by_parent[parent] for parent in sorted(selected_by_parent)]
+    if not selected:
+        raise FileNotFoundError(
+            f"no message_windows.jsonl or parsed.jsonl found under: {path}"
+        )
+    return selected
+
+
+def load_message_window_records(input_path: Path) -> list[MessageWindowRecord]:
+    if input_path.name == "parsed.jsonl":
+        windows = load_reconstructed_message_windows_from_parsed(input_path)
+    elif input_path.name == "message_windows.jsonl":
+        windows = load_reconstructed_message_windows(input_path)
+    else:
+        raise ValueError(
+            f"unsupported semantic prototype input file: {input_path}"
+        )
     return [
         MessageWindowRecord(
             source_path=window.source_path,
@@ -180,7 +219,7 @@ def load_message_window_records(windows_path: Path) -> list[MessageWindowRecord]
             ts_end=window.ts_end,
             text=window.text,
         )
-        for window in load_reconstructed_message_windows(windows_path)
+        for window in windows
     ]
 
 
@@ -1001,7 +1040,7 @@ def analyze_semantic_prototype(
     except ValueError as exc:
         raise SemanticPrototypeError(str(exc)) from exc
 
-    windows_files = discover_message_windows_jsonl(input_path)
+    windows_files = discover_semantic_prototype_inputs(input_path)
     embedding_paths = [window_embeddings_artifact_path(path) for path in windows_files]
     neighbor_paths = [window_neighbors_artifact_path(path) for path in windows_files]
     cluster_paths = [window_clusters_artifact_path(path) for path in windows_files]

@@ -533,14 +533,21 @@ deterministic and model-derived capabilities.
   are deterministic, rebuildable, and safe for local-first workflows
 
 - `semantic-prototype` is an experimental bridge into future L3 work: it
-  reads deterministic `message_windows.jsonl`, writes rebuildable embedding,
-  neighbor, and minimal cluster artifacts, and does not perform topic labeling
+  reads deterministic candidate spans from either stored `message_windows.jsonl`
+  or canonical `parsed.jsonl`, writes rebuildable embedding, neighbor, and
+  minimal cluster artifacts, and does not perform topic labeling
   `message_windows.jsonl` is an L1 deterministic segmentation substrate, not a
   semantic unit. In the current contract, window rows are message-ids-first
   candidate spans containing only deterministic membership and provenance
   fields. When semantic text is needed, L3 reconstructs it from canonical
   `parsed.jsonl` messages using the ordered `message_ids`; no semantic meaning
   is stored in L1 convenience fields.
+  `parsed.jsonl` is now a first-class structural input path for the prototype:
+  when supplied directly, L3 derives the same default deterministic windows
+  from canonical messages without requiring a pre-existing
+  `message_windows.jsonl`. For directory inputs, the prototype prefers stored
+  `message_windows.jsonl` per thread when present and falls back to sibling
+  `parsed.jsonl` otherwise.
   Window generation quality can now be improved upstream with deterministic
   sliding windows: `message_windows.jsonl` still defaults to
   non-overlapping windows, but parse/chain can opt into overlap by setting

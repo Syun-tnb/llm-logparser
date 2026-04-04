@@ -24,6 +24,7 @@ from llm_logparser.core.analyzer_semantic_prototype import (
     compute_semantic_structure,
     compute_semantic_structure_from_provider,
     cosine_similarity,
+    discover_semantic_prototype_inputs,
     discover_message_windows_jsonl,
     load_message_window_records,
     render_window_embedding_row,
@@ -117,6 +118,31 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
         return
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+
+
+def _write_parsed_jsonl(
+    path: Path,
+    *,
+    provider_id: str,
+    conversation_id: str,
+    messages: list[dict],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "record_type": "thread",
+                    "provider_id": provider_id,
+                    "conversation_id": conversation_id,
+                    "message_count": len(messages),
+                },
+                ensure_ascii=True,
+            )
+            + "\n"
+        )
+        for row in messages:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 
@@ -264,6 +290,7 @@ def test_discover_and_load_message_window_records(tmp_path):
     )
 
     assert discover_message_windows_jsonl(tmp_path) == [windows_path]
+    assert discover_semantic_prototype_inputs(tmp_path) == [windows_path]
 
     records = load_message_window_records(windows_path)
     assert records == [
@@ -287,6 +314,130 @@ def test_discover_and_load_message_window_records(tmp_path):
             text="beta gamma",
             message_ids=("window-0002-m1",),
         ),
+    ]
+
+
+def test_discover_semantic_prototype_inputs_accepts_parsed_jsonl_file(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            {
+                "record_type": "message",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "message_id": "m1",
+                "role": "user",
+                "ts": 1,
+                "text": "alpha beta",
+                "content": {"content_type": "text", "parts": ["alpha beta"]},
+            }
+        ],
+    )
+
+    assert discover_semantic_prototype_inputs(parsed_path) == [parsed_path]
+
+
+def test_discover_semantic_prototype_inputs_prefers_windows_per_thread(tmp_path):
+    root = tmp_path / "artifacts"
+    windows_path = root / "openai" / "thread-conv-a" / "message_windows.jsonl"
+    parsed_only_path = root / "openai" / "thread-conv-b" / "parsed.jsonl"
+    parsed_with_windows_path = windows_path.with_name("parsed.jsonl")
+    _write_jsonl(
+        windows_path,
+        [_window_row("openai", "conv-a", "window-0001", "alpha beta", ts_start=1, ts_end=2)],
+    )
+    _write_parsed_jsonl(
+        parsed_with_windows_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            {
+                "record_type": "message",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "message_id": "m1",
+                "role": "user",
+                "ts": 1,
+                "text": "alpha beta",
+                "content": {"content_type": "text", "parts": ["alpha beta"]},
+            }
+        ],
+    )
+    _write_parsed_jsonl(
+        parsed_only_path,
+        provider_id="openai",
+        conversation_id="conv-b",
+        messages=[
+            {
+                "record_type": "message",
+                "provider_id": "openai",
+                "conversation_id": "conv-b",
+                "message_id": "n1",
+                "role": "user",
+                "ts": 3,
+                "text": "beta gamma",
+                "content": {"content_type": "text", "parts": ["beta gamma"]},
+            }
+        ],
+    )
+
+    assert discover_semantic_prototype_inputs(root) == [
+        windows_path,
+        parsed_only_path,
+    ]
+
+
+def test_load_message_window_records_from_parsed_matches_message_windows_default_segmentation(
+    tmp_path,
+):
+    thread_dir = tmp_path / "openai" / "thread-conv-a"
+    parsed_path = thread_dir / "parsed.jsonl"
+    messages = [
+        {
+            "record_type": "message",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "message_id": f"m{index}",
+            "role": "user" if index % 2 else "assistant",
+            "ts": index,
+            "text": f"text {index}",
+            "content": {"content_type": "text", "parts": [f"text {index}"]},
+        }
+        for index in range(1, 6)
+    ]
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=messages,
+    )
+    windows_path = thread_dir / "message_windows.jsonl"
+    window_rows = list(iter_message_windows_from_rows(messages))
+    for row in window_rows:
+        row["__parsed_messages"] = messages
+    _write_jsonl(
+        windows_path,
+        window_rows,
+    )
+
+    from_parsed = load_message_window_records(parsed_path)
+    from_windows = load_message_window_records(windows_path)
+
+    assert from_parsed == [
+        MessageWindowRecord(
+            source_path=parsed_path,
+            provider_id=record.provider_id,
+            conversation_id=record.conversation_id,
+            window_id=record.window_id,
+            message_ids=record.message_ids,
+            ts_start=record.ts_start,
+            ts_end=record.ts_end,
+            text=record.text,
+        )
+        for record in from_windows
     ]
 
 
@@ -1930,6 +2081,69 @@ def test_analyze_semantic_prototype_cli_happy_path(tmp_path):
     assert neighbor_rows[0]["neighbor_count"] == 1
     assert cluster_rows[0]["record_type"] == "window_cluster_member"
     assert cluster_rows[0]["schema_version"] == "0.1"
+
+
+def test_analyze_semantic_prototype_cli_accepts_parsed_jsonl_directly(tmp_path):
+    parsed_path = tmp_path / "artifacts" / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            {
+                "record_type": "message",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "message_id": "m1",
+                "role": "user",
+                "ts": 1,
+                "text": "alpha beta",
+                "content": {"content_type": "text", "parts": ["alpha beta"]},
+            },
+            {
+                "record_type": "message",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "message_id": "m2",
+                "role": "assistant",
+                "ts": 2,
+                "text": "release note draft",
+                "content": {"content_type": "text", "parts": ["release note draft"]},
+            },
+        ],
+    )
+
+    main(
+        [
+            "--locale",
+            "en-US",
+            "analyze",
+            "semantic-prototype",
+            "--input",
+            str(parsed_path),
+            "--top-k",
+            "1",
+            "--min-score",
+            "0.0",
+        ]
+    )
+
+    embeddings_path = parsed_path.with_name("window_embeddings.jsonl")
+    neighbors_path = parsed_path.with_name("window_neighbors.jsonl")
+    clusters_path = parsed_path.with_name("window_clusters.jsonl")
+
+    assert embeddings_path.exists()
+    assert neighbors_path.exists()
+    assert clusters_path.exists()
+
+    embedding_rows = [
+        json.loads(line)
+        for line in embeddings_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(embedding_rows) == 1
+    assert embedding_rows[0]["window_id"] == "window-0001"
+    assert embedding_rows[0]["text_char_count"] == len("alpha beta\n\nrelease note draft")
 
 
 def test_analyze_semantic_prototype_logs_major_phases(tmp_path, caplog):

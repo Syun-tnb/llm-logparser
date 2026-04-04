@@ -141,7 +141,9 @@ deterministic L1 candidate-span membership artifact keyed by ordered
 role sequence needed for semantic work must be reconstructed from canonical
 `parsed.jsonl` messages. L3 should operate on explicit reconstructed message
 sequences, not on message boundaries re-inferred from a flattened window text
-projection.
+projection. `message_windows.jsonl` is therefore a convenience input to L3,
+not the only structural gateway: semantic prototype flows may derive equivalent
+default candidate windows directly from canonical `parsed.jsonl`.
 
 ## 6. Presentation vs Semantics
 
