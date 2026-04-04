@@ -232,7 +232,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
         json.dumps(
             {
                 "artifact_type": "semantic_topics",
-                "schema_version": "1.0",
+                "schema_version": "2.0",
                 "provider_id": "openai",
                 "topic_count": 3,
                 "generated_at": "2026-03-28T00:00:00Z",
@@ -242,7 +242,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                 ],
                 "provenance": {
                     "pipeline_version": "test",
-                    "membership_mode": "cluster-is-topic-v1",
+                    "membership_mode": "span-and-message-v2",
                     "label_mode": "structural-only",
                     "embedding_model": None,
                     "labeling_model": None,
@@ -273,9 +273,18 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "state": None,
                         "cluster_ids": ["cluster-zeta"],
                         "conversation_ids": ["conv-a"],
+                        "span_refs": [
+                            {
+                                "conversation_id": "conv-a",
+                                "span_id": "span-a1",
+                                "message_ids": ["a-1"],
+                                "window_id": "window-0001",
+                            }
+                        ],
                         "window_refs": [{"conversation_id": "conv-a", "window_id": "window-0001"}],
                         "message_refs": [{"conversation_id": "conv-a", "message_id": "a-1"}],
                         "cluster_count": 1,
+                        "span_count": 3,
                         "window_count": 3,
                         "message_count": 1,
                         "quality_signals": {
@@ -287,6 +296,15 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         },
                         "first_seen": 100,
                         "last_seen": 101,
+                        "representative_spans": [
+                            {
+                                "conversation_id": "conv-a",
+                                "span_id": "span-a1",
+                                "message_ids": ["a-1"],
+                                "window_id": "window-0001",
+                                "excerpt": "alpha rollout checklist",
+                            }
+                        ],
                         "representative_windows": [
                             {
                                 "conversation_id": "conv-a",
@@ -305,6 +323,20 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "state": None,
                         "cluster_ids": ["cluster-alpha"],
                         "conversation_ids": ["conv-a", "conv-b"],
+                        "span_refs": [
+                            {
+                                "conversation_id": "conv-a",
+                                "span_id": "span-a1",
+                                "message_ids": ["a-1"],
+                                "window_id": "window-0001",
+                            },
+                            {
+                                "conversation_id": "conv-b",
+                                "span_id": "span-b1",
+                                "message_ids": ["b-1"],
+                                "window_id": "window-0001",
+                            }
+                        ],
                         "window_refs": [
                             {"conversation_id": "conv-a", "window_id": "window-0001"},
                             {"conversation_id": "conv-b", "window_id": "window-0001"},
@@ -314,6 +346,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {"conversation_id": "conv-b", "message_id": "b-1"},
                         ],
                         "cluster_count": 1,
+                        "span_count": 2,
                         "window_count": 2,
                         "message_count": 2,
                         "quality_signals": {
@@ -325,6 +358,15 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         },
                         "first_seen": 100,
                         "last_seen": 111,
+                        "representative_spans": [
+                            {
+                                "conversation_id": "conv-b",
+                                "span_id": "span-b1",
+                                "message_ids": ["b-1"],
+                                "window_id": "window-0001",
+                                "excerpt": "beta launch notes",
+                            }
+                        ],
                         "representative_windows": [
                             {
                                 "conversation_id": "conv-b",
@@ -343,6 +385,20 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "state": None,
                         "cluster_ids": ["cluster-beta"],
                         "conversation_ids": ["conv-b", "conv-c"],
+                        "span_refs": [
+                            {
+                                "conversation_id": "conv-b",
+                                "span_id": "span-b1",
+                                "message_ids": ["b-1"],
+                                "window_id": "window-0001",
+                            },
+                            {
+                                "conversation_id": "conv-c",
+                                "span_id": "span-c1",
+                                "message_ids": ["c-1"],
+                                "window_id": "window-0001",
+                            }
+                        ],
                         "window_refs": [
                             {"conversation_id": "conv-b", "window_id": "window-0001"},
                             {"conversation_id": "conv-c", "window_id": "window-0001"},
@@ -352,6 +408,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {"conversation_id": "conv-c", "message_id": "c-1"},
                         ],
                         "cluster_count": 1,
+                        "span_count": 2,
                         "window_count": 2,
                         "message_count": 2,
                         "quality_signals": {
@@ -363,6 +420,15 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         },
                         "first_seen": 110,
                         "last_seen": 121,
+                        "representative_spans": [
+                            {
+                                "conversation_id": "conv-c",
+                                "span_id": "span-c1",
+                                "message_ids": ["c-1"],
+                                "window_id": "window-0001",
+                                "excerpt": "gamma lunch planning",
+                            }
+                        ],
                         "representative_windows": [
                             {
                                 "conversation_id": "conv-c",
@@ -381,6 +447,14 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "state": None,
                         "cluster_ids": ["cluster-delta"],
                         "conversation_ids": ["conv-c"],
+                        "span_refs": [
+                            {
+                                "conversation_id": "conv-c",
+                                "span_id": "span-c1",
+                                "message_ids": ["c-1"],
+                                "window_id": "window-0001",
+                            }
+                        ],
                         "window_refs": [
                             {"conversation_id": "conv-c", "window_id": "window-0001"},
                         ],
@@ -388,6 +462,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                             {"conversation_id": "conv-c", "message_id": "c-1"},
                         ],
                         "cluster_count": 1,
+                        "span_count": 1,
                         "window_count": 1,
                         "message_count": 1,
                         "quality_signals": {
@@ -399,6 +474,15 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         },
                         "first_seen": 120,
                         "last_seen": 121,
+                        "representative_spans": [
+                            {
+                                "conversation_id": "conv-c",
+                                "span_id": "span-c1",
+                                "message_ids": ["c-1"],
+                                "window_id": "window-0001",
+                                "excerpt": "gamma lunch planning",
+                            }
+                        ],
                         "representative_windows": [
                             {
                                 "conversation_id": "conv-c",
@@ -419,67 +503,73 @@ def _write_manual_topic_artifacts(root: Path) -> None:
         [
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "provider_id": "openai",
                 "topic_id": "topic-zeta",
                 "membership_type": "message",
                 "conversation_id": "conv-a",
                 "cluster_id": "cluster-zeta",
+                "span_id": "span-a1",
                 "window_id": "window-0001",
                 "message_id": "a-1",
             },
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "provider_id": "openai",
                 "topic_id": "topic-alpha",
                 "membership_type": "message",
                 "conversation_id": "conv-a",
                 "cluster_id": "cluster-alpha",
+                "span_id": "span-a1",
                 "window_id": "window-0001",
                 "message_id": "a-1",
             },
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "provider_id": "openai",
                 "topic_id": "topic-alpha",
                 "membership_type": "message",
                 "conversation_id": "conv-b",
                 "cluster_id": "cluster-alpha",
+                "span_id": "span-b1",
                 "window_id": "window-0001",
                 "message_id": "b-1",
             },
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "provider_id": "openai",
                 "topic_id": "topic-beta",
                 "membership_type": "message",
                 "conversation_id": "conv-b",
                 "cluster_id": "cluster-beta",
+                "span_id": "span-b1",
                 "window_id": "window-0001",
                 "message_id": "b-1",
             },
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "provider_id": "openai",
                 "topic_id": "topic-beta",
                 "membership_type": "message",
                 "conversation_id": "conv-c",
                 "cluster_id": "cluster-beta",
+                "span_id": "span-c1",
                 "window_id": "window-0001",
                 "message_id": "c-1",
             },
             {
                 "record_type": "topic_membership",
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "provider_id": "openai",
                 "topic_id": "topic-delta",
                 "membership_type": "message",
                 "conversation_id": "conv-c",
                 "cluster_id": "cluster-delta",
+                "span_id": "span-c1",
                 "window_id": "window-0001",
                 "message_id": "c-1",
             },

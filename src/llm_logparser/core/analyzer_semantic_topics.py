@@ -35,9 +35,9 @@ from .schema_validation import (
 )
 
 WindowRef = tuple[str, str]
-TOPICS_SCHEMA_VERSION = "1.0"
-TOPIC_MEMBERSHIP_SCHEMA_VERSION = "0.1"
-TOPIC_MEMBERSHIP_MODE = "cluster-is-topic-v1"
+TOPICS_SCHEMA_VERSION = "2.0"
+TOPIC_MEMBERSHIP_SCHEMA_VERSION = "1.0"
+TOPIC_MEMBERSHIP_MODE = "span-and-message-v2"
 TOPIC_CLUSTERING_METHOD = "connected-components"
 TOPIC_CLUSTERING_SCORE_POLICY = (
     "same-thread-shared-messages<=1;cross-thread-mutual-score>=runtime-p75"
@@ -155,9 +155,16 @@ def _selected_cluster_items(
     return items
 
 
-def _topic_id(provider_id: str, members: list[WindowClusterMember]) -> str:
+def _topic_id(
+    provider_id: str,
+    members: list[WindowClusterMember],
+    windows: dict[WindowRef, WindowPreviewRecord],
+) -> str:
     anchors = sorted(
-        f"{member.conversation_id}::{member.window_id}"
+        f"{member.conversation_id}::"
+        f"{windows[(member.conversation_id, member.window_id)].span_id}"
+        if (member.conversation_id, member.window_id) in windows
+        else f"{member.conversation_id}::legacy-window::{member.window_id}"
         for member in members
     )
     digest = hashlib.sha256(
@@ -185,6 +192,32 @@ def _message_refs(
     return refs
 
 
+def _span_refs(
+    members: list[WindowClusterMember],
+    windows: dict[WindowRef, WindowPreviewRecord],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for member in sorted(members, key=lambda item: (item.conversation_id, item.window_id)):
+        record = windows.get((member.conversation_id, member.window_id))
+        if record is None:
+            continue
+        key = (member.conversation_id, record.span_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(
+            {
+                "conversation_id": member.conversation_id,
+                "span_id": record.span_id,
+                "message_ids": list(record.message_ids),
+                # Compatibility overlay only; semantic identity is span-based.
+                "window_id": member.window_id,
+            }
+        )
+    return refs
+
+
 def _window_refs(members: list[WindowClusterMember]) -> list[dict[str, str]]:
     return [
         {
@@ -193,6 +226,28 @@ def _window_refs(members: list[WindowClusterMember]) -> list[dict[str, str]]:
         }
         for member in sorted(members, key=lambda item: (item.conversation_id, item.window_id))
     ]
+
+
+def _representative_spans(
+    prompt_windows: list[dict[str, str]],
+    windows: dict[WindowRef, WindowPreviewRecord],
+) -> list[dict[str, Any]]:
+    spans: list[dict[str, Any]] = []
+    for row in prompt_windows[:3]:
+        record = windows.get((row["conversation_id"], row["window_id"]))
+        if record is None:
+            continue
+        spans.append(
+            {
+                "conversation_id": row["conversation_id"],
+                "span_id": record.span_id,
+                "message_ids": list(record.message_ids),
+                "excerpt": row["excerpt"],
+                # Compatibility overlay only; semantic identity is span-based.
+                "window_id": row["window_id"],
+            }
+        )
+    return spans
 
 
 def _time_bounds(
@@ -383,7 +438,10 @@ def build_semantic_topics_artifact(
             continue
 
         first_seen, last_seen = _time_bounds(members, windows)
-        topic_id = _topic_id(provider_id, members)
+        span_refs = _span_refs(members, windows)
+        message_refs = _message_refs(members, windows)
+        representative_spans = _representative_spans(prompt_windows, windows)
+        topic_id = _topic_id(provider_id, members, windows)
         topic_fields = _topic_model_fields(
             model=normalized_model,
             cluster_id=item_cluster_id,
@@ -402,21 +460,22 @@ def build_semantic_topics_artifact(
             "state": None,
             "cluster_ids": [item_cluster_id],
             "conversation_ids": sorted({member.conversation_id for member in members}),
-            "window_refs": _window_refs(members),
-            "message_refs": _message_refs(members, windows),
+            "span_refs": span_refs,
+            "message_refs": message_refs,
             "cluster_count": 1,
+            "span_count": len(span_refs),
             "window_count": len(members),
-            "message_count": sum(
-                len(windows[(member.conversation_id, member.window_id)].message_ids)
-                for member in members
-                if (member.conversation_id, member.window_id) in windows
-            ),
+            "message_count": len(message_refs),
             "quality_signals": compute_cluster_quality_signals(
                 members=members,
                 neighbor_index=neighbor_index,
             ),
             "first_seen": first_seen,
             "last_seen": last_seen,
+            "representative_spans": representative_spans,
+            # Compatibility overlays: retained for browse/render paths that still
+            # expect window-shaped references.
+            "window_refs": _window_refs(members),
             "representative_windows": prompt_windows[:3],
         }
         topics.append(topic)
@@ -429,27 +488,29 @@ def build_semantic_topics_artifact(
                 "membership_type": "cluster",
                 "conversation_id": None,
                 "cluster_id": item_cluster_id,
+                "span_id": None,
                 "window_id": None,
                 "message_id": None,
             }
         )
         for member in sorted(members, key=lambda item: (item.conversation_id, item.window_id)):
+            record = windows.get((member.conversation_id, member.window_id))
+            if record is None:
+                continue
             membership_rows.append(
                 {
                     "record_type": "topic_membership",
                     "schema_version": TOPIC_MEMBERSHIP_SCHEMA_VERSION,
                     "provider_id": provider_id,
                     "topic_id": topic_id,
-                    "membership_type": "window",
+                    "membership_type": "span",
                     "conversation_id": member.conversation_id,
                     "cluster_id": item_cluster_id,
+                    "span_id": record.span_id,
                     "window_id": member.window_id,
                     "message_id": None,
                 }
             )
-            record = windows.get((member.conversation_id, member.window_id))
-            if record is None:
-                continue
             for message_id in record.message_ids:
                 membership_rows.append(
                     {
@@ -460,6 +521,7 @@ def build_semantic_topics_artifact(
                         "membership_type": "message",
                         "conversation_id": member.conversation_id,
                         "cluster_id": item_cluster_id,
+                        "span_id": record.span_id,
                         "window_id": member.window_id,
                         "message_id": message_id,
                     }

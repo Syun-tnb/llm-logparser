@@ -29,6 +29,7 @@ class TopicMembershipRecord:
     membership_type: str
     conversation_id: str | None
     cluster_id: str | None
+    span_id: str | None
     window_id: str | None
     message_id: str | None
 
@@ -114,7 +115,10 @@ def _topic_matches_browse_filters(
     if hide_single_window and _topic_is_single_window(topic):
         return False
 
-    window_count = topic.get("window_count", len(topic.get("window_refs", [])))
+    window_count = topic.get(
+        "span_count",
+        topic.get("window_count", len(topic.get("span_refs", topic.get("window_refs", [])))),
+    )
     if int(window_count or 0) < min_window_count:
         return False
 
@@ -172,6 +176,7 @@ def load_topic_membership_rows(input_root: Path) -> list[TopicMembershipRecord]:
                     membership_type=row["membership_type"],
                     conversation_id=row.get("conversation_id"),
                     cluster_id=row.get("cluster_id"),
+                    span_id=row.get("span_id"),
                     window_id=row.get("window_id"),
                     message_id=row.get("message_id"),
                 )
@@ -186,12 +191,17 @@ class TopicExploreIndex:
     topic_ids_by_message: dict[str, list[str]]
     topic_ids_by_conversation: dict[str, list[str]]
     windows_by_ref: dict[WindowRef, WindowPreviewRecord]
+    windows_by_span: dict[tuple[str, str], WindowPreviewRecord]
 
 
 def build_topic_explore_index(input_root: Path) -> TopicExploreIndex:
     topics_by_id = load_topics_index(input_root)
     membership_rows = load_topic_membership_rows(input_root)
     windows_by_ref = load_window_preview_index(input_root)
+    windows_by_span = {
+        (record.conversation_id, record.span_id): record
+        for record in windows_by_ref.values()
+    }
 
     memberships_by_topic: dict[str, list[TopicMembershipRecord]] = defaultdict(list)
     topic_ids_by_message: dict[str, list[str]] = defaultdict(list)
@@ -223,6 +233,7 @@ def build_topic_explore_index(input_root: Path) -> TopicExploreIndex:
                 row.membership_type,
                 row.conversation_id or "",
                 row.cluster_id or "",
+                row.span_id or "",
                 row.window_id or "",
                 row.message_id or "",
             )
@@ -234,7 +245,32 @@ def build_topic_explore_index(input_root: Path) -> TopicExploreIndex:
         topic_ids_by_message=dict(topic_ids_by_message),
         topic_ids_by_conversation=dict(topic_ids_by_conversation),
         windows_by_ref=windows_by_ref,
+        windows_by_span=windows_by_span,
     )
+
+
+def _topic_representative_spans(topic: dict[str, Any]) -> list[dict[str, Any]]:
+    spans = topic.get("representative_spans", [])
+    if isinstance(spans, list) and spans:
+        return [row for row in spans if isinstance(row, dict)]
+    windows = topic.get("representative_windows", [])
+    if isinstance(windows, list):
+        return [row for row in windows if isinstance(row, dict)]
+    return []
+
+
+def _render_ref_label(
+    *,
+    conversation_id: str | None,
+    span_id: str | None,
+    window_id: str | None,
+) -> str:
+    conversation = conversation_id or "?"
+    if isinstance(window_id, str) and window_id:
+        return f"{conversation} / {window_id}"
+    if isinstance(span_id, str) and span_id:
+        return f"{conversation} / {span_id}"
+    return conversation
 
 
 def _topic_list_rows(
@@ -254,23 +290,26 @@ def _topic_list_rows(
         ):
             continue
         quality_signals = topic.get("quality_signals")
-        representative_windows = topic.get("representative_windows", [])
-        representative_window = (
-            representative_windows[0]
-            if isinstance(representative_windows, list) and representative_windows
-            else None
-        )
+        representative_spans = _topic_representative_spans(topic)
+        representative_span = representative_spans[0] if representative_spans else None
         rows.append(
             {
                 "topic_id": topic["topic_id"],
                 "label": topic.get("label"),
                 "summary": topic.get("summary"),
                 "cluster_count": topic.get("cluster_count", len(topic.get("cluster_ids", []))),
-                "window_count": topic.get("window_count", len(topic.get("window_refs", []))),
+                "span_count": topic.get(
+                    "span_count",
+                    len(topic.get("span_refs", topic.get("window_refs", []))),
+                ),
+                "window_count": topic.get(
+                    "window_count",
+                    topic.get("span_count", len(topic.get("span_refs", topic.get("window_refs", [])))),
+                ),
                 "message_count": topic.get("message_count", len(topic.get("message_refs", []))),
                 "conversation_count": len(topic.get("conversation_ids", [])),
                 "quality_signals": quality_signals,
-                "representative_window": representative_window,
+                "representative_span": representative_span,
                 "first_seen": topic.get("first_seen"),
                 "last_seen": topic.get("last_seen"),
             }
@@ -298,22 +337,30 @@ def _topic_list_rows(
 def _topic_timeline(
     *,
     topic: dict[str, Any],
+    windows_by_span: dict[tuple[str, str], WindowPreviewRecord],
     windows_by_ref: dict[WindowRef, WindowPreviewRecord],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for ref in topic.get("window_refs", []):
+    for ref in topic.get("span_refs", topic.get("window_refs", [])):
         if not isinstance(ref, dict):
             continue
-        key = (ref.get("conversation_id"), ref.get("window_id"))
-        if not isinstance(key[0], str) or not isinstance(key[1], str):
+        conversation_id = ref.get("conversation_id")
+        span_id = ref.get("span_id")
+        window_id = ref.get("window_id")
+        if not isinstance(conversation_id, str):
             continue
-        record = windows_by_ref.get((key[0], key[1]))
+        record = None
+        if isinstance(span_id, str) and span_id:
+            record = windows_by_span.get((conversation_id, span_id))
+        if record is None and isinstance(window_id, str) and window_id:
+            record = windows_by_ref.get((conversation_id, window_id))
         if record is None:
             rows.append(
                 {
                     "timestamp": None,
-                    "conversation_id": key[0],
-                    "window_id": key[1],
+                    "conversation_id": conversation_id,
+                    "span_id": span_id,
+                    "window_id": window_id,
                     "excerpt": "",
                 }
             )
@@ -323,6 +370,7 @@ def _topic_timeline(
             {
                 "timestamp": timestamp,
                 "conversation_id": record.conversation_id,
+                "span_id": record.span_id,
                 "window_id": record.window_id,
                 "excerpt": _normalize_excerpt(record.text),
             }
@@ -331,7 +379,7 @@ def _topic_timeline(
         key=lambda row: (
             row["timestamp"] if isinstance(row["timestamp"], int) else float("inf"),
             row["conversation_id"],
-            row["window_id"],
+            row.get("window_id") or row.get("span_id") or "",
         )
     )
     return rows
@@ -350,15 +398,28 @@ def _topic_detail_payload(index: TopicExploreIndex, topic_id: str) -> dict[str, 
             "keywords": topic.get("keywords", []),
             "confidence": topic.get("confidence"),
             "cluster_count": topic.get("cluster_count", len(topic.get("cluster_ids", []))),
-            "window_count": topic.get("window_count", len(topic.get("window_refs", []))),
+            "span_count": topic.get(
+                "span_count",
+                len(topic.get("span_refs", topic.get("window_refs", []))),
+            ),
+            "window_count": topic.get(
+                "window_count",
+                topic.get("span_count", len(topic.get("span_refs", topic.get("window_refs", [])))),
+            ),
             "message_count": topic.get("message_count", len(topic.get("message_refs", []))),
             "cluster_ids": topic.get("cluster_ids", []),
             "conversation_ids": topic.get("conversation_ids", []),
+            "span_refs": topic.get("span_refs", []),
             "quality_signals": topic.get("quality_signals"),
+            "representative_spans": _topic_representative_spans(topic),
             "representative_windows": topic.get("representative_windows", []),
             "first_seen": topic.get("first_seen"),
             "last_seen": topic.get("last_seen"),
-            "timeline": _topic_timeline(topic=topic, windows_by_ref=index.windows_by_ref),
+            "timeline": _topic_timeline(
+                topic=topic,
+                windows_by_span=index.windows_by_span,
+                windows_by_ref=index.windows_by_ref,
+            ),
         },
     }
 
@@ -414,9 +475,11 @@ def _conversation_payload(
         ]
         timestamps: list[int] = []
         for row in rows:
-            if row.window_id is None:
-                continue
-            record = index.windows_by_ref.get((conversation_id, row.window_id))
+            record = None
+            if row.span_id is not None:
+                record = index.windows_by_span.get((conversation_id, row.span_id))
+            if record is None and row.window_id is not None:
+                record = index.windows_by_ref.get((conversation_id, row.window_id))
             if record is None:
                 continue
             if isinstance(record.ts_start, int):
@@ -491,7 +554,7 @@ def _render_topic_list(payload: dict[str, Any]) -> str:
     for row in payload["topics"]:
         label = row["label"] or "(unlabeled)"
         summary = row["summary"] or "(none)"
-        representative = row.get("representative_window")
+        representative = row.get("representative_span")
         quality_signals = row.get("quality_signals") or {}
         lines.append(f"{row['topic_id']} | {label}")
         lines.append(f"  summary: {summary}")
@@ -505,8 +568,7 @@ def _render_topic_list(payload: dict[str, Any]) -> str:
         if isinstance(representative, dict):
             lines.append(
                 "  preview: "
-                f"[{representative.get('conversation_id', '?')} / "
-                f"{representative.get('window_id', '?')}] "
+                f"[{_render_ref_label(conversation_id=representative.get('conversation_id'), span_id=representative.get('span_id'), window_id=representative.get('window_id'))}] "
                 f"\"{representative.get('excerpt', '')}\""
             )
     return "\n".join(lines)
@@ -538,9 +600,9 @@ def _render_topic_detail(payload: dict[str, Any]) -> str:
         + (", ".join(topic["conversation_ids"]) if topic["conversation_ids"] else "(none)"),
         "Representative:",
     ]
-    for row in topic.get("representative_windows", []):
+    for row in topic.get("representative_spans", topic.get("representative_windows", [])):
         lines.append(
-            f"- [{row['conversation_id']} / {row['window_id']}] "
+            f"- [{_render_ref_label(conversation_id=row.get('conversation_id'), span_id=row.get('span_id'), window_id=row.get('window_id'))}] "
             f"\"{row['excerpt']}\""
         )
     lines.extend(
@@ -550,8 +612,9 @@ def _render_topic_detail(payload: dict[str, Any]) -> str:
     )
     for row in topic["timeline"]:
         lines.append(
-            f"- {_format_timestamp(row['timestamp'])} | {row['conversation_id']} / "
-            f"{row['window_id']} | \"{row['excerpt']}\""
+            f"- {_format_timestamp(row['timestamp'])} | "
+            f"{_render_ref_label(conversation_id=row.get('conversation_id'), span_id=row.get('span_id'), window_id=row.get('window_id'))} "
+            f"| \"{row['excerpt']}\""
         )
     return "\n".join(lines)
 

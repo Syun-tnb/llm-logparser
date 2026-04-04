@@ -471,11 +471,11 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     assert result["topic_count"] == 1
     assert result["label_mode"] == "model-enriched"
     assert topics_payload["artifact_type"] == "semantic_topics"
-    assert topics_payload["schema_version"] == "1.0"
+    assert topics_payload["schema_version"] == "2.0"
     assert topics_payload["generated_at"].endswith("Z")
     assert topics_payload["provenance"]["label_mode"] == "model-enriched"
     assert topics_payload["provenance"]["pipeline_version"]
-    assert topics_payload["provenance"]["membership_mode"] == "cluster-is-topic-v1"
+    assert topics_payload["provenance"]["membership_mode"] == "span-and-message-v2"
     assert (
         topics_payload["provenance"]["embedding_model"]
         == "ollama/nomic-embed-text-v2-moe"
@@ -516,6 +516,10 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     ]
     assert topics_payload["topics"][0]["state"] is None
     assert topics_payload["topics"][0]["cluster_ids"] == ["cluster_000001"]
+    assert topics_payload["topics"][0]["span_count"] == 3
+    assert len(topics_payload["topics"][0]["span_refs"]) == 3
+    assert all("span_id" in row for row in topics_payload["topics"][0]["span_refs"])
+    assert topics_payload["topics"][0]["representative_spans"][0]["window_id"] == "window-0001"
     assert topics_payload["topics"][0]["quality_signals"]["cluster_size"] == 3
     assert topics_payload["topics"][0]["quality_signals"]["conversation_count"] == 2
     assert topics_payload["topics"][0]["quality_signals"]["single_window"] is False
@@ -567,10 +571,10 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
         for row in membership_rows_a
         if row["membership_type"] == "cluster" and row["cluster_id"] == "cluster_000001"
     ]
-    window_rows = [
+    span_rows = [
         row
         for row in membership_rows_a
-        if row["membership_type"] == "window"
+        if row["membership_type"] == "span"
         and row["cluster_id"] == "cluster_000001"
         and row["window_id"] == "window-0001"
     ]
@@ -582,10 +586,12 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
 
     assert len(cluster_rows) == 1
     assert cluster_rows[0]["topic_id"] == topic_a["topic_id"]
-    assert len(window_rows) == 2
-    assert {row["topic_id"] for row in window_rows} == {topic_a["topic_id"]}
+    assert len(span_rows) == 2
+    assert {row["topic_id"] for row in span_rows} == {topic_a["topic_id"]}
+    assert all(row["span_id"] for row in span_rows)
     assert len(message_rows) == 1
     assert message_rows[0]["topic_id"] == topic_a["topic_id"]
+    assert message_rows[0]["span_id"]
     assert membership_rows_a == membership_rows_b
 
 
@@ -618,10 +624,13 @@ def test_semantic_topics_representative_windows_prefer_central_members(tmp_path)
     )
 
     representative = artifact["topics"][0]["representative_windows"][0]
+    representative_span = artifact["topics"][0]["representative_spans"][0]
 
     assert representative["conversation_id"] == "conv-c"
     assert representative["window_id"] == "window-0001"
     assert "rollout checklist" in representative["excerpt"]
+    assert representative_span["span_id"]
+    assert representative_span["message_ids"] == ["c-1", "c-2"]
 
 
 def test_semantic_topics_single_window_cluster_uses_its_only_window(tmp_path):
@@ -636,6 +645,15 @@ def test_semantic_topics_single_window_cluster_uses_its_only_window(tmp_path):
     assert artifact["topics"][0]["representative_windows"] == [
         {
             "conversation_id": "conv-d",
+            "window_id": "window-0001",
+            "excerpt": "standalone checkpoint note",
+        }
+    ]
+    assert artifact["topics"][0]["representative_spans"] == [
+        {
+            "conversation_id": "conv-d",
+            "span_id": artifact["topics"][0]["representative_spans"][0]["span_id"],
+            "message_ids": ["d-1"],
             "window_id": "window-0001",
             "excerpt": "standalone checkpoint note",
         }

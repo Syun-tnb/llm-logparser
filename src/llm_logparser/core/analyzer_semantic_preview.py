@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .analyzer_semantic_prototype import _derive_span_id
 from .schema_validation import (
     load_message_windows_validator,
     load_window_clusters_validator,
@@ -29,6 +30,19 @@ class WindowPreviewRecord:
     ts_end: int | None
     roles: tuple[str, ...]
     text: str
+    span_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "span_id",
+            _derive_span_id(
+                provider_id=self.provider_id,
+                conversation_id=self.conversation_id,
+                message_ids=self.message_ids,
+                window_id=self.window_id,
+            ),
+        )
 
 
 @dataclass(frozen=True)

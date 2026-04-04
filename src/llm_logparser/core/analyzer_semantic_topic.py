@@ -55,6 +55,7 @@ class TopicClusterInput:
     conversation_count: int
     quality_signals: dict[str, Any]
     windows: tuple[dict[str, str], ...]
+    representative_spans: tuple[dict[str, Any], ...]
 
 
 def _filtered_cluster_items(
@@ -125,6 +126,20 @@ def _build_topic_clusters(
         )
         if not topic_windows:
             continue
+        representative_spans: list[dict[str, Any]] = []
+        for row in topic_windows[:3]:
+            record = windows.get((row["conversation_id"], row["window_id"]))
+            if record is None:
+                continue
+            representative_spans.append(
+                {
+                    "conversation_id": row["conversation_id"],
+                    "span_id": record.span_id,
+                    "message_ids": list(record.message_ids),
+                    "window_id": row["window_id"],
+                    "text": row["text"],
+                }
+            )
         topic_clusters.append(
             TopicClusterInput(
                 cluster_id=item_cluster_id,
@@ -135,6 +150,7 @@ def _build_topic_clusters(
                     neighbor_index=neighbor_index,
                 ),
                 windows=topic_windows,
+                representative_spans=tuple(representative_spans),
             )
         )
     if not topic_clusters:
@@ -278,6 +294,7 @@ def _topic_payload(
         "topic_label": " ".join(topic_label.split()),
         "summary": " ".join(summary.split()),
         "keywords": _normalize_keywords(output.get("keywords")),
+        "representative_spans": list(cluster.representative_spans[:3]),
         "representative_windows": list(cluster.windows[:3]),
     }
 
