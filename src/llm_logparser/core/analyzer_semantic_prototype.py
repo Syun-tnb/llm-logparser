@@ -76,6 +76,12 @@ class SqliteCandidateConfig:
     candidate_same_thread: str = DEFAULT_CANDIDATE_SAME_THREAD
 
 
+@dataclass(frozen=True)
+class SemanticStructureResult:
+    neighbor_rows: list[dict[str, Any]]
+    cluster_rows: list[dict[str, Any]]
+
+
 WindowKey = tuple[str, str, str]
 
 
@@ -343,14 +349,27 @@ def _quantile(sorted_values: list[float], probability: float) -> float:
     return float(sorted_values[index])
 
 
-def build_window_neighbor_rows(
+def build_dense_candidate_pools(
+    embeddings: list[WindowEmbeddingRecord],
+) -> list[tuple[int, ...]]:
+    """Return the default dense candidate pool for each semantic candidate."""
+    if not embeddings:
+        return []
+    full_pool = tuple(range(len(embeddings)))
+    return [full_pool for _ in embeddings]
+
+
+def _build_neighbor_rows_from_candidate_pools(
     embeddings: list[WindowEmbeddingRecord],
     *,
     top_k: int,
     min_score: float = DEFAULT_MIN_SCORE,
+    candidate_pools: list[tuple[int, ...]],
+    prefer_same_thread: bool,
     progress: Callable[[str], None] | None = None,
     progress_every: int | None = None,
 ) -> list[dict[str, Any]]:
+    """Semantic core: score candidates, select neighbors, emit neighbor rows."""
     if top_k <= 0:
         raise ValueError("top_k must be > 0")
     _validate_min_score(min_score)
@@ -363,29 +382,29 @@ def build_window_neighbor_rows(
     rows: list[dict[str, Any]] = []
     total = len(embeddings)
     effective_top_k = min(top_k, max(0, total - 1))
-
-    normalized = _normalized_embedding_matrix(embeddings)
-    similarity = normalized @ normalized.T
-    np.fill_diagonal(similarity, -np.inf)
+    _, normalized = _embedding_lookup(embeddings)
+    compared_scores = _build_pool_score_lookup(normalized, candidate_pools)
 
     for index, record in enumerate(embeddings):
         ordered_indices: list[int] = []
-        score_lookup: dict[int, float] = {}
-        if effective_top_k > 0:
-            row_scores = similarity[index]
-            candidate_indices = np.flatnonzero(np.isfinite(row_scores))
-            score_lookup = {
-                int(candidate_index): float(row_scores[candidate_index])
-                for candidate_index in candidate_indices
-            }
+        score_lookup = compared_scores.get(index, {})
+        if effective_top_k > 0 and score_lookup:
+            candidate_index_array = np.asarray(sorted(score_lookup.keys()), dtype=np.int64)
+            candidate_scores = np.asarray(
+                [
+                    score_lookup[int(candidate_index)]
+                    for candidate_index in candidate_index_array
+                ],
+                dtype=np.float64,
+            )
             ordered_indices = _ordered_neighbor_indices(
-                candidate_indices,
-                row_scores[candidate_indices],
+                candidate_index_array,
+                candidate_scores,
                 embeddings,
                 top_k=effective_top_k,
                 min_score=min_score,
                 target_conversation_id=record.conversation_id,
-                prefer_same_thread=False,
+                prefer_same_thread=prefer_same_thread,
             )
 
         rows.append(
@@ -407,6 +426,65 @@ def build_window_neighbor_rows(
             )
 
     return rows
+
+
+def compute_semantic_structure(
+    embeddings: list[WindowEmbeddingRecord],
+    *,
+    top_k: int,
+    min_score: float = DEFAULT_MIN_SCORE,
+    candidate_pools: list[tuple[int, ...]] | None = None,
+    prefer_same_thread: bool = False,
+    cross_thread_score_percentile: float = DEFAULT_CROSS_THREAD_SCORE_PERCENTILE,
+    progress: Callable[[str], None] | None = None,
+    progress_every: int | None = None,
+) -> SemanticStructureResult:
+    """Semantic core: candidate pools in, neighbor graph and clusters out.
+
+    Candidate generation stays outside this function. The semantic core only
+    consumes already-resolved candidate pools, computes similarity-backed
+    neighbor rows, and derives minimal mutual-link clusters.
+    """
+    resolved_candidate_pools = (
+        build_dense_candidate_pools(embeddings)
+        if candidate_pools is None
+        else candidate_pools
+    )
+    neighbor_rows = _build_neighbor_rows_from_candidate_pools(
+        embeddings,
+        top_k=top_k,
+        min_score=min_score,
+        candidate_pools=resolved_candidate_pools,
+        prefer_same_thread=prefer_same_thread,
+        progress=progress,
+        progress_every=progress_every,
+    )
+    cluster_rows = build_window_cluster_rows(
+        embeddings,
+        neighbor_rows,
+        cross_thread_score_percentile=cross_thread_score_percentile,
+    )
+    return SemanticStructureResult(
+        neighbor_rows=neighbor_rows,
+        cluster_rows=cluster_rows,
+    )
+
+
+def build_window_neighbor_rows(
+    embeddings: list[WindowEmbeddingRecord],
+    *,
+    top_k: int,
+    min_score: float = DEFAULT_MIN_SCORE,
+    progress: Callable[[str], None] | None = None,
+    progress_every: int | None = None,
+) -> list[dict[str, Any]]:
+    return compute_semantic_structure(
+        embeddings,
+        top_k=top_k,
+        min_score=min_score,
+        progress=progress,
+        progress_every=progress_every,
+    ).neighbor_rows
 
 
 def _validate_sqlite_candidate_config(config: SqliteCandidateConfig) -> Path:
@@ -577,64 +655,19 @@ def build_window_neighbor_rows_with_sqlite_candidates(
     progress: Callable[[str], None] | None = None,
     progress_every: int | None = None,
 ) -> list[dict[str, Any]]:
-    if top_k <= 0:
-        raise ValueError("top_k must be > 0")
-    _validate_min_score(min_score)
-    if progress_every is not None and progress_every <= 0:
-        raise ValueError("progress_every must be > 0")
-    if not embeddings:
-        return []
-
     candidate_pools = build_sqlite_candidate_pools(
         embeddings,
         candidate_config=candidate_config,
     )
-    _, normalized = _embedding_lookup(embeddings)
-    compared_scores = _build_pool_score_lookup(normalized, candidate_pools)
-
-    rows: list[dict[str, Any]] = []
-    total = len(embeddings)
-    effective_top_k = min(top_k, max(0, total - 1))
-    prefer_same_thread = candidate_config.candidate_same_thread == "prefer"
-
-    for index, record in enumerate(embeddings):
-        score_lookup = compared_scores.get(index, {})
-        ordered_indices: list[int] = []
-        if effective_top_k > 0 and score_lookup:
-            candidate_index_array = np.asarray(sorted(score_lookup.keys()), dtype=np.int64)
-            candidate_scores = np.asarray(
-                [score_lookup[int(candidate_index)] for candidate_index in candidate_index_array],
-                dtype=np.float64,
-            )
-            ordered_indices = _ordered_neighbor_indices(
-                candidate_index_array,
-                candidate_scores,
-                embeddings,
-                top_k=effective_top_k,
-                min_score=min_score,
-                target_conversation_id=record.conversation_id,
-                prefer_same_thread=prefer_same_thread,
-            )
-
-        rows.append(
-            _neighbor_row_from_indices(
-                record,
-                embeddings,
-                ordered_indices,
-                score_lookup,
-            )
-        )
-        if progress_every is not None and (
-            (index + 1) % progress_every == 0 or index + 1 == total
-        ):
-            _emit_progress(
-                progress,
-                "runtime.analyze.semantic_prototype.neighbor_progress",
-                count=index + 1,
-                total=total,
-            )
-
-    return rows
+    return compute_semantic_structure(
+        embeddings,
+        top_k=top_k,
+        min_score=min_score,
+        candidate_pools=candidate_pools,
+        prefer_same_thread=candidate_config.candidate_same_thread == "prefer",
+        progress=progress,
+        progress_every=progress_every,
+    ).neighbor_rows
 
 
 def window_embeddings_artifact_path(windows_path: Path) -> Path:
@@ -862,7 +895,7 @@ def analyze_semantic_prototype(
     embedding_rows = [render_window_embedding_row(record) for record in embeddings]
     _emit_progress(progress, "runtime.analyze.semantic_prototype.building_neighbors")
     if sqlite_db is None:
-        neighbor_rows = build_window_neighbor_rows(
+        semantic_result = compute_semantic_structure(
             embeddings,
             top_k=top_k,
             min_score=min_score,
@@ -872,24 +905,31 @@ def analyze_semantic_prototype(
             else None,
         )
     else:
-        neighbor_rows = build_window_neighbor_rows_with_sqlite_candidates(
-            embeddings,
-            top_k=top_k,
-            min_score=min_score,
-            candidate_config=SqliteCandidateConfig(
+        candidate_config = SqliteCandidateConfig(
                 db_path=sqlite_db,
                 candidate_window_days=candidate_window_days,
                 candidate_min_chars=candidate_min_chars,
                 candidate_min_assistant_ratio=candidate_min_assistant_ratio,
                 candidate_same_thread=candidate_same_thread,
-            ),
+            )
+        candidate_pools = build_sqlite_candidate_pools(
+            embeddings,
+            candidate_config=candidate_config,
+        )
+        semantic_result = compute_semantic_structure(
+            embeddings,
+            top_k=top_k,
+            min_score=min_score,
+            candidate_pools=candidate_pools,
+            prefer_same_thread=candidate_same_thread == "prefer",
             progress=progress,
             progress_every=NEIGHBOR_PROGRESS_INTERVAL
             if len(embeddings) >= NEIGHBOR_PROGRESS_INTERVAL
             else None,
         )
+    neighbor_rows = semantic_result.neighbor_rows
     _emit_progress(progress, "runtime.analyze.semantic_prototype.building_clusters")
-    cluster_rows = build_window_cluster_rows(embeddings, neighbor_rows)
+    cluster_rows = semantic_result.cluster_rows
 
     rows_by_source: dict[Path, dict[str, list[dict[str, Any]]]] = {
         path: {"embeddings": [], "neighbors": [], "clusters": []}
