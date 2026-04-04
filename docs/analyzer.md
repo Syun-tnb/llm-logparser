@@ -625,7 +625,7 @@ deterministic and model-derived capabilities.
   reverse lookup index. Current membership is intentionally conservative:
   one topic per L3 cluster. Structural fields are always written;
   model-derived fields are added only when `--model` is supplied.
-  `topics.json` now emits `schema_version: "2.0"` and
+  `topics.json` now emits `schema_version: "2.1"` and
   `topic_membership.jsonl` now emits `schema_version: "1.0"`, with top-level
   `generated_at`, `source_inputs`, and `provenance`. Per-topic records are now
   grounded primarily by `span_refs`, `message_refs`, and
@@ -636,7 +636,14 @@ deterministic and model-derived capabilities.
   canonical message rows via `message_ids` when needed for prompting or browse
   output.
   window-based. Topic records still include `cluster_ids` for provenance and
-  include `state`, which is currently emitted as `null` for every topic.
+  now include heuristic L3 state fields:
+  `state` with canonical values `unresolved|in_progress|done`,
+  topic-level `state_confidence`, and per-span `state`, `state_confidence`,
+  and `state_signals` on `span_refs` / `representative_spans`.
+  The current MVP path is deterministic, English-biased, and rule-based:
+  it uses reconstructed span messages, tail-priority conflict resolution, and
+  recency only as a modifier. It does not use a model-enriched state
+  classifier.
   Provenance is execution-oriented: structural-only
   runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
   while model-enriched runs populate them from the actually used local labeling
@@ -657,7 +664,8 @@ deterministic and model-derived capabilities.
   from `message_id`, and conversation-centric topic grouping. The default list
   now prefers larger topics first, then broader conversation coverage, then
   higher observed intra-cluster scores when those scores exist, and the text
-  view surfaces one representative preview plus lightweight quality hints.
+  view surfaces one representative preview plus lightweight quality hints and
+  the current heuristic topic state/confidence.
   When span IDs are available, browse labels prefer span-grounded references
   and keep `window_id` only as a compatibility overlay.
 
@@ -666,7 +674,7 @@ Current limitations remain explicit:
 - semantic clusters are not canonical topics
 - topic membership is currently `1 topic = 1 L3 cluster`; no cross-cluster
   merge logic is applied yet
-- no lifecycle state is inferred
+- topic state is heuristic rather than canonical or model-enriched
 - no cross-cluster topic reasoning is performed
 
 Key `semantic-prototype` flags:

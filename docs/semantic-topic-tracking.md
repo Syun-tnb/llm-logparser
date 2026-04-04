@@ -223,14 +223,20 @@ Lifecycle definitions:
 - `last_seen`: timestamp of the most recent message associated with the topic
 - `state`: best-effort status derived from recency and semantic signals
 
-Recommended topic states:
+Canonical stored topic states:
 
-- `active`: recently discussed or clearly still in progress
-- `dormant`: not recently discussed, but still plausibly unresolved
-- `resolved`: appears completed, decided, or explicitly closed
+- `in_progress`: recently discussed or clearly still being worked
+- `unresolved`: open, stalled, or not clearly closed
+- `done`: appears completed, decided, or explicitly closed
+
+Conceptual mapping used elsewhere in older docs:
+
+- `in_progress` → `active`
+- `unresolved` → `dormant`
+- `done` → `resolved`
 
 State assignment is interpretive rather than canonical. A topic can move from
-`resolved` back to `active` if later messages reopen it.
+`done` back to `in_progress` if later messages reopen it.
 
 ---
 
@@ -510,7 +516,10 @@ Current contents:
 - `conversation_ids`
 - structural time bounds (`first_seen`, `last_seen`)
 - optional local-model fields (`label`, `summary`, `keywords`, `confidence`)
-- `state` (currently emitted as `null` for MVP lifecycle compatibility)
+- `state` using canonical values `unresolved|in_progress|done`
+- `state_confidence` at topic level
+- per-span `state`, `state_confidence`, and `state_signals` on `span_refs`
+  and `representative_spans`
 - top-level `generated_at`, `source_inputs`, and `provenance`
 - provenance explaining both whether the run was structural-only or
   model-enriched and which upstream L3 clustering policy produced the source

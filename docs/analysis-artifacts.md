@@ -851,8 +851,16 @@ Experimental prototype note:
   structural-only runs keep `labeling_model`, `prompt_variant`, and
   `prompt_hash` as `null`; model-enriched runs populate them from the actual
   labeling invocation
-- each topic record now includes `state`; current production emits `null` as a
-  lifecycle placeholder rather than inferring lifecycle heuristics
+- `topics.json` now emits `schema_version: "2.1"`
+- each topic record now includes canonical heuristic state fields:
+  `state` with values `unresolved|in_progress|done` plus
+  topic-level `state_confidence`
+- each `span_ref` and `representative_span` now also carries
+  `state`, `state_confidence`, and diagnostic `state_signals`
+- the current state engine is an L3 deterministic heuristic path only:
+  it operates on reconstructed canonical span messages, uses tail-priority
+  last-message-wins conflict handling, and treats recency as a modifier rather
+  than a primary classifier
 - `topic_membership.jsonl` is the reverse lookup index: it now uses
   `schema_version: "1.0"` and emits explicit `membership_type=cluster|span|message`
   rows so cluster provenance, span membership, and message membership are all

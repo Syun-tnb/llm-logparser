@@ -523,7 +523,7 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     assert result["topic_count"] == 1
     assert result["label_mode"] == "model-enriched"
     assert topics_payload["artifact_type"] == "semantic_topics"
-    assert topics_payload["schema_version"] == "2.0"
+    assert topics_payload["schema_version"] == "2.1"
     assert topics_payload["generated_at"].endswith("Z")
     assert topics_payload["provenance"]["label_mode"] == "model-enriched"
     assert topics_payload["provenance"]["pipeline_version"]
@@ -566,15 +566,20 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
         "rollback",
         "monitoring",
     ]
-    assert topics_payload["topics"][0]["state"] is None
+    assert topics_payload["topics"][0]["state"] == "unresolved"
+    assert topics_payload["topics"][0]["state_confidence"] == 0.5
     assert topics_payload["topics"][0]["cluster_ids"] == ["cluster_000001"]
     assert topics_payload["topics"][0]["span_count"] == 3
     assert len(topics_payload["topics"][0]["span_refs"]) == 3
     assert all("span_id" in row for row in topics_payload["topics"][0]["span_refs"])
     assert all("message_ids" in row for row in topics_payload["topics"][0]["span_refs"])
+    assert all("state" in row for row in topics_payload["topics"][0]["span_refs"])
+    assert all("state_confidence" in row for row in topics_payload["topics"][0]["span_refs"])
+    assert all("state_signals" in row for row in topics_payload["topics"][0]["span_refs"])
     assert topics_payload["topics"][0]["message_refs"]
     assert topics_payload["topics"][0]["representative_spans"]
     assert topics_payload["topics"][0]["representative_spans"][0]["window_id"] == "window-0001"
+    assert topics_payload["topics"][0]["representative_spans"][0]["state"] == "done"
     assert all(row["membership_type"] != "window" for row in membership_rows)
     assert {row["membership_type"] for row in membership_rows} == {"cluster", "span", "message"}
     assert topics_payload["topics"][0]["quality_signals"]["cluster_size"] == 3
@@ -617,7 +622,8 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
     assert topic_a["label"] is None
     assert topic_a["summary"] is None
     assert topic_a["keywords"] == []
-    assert topic_a["state"] is None
+    assert topic_a["state"] == "unresolved"
+    assert topic_a["state_confidence"] == 0.5
     assert topic_a["quality_signals"] == topic_b["quality_signals"]
     assert artifact_a["provenance"]["prompt_hash"] == artifact_b["provenance"]["prompt_hash"]
     assert artifact_a["provenance"]["prompt_hash"] is None
@@ -717,6 +723,9 @@ def test_semantic_topics_single_window_cluster_uses_its_only_window(tmp_path):
             "message_ids": ["d-1"],
             "window_id": "window-0001",
             "excerpt": "standalone checkpoint note",
+            "state": "unresolved",
+            "state_confidence": 0.5,
+            "state_signals": ["C1:ends_with_user", "C3:single_turn"],
         }
     ]
     assert artifact["topics"][0]["quality_signals"] == {
@@ -745,7 +754,8 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     assert all(topic["label"] is None for topic in topics_payload["topics"])
     assert all(topic["summary"] is None for topic in topics_payload["topics"])
     assert all(topic["keywords"] == [] for topic in topics_payload["topics"])
-    assert all(topic["state"] is None for topic in topics_payload["topics"])
+    assert all(topic["state"] == "unresolved" for topic in topics_payload["topics"])
+    assert all(topic["state_confidence"] == 0.5 for topic in topics_payload["topics"])
     assert all(topic["quality_signals"]["avg_intra_cluster_score"] is None for topic in topics_payload["topics"])
     assert all(topic["quality_signals"]["max_intra_cluster_score"] is None for topic in topics_payload["topics"])
     assert {topic["quality_signals"]["cluster_size"] for topic in topics_payload["topics"]} == {2, 3}

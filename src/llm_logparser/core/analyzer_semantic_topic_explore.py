@@ -16,7 +16,7 @@ from .schema_validation import (
 )
 
 WindowRef = tuple[str, str]
-EXPECTED_TOPICS_SCHEMA_VERSION = "2.0"
+EXPECTED_TOPICS_SCHEMA_VERSION = "2.1"
 EXPECTED_TOPIC_MEMBERSHIP_SCHEMA_VERSION = "1.0"
 EXPECTED_TOPIC_MEMBERSHIP_MODE = "span-and-message-v2"
 
@@ -348,6 +348,8 @@ def _topic_list_rows(
                 "topic_id": topic["topic_id"],
                 "label": topic.get("label"),
                 "summary": topic.get("summary"),
+                "state": topic.get("state"),
+                "state_confidence": topic.get("state_confidence"),
                 "cluster_count": topic.get("cluster_count", len(topic.get("cluster_ids", []))),
                 "span_count": topic.get(
                     "span_count",
@@ -448,6 +450,8 @@ def _topic_detail_payload(index: TopicExploreIndex, topic_id: str) -> dict[str, 
             "summary": topic.get("summary"),
             "keywords": topic.get("keywords", []),
             "confidence": topic.get("confidence"),
+            "state": topic.get("state"),
+            "state_confidence": topic.get("state_confidence"),
             "cluster_count": topic.get("cluster_count", len(topic.get("cluster_ids", []))),
             "span_count": topic.get(
                 "span_count",
@@ -487,6 +491,10 @@ def _message_lookup_payload(index: TopicExploreIndex, message_id: str) -> dict[s
                 "topic_id": topic_id,
                 "label": index.topics_by_id.get(topic_id, {}).get("label"),
                 "summary": index.topics_by_id.get(topic_id, {}).get("summary"),
+                "state": index.topics_by_id.get(topic_id, {}).get("state"),
+                "state_confidence": index.topics_by_id.get(topic_id, {}).get(
+                    "state_confidence"
+                ),
             }
             for topic_id in topic_ids
         ],
@@ -542,6 +550,8 @@ def _conversation_payload(
                 "topic_id": topic_id,
                 "label": topic.get("label"),
                 "summary": topic.get("summary"),
+                "state": topic.get("state"),
+                "state_confidence": topic.get("state_confidence"),
                 "message_count": len(rows),
                 "quality_signals": topic.get("quality_signals"),
                 "first_seen": min(timestamps) if timestamps else None,
@@ -610,6 +620,15 @@ def _render_topic_list(payload: dict[str, Any]) -> str:
         lines.append(f"{row['topic_id']} | {label}")
         lines.append(f"  summary: {summary}")
         lines.append(
+            "  state: "
+            f"{row['state'] or '?'}"
+            + (
+                f" ({row['state_confidence']:.2f})"
+                if isinstance(row.get("state_confidence"), (int, float))
+                else ""
+            )
+        )
+        lines.append(
             "  stats: "
             f"clusters={row['cluster_count']} windows={row['window_count']} "
             f"messages={row['message_count']} conversations={row['conversation_count']} "
@@ -631,6 +650,15 @@ def _render_topic_detail(payload: dict[str, Any]) -> str:
         f"Topic {topic['topic_id']}",
         f"Label: {topic['label'] or '(unlabeled)'}",
         f"Summary: {topic['summary'] or '(none)'}",
+        (
+            "State: "
+            f"{topic['state'] or '?'}"
+            + (
+                f" ({topic['state_confidence']:.2f})"
+                if isinstance(topic.get('state_confidence'), (int, float))
+                else ""
+            )
+        ),
         "Keywords: "
         + (", ".join(topic["keywords"]) if topic["keywords"] else "(none)"),
         (
@@ -673,7 +701,14 @@ def _render_topic_detail(payload: dict[str, Any]) -> str:
 def _render_message_lookup(payload: dict[str, Any]) -> str:
     lines = [f"Message {payload['message_id']}"]
     for row in payload["topics"]:
-        lines.append(f"- {row['topic_id']} | {row['label'] or '(unlabeled)'}")
+        state_suffix = (
+            f" | state={row['state']} ({row['state_confidence']:.2f})"
+            if isinstance(row.get("state_confidence"), (int, float))
+            else f" | state={row['state'] or '?'}"
+        )
+        lines.append(
+            f"- {row['topic_id']} | {row['label'] or '(unlabeled)'}{state_suffix}"
+        )
         lines.append(f"  {row['summary'] or '(no summary)'}")
     return "\n".join(lines)
 
@@ -681,9 +716,14 @@ def _render_message_lookup(payload: dict[str, Any]) -> str:
 def _render_conversation(payload: dict[str, Any]) -> str:
     lines = [f"Conversation {payload['conversation_id']}"]
     for row in payload["topics"]:
+        state_suffix = (
+            f"state={row['state']} ({row['state_confidence']:.2f}) "
+            if isinstance(row.get("state_confidence"), (int, float))
+            else f"state={row['state'] or '?'} "
+        )
         lines.append(
             f"- {row['topic_id']} | {row['label'] or '(unlabeled)'} | "
-            f"messages={row['message_count']} "
+            f"{state_suffix}messages={row['message_count']} "
             f"range={_format_timestamp(row['first_seen'])} -> {_format_timestamp(row['last_seen'])}"
         )
     return "\n".join(lines)

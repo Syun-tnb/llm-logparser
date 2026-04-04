@@ -275,6 +275,7 @@ def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
 
     assert "Cluster cluster_000001" in rendered
     assert "Cluster cluster_000002" in rendered
+    assert "State: unresolved (0.50)" in rendered
     assert "Label: Launch Readiness" in rendered
     assert "Keywords: launch, rollback, monitoring" in rendered
     assert "Representative:" in rendered
@@ -319,10 +320,13 @@ def test_render_semantic_topic_json_filters_cross_thread_clusters(tmp_path, monk
     assert payload["max_window_chars"] == 300
     assert payload["cluster_count"] == 1
     assert payload["topics"][0]["cluster_id"] == "cluster_000001"
+    assert payload["topics"][0]["state"] == "unresolved"
+    assert payload["topics"][0]["state_confidence"] == 0.5
     assert payload["topics"][0]["topic_label"] == "Launch Readiness"
     assert payload["topics"][0]["representative_spans"]
     assert payload["topics"][0]["representative_spans"][0]["span_id"]
     assert payload["topics"][0]["representative_spans"][0]["message_ids"]
+    assert payload["topics"][0]["representative_spans"][0]["state"] == "done"
     assert payload["topics"][0]["representative_windows"][0]["window_id"] == "window-0001"
     assert payload["topics"][0]["quality_signals"] == {
         "cluster_size": 3,
@@ -392,5 +396,6 @@ def test_analyze_semantic_topic_cli_happy_path(tmp_path, monkeypatch, capsys):
     assert "Cluster cluster_000001" in output
     assert "size: 3" in output
     assert "threads: 2" in output
+    assert "State: unresolved (0.50)" in output
     assert "Label: Launch Readiness" in output
     assert "Summary: Deployment readiness and rollback planning dominate the cluster." in output

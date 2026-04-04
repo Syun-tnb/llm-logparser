@@ -39,13 +39,14 @@
   * renders one target window and its nearest neighbors as human-readable text
   * does not recompute embeddings or write new sidecar artifacts
 * Upgraded `analyze semantic-topics` forward artifacts:
-  * BREAKING: `topics.json` now emits `schema_version: "2.0"`
+  * BREAKING: `topics.json` now emits `schema_version: "2.1"`
   * BREAKING: `topic_membership.jsonl` now emits `schema_version: "1.0"`
   * top-level fields now include `generated_at`, `source_inputs`, and `provenance`
   * BREAKING: topic records are now semantically grounded by `span_refs`, `message_refs`, and `representative_spans`
   * BREAKING: `topic_membership.jsonl` now uses `membership_type=cluster|span|message`; window membership is no longer the semantic contract anchor
   * topic records still include `window_refs` and `representative_windows`, but only as compatibility/presentation overlays
-  * topic records now include `state` and keep `cluster_ids` as cluster provenance only, not semantic identity
+  * topic records now include heuristic L3 state with canonical values `unresolved|in_progress|done`, topic-level `state_confidence`, and per-span `state` / `state_confidence` / `state_signals`
+  * state classification is now implemented as an L3 deterministic heuristic path over reconstructed span messages with tail-priority conflict resolution and recency modifiers
   * provenance now records prompt hash, labeling mode, optional embedding/labeling models, and upstream clustering policy metadata
   * structural-only runs now leave `labeling_model`, `prompt_variant`, and `prompt_hash` as `null` so provenance reflects executed labeling work only
   * BREAKING: deterministic `topic_id` values may change because topic identity is now span-based rather than window-based

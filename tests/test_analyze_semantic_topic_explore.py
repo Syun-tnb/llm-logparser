@@ -118,6 +118,52 @@ def _window_cluster_row(
     }
 
 
+def _span_ref(
+    conversation_id: str,
+    span_id: str,
+    message_ids: list[str],
+    window_id: str,
+    *,
+    state: str,
+    state_confidence: float,
+    state_signals: list[str],
+) -> dict:
+    return {
+        "conversation_id": conversation_id,
+        "span_id": span_id,
+        "message_ids": message_ids,
+        "window_id": window_id,
+        "state": state,
+        "state_confidence": state_confidence,
+        "state_signals": state_signals,
+    }
+
+
+def _representative_span(
+    conversation_id: str,
+    span_id: str,
+    message_ids: list[str],
+    window_id: str,
+    excerpt: str,
+    *,
+    state: str,
+    state_confidence: float,
+    state_signals: list[str],
+) -> dict:
+    return {
+        **_span_ref(
+            conversation_id,
+            span_id,
+            message_ids,
+            window_id,
+            state=state,
+            state_confidence=state_confidence,
+            state_signals=state_signals,
+        ),
+        "excerpt": excerpt,
+    }
+
+
 def _write_explore_fixture(root: Path) -> None:
     thread_a = root / "thread-conv-a"
     thread_b = root / "thread-conv-b"
@@ -287,7 +333,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
         json.dumps(
             {
                 "artifact_type": "semantic_topics",
-                "schema_version": "2.0",
+                "schema_version": "2.1",
                 "provider_id": "openai",
                 "topic_count": 3,
                 "generated_at": "2026-03-28T00:00:00Z",
@@ -325,16 +371,20 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "summary": "Large but low-score topic.",
                         "keywords": [],
                         "confidence": None,
-                        "state": None,
+                        "state": "unresolved",
+                        "state_confidence": 0.61,
                         "cluster_ids": ["cluster-zeta"],
                         "conversation_ids": ["conv-a"],
                         "span_refs": [
-                            {
-                                "conversation_id": "conv-a",
-                                "span_id": "span-a1",
-                                "message_ids": ["a-1"],
-                                "window_id": "window-0001",
-                            }
+                            _span_ref(
+                                "conv-a",
+                                "span-a1",
+                                ["a-1"],
+                                "window-0001",
+                                state="unresolved",
+                                state_confidence=0.61,
+                                state_signals=["C1:ends_with_user", "D2:stale"],
+                            )
                         ],
                         "window_refs": [{"conversation_id": "conv-a", "window_id": "window-0001"}],
                         "message_refs": [{"conversation_id": "conv-a", "message_id": "a-1"}],
@@ -352,13 +402,16 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "first_seen": 100,
                         "last_seen": 101,
                         "representative_spans": [
-                            {
-                                "conversation_id": "conv-a",
-                                "span_id": "span-a1",
-                                "message_ids": ["a-1"],
-                                "window_id": "window-0001",
-                                "excerpt": "alpha rollout checklist",
-                            }
+                            _representative_span(
+                                "conv-a",
+                                "span-a1",
+                                ["a-1"],
+                                "window-0001",
+                                "alpha rollout checklist",
+                                state="unresolved",
+                                state_confidence=0.61,
+                                state_signals=["C1:ends_with_user", "D2:stale"],
+                            )
                         ],
                         "representative_windows": [
                             {
@@ -375,22 +428,29 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "summary": "Higher-score tied topic.",
                         "keywords": [],
                         "confidence": None,
-                        "state": None,
+                        "state": "in_progress",
+                        "state_confidence": 0.82,
                         "cluster_ids": ["cluster-alpha"],
                         "conversation_ids": ["conv-a", "conv-b"],
                         "span_refs": [
-                            {
-                                "conversation_id": "conv-a",
-                                "span_id": "span-a1",
-                                "message_ids": ["a-1"],
-                                "window_id": "window-0001",
-                            },
-                            {
-                                "conversation_id": "conv-b",
-                                "span_id": "span-b1",
-                                "message_ids": ["b-1"],
-                                "window_id": "window-0001",
-                            }
+                            _span_ref(
+                                "conv-a",
+                                "span-a1",
+                                ["a-1"],
+                                "window-0001",
+                                state="unresolved",
+                                state_confidence=0.61,
+                                state_signals=["C1:ends_with_user", "D2:stale"],
+                            ),
+                            _span_ref(
+                                "conv-b",
+                                "span-b1",
+                                ["b-1"],
+                                "window-0001",
+                                state="in_progress",
+                                state_confidence=0.82,
+                                state_signals=["B4:explicit_next_step", "D1:recent_activity"],
+                            ),
                         ],
                         "window_refs": [
                             {"conversation_id": "conv-a", "window_id": "window-0001"},
@@ -414,13 +474,16 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "first_seen": 100,
                         "last_seen": 111,
                         "representative_spans": [
-                            {
-                                "conversation_id": "conv-b",
-                                "span_id": "span-b1",
-                                "message_ids": ["b-1"],
-                                "window_id": "window-0001",
-                                "excerpt": "beta launch notes",
-                            }
+                            _representative_span(
+                                "conv-b",
+                                "span-b1",
+                                ["b-1"],
+                                "window-0001",
+                                "beta launch notes",
+                                state="in_progress",
+                                state_confidence=0.82,
+                                state_signals=["B4:explicit_next_step", "D1:recent_activity"],
+                            )
                         ],
                         "representative_windows": [
                             {
@@ -437,22 +500,29 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "summary": "Null-score tied topic.",
                         "keywords": [],
                         "confidence": None,
-                        "state": None,
+                        "state": "done",
+                        "state_confidence": 0.9,
                         "cluster_ids": ["cluster-beta"],
                         "conversation_ids": ["conv-b", "conv-c"],
                         "span_refs": [
-                            {
-                                "conversation_id": "conv-b",
-                                "span_id": "span-b1",
-                                "message_ids": ["b-1"],
-                                "window_id": "window-0001",
-                            },
-                            {
-                                "conversation_id": "conv-c",
-                                "span_id": "span-c1",
-                                "message_ids": ["c-1"],
-                                "window_id": "window-0001",
-                            }
+                            _span_ref(
+                                "conv-b",
+                                "span-b1",
+                                ["b-1"],
+                                "window-0001",
+                                state="done",
+                                state_confidence=0.9,
+                                state_signals=["A2:task_completion_statement"],
+                            ),
+                            _span_ref(
+                                "conv-c",
+                                "span-c1",
+                                ["c-1"],
+                                "window-0001",
+                                state="done",
+                                state_confidence=0.9,
+                                state_signals=["A2:task_completion_statement"],
+                            ),
                         ],
                         "window_refs": [
                             {"conversation_id": "conv-b", "window_id": "window-0001"},
@@ -476,13 +546,16 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "first_seen": 110,
                         "last_seen": 121,
                         "representative_spans": [
-                            {
-                                "conversation_id": "conv-c",
-                                "span_id": "span-c1",
-                                "message_ids": ["c-1"],
-                                "window_id": "window-0001",
-                                "excerpt": "gamma lunch planning",
-                            }
+                            _representative_span(
+                                "conv-c",
+                                "span-c1",
+                                ["c-1"],
+                                "window-0001",
+                                "gamma lunch planning",
+                                state="done",
+                                state_confidence=0.9,
+                                state_signals=["A2:task_completion_statement"],
+                            )
                         ],
                         "representative_windows": [
                             {
@@ -499,16 +572,20 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "summary": "Singleton topic.",
                         "keywords": [],
                         "confidence": None,
-                        "state": None,
+                        "state": "unresolved",
+                        "state_confidence": 0.5,
                         "cluster_ids": ["cluster-delta"],
                         "conversation_ids": ["conv-c"],
                         "span_refs": [
-                            {
-                                "conversation_id": "conv-c",
-                                "span_id": "span-c1",
-                                "message_ids": ["c-1"],
-                                "window_id": "window-0001",
-                            }
+                            _span_ref(
+                                "conv-c",
+                                "span-c1",
+                                ["c-1"],
+                                "window-0001",
+                                state="unresolved",
+                                state_confidence=0.5,
+                                state_signals=["C1:ends_with_user"],
+                            )
                         ],
                         "window_refs": [
                             {"conversation_id": "conv-c", "window_id": "window-0001"},
@@ -530,13 +607,16 @@ def _write_manual_topic_artifacts(root: Path) -> None:
                         "first_seen": 120,
                         "last_seen": 121,
                         "representative_spans": [
-                            {
-                                "conversation_id": "conv-c",
-                                "span_id": "span-c1",
-                                "message_ids": ["c-1"],
-                                "window_id": "window-0001",
-                                "excerpt": "gamma lunch planning",
-                            }
+                            _representative_span(
+                                "conv-c",
+                                "span-c1",
+                                ["c-1"],
+                                "window-0001",
+                                "gamma lunch planning",
+                                state="unresolved",
+                                state_confidence=0.5,
+                                state_signals=["C1:ends_with_user"],
+                            )
                         ],
                         "representative_windows": [
                             {
@@ -711,6 +791,7 @@ def test_semantic_topic_explore_topic_list_output(tmp_path):
     first_topic_id = topics_payload["topics"][0]["topic_id"]
     first_span_id = topics_payload["topics"][0]["representative_spans"][0]["span_id"]
     assert first_topic_id in rendered
+    assert "state: unresolved (0.50)" in rendered
     assert "stats: clusters=1 windows=3 messages=5 conversations=2" in rendered
     assert "avg_intra_cluster_score=?" in rendered
     assert "range=100 -> 170" in rendered
@@ -740,6 +821,7 @@ def test_semantic_topic_explore_topic_detail_view(tmp_path):
     ]
     assert f"Topic {topic_id}" in rendered
     assert "Summary: (none)" in rendered
+    assert "State: unresolved (0.50)" in rendered
     assert "Stats: clusters=1 windows=3 messages=5" in rendered
     assert "Quality: windows=3 conversations=2 avg_intra_cluster_score=?" in rendered
     assert "Conversations: conv-a, conv-b" in rendered
@@ -778,6 +860,8 @@ def test_semantic_topic_explore_message_reverse_lookup(tmp_path):
             "topic_id": topic_id,
             "label": None,
             "summary": None,
+            "state": "unresolved",
+            "state_confidence": 0.5,
         }
     ]
 
@@ -795,6 +879,8 @@ def test_semantic_topic_explore_conversation_grouping(tmp_path):
     assert payload["view"] == "conversation"
     assert payload["conversation_id"] == "conv-a"
     assert len(payload["topics"]) == 1
+    assert payload["topics"][0]["state"] == "unresolved"
+    assert payload["topics"][0]["state_confidence"] == 0.5
     assert payload["topics"][0]["message_count"] == 3
     assert payload["topics"][0]["quality_signals"] == {
         "cluster_size": 3,
@@ -826,6 +912,8 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
 
     assert payload["view"] == "topic-detail"
     assert payload["topic"]["topic_id"] == topic_id
+    assert payload["topic"]["state"] == "unresolved"
+    assert payload["topic"]["state_confidence"] == 0.5
     assert payload["topic"]["span_refs"]
     assert payload["topic"]["span_count"] == 2
     assert payload["topic"]["representative_spans"] == [
@@ -835,6 +923,9 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
             "message_ids": ["c-2"],
             "window_id": "window-0002",
             "excerpt": "Compare ramen shops and cafe seating",
+            "state": "done",
+            "state_confidence": 0.5,
+            "state_signals": ["C2:ends_with_assistant", "C3:single_turn"],
         },
         {
             "conversation_id": "conv-c",
@@ -842,6 +933,9 @@ def test_semantic_topic_explore_json_output_correctness(tmp_path):
             "message_ids": ["c-1"],
             "window_id": "window-0001",
             "excerpt": "Plan lunch options for next week",
+            "state": "unresolved",
+            "state_confidence": 0.5,
+            "state_signals": ["C1:ends_with_user", "C3:single_turn"],
         },
     ]
     assert payload["topic"]["message_count"] == 2
@@ -880,6 +974,9 @@ def test_semantic_topic_explore_topic_list_refined_ordering_and_null_score_handl
         "topic-beta",
         "topic-delta",
     ]
+    assert payload["topics"][0]["state"] == "unresolved"
+    assert payload["topics"][1]["state"] == "in_progress"
+    assert payload["topics"][2]["state"] == "done"
     assert payload["topics"][1]["quality_signals"]["avg_intra_cluster_score"] == 0.9
     assert payload["topics"][2]["quality_signals"]["avg_intra_cluster_score"] is None
 
@@ -995,6 +1092,7 @@ def test_semantic_topic_explore_topic_list_rendering_surfaces_preview_and_qualit
 
     assert "topic-zeta | Zeta" in rendered
     assert "summary: Large but low-score topic." in rendered
+    assert "state: unresolved (0.61)" in rendered
     assert "avg_intra_cluster_score=0.40" in rendered
     assert 'preview: [conv-a / span-a1 (window-0001)] "alpha rollout checklist"' in rendered
 
@@ -1073,4 +1171,5 @@ def test_analyze_semantic_topic_explore_cli_happy_path(tmp_path, capsys):
 
     output = capsys.readouterr().out
     assert "Conversation conv-a" in output
+    assert "state=unresolved (0.50)" in output
     assert "messages=3" in output

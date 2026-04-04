@@ -166,7 +166,7 @@ The current Step 5 semantic artifact contract is span/message-first.
 
 ### `topics.json`
 
-`topics.json` is now version `2.0`.
+`topics.json` is now version `2.1`.
 
 Its primary semantic grounding is:
 
@@ -177,6 +177,19 @@ Its primary semantic grounding is:
 
 Those fields express what the topic actually contains and how it is grounded
 back to canonical messages.
+
+State is now also part of the L3 contract, but it remains interpretive rather
+than canonical. The current MVP state engine is deterministic and rule-based:
+
+- topic `state` uses only the canonical values `unresolved`, `in_progress`,
+  and `done`
+- topic `state_confidence` is an aggregated heuristic confidence
+- each `span_ref` / `representative_span` carries its own `state`,
+  `state_confidence`, and diagnostic `state_signals`
+- classification runs on reconstructed ordered span messages, not on L1 window
+  text projections
+- topic aggregation is conservative: any `in_progress` span keeps the topic
+  `in_progress`; otherwise any `unresolved` span keeps it `unresolved`
 
 Window-shaped fields remain only as overlays:
 

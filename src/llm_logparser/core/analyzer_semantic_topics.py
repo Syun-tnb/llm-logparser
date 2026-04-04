@@ -28,6 +28,11 @@ from .analyzer_semantic_topic import (
     _call_ollama,
     _parse_topic_output,
 )
+from .semantic_state import (
+    aggregate_topic_state,
+    classify_span_state,
+    semantic_state_dataset_max_timestamp,
+)
 from .schema_validation import (
     load_topic_membership_validator,
     load_topics_validator,
@@ -35,7 +40,7 @@ from .schema_validation import (
 )
 
 WindowRef = tuple[str, str]
-TOPICS_SCHEMA_VERSION = "2.0"
+TOPICS_SCHEMA_VERSION = "2.1"
 TOPIC_MEMBERSHIP_SCHEMA_VERSION = "1.0"
 TOPIC_MEMBERSHIP_MODE = "span-and-message-v2"
 TOPIC_CLUSTERING_METHOD = "connected-components"
@@ -195,6 +200,8 @@ def _message_refs(
 def _span_refs(
     members: list[WindowClusterMember],
     windows: dict[WindowRef, WindowPreviewRecord],
+    *,
+    span_state_by_ref: dict[WindowRef, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     refs: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -206,11 +213,15 @@ def _span_refs(
         if key in seen:
             continue
         seen.add(key)
+        state_row = span_state_by_ref[(member.conversation_id, member.window_id)]
         refs.append(
             {
                 "conversation_id": member.conversation_id,
                 "span_id": record.span_id,
                 "message_ids": list(record.message_ids),
+                "state": state_row["state"],
+                "state_confidence": state_row["state_confidence"],
+                "state_signals": list(state_row["state_signals"]),
                 # Compatibility overlay only; semantic identity is span-based.
                 "window_id": member.window_id,
             }
@@ -230,18 +241,26 @@ def _window_refs(members: list[WindowClusterMember]) -> list[dict[str, str]]:
 
 def _representative_spans(
     prompt_windows: list[dict[str, Any]],
+    *,
+    span_state_by_ref: dict[WindowRef, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    return [
-        {
+    rows: list[dict[str, Any]] = []
+    for row in prompt_windows[:3]:
+        state_row = span_state_by_ref[(row["conversation_id"], row["window_id"])]
+        rows.append(
+            {
             "conversation_id": row["conversation_id"],
             "span_id": row["span_id"],
             "message_ids": list(row["message_ids"]),
             "excerpt": row["excerpt"],
+            "state": state_row["state"],
+            "state_confidence": state_row["state_confidence"],
+            "state_signals": list(state_row["state_signals"]),
             # Compatibility overlay only; semantic identity is span-based.
             "window_id": row["window_id"],
         }
-        for row in prompt_windows[:3]
-    ]
+        )
+    return rows
 
 
 def _representative_windows(prompt_windows: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -422,6 +441,21 @@ def build_semantic_topics_artifact(
     prompt_variant, prompt_hash = _labeling_prompt_provenance(normalized_model)
     embedding_model, neighbor_k, has_neighbors = _semantic_neighbor_provenance(input_root)
     edge_policies = sorted({member.edge_policy for _cluster_id, members in items for member in members})
+    dataset_max_ts = semantic_state_dataset_max_timestamp(windows.values())
+    span_state_by_ref: dict[WindowRef, dict[str, Any]] = {
+        key: {
+            "state": result.state,
+            "state_confidence": result.state_confidence,
+            "state_signals": result.state_signals,
+        }
+        for key, result in (
+            (
+                key,
+                classify_span_state(record, dataset_max_ts=dataset_max_ts),
+            )
+            for key, record in windows.items()
+        )
+    }
     topics: list[dict[str, Any]] = []
     membership_rows: list[dict[str, Any]] = []
     for item_cluster_id, members in items:
@@ -438,10 +472,27 @@ def build_semantic_topics_artifact(
             continue
 
         first_seen, last_seen = _time_bounds(members, windows)
-        span_refs = _span_refs(members, windows)
+        span_refs = _span_refs(
+            members,
+            windows,
+            span_state_by_ref=span_state_by_ref,
+        )
         message_refs = _message_refs(members, windows)
-        representative_spans = _representative_spans(prompt_windows)
+        representative_spans = _representative_spans(
+            prompt_windows,
+            span_state_by_ref=span_state_by_ref,
+        )
         topic_id = _topic_id(provider_id, members, windows)
+        topic_state, topic_state_confidence = aggregate_topic_state(
+            [
+                classify_span_state(
+                    windows[(member.conversation_id, member.window_id)],
+                    dataset_max_ts=dataset_max_ts,
+                )
+                for member in members
+                if (member.conversation_id, member.window_id) in windows
+            ]
+        )
         topic_fields = _topic_model_fields(
             model=normalized_model,
             cluster_id=item_cluster_id,
@@ -457,7 +508,8 @@ def build_semantic_topics_artifact(
             "summary": topic_fields["summary"],
             "keywords": topic_fields["keywords"],
             "confidence": topic_fields["confidence"],
-            "state": None,
+            "state": topic_state,
+            "state_confidence": topic_state_confidence,
             "cluster_ids": [item_cluster_id],
             "conversation_ids": sorted({member.conversation_id for member in members}),
             "span_refs": span_refs,

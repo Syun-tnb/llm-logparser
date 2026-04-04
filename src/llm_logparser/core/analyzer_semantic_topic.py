@@ -17,6 +17,11 @@ from .analyzer_semantic_preview import (
     load_window_preview_index,
     select_representative_cluster_windows,
 )
+from .semantic_state import (
+    aggregate_topic_state,
+    classify_span_state,
+    semantic_state_dataset_max_timestamp,
+)
 
 DEFAULT_TOPIC_PROMPT_VARIANT = "prompt_b"
 DEFAULT_TOPIC_TOP_CLUSTERS = 20
@@ -53,6 +58,8 @@ class TopicClusterInput:
     cluster_id: str
     cluster_size: int
     conversation_count: int
+    state: str | None
+    state_confidence: float | None
     quality_signals: dict[str, Any]
     windows: tuple[dict[str, Any], ...]
     representative_spans: tuple[dict[str, Any], ...]
@@ -116,6 +123,7 @@ def _build_topic_clusters(
         raise SemanticTopicError("no clusters matched the requested filters")
 
     topic_clusters: list[TopicClusterInput] = []
+    dataset_max_ts = semantic_state_dataset_max_timestamp(windows.values())
     for item_cluster_id, members in items:
         topic_windows = select_representative_cluster_windows(
             members=members,
@@ -126,8 +134,20 @@ def _build_topic_clusters(
         )
         if not topic_windows:
             continue
+        span_states_by_ref = {
+            (member.conversation_id, member.window_id): classify_span_state(
+                windows[(member.conversation_id, member.window_id)],
+                dataset_max_ts=dataset_max_ts,
+            )
+            for member in members
+            if (member.conversation_id, member.window_id) in windows
+        }
+        topic_state, topic_state_confidence = aggregate_topic_state(
+            span_states_by_ref.values()
+        )
         representative_spans: list[dict[str, Any]] = []
         for row in topic_windows[:3]:
+            state_row = span_states_by_ref[(row["conversation_id"], row["window_id"])]
             representative_spans.append(
                 {
                     "conversation_id": row["conversation_id"],
@@ -135,6 +155,9 @@ def _build_topic_clusters(
                     "message_ids": list(row["message_ids"]),
                     "window_id": row["window_id"],
                     "excerpt": row["excerpt"],
+                    "state": state_row.state,
+                    "state_confidence": state_row.state_confidence,
+                    "state_signals": list(state_row.state_signals),
                 }
             )
         topic_clusters.append(
@@ -142,6 +165,8 @@ def _build_topic_clusters(
                 cluster_id=item_cluster_id,
                 cluster_size=len(members),
                 conversation_count=len({member.conversation_id for member in members}),
+                state=topic_state,
+                state_confidence=topic_state_confidence,
                 quality_signals=compute_cluster_quality_signals(
                     members=members,
                     neighbor_index=neighbor_index,
@@ -287,6 +312,8 @@ def _topic_payload(
         "cluster_id": cluster.cluster_id,
         "cluster_size": cluster.cluster_size,
         "conversation_count": cluster.conversation_count,
+        "state": cluster.state,
+        "state_confidence": cluster.state_confidence,
         "quality_signals": cluster.quality_signals,
         "topic_label": " ".join(topic_label.split()),
         "summary": " ".join(summary.split()),
@@ -363,6 +390,15 @@ def _render_text(result: dict[str, Any]) -> str:
         lines.append(f"Cluster {topic['cluster_id']}")
         lines.append(f"size: {topic['cluster_size']}")
         lines.append(f"threads: {topic['conversation_count']}")
+        lines.append(
+            "State: "
+            f"{topic['state'] or '?'}"
+            + (
+                f" ({topic['state_confidence']:.2f})"
+                if isinstance(topic.get("state_confidence"), (int, float))
+                else ""
+            )
+        )
         lines.append(f"Label: {topic['topic_label']}")
         lines.append(f"Summary: {topic['summary']}")
         keywords = topic["keywords"]
