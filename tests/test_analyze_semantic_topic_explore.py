@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_semantic_topic_explore import (
+    SemanticTopicExploreError,
     build_semantic_topic_explore_payload,
     render_semantic_topic_explore,
 )
@@ -582,6 +585,70 @@ def _build_topic_artifacts(root: Path) -> dict:
     return json.loads(Path(result["topics_path"]).read_text(encoding="utf-8"))
 
 
+def _write_incompatible_topics_artifact(root: Path, *, schema_version: str = "1.0") -> None:
+    topics_dir = root / "l3" / "semantic-topics"
+    topics_dir.mkdir(parents=True, exist_ok=True)
+    (topics_dir / "topics.json").write_text(
+        json.dumps(
+            {
+                "artifact_type": "semantic_topics",
+                "schema_version": schema_version,
+                "provider_id": "openai",
+                "topic_count": 1,
+                "generated_at": "2026-03-28T00:00:00Z",
+                "source_inputs": ["message_windows.jsonl", "window_clusters.jsonl"],
+                "provenance": {
+                    "pipeline_version": "test",
+                    "membership_mode": "cluster-is-topic-v1",
+                    "label_mode": "structural-only",
+                    "embedding_model": None,
+                    "labeling_model": None,
+                    "prompt_hash": None,
+                    "prompt_variant": None,
+                    "window_cap": 8,
+                    "max_window_chars": 300,
+                    "clustering": {
+                        "method": "connected-components",
+                        "edge_policy": "mutual-only",
+                        "neighbor_k": None,
+                        "score_threshold_policy": "test",
+                    },
+                    "filters": {
+                        "cluster_id": None,
+                        "min_cluster_size": 1,
+                        "cross_thread_only": False,
+                    },
+                },
+                "topics": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_incompatible_topic_membership_artifact(root: Path, *, schema_version: str = "0.1") -> None:
+    topics_dir = root / "l3" / "semantic-topics"
+    topics_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        topics_dir / "topic_membership.jsonl",
+        [
+            {
+                "record_type": "topic_membership",
+                "schema_version": schema_version,
+                "provider_id": "openai",
+                "topic_id": "topic-old",
+                "membership_type": "window",
+                "conversation_id": "conv-a",
+                "cluster_id": "cluster-old",
+                "window_id": "window-0001",
+                "message_id": None,
+            }
+        ],
+    )
+
+
 def test_semantic_topic_explore_topic_list_output(tmp_path):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_explore_fixture(root)
@@ -847,6 +914,60 @@ def test_semantic_topic_explore_topic_list_rendering_surfaces_preview_and_qualit
     assert "summary: Large but low-score topic." in rendered
     assert "avg_intra_cluster_score=0.40" in rendered
     assert 'preview: [conv-a / window-0001] "alpha rollout checklist"' in rendered
+
+
+def test_semantic_topic_explore_rejects_legacy_topics_contract_with_regeneration_guidance(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_jsonl(
+        root / "thread-conv-a" / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-a",
+                "window-0001",
+                message_ids=["a-1"],
+                roles=["user"],
+                text="alpha rollout checklist",
+                ts_start=100,
+                ts_end=101,
+            )
+        ],
+    )
+    _write_incompatible_topics_artifact(root)
+    _write_incompatible_topic_membership_artifact(root, schema_version="1.0")
+
+    with pytest.raises(SemanticTopicExploreError) as exc_info:
+        build_semantic_topic_explore_payload(input_root=root)
+
+    message = str(exc_info.value)
+    assert "incompatible topics.json schema_version" in message
+    assert "Regenerate semantic artifacts with the current pipeline" in message
+
+
+def test_semantic_topic_explore_rejects_legacy_topic_membership_contract_with_regeneration_guidance(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_jsonl(
+        root / "thread-conv-a" / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-a",
+                "window-0001",
+                message_ids=["a-1"],
+                roles=["user"],
+                text="alpha rollout checklist",
+                ts_start=100,
+                ts_end=101,
+            )
+        ],
+    )
+    _write_manual_topic_artifacts(root)
+    _write_incompatible_topic_membership_artifact(root)
+
+    with pytest.raises(SemanticTopicExploreError) as exc_info:
+        build_semantic_topic_explore_payload(input_root=root)
+
+    message = str(exc_info.value)
+    assert "incompatible topic_membership.jsonl schema_version" in message
+    assert "Regenerate semantic artifacts with the current pipeline" in message
 
 
 def test_analyze_semantic_topic_explore_cli_happy_path(tmp_path, capsys):

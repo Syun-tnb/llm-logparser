@@ -16,6 +16,9 @@ from .schema_validation import (
 )
 
 WindowRef = tuple[str, str]
+EXPECTED_TOPICS_SCHEMA_VERSION = "2.0"
+EXPECTED_TOPIC_MEMBERSHIP_SCHEMA_VERSION = "1.0"
+EXPECTED_TOPIC_MEMBERSHIP_MODE = "span-and-message-v2"
 
 
 class SemanticTopicExploreError(RuntimeError):
@@ -65,6 +68,31 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _discover_artifacts(root: Path, name: str) -> list[Path]:
     return sorted(root.rglob(name))
+
+
+def _semantic_regeneration_guidance() -> str:
+    return (
+        "Regenerate semantic artifacts with the current pipeline from canonical "
+        "parsed.jsonl inputs."
+    )
+
+
+def _require_semantic_schema_version(
+    *,
+    artifact_name: str,
+    actual_version: Any,
+    expected_version: str,
+    path: Path,
+    location: str | None = None,
+) -> None:
+    if actual_version == expected_version:
+        return
+    suffix = f":{location}" if location is not None else ""
+    raise SemanticTopicExploreError(
+        f"incompatible {artifact_name} schema_version in {path}{suffix}: "
+        f"expected {expected_version}, got {actual_version!r}. "
+        f"{_semantic_regeneration_guidance()}"
+    )
 
 
 def _normalize_excerpt(text: str, *, max_chars: int = 120) -> str:
@@ -137,6 +165,20 @@ def load_topics_index(input_root: Path) -> dict[str, dict[str, Any]]:
 
     for path in paths:
         payload = _load_json(path)
+        _require_semantic_schema_version(
+            artifact_name="topics.json",
+            actual_version=payload.get("schema_version"),
+            expected_version=EXPECTED_TOPICS_SCHEMA_VERSION,
+            path=path,
+        )
+        provenance = payload.get("provenance")
+        membership_mode = provenance.get("membership_mode") if isinstance(provenance, dict) else None
+        if membership_mode != EXPECTED_TOPIC_MEMBERSHIP_MODE:
+            raise SemanticTopicExploreError(
+                f"incompatible topics.json membership_mode in {path}: "
+                f"expected {EXPECTED_TOPIC_MEMBERSHIP_MODE!r}, got {membership_mode!r}. "
+                f"{_semantic_regeneration_guidance()}"
+            )
         errors = list(validator.iter_errors(payload))
         if errors:
             raise SemanticTopicExploreError(
@@ -163,6 +205,13 @@ def load_topic_membership_rows(input_root: Path) -> list[TopicMembershipRecord]:
 
     for path in paths:
         for line_no, row in enumerate(_load_jsonl(path), start=1):
+            _require_semantic_schema_version(
+                artifact_name="topic_membership.jsonl",
+                actual_version=row.get("schema_version"),
+                expected_version=EXPECTED_TOPIC_MEMBERSHIP_SCHEMA_VERSION,
+                path=path,
+                location=f"line {line_no}",
+            )
             errors = list(validator.iter_errors(row))
             if errors:
                 raise SemanticTopicExploreError(

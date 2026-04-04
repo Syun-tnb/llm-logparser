@@ -609,19 +609,28 @@ deterministic and model-derived capabilities.
   provider-scoped artifacts under `l3/semantic-topics/`:
   `topics.json` as the forward topic index and `topic_membership.jsonl` as the
   reverse lookup index. Current membership is intentionally conservative:
-  one topic per L3 cluster (`cluster-is-topic-v1`). Structural fields are
-  always written; model-derived fields are added only when `--model` is
-  supplied. `topics.json` now emits `schema_version: "1.0"` with top-level
-  `generated_at`, `source_inputs`, and `provenance`. Per-topic records keep
-  `cluster_ids` as the primary anchor, derive `window_refs` and `message_refs`
-  from cluster membership, and include `state`, which is currently emitted as
-  `null` for every topic. Provenance is execution-oriented: structural-only
+  one topic per L3 cluster. Structural fields are always written;
+  model-derived fields are added only when `--model` is supplied.
+  `topics.json` now emits `schema_version: "2.0"` and
+  `topic_membership.jsonl` now emits `schema_version: "1.0"`, with top-level
+  `generated_at`, `source_inputs`, and `provenance`. Per-topic records are now
+  grounded primarily by `span_refs`, `message_refs`, and
+  `representative_spans`; `window_refs` and `representative_windows` remain as
+  compatibility/presentation overlays only. `topic_membership.jsonl` now uses
+  `membership_type=cluster|span|message`, so semantic membership is no longer
+  window-based. Topic records still include `cluster_ids` for provenance and
+  include `state`, which is currently emitted as `null` for every topic.
+  Provenance is execution-oriented: structural-only
   runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
   while model-enriched runs populate them from the actually used local labeling
   prompt. Topic records may also include additive `quality_signals` derived
   from cluster size, conversation count, and retained intra-cluster neighbor
   scores when available. Representative windows in `topics.json` use the same deterministic
   intra-cluster connectedness-first ranking as `semantic-topic`.
+  This Step 5 contract change is intentionally breaking: older
+  window-centric `topics.json` / `topic_membership.jsonl` artifacts should be
+  regenerated from canonical inputs under the current pipeline rather than
+  reused through compatibility fallbacks.
 
 - `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
   it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`

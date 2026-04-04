@@ -827,26 +827,30 @@ Experimental prototype note:
   boundary; it writes provider-scoped artifacts under
   `<provider-root>/l3/semantic-topics/`
 - `topics.json` is the forward topic index: one current topic record per L3
-  cluster, with deterministic `topic_id`, structural references back to
-  clusters/windows/messages, conversation coverage, time bounds, and optional
-  model-derived label / summary / keywords
+  cluster, with deterministic `topic_id`, span/message-grounded references
+  back to semantic membership, conversation coverage, time bounds, and
+  optional model-derived label / summary / keywords
 - each topic record may also carry additive `quality_signals` for observation
   only, such as cluster size, conversation count, and retained intra-cluster
   score summaries when neighbor data is available
-- `topics.json` now uses `schema_version: "1.0"` and carries top-level
+- `topics.json` now uses `schema_version: "2.0"` and carries top-level
   `generated_at`, `source_inputs`, and `provenance`; provenance records the
   topic builder mode plus the upstream clustering policy used to produce the
   source L3 clusters
+- topic records are now grounded primarily by `span_refs`, `message_refs`, and
+  `representative_spans`; `window_refs` and `representative_windows` remain
+  only as compatibility/presentation overlays and are no longer the semantic
+  contract core
 - prompt provenance is execution-based rather than capability-based:
   structural-only runs keep `labeling_model`, `prompt_variant`, and
   `prompt_hash` as `null`; model-enriched runs populate them from the actual
   labeling invocation
 - each topic record now includes `state`; current production emits `null` as a
   lifecycle placeholder rather than inferring lifecycle heuristics
-- `topic_membership.jsonl` is the reverse lookup index: it emits explicit
-  `membership_type=cluster|window|message` rows so `cluster -> topic`,
-  `window -> topic`, and `message -> topic` are all direct lookups rather than
-  implied joins
+- `topic_membership.jsonl` is the reverse lookup index: it now uses
+  `schema_version: "1.0"` and emits explicit `membership_type=cluster|span|message`
+  rows so cluster provenance, span membership, and message membership are all
+  direct lookups rather than implied joins
 - `analyze semantic-topic-explore` is the read-only consumer of that reverse
   index; it loads `topics.json`, `topic_membership.jsonl`, and
   `message_windows.jsonl`, then builds:
@@ -866,6 +870,11 @@ Experimental prototype note:
 - model-derived fields remain additive only; if `semantic-topics` runs without
   `--model`, it still writes the structural topic index and reverse membership
   rows with label/summary fields left empty
+- Step 5 semantic artifact migration is explicit and breaking: older
+  window-centric `topics.json` / `topic_membership.jsonl` contracts are not
+  equivalent to the current span/message-first contract. Regenerate semantic
+  artifacts from canonical inputs under the current pipeline rather than
+  attempting to reuse older semantic artifacts in place
 - the current production topic prompt was selected from the repository's
   prompt experiment harness under `./tmp`; runtime does not depend on those
   tmp files and instead uses the fixed winning settings directly
