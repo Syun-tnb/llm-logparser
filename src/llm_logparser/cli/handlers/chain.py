@@ -8,6 +8,7 @@ from llm_logparser.cli.common import (
     validate_split_option,
 )
 from llm_logparser.core.i18n import _
+from llm_logparser.core.utils import format_display_path
 
 
 def run_chain(args, logger: logging.Logger) -> None:
@@ -19,7 +20,7 @@ def run_chain(args, logger: logging.Logger) -> None:
 
     logger.info(_("runtime.chain.provider", provider=args.provider))
     logger.info(_("runtime.chain.input", path=input_path))
-    logger.info(_("runtime.chain.root", path=args.outdir))
+    logger.info(_("runtime.chain.root", path=format_display_path(args.outdir)))
     logger.info(_("runtime.chain.timezone", timezone=args.timezone))
     logger.info(_("runtime.chain.formatting", formatting=args.formatting))
     logger.info(_("runtime.chain.dry_run", dry_run=args.dry_run))
@@ -30,12 +31,12 @@ def run_chain(args, logger: logging.Logger) -> None:
 
     if args.parsed_root:
         parsed_root = validate_path(args.parsed_root, expect_dir=True)
-        logger.info(_("runtime.chain.using_parsed_root", path=parsed_root))
+        logger.info(_("runtime.chain.using_parsed_root", path=format_display_path(parsed_root)))
     else:
         parse_outdir = args.outdir / "output"
         parse_outdir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(_("runtime.chain.parsing_into", path=parse_outdir))
+        logger.info(_("runtime.chain.parsing_into", path=format_display_path(parse_outdir)))
         schema_validator = None
         if args.validate_schema:
             from llm_logparser.core.schema_validation import MessageSchemaValidator
@@ -63,12 +64,12 @@ def run_chain(args, logger: logging.Logger) -> None:
         parsed_root = parse_outdir / args.provider
 
     if not parsed_root.exists():
-        logger.error(_("runtime.chain.parsed_root_missing", path=parsed_root))
+        logger.error(_("runtime.chain.parsed_root_missing", path=format_display_path(parsed_root)))
         raise SystemExit(4)
 
     parsed_files = sorted(parsed_root.rglob("parsed.jsonl"))
     if not parsed_files:
-        logger.warning(_("runtime.chain.no_parsed_jsonl", path=parsed_root))
+        logger.warning(_("runtime.chain.no_parsed_jsonl", path=format_display_path(parsed_root)))
         return
 
     logger.info(_("runtime.chain.found_threads", count=len(parsed_files)))
@@ -86,7 +87,7 @@ def run_chain(args, logger: logging.Logger) -> None:
     if args.export_outdir:
         export_root = args.export_outdir
         export_root.mkdir(parents=True, exist_ok=True)
-        logger.info(_("runtime.chain.export_outdir", path=export_root))
+        logger.info(_("runtime.chain.export_outdir", path=format_display_path(export_root)))
 
     total_md = 0
     failed = 0
@@ -98,7 +99,13 @@ def run_chain(args, logger: logging.Logger) -> None:
         else:
             out_md = parent / f"{parent.name}.md"
 
-        logger.info(_("runtime.chain.exporting", parsed=parsed, out=out_md))
+        logger.info(
+            _(
+                "runtime.chain.exporting",
+                parsed=format_display_path(parsed),
+                out=format_display_path(out_md),
+            )
+        )
 
         try:
             paths = export_thread_md(parsed, out_md, tz=tz, **export_opts)

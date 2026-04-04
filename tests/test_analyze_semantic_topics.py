@@ -702,6 +702,8 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
 def test_analyze_semantic_topics_cli_happy_path(tmp_path, caplog):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)
+    topics_path = (root / "l3" / "semantic-topics" / "topics.json").resolve()
+    membership_path = (root / "l3" / "semantic-topics" / "topic_membership.jsonl").resolve()
 
     caplog.set_level(logging.INFO)
     main(
@@ -719,5 +721,7 @@ def test_analyze_semantic_topics_cli_happy_path(tmp_path, caplog):
 
     assert "semantic topics artifacts written" in caplog.text
     assert "structural-only" in caplog.text
-    assert (root / "l3" / "semantic-topics" / "topics.json").exists()
-    assert (root / "l3" / "semantic-topics" / "topic_membership.jsonl").exists()
+    assert str(topics_path) in caplog.text
+    assert str(membership_path) in caplog.text
+    assert topics_path.exists()
+    assert membership_path.exists()

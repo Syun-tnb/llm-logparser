@@ -1,11 +1,16 @@
 # src/llm_logparser/core/utils.py
 from __future__ import annotations
-import re
 import hashlib
+import re
+from pathlib import Path
 
 _IEC = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}
 _SI  = {"KB": 1000, "MB": 1000**2, "GB": 1000**3}
 _IEC_WORDS = {"KIB": "K", "MIB": "M", "GIB": "G"}
+
+
+def format_display_path(path: str | Path) -> str:
+    return str(Path(path).expanduser().resolve())
 
 def parse_size_expr(expr: str) -> int:
     """

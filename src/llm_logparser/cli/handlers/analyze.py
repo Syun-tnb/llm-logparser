@@ -4,6 +4,7 @@ import logging
 
 from llm_logparser.cli.common import validate_path, write_or_print
 from llm_logparser.core.i18n import _
+from llm_logparser.core.utils import format_display_path
 
 
 def _log_sidecar_dry_run_summary(
@@ -159,7 +160,7 @@ def run_analyze_sqlite_build(args, logger: logging.Logger) -> None:
     logger.info(
         _(
             "runtime.analyze.sqlite_built",
-            db_path=result["db_path"],
+            db_path=format_display_path(result["db_path"]),
             threads=result["threads"],
             messages=result["messages"],
             windows=result["message_windows"],
@@ -285,8 +286,8 @@ def run_analyze_semantic_topics(args, logger: logging.Logger) -> None:
 
     logger.info(
         "semantic topics artifacts written: "
-        f"{result['topic_count']} topic(s) -> {result['topics_path']} "
-        f"and {result['membership_path']} ({result['label_mode']})"
+        f"{result['topic_count']} topic(s) -> {format_display_path(result['topics_path'])} "
+        f"and {format_display_path(result['membership_path'])} ({result['label_mode']})"
     )
 
 

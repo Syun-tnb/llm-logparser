@@ -8,6 +8,7 @@ from llm_logparser.cli.common import (
     validate_split_option,
 )
 from llm_logparser.core.i18n import _
+from llm_logparser.core.utils import format_display_path
 
 
 def run_export(args, logger: logging.Logger) -> None:
@@ -26,9 +27,9 @@ def run_export(args, logger: logging.Logger) -> None:
 
     logger.info(_("runtime.export.input_jsonl", path=in_path))
     logger.info(
-        _("runtime.export.output_md_split", path=out_md.parent)
+        _("runtime.export.output_md_split", path=format_display_path(out_md.parent))
         if args.split
-        else _("runtime.export.output_md", path=out_md)
+        else _("runtime.export.output_md", path=format_display_path(out_md))
     )
     logger.info(_("runtime.export.timezone", timezone=args.timezone))
     logger.info(_("runtime.export.formatting", formatting=args.formatting))

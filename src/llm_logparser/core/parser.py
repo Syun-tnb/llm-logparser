@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover
 from .l1_derivation import ThreadMetrics, build_thread_stats_artifact
 from .i18n import _
 from .message_windows import render_message_windows_jsonl
+from .utils import format_display_path
 
 # ============================================================
 # 1. Error Classes
@@ -533,7 +534,7 @@ def parse_to_jsonl(
             "index": {"threads": manifest_index},
         }
         manifest_path.write_text(json.dumps(manifest_obj, ensure_ascii=True, indent=2), encoding="utf-8")
-        log.info(_("runtime.parser.manifest_saved", path=manifest_path))
+        log.info(_("runtime.parser.manifest_saved", path=format_display_path(manifest_path)))
 
     log.info(
         _(

@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 import sys
 from pathlib import Path
@@ -157,8 +158,9 @@ def _build_fixture_root(tmp_path: Path, *, include_missing_artifacts: bool = Fal
     return tmp_path
 
 
-def test_l2_sqlite_cli_builds_database_from_fixture_threads(tmp_path, monkeypatch, capsys):
+def test_l2_sqlite_cli_builds_database_from_fixture_threads(tmp_path, monkeypatch, caplog):
     root = _build_fixture_root(tmp_path)
+    caplog.set_level(logging.INFO)
 
     monkeypatch.setattr(
         sys,
@@ -174,10 +176,10 @@ def test_l2_sqlite_cli_builds_database_from_fixture_threads(tmp_path, monkeypatc
         ],
     )
     main()
-    capsys.readouterr()
 
     db_path = root / "openai" / "analysis.db"
     assert db_path.exists()
+    assert str(db_path.resolve()) in caplog.text
 
     conn = sqlite3.connect(db_path)
     try:
