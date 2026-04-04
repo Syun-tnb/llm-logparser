@@ -243,8 +243,11 @@ Current formal fields:
 | `first_seen` | Earliest associated timestamp |
 | `last_seen` | Latest associated timestamp |
 | `cluster_ids` | Source L3 cluster identifiers |
-| `window_refs` | Source window references |
+| `span_refs` | Primary semantic span references; each span is grounded by `span_id` and ordered `message_ids` |
 | `message_refs` | Source message references |
+| `span_count` | Count of distinct semantic spans associated with the topic |
+| `representative_spans` | Primary representative span overlays used for browse/prompt grounding |
+| `window_refs` | Compatibility and traceability overlay back to current window-derived artifacts |
 | `conversation_ids` | Set of conversations touched by the topic |
 | `keywords` | Optional local-model keyword list |
 | `confidence` | Optional model confidence |
@@ -262,9 +265,16 @@ Additional implementation metadata is also recommended:
 
 Current production contract uses:
 
-- `membership_mode = cluster-is-topic-v1`
+- `membership_mode = span-and-message-v2`
 - one current topic record per L3 cluster
-- deterministic `topic_id` derived from provider ID plus sorted window anchors
+- deterministic `topic_id` derived from provider ID plus sorted span anchors
+
+Current semantic identity is span-based:
+
+- `span_id` is derived from ordered `message_ids`
+- semantic topic grounding is expressed through `span_refs` and `message_refs`
+- `window_id` may still appear in topic artifacts, but only as a compatibility
+  or presentation overlay rather than semantic identity
 
 This keeps the first formal topic artifact pass reversible without adding
 speculative cross-cluster merge logic.
@@ -379,8 +389,13 @@ Semantic Topic Tracking should combine:
 - time-aware continuity tracking
 - summary extraction for user-facing topic metadata
 
-The implementation should operate over canonical messages or derived windows,
-not over provider-native raw exports.
+The implementation should operate over canonical messages or derived candidate
+spans, not over provider-native raw exports.
+
+When current L3 code consumes `message_windows.jsonl`, it is consuming an L1
+candidate-span substrate rather than semantic ground truth. Semantic grouping
+is established later by the semantic computation layer and topic artifact
+builders.
 
 ## 8.2 Embedding-Based Similarity
 
@@ -481,8 +496,10 @@ Current contents:
 
 - deterministic `topic_id`
 - source `cluster_ids`
-- source `window_refs`
+- primary `span_refs`
 - source `message_refs`
+- `span_count`
+- `representative_spans`
 - `conversation_ids`
 - structural time bounds (`first_seen`, `last_seen`)
 - optional local-model fields (`label`, `summary`, `keywords`, `confidence`)
@@ -493,6 +510,8 @@ Current contents:
   cluster anchors
 - prompt provenance is execution-based: if no labeling model runs, then
   `labeling_model`, `prompt_variant`, and `prompt_hash` remain `null`
+- `window_refs` and `representative_windows` as compatibility/presentation
+  overlays only
 
 ## 9.2 `topic_membership.jsonl`
 
@@ -500,20 +519,24 @@ Normalized reverse-lookup artifact.
 
 Current contents:
 
-- one row per `cluster`, `window`, or `message` membership edge
+- one row per `cluster`, `span`, or `message` membership edge
 - `topic_id`
 - `provider_id`
 - `conversation_id`
 - `cluster_id`
+- `span_id`
 - `window_id`
 - `message_id`
 
 This makes all of these explicit:
 
-- `topic -> clusters / windows / messages` via `topics.json`
+- `topic -> clusters / spans / messages` via `topics.json`
 - `cluster -> topic` via `membership_type=cluster`
-- `window -> topic` via `membership_type=window`
+- `span -> topic` via `membership_type=span`
 - `message -> topic` via `membership_type=message`
+
+`window_id` may still appear on membership rows when available, but it is not
+the semantic contract core.
 
 ---
 
