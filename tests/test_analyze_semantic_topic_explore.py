@@ -863,6 +863,36 @@ def test_semantic_topic_explore_topic_list_output(tmp_path):
     assert f"preview: [conv-a / {first_span_id} (window-0001)]" in rendered
 
 
+def test_semantic_topic_explore_topic_list_empty_preview_uses_placeholder(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    topics_path = root / "l3" / "semantic-topics" / "topics.json"
+    payload = json.loads(topics_path.read_text(encoding="utf-8"))
+    payload["topics"][0]["representative_spans"][0]["excerpt"] = "   "
+    topics_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    rendered = render_semantic_topic_explore(input_root=root)
+
+    assert (
+        "preview: [conv-a / span-a1 (window-0001)] (no displayable preview)"
+        in rendered
+    )
+    assert 'preview: [conv-a / span-a1 (window-0001)] ""' not in rendered
+
+
+def test_semantic_topic_explore_topic_list_non_empty_preview_is_unchanged(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    rendered = render_semantic_topic_explore(input_root=root)
+
+    assert 'preview: [conv-a / span-a1 (window-0001)] "alpha rollout checklist"' in rendered
+
+
 def test_semantic_topic_explore_topic_detail_view(tmp_path):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_explore_fixture(root)

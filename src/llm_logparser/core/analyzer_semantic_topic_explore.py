@@ -826,10 +826,16 @@ def _render_topic_list(payload: dict[str, Any]) -> str:
             f"range={_format_timestamp(row['first_seen'])} -> {_format_timestamp(row['last_seen'])}"
         )
         if isinstance(representative, dict):
+            excerpt = representative.get("excerpt")
+            preview_text = (
+                f"\"{excerpt}\""
+                if _is_displayable_message_text(excerpt)
+                else "(no displayable preview)"
+            )
             lines.append(
                 "  preview: "
                 f"[{_render_ref_label(conversation_id=representative.get('conversation_id'), span_id=representative.get('span_id'), window_id=representative.get('window_id'))}] "
-                f"\"{representative.get('excerpt', '')}\""
+                f"{preview_text}"
             )
     return "\n".join(lines)
 
