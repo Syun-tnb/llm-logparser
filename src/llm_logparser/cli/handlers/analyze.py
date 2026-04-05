@@ -309,6 +309,9 @@ def run_analyze_semantic_topic_explore(args, logger: logging.Logger) -> None:
             hide_single_window=args.hide_single_window,
             min_window_count=args.min_window_count,
             min_conversation_count=args.min_conversation_count,
+            view=args.view,
+            full_messages=args.full_messages,
+            max_chars=args.max_chars,
             json_output=args.json_output,
         )
     except SemanticTopicExploreError as exc:

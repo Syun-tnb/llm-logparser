@@ -108,6 +108,9 @@ messages:
   cli.analyze.semantic_topic_explore.opt.hide_single_window.help: Hide topics marked as single-window by quality_signals during browse views
   cli.analyze.semantic_topic_explore.opt.min_window_count.help: Hide topics whose window_count is below this threshold during browse views
   cli.analyze.semantic_topic_explore.opt.min_conversation_count.help: Hide topics whose conversation coverage is below this threshold during browse views
+  cli.analyze.semantic_topic_explore.opt.view.help: Render one topic as a human-readable span/message view reconstructed from parsed.jsonl
+  cli.analyze.semantic_topic_explore.opt.full_messages.help: With --view, show the full topic message sequence ordered by time instead of representative spans
+  cli.analyze.semantic_topic_explore.opt.max_chars.help: Maximum characters to show per reconstructed message in --view output
   cli.analyze.semantic_topic_explore.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.

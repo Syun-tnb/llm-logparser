@@ -176,4 +176,7 @@ def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys)
     assert "--hide-single-window" in help_text
     assert "--min-window-count" in help_text
     assert "--min-conversation-count" in help_text
+    assert "--view" in help_text
+    assert "--full-messages" in help_text
+    assert "--max-chars" in help_text
     assert "--json" in help_text

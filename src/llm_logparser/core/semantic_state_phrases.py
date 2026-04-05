@@ -55,8 +55,7 @@ def _locale_aliases() -> dict[str, str]:
         language = locale.split("-")[0]
         by_language.setdefault(language, set()).add(locale)
     for language, candidates in by_language.items():
-        if len(candidates) == 1:
-            aliases[language] = next(iter(candidates))
+        aliases[language] = sorted(candidates)[0]
     return aliases
 
 

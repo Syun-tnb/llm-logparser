@@ -3,12 +3,18 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .analyzer_semantic_preview import (
     WindowPreviewRecord,
     load_window_preview_index,
+)
+from .l1_derivation import (
+    canonical_role_or_unknown,
+    iter_input_message_records,
+    ts_to_seconds,
 )
 from .schema_validation import (
     load_topic_membership_validator,
@@ -35,6 +41,15 @@ class TopicMembershipRecord:
     span_id: str | None
     window_id: str | None
     message_id: str | None
+
+
+@dataclass(frozen=True)
+class CanonicalMessageRecord:
+    conversation_id: str
+    message_id: str
+    role: str
+    text: str
+    ts: int | None
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -112,6 +127,46 @@ def _format_score(value: float | None) -> str:
     if not isinstance(value, (int, float)):
         return "?"
     return f"{float(value):.2f}"
+
+
+def _format_human_timestamp(value: int | None) -> str:
+    seconds = ts_to_seconds(value)
+    if seconds is None or seconds < 946684800.0:
+        return _format_timestamp(value)
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+
+def _truncate_message_text(text: str, *, max_chars: int) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3] + "..."
+
+
+def _is_displayable_message_text(text: str | None) -> bool:
+    return isinstance(text, str) and bool(text.strip())
+
+
+def _load_canonical_message_index(
+    input_root: Path,
+) -> dict[tuple[str, str], CanonicalMessageRecord]:
+    messages: dict[tuple[str, str], CanonicalMessageRecord] = {}
+    try:
+        for row in iter_input_message_records(input_root):
+            conversation_id = row.get("conversation_id")
+            message_id = row.get("message_id")
+            if not isinstance(conversation_id, str) or not isinstance(message_id, str):
+                continue
+            messages[(conversation_id, message_id)] = CanonicalMessageRecord(
+                conversation_id=conversation_id,
+                message_id=message_id,
+                role=canonical_role_or_unknown(row.get("role")),
+                text=row.get("text") if isinstance(row.get("text"), str) else "",
+                ts=row.get("ts") if isinstance(row.get("ts"), int) else None,
+            )
+    except (FileNotFoundError, ValueError) as exc:
+        raise SemanticTopicExploreError(str(exc)) from exc
+    return messages
 
 
 def _topic_conversation_count(topic: dict[str, Any]) -> int:
@@ -308,6 +363,16 @@ def _topic_representative_spans(topic: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _topic_view_spans(topic: dict[str, Any]) -> list[dict[str, Any]]:
+    spans = _topic_representative_spans(topic)
+    if spans:
+        return spans
+    refs = topic.get("span_refs", [])
+    if isinstance(refs, list):
+        return [row for row in refs if isinstance(row, dict)]
+    return []
+
+
 def _render_ref_label(
     *,
     conversation_id: str | None,
@@ -322,6 +387,131 @@ def _render_ref_label(
     if isinstance(window_id, str) and window_id:
         return f"{conversation} / {window_id}"
     return conversation
+
+
+def _span_messages(
+    span_row: dict[str, Any],
+    *,
+    messages_by_ref: dict[tuple[str, str], CanonicalMessageRecord],
+) -> list[CanonicalMessageRecord]:
+    conversation_id = span_row.get("conversation_id")
+    if not isinstance(conversation_id, str):
+        return []
+    message_ids = span_row.get("message_ids", [])
+    if not isinstance(message_ids, list):
+        return []
+    messages: list[CanonicalMessageRecord] = []
+    for message_id in message_ids:
+        if not isinstance(message_id, str):
+            continue
+        message = messages_by_ref.get((conversation_id, message_id))
+        if message is None:
+            messages.append(
+                CanonicalMessageRecord(
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    role="unknown",
+                    text="",
+                    ts=None,
+                )
+            )
+            continue
+        messages.append(message)
+    return messages
+
+
+def _displayable_messages(
+    messages: list[CanonicalMessageRecord],
+) -> list[CanonicalMessageRecord]:
+    return [
+        message
+        for message in messages
+        if _is_displayable_message_text(message.text)
+    ]
+
+
+def _topic_full_messages(
+    topic: dict[str, Any],
+    *,
+    messages_by_ref: dict[tuple[str, str], CanonicalMessageRecord],
+) -> list[CanonicalMessageRecord]:
+    rows = topic.get("span_refs", [])
+    if not isinstance(rows, list):
+        rows = []
+    collected: list[CanonicalMessageRecord] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for message in _span_messages(row, messages_by_ref=messages_by_ref):
+            key = (message.conversation_id, message.message_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            collected.append(message)
+    collected.sort(
+        key=lambda row: (
+            row.ts if isinstance(row.ts, int) else float("inf"),
+            row.conversation_id,
+            row.message_id,
+        )
+    )
+    return collected
+
+
+def _render_human_topic_view(
+    topic: dict[str, Any],
+    *,
+    messages_by_ref: dict[tuple[str, str], CanonicalMessageRecord],
+    full_messages: bool,
+    max_chars: int,
+) -> str:
+    lines = [
+        f"topic_id: {topic['topic_id']}",
+        f"state: {topic.get('state') or '?'}",
+        "clusters: " + ", ".join(topic.get("cluster_ids", []) or ["(none)"]),
+        f"spans: {topic.get('span_count', len(topic.get('span_refs', [])))}",
+        f"messages: {topic.get('message_count', len(topic.get('message_refs', [])))}",
+        f"first_seen: {_format_human_timestamp(topic.get('first_seen'))}",
+        f"last_seen: {_format_human_timestamp(topic.get('last_seen'))}",
+    ]
+
+    if full_messages:
+        lines.append("")
+        lines.append("== full messages ==")
+        messages = _displayable_messages(
+            _topic_full_messages(topic, messages_by_ref=messages_by_ref)
+        )
+        if not messages:
+            lines.append("(no displayable messages)")
+            return "\n".join(lines)
+        for message in messages:
+            lines.append(
+                f"[{message.role.upper()}] "
+                f"{_truncate_message_text(message.text, max_chars=max_chars)}"
+            )
+        return "\n".join(lines)
+
+    spans = _topic_view_spans(topic)
+    for index, span_row in enumerate(spans, start=1):
+        lines.append("")
+        lines.append(
+            "== representative span "
+            f"{index} / "
+            f"{_render_ref_label(conversation_id=span_row.get('conversation_id'), span_id=span_row.get('span_id'), window_id=span_row.get('window_id'))} =="
+        )
+        messages = _displayable_messages(
+            _span_messages(span_row, messages_by_ref=messages_by_ref)
+        )
+        if not messages:
+            lines.append("(no displayable messages)")
+            continue
+        for message in messages:
+            lines.append(
+                f"[{message.role.upper()}] "
+                f"{_truncate_message_text(message.text, max_chars=max_chars)}"
+            )
+    return "\n".join(lines)
 
 
 def _topic_list_rows(
@@ -738,8 +928,33 @@ def render_semantic_topic_explore(
     hide_single_window: bool = False,
     min_window_count: int = 1,
     min_conversation_count: int = 1,
+    view: bool = False,
+    full_messages: bool = False,
+    max_chars: int = 400,
     json_output: bool = False,
 ) -> str:
+    if max_chars <= 0:
+        raise SemanticTopicExploreError("--max-chars must be > 0")
+    if view and json_output:
+        raise SemanticTopicExploreError("--view cannot be combined with --json")
+    if full_messages and not view:
+        raise SemanticTopicExploreError("--full-messages requires --view")
+    if view and topic_id is None:
+        raise SemanticTopicExploreError("--view currently requires --topic-id")
+
+    if view:
+        index = build_topic_explore_index(input_root)
+        topic = index.topics_by_id.get(topic_id)
+        if topic is None:
+            raise SemanticTopicExploreError(f"topic not found: {topic_id}")
+        messages_by_ref = _load_canonical_message_index(input_root)
+        return _render_human_topic_view(
+            topic,
+            messages_by_ref=messages_by_ref,
+            full_messages=full_messages,
+            max_chars=max_chars,
+        )
+
     payload = build_semantic_topic_explore_payload(
         input_root=input_root,
         topic_id=topic_id,

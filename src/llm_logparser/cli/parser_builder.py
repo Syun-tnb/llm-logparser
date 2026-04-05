@@ -690,6 +690,25 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topic_explore.opt.min_conversation_count.help"),
     )
     analyze_semantic_topic_explore_cmd.add_argument(
+        "--view",
+        dest="view",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic_explore.opt.view.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--full-messages",
+        dest="full_messages",
+        action="store_true",
+        help=_("cli.analyze.semantic_topic_explore.opt.full_messages.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
+        "--max-chars",
+        dest="max_chars",
+        type=int,
+        default=400,
+        help=_("cli.analyze.semantic_topic_explore.opt.max_chars.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
         "--json",
         dest="json_output",
         action="store_true",

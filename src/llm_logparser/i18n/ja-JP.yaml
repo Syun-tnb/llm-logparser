@@ -112,6 +112,9 @@ messages:
   cli.analyze.semantic_topic_explore.opt.hide_single_window.help: browse view で quality_signals.single_window が true の topic を非表示にする
   cli.analyze.semantic_topic_explore.opt.min_window_count.help: browse view で window_count がこの値未満の topic を非表示にする
   cli.analyze.semantic_topic_explore.opt.min_conversation_count.help: browse view で conversation 数がこの値未満の topic を非表示にする
+  cli.analyze.semantic_topic_explore.opt.view.help: parsed.jsonl から再構築した span / message を使って 1 件の topic を人間向け表示にする
+  cli.analyze.semantic_topic_explore.opt.full_messages.help: --view と組み合わせて representative span の代わりに topic 全体の message を時系列表示する
+  cli.analyze.semantic_topic_explore.opt.max_chars.help: --view 出力で各 message に表示する最大文字数
   cli.analyze.semantic_topic_explore.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/output/<provider>/... 配下になる
   cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む

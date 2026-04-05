@@ -717,6 +717,70 @@ def _build_topic_artifacts(root: Path) -> dict:
     return json.loads(Path(result["topics_path"]).read_text(encoding="utf-8"))
 
 
+def _rewrite_parsed_message_text(
+    root: Path,
+    *,
+    conversation_id: str,
+    message_id: str,
+    text: str | None,
+) -> None:
+    for parsed_path in sorted(root.rglob("parsed.jsonl")):
+        rows = [
+            json.loads(line)
+            for line in parsed_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        updated = False
+        for row in rows:
+            if (
+                row.get("record_type") == "message"
+                and row.get("conversation_id") == conversation_id
+                and row.get("message_id") == message_id
+            ):
+                row["text"] = text
+                updated = True
+        if not updated:
+            continue
+        parsed_path.write_text(
+            "\n".join(json.dumps(row, ensure_ascii=True) for row in rows) + "\n",
+            encoding="utf-8",
+        )
+        message_text_by_id = {
+            row["message_id"]: (
+                row.get("text") if isinstance(row.get("text"), str) else ""
+            )
+            for row in rows
+            if row.get("record_type") == "message"
+            and row.get("conversation_id") == conversation_id
+            and isinstance(row.get("message_id"), str)
+        }
+        windows_path = parsed_path.with_name("message_windows.jsonl")
+        if not windows_path.exists():
+            continue
+        window_rows = [
+            json.loads(line)
+            for line in windows_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        for row in window_rows:
+            if row.get("conversation_id") != conversation_id:
+                continue
+            message_ids = row.get("message_ids", [])
+            if not isinstance(message_ids, list):
+                continue
+            if message_id not in message_ids:
+                continue
+            row["char_count"] = sum(
+                len(message_text_by_id.get(item, ""))
+                for item in message_ids
+                if isinstance(item, str)
+            )
+        windows_path.write_text(
+            "\n".join(json.dumps(row, ensure_ascii=True) for row in window_rows) + "\n",
+            encoding="utf-8",
+        )
+
+
 def _write_incompatible_topics_artifact(root: Path, *, schema_version: str = "1.0") -> None:
     topics_dir = root / "l3" / "semantic-topics"
     topics_dir.mkdir(parents=True, exist_ok=True)
@@ -836,6 +900,183 @@ def test_semantic_topic_explore_topic_detail_view(tmp_path):
         f'- 150 | conv-b / {timeline_span_ids[1]} (window-0001) '
         '| "Review launch risk controls Add deployment rollback checks"'
     ) in rendered
+
+
+def test_semantic_topic_explore_view_reconstructs_representative_messages_from_parsed_jsonl(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_explore_fixture(root)
+    topics_payload = _build_topic_artifacts(root)
+    topic_id = next(
+        topic["topic_id"]
+        for topic in topics_payload["topics"]
+        if topic["cluster_ids"] == ["cluster_000001"]
+    )
+
+    topics_path = root / "l3" / "semantic-topics" / "topics.json"
+    payload = json.loads(topics_path.read_text(encoding="utf-8"))
+    for topic in payload["topics"]:
+        if topic["topic_id"] != topic_id:
+            continue
+        topic["representative_spans"][0]["excerpt"] = "WRONG EXCERPT"
+    topics_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        topic_id=topic_id,
+        view=True,
+    )
+
+    assert f"topic_id: {topic_id}" in rendered
+    assert "[USER] Draft the production migration checklist" in rendered
+    assert "[ASSISTANT] Include schema audit and rollback steps" in rendered
+    assert "WRONG EXCERPT" not in rendered
+
+
+def test_semantic_topic_explore_view_full_messages_shows_full_ordered_sequence(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_explore_fixture(root)
+    topics_payload = _build_topic_artifacts(root)
+    topic_id = next(
+        topic["topic_id"]
+        for topic in topics_payload["topics"]
+        if topic["cluster_ids"] == ["cluster_000001"]
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        topic_id=topic_id,
+        view=True,
+        full_messages=True,
+    )
+
+    user_a = rendered.index("[USER] Draft the production migration checklist")
+    assistant_a = rendered.index("[ASSISTANT] Include schema audit and rollback steps")
+    user_b = rendered.index("[USER] Capture monitoring gates for rollout readiness")
+    assistant_b = rendered.index("[ASSISTANT] Review launch risk controls")
+    user_c = rendered.index("[USER] Add deployment rollback checks")
+
+    assert "== full messages ==" in rendered
+    assert user_a < assistant_a < user_b < assistant_b < user_c
+
+
+def test_semantic_topic_explore_view_requires_topic_id(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_explore_fixture(root)
+    _build_topic_artifacts(root)
+
+    with pytest.raises(
+        SemanticTopicExploreError,
+        match="--view currently requires --topic-id",
+    ):
+        render_semantic_topic_explore(
+            input_root=root,
+            view=True,
+        )
+
+
+def test_semantic_topic_explore_view_skips_empty_canonical_messages(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_explore_fixture(root)
+    topics_payload = _build_topic_artifacts(root)
+    topic_id = next(
+        topic["topic_id"]
+        for topic in topics_payload["topics"]
+        if topic["cluster_ids"] == ["cluster_000001"]
+    )
+
+    _rewrite_parsed_message_text(
+        root,
+        conversation_id="conv-a",
+        message_id="a-1",
+        text="   ",
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        topic_id=topic_id,
+        view=True,
+    )
+
+    assert "[USER] Draft the production migration checklist" not in rendered
+    assert "[ASSISTANT] Include schema audit and rollback steps" in rendered
+    assert "[USER] Add deployment rollback checks" in rendered
+
+
+def test_semantic_topic_explore_view_all_empty_span_shows_placeholder(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_explore_fixture(root)
+    topics_payload = _build_topic_artifacts(root)
+    topic_id = next(
+        topic["topic_id"]
+        for topic in topics_payload["topics"]
+        if topic["cluster_ids"] == ["cluster_000001"]
+    )
+
+    _rewrite_parsed_message_text(
+        root,
+        conversation_id="conv-a",
+        message_id="a-1",
+        text="",
+    )
+    _rewrite_parsed_message_text(
+        root,
+        conversation_id="conv-a",
+        message_id="a-2",
+        text=None,
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        topic_id=topic_id,
+        view=True,
+    )
+
+    assert "(no displayable messages)" in rendered
+    assert "[USER] Draft the production migration checklist" not in rendered
+    assert "[ASSISTANT] Include schema audit and rollback steps" not in rendered
+    assert "[ASSISTANT] Review launch risk controls" in rendered
+
+
+def test_semantic_topic_explore_full_messages_all_empty_shows_placeholder(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_explore_fixture(root)
+    topics_payload = _build_topic_artifacts(root)
+    topic_id = next(
+        topic["topic_id"]
+        for topic in topics_payload["topics"]
+        if topic["cluster_ids"] == ["cluster_000001"]
+    )
+
+    for conversation_id, message_id in [
+        ("conv-a", "a-1"),
+        ("conv-a", "a-2"),
+        ("conv-a", "a-3"),
+        ("conv-b", "b-1"),
+        ("conv-b", "b-2"),
+    ]:
+        _rewrite_parsed_message_text(
+            root,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            text=" " if message_id.endswith("1") else "",
+        )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        topic_id=topic_id,
+        view=True,
+        full_messages=True,
+    )
+
+    assert "== full messages ==" in rendered
+    assert "(no displayable messages)" in rendered
+    assert "[USER]" not in rendered
+    assert "[ASSISTANT]" not in rendered
 
 
 def test_semantic_topic_explore_message_reverse_lookup(tmp_path):
