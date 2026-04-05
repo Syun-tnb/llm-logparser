@@ -51,6 +51,7 @@
   * topic records still include `window_refs` and `representative_windows`, but only as compatibility/presentation overlays
   * topic records now include heuristic L3 state with canonical values `unresolved|in_progress|done`, topic-level `state_confidence`, and per-span `state` / `state_confidence` / `state_signals`
   * state classification is now implemented as an L3 deterministic heuristic path over reconstructed span messages with tail-priority conflict resolution and recency modifiers
+  * structural-only `semantic-topics` runs now populate topic `label` via a deterministic heuristic phrase extractor instead of leaving labels empty
   * provenance now records prompt hash, labeling mode, optional embedding/labeling models, and upstream clustering policy metadata
   * structural-only runs now leave `labeling_model`, `prompt_variant`, and `prompt_hash` as `null` so provenance reflects executed labeling work only
   * BREAKING: deterministic `topic_id` values may change because topic identity is now span-based rather than window-based

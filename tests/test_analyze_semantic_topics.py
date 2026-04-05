@@ -302,6 +302,35 @@ def _write_japanese_state_fixture(root: Path) -> None:
     )
 
 
+def _write_noisy_label_fixture(root: Path) -> None:
+    thread_a = root / "thread-conv-noise"
+    _write_jsonl(
+        thread_a / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-noise",
+                "window-0001",
+                message_ids=["noise-1"],
+                roles=["user"],
+                text="```python``` ok thanks please",
+                ts_start=100,
+                ts_end=100,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread_a / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-noise",
+                "window-0001",
+                cluster_id="cluster_noise_000001",
+                cluster_size=1,
+            )
+        ],
+    )
+
+
 def _write_representative_selection_fixture(root: Path) -> None:
     thread_a = root / "thread-conv-a"
     thread_b = root / "thread-conv-b"
@@ -648,11 +677,14 @@ def test_semantic_topics_reverse_lookup_and_deterministic_topic_ids(tmp_path):
     )
 
     assert topic_a["topic_id"] == topic_b["topic_id"]
-    assert topic_a["label"] is None
+    assert topic_a["label"] == topic_b["label"]
+    assert isinstance(topic_a["label"], str)
+    assert topic_a["label"]
     assert topic_a["summary"] is None
     assert topic_a["keywords"] == []
     assert topic_a["state"] == "unresolved"
     assert topic_a["state_confidence"] == 0.5
+    assert topic_a["label"] not in {"done", "in_progress", "unresolved"}
     assert topic_a["quality_signals"] == topic_b["quality_signals"]
     assert artifact_a["provenance"]["prompt_hash"] == artifact_b["provenance"]["prompt_hash"]
     assert artifact_a["provenance"]["prompt_hash"] is None
@@ -780,14 +812,24 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     assert topics_payload["provenance"]["prompt_hash"] is None
     assert topics_payload["provenance"]["embedding_model"] is None
     assert topics_payload["provenance"]["clustering"]["neighbor_k"] is None
-    assert all(topic["label"] is None for topic in topics_payload["topics"])
+    assert all(isinstance(topic["label"], str) and topic["label"] for topic in topics_payload["topics"])
     assert all(topic["summary"] is None for topic in topics_payload["topics"])
     assert all(topic["keywords"] == [] for topic in topics_payload["topics"])
     assert all(topic["state"] == "unresolved" for topic in topics_payload["topics"])
     assert all(topic["state_confidence"] == 0.5 for topic in topics_payload["topics"])
+    assert all(topic["label"] not in {"done", "in_progress", "unresolved"} for topic in topics_payload["topics"])
     assert all(topic["quality_signals"]["avg_intra_cluster_score"] is None for topic in topics_payload["topics"])
     assert all(topic["quality_signals"]["max_intra_cluster_score"] is None for topic in topics_payload["topics"])
     assert {topic["quality_signals"]["cluster_size"] for topic in topics_payload["topics"]} == {2, 3}
+
+
+def test_semantic_topics_structural_only_noisy_input_falls_back_to_misc(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_noisy_label_fixture(root)
+
+    artifact, _membership_rows = build_semantic_topics_artifact(root)
+
+    assert artifact["topics"][0]["label"] == "misc"
 
 
 def test_semantic_topics_state_locale_changes_l3_state_matching(tmp_path):

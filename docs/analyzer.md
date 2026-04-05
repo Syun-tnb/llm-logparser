@@ -646,6 +646,10 @@ deterministic and model-derived capabilities.
   locale-specific L3 data files, with explicit `state_locale` selection for
   `semantic-topic` / `semantic-topics` and `en-US` as the fallback. It does
   not use a model-enriched state classifier.
+  Structural-only topic labeling is now also deterministic: when `--model` is
+  omitted, `semantic-topics` fills `label` with a heuristic phrase derived from
+  representative topic text while leaving `summary` empty. Labels remain
+  additive convenience metadata and are separate from topic `state`.
   Provenance is execution-oriented: structural-only
   runs keep `labeling_model`, `prompt_variant`, and `prompt_hash` as `null`,
   while model-enriched runs populate them from the actually used local labeling

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
@@ -48,10 +49,209 @@ TOPIC_CLUSTERING_METHOD = "connected-components"
 TOPIC_CLUSTERING_SCORE_POLICY = (
     "same-thread-shared-messages<=1;cross-thread-mutual-score>=runtime-p75"
 )
+TOPIC_HEURISTIC_LABEL_FALLBACK = "misc"
+TOPIC_HEURISTIC_LABEL_MAX_TOKENS = 4
+TOPIC_HEURISTIC_LATIN_MIN_LEN = 3
+TOPIC_HEURISTIC_TOKEN_RE = re.compile(
+    r"[a-z][a-z0-9_/-]*|[一-龯ぁ-んァ-ヶー]+",
+    re.IGNORECASE,
+)
+TOPIC_HEURISTIC_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "any",
+        "are",
+        "assistant",
+        "can",
+        "capture",
+        "check",
+        "codex",
+        "compare",
+        "could",
+        "designing",
+        "did",
+        "do",
+        "does",
+        "done",
+        "draft",
+        "for",
+        "from",
+        "get",
+        "go",
+        "got",
+        "here",
+        "how",
+        "implement",
+        "implementation",
+        "include",
+        "in_progress",
+        "into",
+        "just",
+        "make",
+        "need",
+        "next",
+        "not",
+        "now",
+        "okay",
+        "ok",
+        "one",
+        "only",
+        "out",
+        "please",
+        "prompting",
+        "review",
+        "run",
+        "same",
+        "ship",
+        "should",
+        "show",
+        "single",
+        "some",
+        "state",
+        "sure",
+        "task",
+        "tests",
+        "thank",
+        "thanks",
+        "that",
+        "the",
+        "their",
+        "them",
+        "there",
+        "these",
+        "thing",
+        "this",
+        "those",
+        "through",
+        "today",
+        "topic",
+        "topics",
+        "unresolved",
+        "update",
+        "user",
+        "using",
+        "want",
+        "what",
+        "with",
+        "work",
+        "workflowing",
+        "would",
+        "yes",
+        "you",
+        "your",
+        "ありがとう",
+        "お願いします",
+        "これ",
+        "それ",
+        "です",
+        "ます",
+        "こと",
+        "もの",
+        "よう",
+    }
+)
 
 
 class SemanticTopicsError(RuntimeError):
     pass
+
+
+def _displayable_label_text(text: Any) -> str:
+    if not isinstance(text, str):
+        return ""
+    return " ".join(text.split()).strip()
+
+
+def _topic_label_source_texts(
+    *,
+    prompt_windows: list[dict[str, Any]],
+    members: list[WindowClusterMember],
+    windows: dict[WindowRef, WindowPreviewRecord],
+) -> list[str]:
+    texts: list[str] = []
+    seen_refs: set[WindowRef] = set()
+
+    for row in prompt_windows:
+        conversation_id = row.get("conversation_id")
+        window_id = row.get("window_id")
+        if not isinstance(conversation_id, str) or not isinstance(window_id, str):
+            continue
+        ref = (conversation_id, window_id)
+        seen_refs.add(ref)
+        excerpt = _displayable_label_text(row.get("excerpt"))
+        if excerpt:
+            texts.append(excerpt)
+            continue
+        record = windows.get(ref)
+        if record is None:
+            continue
+        text = _displayable_label_text(record.text)
+        if text:
+            texts.append(text)
+
+    if texts:
+        return texts
+
+    for member in members:
+        ref = (member.conversation_id, member.window_id)
+        if ref in seen_refs:
+            continue
+        record = windows.get(ref)
+        if record is None:
+            continue
+        text = _displayable_label_text(record.text)
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _heuristic_label_tokens(texts: list[str]) -> list[str]:
+    counts: dict[str, int] = {}
+    first_seen: dict[str, int] = {}
+    position = 0
+
+    for text in texts:
+        normalized = re.sub(r"`{3,}[\w+-]*", " ", text.casefold())
+        normalized = re.sub(r"[#>*_\-\[\](){}|]+", " ", normalized)
+        for token in TOPIC_HEURISTIC_TOKEN_RE.findall(normalized):
+            if token.isdigit():
+                continue
+            if (
+                re.fullmatch(r"[a-z0-9_/-]+", token)
+                and len(token) < TOPIC_HEURISTIC_LATIN_MIN_LEN
+            ):
+                continue
+            if token in TOPIC_HEURISTIC_STOPWORDS:
+                continue
+            counts[token] = counts.get(token, 0) + 1
+            first_seen.setdefault(token, position)
+            position += 1
+
+    ranked = sorted(
+        counts,
+        key=lambda token: (-counts[token], first_seen[token], token),
+    )[:TOPIC_HEURISTIC_LABEL_MAX_TOKENS]
+    ranked.sort(key=lambda token: first_seen[token])
+    return ranked
+
+
+def _heuristic_topic_label(
+    *,
+    prompt_windows: list[dict[str, Any]],
+    members: list[WindowClusterMember],
+    windows: dict[WindowRef, WindowPreviewRecord],
+) -> str:
+    texts = _topic_label_source_texts(
+        prompt_windows=prompt_windows,
+        members=members,
+        windows=windows,
+    )
+    tokens = _heuristic_label_tokens(texts)
+    if not tokens:
+        return TOPIC_HEURISTIC_LABEL_FALLBACK
+    return " ".join(tokens)
 
 
 def _utc_now_isoformat() -> str:
@@ -337,12 +537,17 @@ def _topic_model_fields(
     cluster_id: str,
     members: list[WindowClusterMember],
     prompt_windows: list[dict[str, Any]],
+    windows: dict[WindowRef, WindowPreviewRecord],
     base_url: str,
     timeout_seconds: float,
 ) -> dict[str, Any]:
     if model is None:
         return {
-            "label": None,
+            "label": _heuristic_topic_label(
+                prompt_windows=prompt_windows,
+                members=members,
+                windows=windows,
+            ),
             "summary": None,
             "keywords": [],
             "confidence": None,
@@ -497,6 +702,7 @@ def build_semantic_topics_artifact(
             cluster_id=item_cluster_id,
             members=members,
             prompt_windows=prompt_windows,
+            windows=windows,
             base_url=base_url,
             timeout_seconds=timeout_seconds,
         )

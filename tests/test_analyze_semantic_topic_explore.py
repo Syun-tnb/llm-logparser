@@ -859,7 +859,8 @@ def test_semantic_topic_explore_topic_list_output(tmp_path):
     assert "stats: clusters=1 windows=3 messages=5 conversations=2" in rendered
     assert "avg_intra_cluster_score=?" in rendered
     assert "range=100 -> 170" in rendered
-    assert "(unlabeled)" in rendered
+    assert topics_payload["topics"][0]["label"] in rendered
+    assert "(unlabeled)" not in rendered
     assert f"preview: [conv-a / {first_span_id} (window-0001)]" in rendered
 
 
@@ -1129,7 +1130,7 @@ def test_semantic_topic_explore_message_reverse_lookup(tmp_path):
     assert payload["topics"] == [
         {
             "topic_id": topic_id,
-            "label": None,
+            "label": topics_payload["topics"][0]["label"],
             "summary": None,
             "state": "unresolved",
             "state_confidence": 0.5,

@@ -851,6 +851,10 @@ Experimental prototype note:
   structural-only runs keep `labeling_model`, `prompt_variant`, and
   `prompt_hash` as `null`; model-enriched runs populate them from the actual
   labeling invocation
+- structural-only runs now also fill topic `label` with a deterministic
+  heuristic phrase derived from representative topic text; `summary` remains
+  empty and labels stay additive convenience metadata rather than canonical
+  meaning
 - `topics.json` now emits `schema_version: "2.1"`
 - each topic record now includes canonical heuristic state fields:
   `state` with values `unresolved|in_progress|done` plus
@@ -886,7 +890,7 @@ Experimental prototype note:
   clustering logic or making any LLM calls
 - model-derived fields remain additive only; if `semantic-topics` runs without
   `--model`, it still writes the structural topic index and reverse membership
-  rows with label/summary fields left empty
+  rows, now with heuristic labels but without model summaries
 - Step 5 semantic artifact migration is explicit and breaking: older
   window-centric `topics.json` / `topic_membership.jsonl` contracts are not
   equivalent to the current span/message-first contract. Regenerate semantic
