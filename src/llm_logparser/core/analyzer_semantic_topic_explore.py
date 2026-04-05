@@ -459,6 +459,64 @@ def _topic_full_messages(
     return collected
 
 
+def _topic_displayable_message_count(
+    topic: dict[str, Any],
+    *,
+    messages_by_ref: dict[tuple[str, str], CanonicalMessageRecord],
+) -> int:
+    refs = topic.get("message_refs", [])
+    if not isinstance(refs, list) or not refs:
+        refs = []
+    seen: set[tuple[str, str]] = set()
+    count = 0
+    for row in refs:
+        if not isinstance(row, dict):
+            continue
+        conversation_id = row.get("conversation_id")
+        message_id = row.get("message_id")
+        if not isinstance(conversation_id, str) or not isinstance(message_id, str):
+            continue
+        key = (conversation_id, message_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        message = messages_by_ref.get(key)
+        if message is not None and _is_displayable_message_text(message.text):
+            count += 1
+    return count
+
+
+def _filter_browse_payload_by_displayable_messages(
+    payload: dict[str, Any],
+    *,
+    topics_by_id: dict[str, dict[str, Any]],
+    messages_by_ref: dict[tuple[str, str], CanonicalMessageRecord],
+    min_displayable_messages: int,
+) -> dict[str, Any]:
+    if min_displayable_messages <= 0:
+        return payload
+    if payload.get("view") not in {"topic-list", "conversation"}:
+        return payload
+
+    filtered_topics = [
+        row
+        for row in payload.get("topics", [])
+        if isinstance(row, dict)
+        and (
+            topic := topics_by_id.get(row.get("topic_id"))
+        ) is not None
+        and _topic_displayable_message_count(
+            topic,
+            messages_by_ref=messages_by_ref,
+        )
+        >= min_displayable_messages
+    ]
+    return {
+        **payload,
+        "topics": filtered_topics,
+    }
+
+
 def _render_human_topic_view(
     topic: dict[str, Any],
     *,
@@ -937,10 +995,13 @@ def render_semantic_topic_explore(
     view: bool = False,
     full_messages: bool = False,
     max_chars: int = 400,
+    min_displayable_messages: int = 0,
     json_output: bool = False,
 ) -> str:
     if max_chars <= 0:
         raise SemanticTopicExploreError("--max-chars must be > 0")
+    if min_displayable_messages < 0:
+        raise SemanticTopicExploreError("--min-displayable-messages must be >= 0")
     if view and json_output:
         raise SemanticTopicExploreError("--view cannot be combined with --json")
     if full_messages and not view:
@@ -972,6 +1033,13 @@ def render_semantic_topic_explore(
     )
     if json_output:
         return json.dumps(payload, ensure_ascii=False, indent=2)
+    if min_displayable_messages > 0:
+        payload = _filter_browse_payload_by_displayable_messages(
+            payload,
+            topics_by_id=load_topics_index(input_root),
+            messages_by_ref=_load_canonical_message_index(input_root),
+            min_displayable_messages=min_displayable_messages,
+        )
     if payload["view"] == "topic-detail":
         return _render_topic_detail(payload)
     if payload["view"] == "message-lookup":

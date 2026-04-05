@@ -1368,6 +1368,107 @@ def test_semantic_topic_explore_topic_list_rendering_surfaces_preview_and_qualit
     assert 'preview: [conv-a / span-a1 (window-0001)] "alpha rollout checklist"' in rendered
 
 
+def test_semantic_topic_explore_min_displayable_messages_zero_is_disabled(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+
+    default_rendered = render_semantic_topic_explore(input_root=root)
+    explicit_rendered = render_semantic_topic_explore(
+        input_root=root,
+        min_displayable_messages=0,
+    )
+
+    assert explicit_rendered == default_rendered
+
+
+def test_semantic_topic_explore_min_displayable_messages_hides_zero_displayable_topics(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+    _rewrite_parsed_message_text(
+        root,
+        conversation_id="conv-a",
+        message_id="a-1",
+        text="",
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        min_displayable_messages=1,
+    )
+
+    assert "topic-zeta | Zeta" not in rendered
+    assert "topic-alpha | Alpha" in rendered
+    assert "topic-beta | Beta" in rendered
+    assert "topic-delta | Delta" in rendered
+
+
+def test_semantic_topic_explore_min_displayable_messages_hides_sparse_topics_and_keeps_placeholder(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+    _rewrite_parsed_message_text(
+        root,
+        conversation_id="conv-a",
+        message_id="a-1",
+        text="",
+    )
+
+    topics_path = root / "l3" / "semantic-topics" / "topics.json"
+    payload = json.loads(topics_path.read_text(encoding="utf-8"))
+    for topic in payload["topics"]:
+        if topic["topic_id"] == "topic-beta":
+            topic["representative_spans"][0]["excerpt"] = "   "
+    topics_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        min_displayable_messages=2,
+    )
+
+    assert "topic-zeta | Zeta" not in rendered
+    assert "topic-alpha | Alpha" not in rendered
+    assert "topic-delta | Delta" not in rendered
+    assert "topic-beta | Beta" in rendered
+    assert (
+        "preview: [conv-c / span-c1 (window-0001)] (no displayable preview)"
+        in rendered
+    )
+
+
+def test_semantic_topic_explore_min_displayable_messages_does_not_change_json_output(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_manual_topic_artifacts(root)
+    _rewrite_parsed_message_text(
+        root,
+        conversation_id="conv-a",
+        message_id="a-1",
+        text="",
+    )
+
+    rendered = render_semantic_topic_explore(
+        input_root=root,
+        min_displayable_messages=2,
+        json_output=True,
+    )
+    payload = json.loads(rendered)
+
+    assert payload["view"] == "topic-list"
+    assert [row["topic_id"] for row in payload["topics"]] == [
+        "topic-zeta",
+        "topic-alpha",
+        "topic-beta",
+        "topic-delta",
+    ]
+
+
 def test_semantic_topic_explore_rejects_legacy_topics_contract_with_regeneration_guidance(tmp_path):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_jsonl(

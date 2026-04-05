@@ -309,6 +309,7 @@ def run_analyze_semantic_topic_explore(args, logger: logging.Logger) -> None:
             hide_single_window=args.hide_single_window,
             min_window_count=args.min_window_count,
             min_conversation_count=args.min_conversation_count,
+            min_displayable_messages=args.min_displayable_messages,
             view=args.view,
             full_messages=args.full_messages,
             max_chars=args.max_chars,

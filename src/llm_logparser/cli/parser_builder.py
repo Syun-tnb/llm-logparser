@@ -690,6 +690,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topic_explore.opt.min_conversation_count.help"),
     )
     analyze_semantic_topic_explore_cmd.add_argument(
+        "--min-displayable-messages",
+        dest="min_displayable_messages",
+        type=int,
+        default=0,
+        help=_("cli.analyze.semantic_topic_explore.opt.min_displayable_messages.help"),
+    )
+    analyze_semantic_topic_explore_cmd.add_argument(
         "--view",
         dest="view",
         action="store_true",
