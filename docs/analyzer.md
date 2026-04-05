@@ -664,49 +664,49 @@ deterministic and model-derived capabilities.
 
   ### Heuristic Topic Labeling (Structural-only mode)
 
-In structural-only `semantic-topics` runs (no `--model`), topic labels are
-generated deterministically using a lightweight heuristic.
+  In structural-only `semantic-topics` runs (no `--model`), topic labels are
+  generated deterministically using a lightweight heuristic.
 
-This is intended to provide stable, reproducible labels without requiring
-any model dependency.
+  This is intended to provide stable, reproducible labels without requiring
+  any model dependency.
 
-Label generation follows these steps:
+  Label generation follows these steps:
 
-- Primary source is representative topic excerpts
-- If unavailable, falls back to reconstructed representative window text
-- If still unavailable, falls back to other member window text
+  - Primary source is representative topic excerpts
+  - If unavailable, falls back to reconstructed representative window text
+  - If still unavailable, falls back to other member window text
 
-Text is then:
+  Text is then processed as follows:
 
-- normalized (lowercased, markdown/code wrappers stripped)
-- tokenized deterministically
-- filtered to remove:
-  - stopwords
-  - state-related terms
-  - short Latin tokens
-  - numeric-only tokens
+  - normalized (lowercased, markdown/code wrappers stripped)
+  - tokenized deterministically
+  - filtered to remove:
+    - stopwords
+    - state-related terms
+    - short Latin tokens
+    - numeric-only tokens
 
-Remaining tokens are:
+  Remaining tokens are:
 
-- ranked by frequency and first occurrence
-- rendered in first-occurrence order
-- truncated to up to 4 tokens
+  - ranked by frequency and first occurrence
+  - rendered in first-occurrence order
+  - truncated to up to 4 tokens
 
-If no stable topic-bearing tokens can be derived, the label falls back to `misc`.
+  If no stable topic-bearing tokens can be derived, the label falls back to `misc`.
 
-### Limitations
+  ### Limitations
 
-- heuristic is currently English-biased
-- no phrase-level extraction (token-based only)
-- locale-specific stopwords are currently hardcoded
-- does not use `state_locale` or semantic state resources
+  - heuristic is currently English-biased
+  - no phrase-level extraction (token-based only)
+  - locale-specific stopwords are currently hardcoded
+  - does not use `state_locale` or semantic state resources
 
-### Future Direction
+  ### Future Direction
 
-- integrate locale-aware stopword/token filtering via `state_locale`
-- optionally introduce deterministic keyword extraction pass
-- optionally allow local-LLM label enrichment as an additive layer
-- add small evaluation fixtures for label quality validation
+  - integrate locale-aware stopword/token filtering via `state_locale`
+  - optionally introduce deterministic keyword extraction pass
+  - optionally allow local-LLM label enrichment as an additive layer
+  - add small evaluation fixtures for label quality validation
 
 - `semantic-topic-explore` is the read-only UX layer on top of those artifacts:
   it reads `topics.json`, `topic_membership.jsonl`, and `message_windows.jsonl`
