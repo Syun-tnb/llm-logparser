@@ -33,10 +33,9 @@ def run_chain(args, logger: logging.Logger) -> None:
         parsed_root = validate_path(args.parsed_root, expect_dir=True)
         logger.info(_("runtime.chain.using_parsed_root", path=format_display_path(parsed_root)))
     else:
-        parse_outdir = args.outdir / "output"
-        parse_outdir.mkdir(parents=True, exist_ok=True)
+        args.outdir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(_("runtime.chain.parsing_into", path=format_display_path(parse_outdir)))
+        logger.info(_("runtime.chain.parsing_into", path=format_display_path(args.outdir)))
         schema_validator = None
         if args.validate_schema:
             from llm_logparser.core.schema_validation import MessageSchemaValidator
@@ -49,7 +48,7 @@ def run_chain(args, logger: logging.Logger) -> None:
         stats = parse_to_jsonl(
             args.provider,
             input_path,
-            parse_outdir,
+            args.outdir,
             dry_run=args.dry_run,
             fail_fast=args.fail_fast,
             validate_schema=args.validate_schema,
@@ -61,7 +60,7 @@ def run_chain(args, logger: logging.Logger) -> None:
         messages = stats.get("messages", 0)
         logger.info(_("runtime.chain.parsed", threads=threads, messages=messages))
 
-        parsed_root = parse_outdir / args.provider
+        parsed_root = args.outdir / args.provider
 
     if not parsed_root.exists():
         logger.error(_("runtime.chain.parsed_root_missing", path=format_display_path(parsed_root)))

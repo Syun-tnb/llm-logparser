@@ -22,6 +22,15 @@ Everything runs locally. No cloud. No telemetry. Your data stays on your machine
 
 > Current parse/import adapters: OpenAI ChatGPT, Anthropic Claude, xAI Grok, Mistral Le Chat, and Google Gemini My Activity.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Core Workflow](#core-workflow)
+- [Input Rules](#input-rules)
+- [Output Structure](#output-structure)
+- [Analyzer](#analyzer)
+- [CLI Reference](#cli-reference)
+
 ---
 
 ## Installation
@@ -65,6 +74,19 @@ If you cloned the repository, you can run commands with `uv run ...`. If you ins
 The fastest way to go from a raw export to readable output:
 
 ```bash
+# Minimal workflow
+llm-logparser chain --provider openai --input <export> --outdir artifacts
+
+# Analyze
+llm-logparser analyze stats --input artifacts/openai
+```
+
+Current implementation is provider-based. `chain` and `parse` now both write
+parsed artifacts under `artifacts/<provider>/`.
+
+Full example:
+
+```bash
 llm-logparser chain \
   --provider openai \
   --input path/to/conversations.json \
@@ -79,7 +101,7 @@ This does two things:
 When it finishes, you'll see a directory like this:
 
 ```text
-artifacts/output/openai/
+artifacts/openai/
   manifest.json                        ← index of all parsed conversations
   thread-abc123/
     parsed.jsonl                       ← structured conversation data
@@ -91,12 +113,87 @@ artifacts/output/openai/
 Open any `.md` file to read your conversations. That's it — you're done with
 the basics.
 
-**Want to go further?** See [First Steps After Setup](#first-steps-after-setup)
+**Want to go further?** See [Core Workflow](#core-workflow)
 to learn what the analyze commands can tell you about your conversations.
 
 ---
 
-## First Steps After Setup
+## Input Rules
+
+Use the current CLI contract:
+
+- `parse` / `chain`: raw export input, file or directory
+- `export`: single `parsed.jsonl` file only
+- `extract`: raw export input, file or directory, plus `--conversation-id`
+- `analyze stats` / `datasheet` / `timeline` / `tokens` / `metrics`: `parsed.jsonl` file or directory containing `parsed.jsonl`
+- `analyze sqlite-build`: directory only; pass the root that contains provider directories, then set `--provider`
+- `analyze semantic-prototype`: `message_windows.jsonl` or `parsed.jsonl` file, or a directory containing those artifacts
+- `analyze semantic-preview` / `semantic-topic` / `semantic-topics` / `semantic-topic-explore`: directory only
+
+If you want the shortest rule of thumb:
+
+- `parse` / `chain` take raw exports
+- `export` takes `parsed.jsonl`
+- `analyze` usually takes `parsed.jsonl` or a provider directory such as `artifacts/openai`
+
+---
+
+## Output Structure
+
+Current implementation is provider-based, not dataset-based:
+
+```text
+artifacts/
+  <provider>/
+    thread-*/
+      parsed.jsonl
+      thread_stats.json
+      token_stats.json
+      metrics.json
+      message_windows.jsonl
+
+    manifest.json              # auto-generated during parse
+    analysis.db                # optional (L2)
+    l3/semantic-topics/        # optional (L3)
+```
+
+Implicit behaviors worth knowing:
+
+- `thread_stats.json` is generated during `parse`
+- `message_windows.jsonl` is generated during `parse`
+- `manifest.json` is auto-generated during `parse`
+- `chain` now writes directly to `artifacts/<provider>/` and no longer creates an implicit `output/` layer
+
+---
+
+## Optional Components
+
+Core:
+
+- `parse` / `chain`
+- `analyze stats` / `analyze timeline`
+
+Optional:
+
+- `analyze tokens`
+- `analyze metrics`
+- `analyze sqlite-build`
+- `analyze semantic-prototype`
+- `analyze semantic-preview`
+- `analyze semantic-topic`
+- `analyze semantic-topics`
+- `analyze semantic-topic-explore`
+
+Notes:
+
+- `analyze tokens` supports provider-default tokenization only for `openai`, `anthropic`, and `xai`; other providers error unless you supply an explicit `--encoding`
+- `analyze metrics` requires existing `token_stats.json`, so run `analyze tokens` first
+- `semantic-prototype` works without Ollama by default because its default backend is `deterministic-hash`
+- Ollama is required only for `semantic-prototype --backend ollama`, `semantic-topic`, and `semantic-topics --model <model>`
+
+---
+
+## Core Workflow
 
 After running `chain` (or `parse`), here is the recommended path to get the
 most from your data. Each step builds on the previous one.
@@ -109,7 +206,7 @@ role labels, and preserved formatting.
 ### Step 2 — Get a quick summary
 
 ```bash
-llm-logparser analyze stats --input artifacts/output/openai
+llm-logparser analyze stats --input artifacts/openai
 ```
 
 This prints a summary of your conversations: how many threads, total messages,
@@ -118,7 +215,7 @@ character counts, and time spans. Add `--json` for machine-readable output.
 ### Step 3 — Count tokens
 
 ```bash
-llm-logparser analyze tokens --input artifacts/output/openai
+llm-logparser analyze tokens --input artifacts/openai
 ```
 
 This writes a `token_stats.json` file next to each conversation with per-message
@@ -127,7 +224,7 @@ token counts. Useful if you want to understand cost or context-window usage.
 ### Step 4 — Build full metrics
 
 ```bash
-llm-logparser analyze metrics --input artifacts/output/openai
+llm-logparser analyze metrics --input artifacts/openai
 ```
 
 This writes a `metrics.json` file next to each conversation with safety signals,
@@ -138,7 +235,7 @@ interaction patterns, and character/token ratios. **Requires Step 3 first.**
 
 ---
 
-## What Do Analyzers Actually Output?
+## Analyzer
 
 Each analyze command produces a different kind of output. Here is what you
 actually get and what questions each one answers.
@@ -263,7 +360,7 @@ rebuildable from your parsed data at any time.
 
 ```bash
 llm-logparser analyze sqlite-build \
-  --input artifacts/output \
+  --input artifacts \
   --provider openai
 ```
 
@@ -414,7 +511,7 @@ Aggregate timestamped message activity from canonical `parsed.jsonl` files:
 
 ```bash
 uv run llm-logparser analyze timeline \
-  --input artifacts/output/openai \
+  --input artifacts/openai \
   --bucket day \
   [--json] \
   [--out <path>]
@@ -438,6 +535,7 @@ Current tokenizer backend:
 * `tiktoken`
 * provider defaults for `openai`, `anthropic`, and `xai`
 * `--encoding` overrides provider and model resolution
+* other providers currently error unless you supply an explicit `--encoding`
 
 Runtime caveats:
 
@@ -481,14 +579,15 @@ deterministic thread artifacts:
 
 ```bash
 uv run llm-logparser analyze sqlite-build \
-  --input <provider-artifact-root> \
+  --input <artifact-root> \
   --provider <provider-id> \
   [--overwrite]
 ```
 
 `analysis.db` is an optional deterministic, rebuildable, and non-canonical index
-for query acceleration. It does not replace `parsed.jsonl` and is not a storage
-layer for every future derived artifact.
+for query acceleration. Pass the directory that contains provider roots such as
+`artifacts/`, then select the provider with `--provider`. It does not replace
+`parsed.jsonl` and is not a storage layer for every future derived artifact.
 
 ### Analyze Semantic Prototype
 
@@ -937,20 +1036,19 @@ Analyzer i18n is intentionally narrow:
 
 ```text
 artifacts/
-  output/
-    openai/
-      manifest.json
-      thread-<conversation_id>/
-        parsed.jsonl
-        thread_stats.json
-        message_windows.jsonl
-        token_stats.json
-        metrics.json
-        thread-<conversation_id>__*.md
-        meta.json (optional)
+  openai/
+    manifest.json
+    thread-<conversation_id>/
+      parsed.jsonl
+      thread_stats.json
+      message_windows.jsonl
+      token_stats.json
+      metrics.json
+      thread-<conversation_id>__*.md
+      meta.json (optional)
 ```
 
-Pass only the root path via `--outdir`. The tool creates `output/<provider>/...` automatically.
+Pass only the root path via `--outdir`. The tool creates `<provider>/...` automatically.
 
 ---
 
@@ -995,7 +1093,7 @@ profiles:
       # or:
       # paths: [exports/a.jsonl, exports/b.jsonl]
       # export uses:
-      # parsed: artifacts/output/openai/thread-123/parsed.jsonl
+      # parsed: artifacts/openai/thread-123/parsed.jsonl
 
     sanitize:
       enabled: true

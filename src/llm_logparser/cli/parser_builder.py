@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input",
         required=False,
         type=Path,
-        help=_("cli.parse.opt.input.help"),
+        help=_("cli.extract.opt.input.help"),
     )
     extract_cmd.add_argument(
         "--conversation-id",
@@ -741,7 +741,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input",
         required=False,
         type=Path,
-        help=_("cli.parse.opt.input.help"),
+        help=_("cli.chain.opt.input.help"),
     )
     chain_cmd.add_argument(
         "--outdir",

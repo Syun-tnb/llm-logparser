@@ -112,7 +112,7 @@ def test_chain_logs_absolute_output_paths(tmp_path, monkeypatch, caplog):
     )
 
     root = (tmp_path / "artifacts").resolve()
-    parse_root = (tmp_path / "artifacts" / "output").resolve()
+    parse_root = (tmp_path / "artifacts").resolve()
     export_root = (tmp_path / "markdown").resolve()
     exported = next((tmp_path / "markdown").glob("*.md")).resolve()
 

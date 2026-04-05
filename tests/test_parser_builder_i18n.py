@@ -181,3 +181,37 @@ def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys)
     assert "--full-messages" in help_text
     assert "--max-chars" in help_text
     assert "--json" in help_text
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["parse", "--help"], "Input: raw export file or directory"),
+        (["chain", "--help"], "Input: raw export file or directory"),
+        (["extract", "--help"], "Input: raw export file or directory"),
+        (["export", "--help"], "Input: single parsed.jsonl file"),
+        (
+            ["analyze", "stats", "--help"],
+            "Input: parsed.jsonl file or directory containing parsed.jsonl",
+        ),
+        (
+            ["analyze", "sqlite-build", "--help"],
+            "Input: directory only; root containing per-provider artifact directories",
+        ),
+        (
+            ["analyze", "semantic-preview", "--help"],
+            "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files",
+        ),
+    ],
+)
+def test_help_text_clarifies_input_semantics(capsys, argv, expected):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(argv)
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    normalized_help_text = " ".join(help_text.split())
+    assert expected in normalized_help_text

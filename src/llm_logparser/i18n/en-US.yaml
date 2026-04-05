@@ -20,18 +20,19 @@ messages:
   cli.config.show.help: Print the normalized config or selected profile
   cli.config.validate.help: Validate the current config and exit
   cli.parse.opt.provider.help: Provider ID (e.g., openai)
-  cli.parse.opt.input.help: Input JSON/JSONL path
+  cli.parse.opt.input.help: "Input: raw export file or directory"
   cli.parse.opt.outdir.help: Output root directory (provider subdir will be auto-created)
   cli.parse.opt.dry_run.help: Run parse without writing any files (stats/log only).
   cli.parse.opt.fail_fast.help: Stop parsing on first error instead of continuing.
   cli.parse.opt.validate_schema.help: Validate normalized messages against message.schema.json
   cli.parse.opt.message_window_size.help: Number of canonical messages per generated message window
   cli.parse.opt.message_window_stride.help: Advance step between generated message windows. Defaults to the window size when omitted.
-  cli.export.opt.input.help: Path to thread parsed.jsonl
+  cli.export.opt.input.help: "Input: single parsed.jsonl file"
+  cli.extract.opt.input.help: "Input: raw export file or directory"
   cli.export.opt.out.help: Output Markdown path
   cli.extract.opt.conversation_id.help: Conversation ID to extract
   cli.extract.opt.outdir.help: Output root directory
-  cli.analyze.opt.input.help: Path to a parsed.jsonl file or a directory containing parsed.jsonl files
+  cli.analyze.opt.input.help: "Input: parsed.jsonl file or directory containing parsed.jsonl"
   cli.analyze.opt.json.help: Emit JSON instead of human-readable text
   cli.analyze.opt.out.help: Write the rendered result to a file
   cli.analyze.opt.skip_existing.help: Skip threads whose sidecar already exists. By default, existing sidecars are rebuilt and overwritten.
@@ -49,11 +50,11 @@ messages:
   cli.analyze.tokens.opt.encoding.help: Explicit tiktoken encoding name that overrides provider/model resolution
   cli.analyze.metrics.help: Build deterministic metrics.json sidecars from parsed.jsonl plus token_stats.json. Run `analyze tokens` first. Existing sidecars are rebuilt by default.
   cli.analyze.sqlite_build.help: Build an optional SQLite accelerator from canonical thread artifacts
-  cli.analyze.sqlite_build.opt.input.help: Root directory containing per-provider artifact directories
+  cli.analyze.sqlite_build.opt.input.help: "Input: directory only; root containing per-provider artifact directories"
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
   cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl or canonical parsed.jsonl
-  cli.analyze.semantic_prototype.opt.input.help: Path to a message_windows.jsonl or parsed.jsonl file, or a directory containing those artifacts
+  cli.analyze.semantic_prototype.opt.input.help: "Input: message_windows.jsonl or parsed.jsonl file, or directory containing those artifacts"
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
   cli.analyze.semantic_prototype.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
   cli.analyze.semantic_prototype.opt.top_k.help: Number of nearest neighbors to keep per window
@@ -68,7 +69,7 @@ messages:
   cli.analyze.semantic_prototype.opt.candidate_same_thread.help: Same-thread candidate policy in SQLite mode (allow, prefer, only, exclude)
   cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts
   cli.analyze.semantic_preview.help: Browse semantic clusters, conversations, or individual windows from stored L3 prototype artifacts
-  cli.analyze.semantic_preview.opt.input.help: Provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files
+  cli.analyze.semantic_preview.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files"
   cli.analyze.semantic_preview.opt.cluster_id.help: Show one cluster in detail
   cli.analyze.semantic_preview.opt.conversation_id.help: Conversation/thread ID to inspect (also accepted as --thread)
   cli.analyze.semantic_preview.opt.window.help: Window ID to inspect. Use with --conversation-id/--thread for window view.
@@ -81,7 +82,7 @@ messages:
   cli.analyze.semantic_preview.opt.max_chars.help: Maximum number of characters to show per window before truncation
   cli.analyze.semantic_preview.opt.show_meta.help: Include metadata blocks in the preview (use --no-show-meta to disable)
   cli.analyze.semantic_topic.help: Generate experimental L4 topic labels and summaries from stored L3 clusters using a local Ollama model
-  cli.analyze.semantic_topic.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
+  cli.analyze.semantic_topic.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl and window_clusters.jsonl files"
   cli.analyze.semantic_topic.opt.model.help: Local Ollama generation model identifier
   cli.analyze.semantic_topic.opt.cluster_id.help: Generate one topic for the specified cluster only
   cli.analyze.semantic_topic.opt.top_clusters.help: Number of clusters to label when --cluster-id is not provided
@@ -92,7 +93,7 @@ messages:
   cli.analyze.semantic_topic.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
   cli.analyze.semantic_topic.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.analyze.semantic_topics.help: Build formal semantic topic artifacts with forward and reverse lookup from stored L3 clusters
-  cli.analyze.semantic_topics.opt.input.help: Provider artifact root containing message_windows.jsonl and window_clusters.jsonl files
+  cli.analyze.semantic_topics.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl and window_clusters.jsonl files"
   cli.analyze.semantic_topics.opt.model.help: Optional local Ollama generation model. Omit for structural-only topic artifacts.
   cli.analyze.semantic_topics.opt.cluster_id.help: Build artifacts for one cluster only
   cli.analyze.semantic_topics.opt.min_cluster_size.help: Minimum cluster size to include in the generated topic set
@@ -101,7 +102,7 @@ messages:
   cli.analyze.semantic_topics.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds when --model is used
   cli.analyze.semantic_topics.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
-  cli.analyze.semantic_topic_explore.opt.input.help: Artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl
+  cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline
   cli.analyze.semantic_topic_explore.opt.message_id.help: Reverse lookup the topic or topics containing one message ID
   cli.analyze.semantic_topic_explore.opt.conversation_id.help: Show topics that appear in one conversation/thread (also accepted as --thread)
@@ -113,7 +114,8 @@ messages:
   cli.analyze.semantic_topic_explore.opt.full_messages.help: With --view, show the full topic message sequence ordered by time instead of representative spans
   cli.analyze.semantic_topic_explore.opt.max_chars.help: Maximum characters to show per reconstructed message in --view output
   cli.analyze.semantic_topic_explore.opt.json.help: Emit machine-readable JSON instead of pretty text
-  cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/output/<provider>/...
+  cli.chain.opt.input.help: "Input: raw export file or directory"
+  cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.
   cli.chain.opt.parsed_root.help: Optional root directory that already contains parsed threads (…/thread-*/parsed.jsonl). If specified, parse phase is skipped.
   cli.chain.opt.fail_fast.help: Stop chain processing on first export error. Default is to continue.
