@@ -13,7 +13,7 @@ from llm_logparser.core.semantic_state import (
 )
 from llm_logparser.core.semantic_state_phrases import (
     load_semantic_state_phrases,
-    resolve_state_locale,
+    resolve_supported_state_locale,
 )
 
 
@@ -281,9 +281,27 @@ def test_classify_span_state_uses_structured_messages_not_rendered_text_splittin
     assert "B1:trailing_question" not in result.state_signals
 
 
-def test_state_phrase_loader_resolves_supported_locale_and_falls_back():
-    assert resolve_state_locale("ja") == "ja-JP"
-    assert resolve_state_locale("fr-FR") == "en-US"
+def test_state_phrase_loader_resolves_exact_locale_match():
+    assert (
+        resolve_supported_state_locale("ja-Kansai", {"en-US", "ja-JP", "ja-Kansai"})
+        == "ja-Kansai"
+    )
+
+
+def test_state_phrase_loader_resolves_single_candidate_prefix():
+    assert resolve_supported_state_locale("ja", {"en-US", "ja-JP"}) == "ja-JP"
+
+
+def test_state_phrase_loader_ambiguous_prefix_falls_back_to_english():
+    assert (
+        resolve_supported_state_locale("ja", {"en-US", "ja-JP", "ja-Kansai"})
+        == "en-US"
+    )
+
+
+def test_state_phrase_loader_unknown_and_none_fall_back_to_english():
+    assert resolve_supported_state_locale("fr-FR", {"en-US", "ja-JP"}) == "en-US"
+    assert resolve_supported_state_locale(None, {"en-US", "ja-JP"}) == "en-US"
 
     phrases = load_semantic_state_phrases("fr-FR")
     assert phrases.locale == "en-US"

@@ -55,23 +55,30 @@ def _locale_aliases() -> dict[str, str]:
         language = locale.split("-")[0]
         by_language.setdefault(language, set()).add(locale)
     for language, candidates in by_language.items():
-        aliases[language] = sorted(candidates)[0]
+        if len(candidates) == 1:
+            aliases[language] = next(iter(candidates))
     return aliases
 
 
-def resolve_state_locale(state_locale: str | None) -> str:
-    normalized = _normalize_locale(state_locale)
-    available = set(_available_locales())
-    aliases = _locale_aliases()
-    if normalized in available:
+def resolve_supported_state_locale(
+    requested: str | None,
+    available_locales: set[str],
+) -> str:
+    if requested is None:
+        return DEFAULT_STATE_LOCALE
+
+    normalized = _normalize_locale(requested)
+    if normalized in available_locales:
         return normalized
-    if normalized in aliases:
-        return aliases[normalized]
+
     language = normalized.split("-")[0]
-    if language in available:
-        return language
-    if language in aliases:
-        return aliases[language]
+    matches = sorted(
+        locale
+        for locale in available_locales
+        if locale.split("-")[0] == language
+    )
+    if len(matches) == 1:
+        return matches[0]
     return DEFAULT_STATE_LOCALE
 
 
@@ -102,7 +109,10 @@ def _normalize_phrase_list(value: Any) -> tuple[str, ...]:
 def load_semantic_state_phrases(
     state_locale: str | None = None,
 ) -> SemanticStatePhrases:
-    resolved_locale = resolve_state_locale(state_locale)
+    resolved_locale = resolve_supported_state_locale(
+        state_locale,
+        set(_available_locales()),
+    )
     path = _RESOURCE_DIR / f"{resolved_locale}.yaml"
     if not path.exists():
         if resolved_locale != DEFAULT_STATE_LOCALE:
