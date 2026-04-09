@@ -264,9 +264,14 @@ def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     with patch("llm_logparser.core.analyzer_semantic_topic.OllamaClient") as client_cls:
         client = client_cls.return_value
         client.generate_text.side_effect = [
-            "JSON follows:\n"
-            '{"topic_label":"Launch Readiness","summary":"The windows focus on deployment '
-            'checklists, rollback safety, and rollout gates.","keywords":["launch","rollback","monitoring"]}',
+            "{invalid",
+            json.dumps(
+                {
+                    "topic_label": "Launch Readiness",
+                    "summary": "The windows focus on deployment checklists, rollback safety, and rollout gates.",
+                    "keywords": ["launch", "rollback", "monitoring"],
+                }
+            ),
             json.dumps(
                 {
                     "topic_label": "Lunch Planning",
@@ -295,6 +300,7 @@ def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     ]
     first_call = client.generate_text.call_args_list[0]
     assert first_call.kwargs["model"] == "llama3.1:latest"
+    assert first_call.kwargs["response_format"] == "json"
     assert first_call.kwargs["options"]["temperature"] == 0.0
     assert first_call.kwargs["options"]["num_predict"] == 220
     assert "Cluster size: 3" in first_call.kwargs["prompt"]

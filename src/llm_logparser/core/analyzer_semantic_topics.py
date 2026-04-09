@@ -26,8 +26,7 @@ from .analyzer_semantic_topic import (
     DEFAULT_TOPIC_WINDOW_CAP,
     SemanticTopicError,
     TOPIC_PROMPT_TEMPLATE,
-    _call_ollama,
-    _parse_topic_output,
+    _generate_topic_output,
 )
 from .semantic_state import (
     SpanStateResult,
@@ -554,7 +553,7 @@ def _topic_model_fields(
         }
 
     try:
-        raw_output = _call_ollama(
+        parsed = _generate_topic_output(
             model=model,
             prompt=_topic_prompt(
                 cluster_id=cluster_id,
@@ -564,7 +563,6 @@ def _topic_model_fields(
             base_url=base_url,
             timeout_seconds=timeout_seconds,
         )
-        parsed = _parse_topic_output(raw_output)
     except SemanticTopicError as exc:
         raise SemanticTopicsError(str(exc)) from exc
 

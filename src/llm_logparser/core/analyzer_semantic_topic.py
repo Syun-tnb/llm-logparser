@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from .analyzer_semantic_preview import (
 )
 from .llm_client_protocol import LLMClient
 from .ollama_client import OllamaClient
+from .structured_llm import generate_structured_json
 from .semantic_state import (
     aggregate_topic_state,
     classify_span_state,
@@ -45,9 +45,6 @@ Return JSON:
   "summary": "...",
   "keywords": ["..."]
 }"""
-
-JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
-
 
 class SemanticTopicError(RuntimeError):
     pass
@@ -196,19 +193,20 @@ def _build_prompt(cluster: TopicClusterInput) -> str:
     )
 
 
-def _call_ollama(
+def _generate_topic_output(
     *,
     model: str,
     prompt: str,
     base_url: str,
     timeout_seconds: float,
-) -> str:
+) -> dict[str, Any]:
     try:
         client: LLMClient = OllamaClient(
             base_url=base_url,
             timeout=timeout_seconds,
         )
-        return client.generate_text(
+        return generate_structured_json(
+            client,
             model=model,
             prompt=prompt,
             options={
@@ -218,27 +216,6 @@ def _call_ollama(
         )
     except RuntimeError as exc:
         raise SemanticTopicError(str(exc)) from exc
-
-
-def _parse_topic_output(raw_output: str) -> dict[str, Any]:
-    stripped = raw_output.strip()
-    candidates = [stripped]
-    match = JSON_BLOCK_RE.search(stripped)
-    if match is not None and match.group(0) != stripped:
-        candidates.insert(0, match.group(0))
-
-    payload: dict[str, Any] | None = None
-    for candidate in candidates:
-        try:
-            loaded = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(loaded, dict):
-            payload = loaded
-            break
-    if payload is None:
-        raise SemanticTopicError("topic response was not valid JSON")
-    return payload
 
 
 def _normalize_keywords(value: Any) -> list[str]:
@@ -333,13 +310,12 @@ def analyze_semantic_topic(
 
     topics: list[dict[str, Any]] = []
     for cluster in clusters:
-        raw_output = _call_ollama(
+        parsed = _generate_topic_output(
             model=model.strip(),
             prompt=_build_prompt(cluster),
             base_url=base_url,
             timeout_seconds=timeout_seconds,
         )
-        parsed = _parse_topic_output(raw_output)
         topics.append(_topic_payload(cluster=cluster, output=parsed))
 
     return {

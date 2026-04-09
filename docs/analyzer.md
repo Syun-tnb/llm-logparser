@@ -566,7 +566,9 @@ deterministic and model-derived capabilities.
   intent is to keep transport concerns centralized now so broader local-runtime
   abstraction can remain possible later, including future backends such as
   `llama.cpp`; users should not be forced onto Ollama as the only long-term
-  local inference option.
+  local inference option. Structured local-LLM JSON response handling is now
+  also isolated behind a dedicated L3 helper so semantic flows do not need to
+  own ad hoc structured-response parsing logic.
   For Ollama-backed runs, oversized window text is chunked automatically with a
   deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
   one final embedding per window.
