@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import call, patch
 
 import pytest
 
@@ -258,46 +259,28 @@ def _write_japanese_topic_fixture(root: Path) -> None:
 def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topic_fixture(root)
-    captured_requests: list[dict] = []
-    queued_responses = [
-        {
-            "response": (
-                "JSON follows:\n"
-                '{"topic_label":"Launch Readiness","summary":"The windows focus on deployment '
-                'checklists, rollback safety, and rollout gates.","keywords":["launch","rollback","monitoring"]}'
-            )
-        },
-        {
-            "response": json.dumps(
+    del monkeypatch
+
+    with patch("llm_logparser.core.analyzer_semantic_topic.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.generate_text.side_effect = [
+            "JSON follows:\n"
+            '{"topic_label":"Launch Readiness","summary":"The windows focus on deployment '
+            'checklists, rollback safety, and rollout gates.","keywords":["launch","rollback","monitoring"]}',
+            json.dumps(
                 {
                     "topic_label": "Lunch Planning",
                     "summary": "The windows compare lunch choices and seating options for a future outing.",
                     "keywords": ["lunch", "ramen", "cafe"],
                 }
-            )
-        },
-    ]
+            ),
+        ]
 
-    def _fake_urlopen(request, timeout):
-        captured_requests.append(
-            {
-                "url": request.full_url,
-                "timeout": timeout,
-                "body": json.loads(request.data.decode("utf-8")),
-            }
+        rendered = render_semantic_topic(
+            input_root=root,
+            model="llama3.1:latest",
+            top_clusters=2,
         )
-        return _FakeHTTPResponse(queued_responses.pop(0))
-
-    monkeypatch.setattr(
-        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
-        _fake_urlopen,
-    )
-
-    rendered = render_semantic_topic(
-        input_root=root,
-        model="llama3.1:latest",
-        top_clusters=2,
-    )
 
     assert "Cluster cluster_000001" in rendered
     assert "Cluster cluster_000002" in rendered
@@ -306,39 +289,39 @@ def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     assert "Keywords: launch, rollback, monitoring" in rendered
     assert "Representative:" in rendered
     assert "[conv-a / window-0001]" in rendered
-    assert captured_requests[0]["url"] == "http://localhost:11434/api/generate"
-    assert captured_requests[0]["timeout"] == 120.0
-    assert captured_requests[0]["body"]["model"] == "llama3.1:latest"
-    assert captured_requests[0]["body"]["options"]["temperature"] == 0.0
-    assert captured_requests[0]["body"]["options"]["num_predict"] == 220
-    assert "Cluster size: 3" in captured_requests[0]["body"]["prompt"]
+    assert client_cls.call_args_list == [
+        call(base_url="http://localhost:11434", timeout=120.0),
+        call(base_url="http://localhost:11434", timeout=120.0),
+    ]
+    first_call = client.generate_text.call_args_list[0]
+    assert first_call.kwargs["model"] == "llama3.1:latest"
+    assert first_call.kwargs["options"]["temperature"] == 0.0
+    assert first_call.kwargs["options"]["num_predict"] == 220
+    assert "Cluster size: 3" in first_call.kwargs["prompt"]
 
 
 def test_render_semantic_topic_json_filters_cross_thread_clusters(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topic_fixture(root)
 
-    monkeypatch.setattr(
-        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
-        lambda request, timeout: _FakeHTTPResponse(
+    del monkeypatch
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topic.OllamaClient.generate_text",
+        return_value=json.dumps(
             {
-                "response": json.dumps(
-                    {
-                        "topic_label": "Launch Readiness",
-                        "summary": "Deployment readiness and rollback planning dominate the cluster.",
-                        "keywords": ["launch", "rollback", "risk"],
-                    }
-                )
+                "topic_label": "Launch Readiness",
+                "summary": "Deployment readiness and rollback planning dominate the cluster.",
+                "keywords": ["launch", "rollback", "risk"],
             }
         ),
-    )
-
-    rendered = render_semantic_topic(
-        input_root=root,
-        model="llama3.1:latest",
-        cross_thread_only=True,
-        json_output=True,
-    )
+    ):
+        rendered = render_semantic_topic(
+            input_root=root,
+            model="llama3.1:latest",
+            cross_thread_only=True,
+            json_output=True,
+        )
     payload = json.loads(rendered)
 
     assert payload["prompt_variant"] == "prompt_b"
@@ -388,35 +371,32 @@ def test_analyze_semantic_topic_cli_happy_path(tmp_path, monkeypatch, capsys):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topic_fixture(root)
 
-    monkeypatch.setattr(
-        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
-        lambda request, timeout: _FakeHTTPResponse(
+    del monkeypatch
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topic.OllamaClient.generate_text",
+        return_value=json.dumps(
             {
-                "response": json.dumps(
-                    {
-                        "topic_label": "Launch Readiness",
-                        "summary": "Deployment readiness and rollback planning dominate the cluster.",
-                        "keywords": ["launch", "rollback", "risk"],
-                    }
-                )
+                "topic_label": "Launch Readiness",
+                "summary": "Deployment readiness and rollback planning dominate the cluster.",
+                "keywords": ["launch", "rollback", "risk"],
             }
         ),
-    )
-
-    main(
-        [
-            "--locale",
-            "en-US",
-            "analyze",
-            "semantic-topic",
-            "--input",
-            str(root),
-            "--model",
-            "llama3.1:latest",
-            "--cluster-id",
-            "cluster_000001",
-        ]
-    )
+    ):
+        main(
+            [
+                "--locale",
+                "en-US",
+                "analyze",
+                "semantic-topic",
+                "--input",
+                str(root),
+                "--model",
+                "llama3.1:latest",
+                "--cluster-id",
+                "cluster_000001",
+            ]
+        )
 
     output = capsys.readouterr().out
     assert "Cluster cluster_000001" in output
@@ -431,38 +411,35 @@ def test_render_semantic_topic_json_uses_state_locale_for_span_state(tmp_path, m
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_japanese_topic_fixture(root)
 
-    monkeypatch.setattr(
-        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
-        lambda request, timeout: _FakeHTTPResponse(
+    del monkeypatch
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topic.OllamaClient.generate_text",
+        return_value=json.dumps(
             {
-                "response": json.dumps(
-                    {
-                        "topic_label": "Japanese Closure",
-                        "summary": "A resolved Japanese-language confirmation span.",
-                        "keywords": ["japanese", "closure"],
-                    }
-                )
+                "topic_label": "Japanese Closure",
+                "summary": "A resolved Japanese-language confirmation span.",
+                "keywords": ["japanese", "closure"],
             }
         ),
-    )
-
-    default_payload = json.loads(
-        render_semantic_topic(
-            input_root=root,
-            model="llama3.1:latest",
-            cluster_id="cluster_ja_000001",
-            json_output=True,
+    ):
+        default_payload = json.loads(
+            render_semantic_topic(
+                input_root=root,
+                model="llama3.1:latest",
+                cluster_id="cluster_ja_000001",
+                json_output=True,
+            )
         )
-    )
-    japanese_payload = json.loads(
-        render_semantic_topic(
-            input_root=root,
-            model="llama3.1:latest",
-            cluster_id="cluster_ja_000001",
-            state_locale="ja-JP",
-            json_output=True,
+        japanese_payload = json.loads(
+            render_semantic_topic(
+                input_root=root,
+                model="llama3.1:latest",
+                cluster_id="cluster_ja_000001",
+                state_locale="ja-JP",
+                json_output=True,
+            )
         )
-    )
 
     assert default_payload["topics"][0]["state"] == "unresolved"
     assert japanese_payload["topics"][0]["state"] == "done"
@@ -473,37 +450,34 @@ def test_analyze_semantic_topic_cli_accepts_state_locale(tmp_path, monkeypatch, 
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_japanese_topic_fixture(root)
 
-    monkeypatch.setattr(
-        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
-        lambda request, timeout: _FakeHTTPResponse(
+    del monkeypatch
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topic.OllamaClient.generate_text",
+        return_value=json.dumps(
             {
-                "response": json.dumps(
-                    {
-                        "topic_label": "Japanese Closure",
-                        "summary": "A resolved Japanese-language confirmation span.",
-                        "keywords": ["japanese", "closure"],
-                    }
-                )
+                "topic_label": "Japanese Closure",
+                "summary": "A resolved Japanese-language confirmation span.",
+                "keywords": ["japanese", "closure"],
             }
         ),
-    )
-
-    main(
-        [
-            "--locale",
-            "en-US",
-            "analyze",
-            "semantic-topic",
-            "--input",
-            str(root),
-            "--model",
-            "llama3.1:latest",
-            "--cluster-id",
-            "cluster_ja_000001",
-            "--state-locale",
-            "ja-JP",
-        ]
-    )
+    ):
+        main(
+            [
+                "--locale",
+                "en-US",
+                "analyze",
+                "semantic-topic",
+                "--input",
+                str(root),
+                "--model",
+                "llama3.1:latest",
+                "--cluster-id",
+                "cluster_ja_000001",
+                "--state-locale",
+                "ja-JP",
+            ]
+        )
 
     output = capsys.readouterr().out
     assert "State: done" in output

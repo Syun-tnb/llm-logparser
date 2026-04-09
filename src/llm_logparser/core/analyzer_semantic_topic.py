@@ -5,8 +5,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib import error as urllib_error
-from urllib import request as urllib_request
 
 from .analyzer_semantic_preview import (
     SemanticPreviewError,
@@ -17,6 +15,7 @@ from .analyzer_semantic_preview import (
     load_window_preview_index,
     select_representative_cluster_windows,
 )
+from .ollama_client import OllamaClient
 from .semantic_state import (
     aggregate_topic_state,
     classify_span_state,
@@ -196,16 +195,6 @@ def _build_prompt(cluster: TopicClusterInput) -> str:
     )
 
 
-def _decode_error_body(exc: urllib_error.HTTPError) -> str:
-    try:
-        body = exc.read().decode("utf-8").strip()
-    except Exception:
-        body = ""
-    if not body:
-        return ""
-    return f" ({body})"
-
-
 def _call_ollama(
     *,
     model: str,
@@ -213,44 +202,21 @@ def _call_ollama(
     base_url: str,
     timeout_seconds: float,
 ) -> str:
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.0,
-            "num_predict": DEFAULT_OLLAMA_NUM_PREDICT,
-        },
-    }
-    request = urllib_request.Request(
-        f"{base_url.rstrip('/')}/api/generate",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
-            raw_response = response.read().decode("utf-8")
-    except urllib_error.HTTPError as exc:
-        detail = _decode_error_body(exc)
-        raise SemanticTopicError(
-            f"ollama topic request failed for model '{model}': HTTP {exc.code}{detail}"
-        ) from exc
-    except urllib_error.URLError as exc:
-        raise SemanticTopicError(
-            "ollama topic backend is unavailable at "
-            f"{base_url.rstrip('/')}/api/generate: {exc.reason}"
-        ) from exc
-
-    try:
-        payload = json.loads(raw_response)
-    except json.JSONDecodeError as exc:
-        raise SemanticTopicError("ollama topic response was not valid JSON") from exc
-
-    response_text = payload.get("response")
-    if not isinstance(response_text, str) or not response_text.strip():
-        raise SemanticTopicError("ollama topic response is missing 'response' text")
-    return response_text.strip()
+        client = OllamaClient(
+            base_url=base_url,
+            timeout=timeout_seconds,
+        )
+        return client.generate_text(
+            model=model,
+            prompt=prompt,
+            options={
+                "temperature": 0.0,
+                "num_predict": DEFAULT_OLLAMA_NUM_PREDICT,
+            },
+        )
+    except RuntimeError as exc:
+        raise SemanticTopicError(str(exc)) from exc
 
 
 def _parse_topic_output(raw_output: str) -> dict[str, Any]:

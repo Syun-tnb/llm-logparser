@@ -25,6 +25,31 @@ class OllamaClientTests(unittest.TestCase):
             {"model": "nomic-embed-text", "prompt": "hello"},
         )
 
+    def test_generate_text_returns_response_and_passes_options(self) -> None:
+        client = OllamaClient()
+
+        with patch.object(
+            client,
+            "_post",
+            return_value={"response": '  {"key": "value"}  '},
+        ) as post_mock:
+            result = client.generate_text(
+                "llama3.1",
+                "return a JSON object",
+                options={"temperature": 0.0},
+            )
+
+        self.assertEqual(result, '{"key": "value"}')
+        post_mock.assert_called_once_with(
+            "/api/generate",
+            {
+                "model": "llama3.1",
+                "prompt": "return a JSON object",
+                "stream": False,
+                "options": {"temperature": 0.0},
+            },
+        )
+
     def test_generate_json_returns_parsed_dict(self) -> None:
         client = OllamaClient()
 

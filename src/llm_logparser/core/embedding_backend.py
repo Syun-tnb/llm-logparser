@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
-from urllib import error as urllib_error
-from urllib import request as urllib_request
+
+from .ollama_client import OllamaClient
 
 
 class EmbeddingBackend(Protocol):
@@ -102,6 +101,10 @@ class OllamaEmbeddingBackend:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.model_id = f"ollama/{self.model}"
+        self._client = OllamaClient(
+            base_url=self.base_url,
+            timeout=self.timeout_seconds,
+        )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -124,60 +127,17 @@ class OllamaEmbeddingBackend:
         return vectors
 
     def _embed_request(self, texts: list[str]) -> list[list[float]]:
-        payload = {
-            "model": self.model,
-            "input": texts,
-        }
-        body = json.dumps(payload).encode("utf-8")
-        request = urllib_request.Request(
-            f"{self.base_url}/api/embed",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        try:
-            with urllib_request.urlopen(request, timeout=self.timeout_seconds) as response:
-                raw_response = response.read().decode("utf-8")
-        except urllib_error.HTTPError as exc:
-            detail = _decode_error_body(exc)
-            raise RuntimeError(
-                f"ollama embedding request failed for model '{self.model}': "
-                f"HTTP {exc.code}{detail}"
-            ) from exc
-        except urllib_error.URLError as exc:
-            raise RuntimeError(
-                "ollama embedding backend is unavailable at "
-                f"{self.base_url}/api/embed: {exc.reason}"
-            ) from exc
-
-        try:
-            payload = json.loads(raw_response)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("ollama embedding response was not valid JSON") from exc
-
-        embeddings = payload.get("embeddings")
-        if not isinstance(embeddings, list):
-            raise RuntimeError("ollama embedding response is missing 'embeddings'")
-        if len(embeddings) != len(texts):
-            raise RuntimeError(
-                "ollama embedding response count did not match input text count"
-            )
-
         vectors: list[list[float]] = []
-        for index, vector in enumerate(embeddings):
-            if not isinstance(vector, list) or not vector:
+        for index, text in enumerate(texts):
+            vector = self._client.embeddings(
+                model=self.model,
+                prompt=text,
+            )
+            if not vector:
                 raise RuntimeError(
                     f"ollama embedding response contained an invalid vector at index {index}"
                 )
-            normalized_vector: list[float] = []
-            for value in vector:
-                if not isinstance(value, (int, float)):
-                    raise RuntimeError(
-                        "ollama embedding response contained a non-numeric vector value"
-                    )
-                normalized_vector.append(float(value))
-            vectors.append(normalized_vector)
+            vectors.append(vector)
         return vectors
 
 
@@ -194,16 +154,6 @@ def _l2_normalize(vector: list[float]) -> list[float]:
     if norm == 0.0:
         return [0.0] * len(vector)
     return [value / norm for value in vector]
-
-
-def _decode_error_body(exc: urllib_error.HTTPError) -> str:
-    try:
-        body = exc.read().decode("utf-8").strip()
-    except Exception:
-        body = ""
-    if not body:
-        return ""
-    return f" ({body})"
 
 
 def resolve_embedding_model_settings(

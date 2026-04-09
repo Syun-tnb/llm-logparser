@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -548,26 +549,23 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
         ],
     )
 
-    monkeypatch.setattr(
-        "llm_logparser.core.analyzer_semantic_topic.urllib_request.urlopen",
-        lambda request, timeout: _FakeHTTPResponse(
+    del monkeypatch
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topic.OllamaClient.generate_text",
+        return_value=json.dumps(
             {
-                "response": json.dumps(
-                    {
-                        "topic_label": "Launch Readiness",
-                        "summary": "Deployment readiness and rollback planning dominate the topic.",
-                        "keywords": ["launch", "rollback", "monitoring"],
-                    }
-                )
+                "topic_label": "Launch Readiness",
+                "summary": "Deployment readiness and rollback planning dominate the topic.",
+                "keywords": ["launch", "rollback", "monitoring"],
             }
         ),
-    )
-
-    result = write_semantic_topics_artifacts(
-        root,
-        model="llama3.1:latest",
-        cluster_id="cluster_000001",
-    )
+    ):
+        result = write_semantic_topics_artifacts(
+            root,
+            model="llama3.1:latest",
+            cluster_id="cluster_000001",
+        )
 
     topics_path = Path(result["topics_path"])
     membership_path = Path(result["membership_path"])

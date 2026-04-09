@@ -73,23 +73,41 @@ class OllamaClient:
             )
         return [float(value) for value in embedding]
 
-    def generate_json(self, model: str, prompt: str) -> dict:
-        """Generate a structured JSON object from Ollama with one retry."""
-        payload = {
+    def generate_text(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        response_format: str | None = None,
+        options: dict[str, object] | None = None,
+    ) -> str:
+        """Return raw response text from Ollama's generate API."""
+        payload: dict[str, object] = {
             "model": model,
             "prompt": prompt,
-            "format": "json",
             "stream": False,
         }
+        if response_format is not None:
+            payload["format"] = response_format
+        if options:
+            payload["options"] = options
 
+        response_payload = self._post("/api/generate", payload)
+        response_text = response_payload.get("response")
+        if not isinstance(response_text, str) or not response_text.strip():
+            raise RuntimeError(
+                "Ollama response for /api/generate is missing 'response'"
+            )
+        return response_text.strip()
+
+    def generate_json(self, model: str, prompt: str) -> dict:
+        """Generate a structured JSON object from Ollama with one retry."""
         for attempt in range(2):
-            response_payload = self._post("/api/generate", payload)
-            response_text = response_payload.get("response")
-            if not isinstance(response_text, str) or not response_text.strip():
-                raise RuntimeError(
-                    "Ollama response for /api/generate is missing 'response'"
-                )
-
+            response_text = self.generate_text(
+                model,
+                prompt,
+                response_format="json",
+            )
             try:
                 decoded = json.loads(response_text)
             except json.JSONDecodeError as exc:

@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 from pathlib import Path
+from unittest.mock import call, patch
 
 import pytest
 
@@ -2583,86 +2584,64 @@ def test_cli_ollama_backend_requires_model(tmp_path, caplog):
 
 
 def test_ollama_embedding_backend_returns_vectors(monkeypatch):
-    captured_requests: list[dict[str, object]] = []
+    del monkeypatch
 
-    def _fake_urlopen(request, timeout):
-        captured_requests.append(
-            {
-                "url": request.full_url,
-                "timeout": timeout,
-                "body": json.loads(request.data.decode("utf-8")),
-            }
-        )
-        body = captured_requests[-1]["body"]
-        if body["input"] == ["alpha"]:
-            return _FakeHTTPResponse({"embeddings": [[0.1, 0.2]]})
-        return _FakeHTTPResponse({"embeddings": [[0.3, 0.4]]})
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.side_effect = [[0.1, 0.2], [0.3, 0.4]]
 
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        _fake_urlopen,
-    )
-
-    backend = OllamaEmbeddingBackend("embeddinggemma")
-    vectors = backend.embed(["alpha", "beta"])
+        backend = OllamaEmbeddingBackend("embeddinggemma")
+        vectors = backend.embed(["alpha", "beta"])
 
     assert backend.model_id == "ollama/embeddinggemma"
     assert vectors == [[0.1, 0.2], [0.3, 0.4]]
-    assert [request["url"] for request in captured_requests] == [
-        "http://localhost:11434/api/embed",
-        "http://localhost:11434/api/embed",
-    ]
-    assert [request["body"] for request in captured_requests] == [
-        {
-            "model": "embeddinggemma",
-            "input": ["alpha"],
-        },
-        {
-            "model": "embeddinggemma",
-            "input": ["beta"],
-        },
+    client_cls.assert_called_once_with(
+        base_url="http://localhost:11434",
+        timeout=30.0,
+    )
+    assert client.embeddings.call_args_list == [
+        call(model="embeddinggemma", prompt="alpha"),
+        call(model="embeddinggemma", prompt="beta"),
     ]
 
 
 def test_ollama_embedding_backend_chunks_long_input_and_aggregates(monkeypatch):
-    captured_requests: list[dict[str, object]] = []
+    del monkeypatch
 
-    def _fake_urlopen(request, timeout):
-        body = json.loads(request.data.decode("utf-8"))
-        captured_requests.append(body)
-        assert body["input"] == ["abcd", "defg", "gh"]
-        return _FakeHTTPResponse({"embeddings": [[1.0, 1.0], [3.0, 3.0], [5.0, 5.0]]})
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.side_effect = [[1.0, 1.0], [3.0, 3.0], [5.0, 5.0]]
 
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        _fake_urlopen,
-    )
-
-    backend = OllamaEmbeddingBackend(
-        "nomic-embed-text-v2-moe",
-        settings=resolve_embedding_model_settings(
+        backend = OllamaEmbeddingBackend(
             "nomic-embed-text-v2-moe",
-            max_input_bytes=4,
-            chunk_overlap_bytes=1,
-        ),
-    )
+            settings=resolve_embedding_model_settings(
+                "nomic-embed-text-v2-moe",
+                max_input_bytes=4,
+                chunk_overlap_bytes=1,
+            ),
+        )
 
-    vectors = backend.embed(["abcdefgh"])
+        vectors = backend.embed(["abcdefgh"])
 
-    assert len(captured_requests) == 1
+    assert client.embeddings.call_args_list == [
+        call(model="nomic-embed-text-v2-moe", prompt="abcd"),
+        call(model="nomic-embed-text-v2-moe", prompt="defg"),
+        call(model="nomic-embed-text-v2-moe", prompt="gh"),
+    ]
     assert vectors == [[3.0, 3.0]]
 
 
 def test_ollama_embedding_backend_rejects_malformed_response(monkeypatch):
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        lambda request, timeout: _FakeHTTPResponse({"embedding": [0.1, 0.2]}),
-    )
+    del monkeypatch
 
-    backend = OllamaEmbeddingBackend("embeddinggemma")
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.return_value = []
 
-    with pytest.raises(RuntimeError, match="missing 'embeddings'"):
-        backend.embed(["alpha"])
+        backend = OllamaEmbeddingBackend("embeddinggemma")
+
+        with pytest.raises(RuntimeError, match="invalid vector at index 0"):
+            backend.embed(["alpha"])
 
 
 def test_analyze_semantic_prototype_cli_with_ollama_backend(tmp_path, monkeypatch):
@@ -2692,34 +2671,26 @@ def test_analyze_semantic_prototype_cli_with_ollama_backend(tmp_path, monkeypatc
         [0.1, 0.9],
     ]
 
-    captured_requests: list[list[str]] = []
+    del monkeypatch
 
-    def _fake_urlopen(request, timeout):
-        body = json.loads(request.data.decode("utf-8"))
-        assert body["model"] == "embeddinggemma"
-        captured_requests.append(body["input"])
-        vector = vectors[len(captured_requests) - 1]
-        return _FakeHTTPResponse({"embeddings": [vector]})
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.side_effect = vectors
 
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        _fake_urlopen,
-    )
-
-    main(
-        [
-            "analyze",
-            "semantic-prototype",
-            "--input",
-            str(tmp_path / "artifacts"),
-            "--backend",
-            "ollama",
-            "--model",
-            "embeddinggemma",
-            "--top-k",
-            "1",
-        ]
-    )
+        main(
+            [
+                "analyze",
+                "semantic-prototype",
+                "--input",
+                str(tmp_path / "artifacts"),
+                "--backend",
+                "ollama",
+                "--model",
+                "embeddinggemma",
+                "--top-k",
+                "1",
+            ]
+        )
 
     embeddings_path = thread_a.with_name("window_embeddings.jsonl")
     neighbors_path = thread_a.with_name("window_neighbors.jsonl")
@@ -2739,11 +2710,15 @@ def test_analyze_semantic_prototype_cli_with_ollama_backend(tmp_path, monkeypatc
     assert neighbor_rows[0]["embedding_model"] == "ollama/embeddinggemma"
     assert neighbor_rows[0]["neighbor_count"] == 1
     assert neighbor_rows[0]["neighbors"][0]["conversation_id"] == "conv-b"
-    assert captured_requests == [
-        ["alpha beta"],
-        ["release note draft"],
-        ["alpha gamma"],
-        ["database migration"],
+    client_cls.assert_called_once_with(
+        base_url="http://localhost:11434",
+        timeout=30.0,
+    )
+    assert client.embeddings.call_args_list == [
+        call(model="embeddinggemma", prompt="alpha beta"),
+        call(model="embeddinggemma", prompt="release note draft"),
+        call(model="embeddinggemma", prompt="alpha gamma"),
+        call(model="embeddinggemma", prompt="database migration"),
     ]
 
 
@@ -2785,28 +2760,21 @@ def test_semantic_prototype_reads_config_profile_settings(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    def _fake_urlopen(request, timeout):
-        body = json.loads(request.data.decode("utf-8"))
-        assert request.full_url == "http://localhost:22434/api/embed"
-        assert timeout == 12.5
-        assert body["model"] == "nomic-embed-text-v2-moe"
-        assert body["input"] in (["abcd", "defg", "gh"], ["ijkl", "lmno", "op"])
-        return _FakeHTTPResponse({"embeddings": [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]]})
+    del monkeypatch
 
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        _fake_urlopen,
-    )
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.return_value = [1.0, 0.0]
 
-    main(
-        [
-            "--config",
-            str(config_path),
-            "analyze",
-            "semantic-prototype",
-            "--overwrite",
-        ]
-    )
+        main(
+            [
+                "--config",
+                str(config_path),
+                "analyze",
+                "semantic-prototype",
+                "--overwrite",
+            ]
+        )
 
     embedding_rows = [
         json.loads(line)
@@ -2814,6 +2782,18 @@ def test_semantic_prototype_reads_config_profile_settings(tmp_path, monkeypatch)
         if line.strip()
     ]
     assert embedding_rows[0]["embedding_model"] == "ollama/nomic-embed-text-v2-moe"
+    client_cls.assert_called_once_with(
+        base_url="http://localhost:22434",
+        timeout=12.5,
+    )
+    assert client.embeddings.call_args_list == [
+        call(model="nomic-embed-text-v2-moe", prompt="abcd"),
+        call(model="nomic-embed-text-v2-moe", prompt="defg"),
+        call(model="nomic-embed-text-v2-moe", prompt="gh"),
+        call(model="nomic-embed-text-v2-moe", prompt="ijkl"),
+        call(model="nomic-embed-text-v2-moe", prompt="lmno"),
+        call(model="nomic-embed-text-v2-moe", prompt="op"),
+    ]
 
 
 def test_semantic_prototype_uses_safe_defaults_when_config_omits_embedding_overrides(
@@ -2847,42 +2827,28 @@ def test_semantic_prototype_uses_safe_defaults_when_config_omits_embedding_overr
         encoding="utf-8",
     )
 
-    captured_requests: list[dict[str, object]] = []
+    del monkeypatch
 
-    def _fake_urlopen(request, timeout):
-        captured_requests.append(
-            {
-                "url": request.full_url,
-                "timeout": timeout,
-                "body": json.loads(request.data.decode("utf-8")),
-            }
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.return_value = [1.0, 0.0]
+
+        main(
+            [
+                "--config",
+                str(config_path),
+                "analyze",
+                "semantic-prototype",
+                "--overwrite",
+            ]
         )
-        return _FakeHTTPResponse({"embeddings": [[1.0, 0.0]]})
 
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        _fake_urlopen,
+    client_cls.assert_called_once_with(
+        base_url="http://localhost:11434",
+        timeout=30.0,
     )
-
-    main(
-        [
-            "--config",
-            str(config_path),
-            "analyze",
-            "semantic-prototype",
-            "--overwrite",
-        ]
-    )
-
-    assert captured_requests == [
-        {
-            "url": "http://localhost:11434/api/embed",
-            "timeout": 30.0,
-            "body": {
-                "model": "custom-local-embedder",
-                "input": ["alpha beta"],
-            },
-        }
+    assert client.embeddings.call_args_list == [
+        call(model="custom-local-embedder", prompt="alpha beta")
     ]
 
 
@@ -2930,29 +2896,25 @@ def test_semantic_prototype_cli_overrides_config(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    def _fake_urlopen(request, timeout):
-        body = json.loads(request.data.decode("utf-8"))
-        chunk_count = len(body["input"])
-        return _FakeHTTPResponse({"embeddings": [[1.0, 0.0]] * chunk_count})
+    del monkeypatch
 
-    monkeypatch.setattr(
-        "llm_logparser.core.embedding_backend.urllib_request.urlopen",
-        _fake_urlopen,
-    )
+    with patch("llm_logparser.core.embedding_backend.OllamaClient") as client_cls:
+        client = client_cls.return_value
+        client.embeddings.return_value = [1.0, 0.0]
 
-    main(
-        [
-            "--config",
-            str(config_path),
-            "analyze",
-            "semantic-prototype",
-            "--top-k",
-            "1",
-            "--model",
-            "embeddinggemma",
-            "--overwrite",
-        ]
-    )
+        main(
+            [
+                "--config",
+                str(config_path),
+                "analyze",
+                "semantic-prototype",
+                "--top-k",
+                "1",
+                "--model",
+                "embeddinggemma",
+                "--overwrite",
+            ]
+        )
 
     neighbor_rows = [
         json.loads(line)
@@ -2967,6 +2929,10 @@ def test_semantic_prototype_cli_overrides_config(tmp_path, monkeypatch):
 
     assert neighbor_rows[0]["neighbor_count"] == 1
     assert embedding_rows[0]["embedding_model"] == "ollama/embeddinggemma"
+    client_cls.assert_called_once_with(
+        base_url="http://localhost:11434",
+        timeout=30.0,
+    )
 
 
 def test_analyze_semantic_prototype_neighbor_progress_for_large_runs(tmp_path):
