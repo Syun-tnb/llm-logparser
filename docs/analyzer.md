@@ -557,13 +557,16 @@ deterministic and model-derived capabilities.
   All Ollama-backed semantic flows now route through
   `llm_logparser.core.ollama_client.OllamaClient`, replacing duplicated local
   request helpers with a single stdlib-only I/O boundary and consistent error
-  handling. It remains isolated from canonical parsing and deterministic L1/L2
-  processing. This is a current implementation choice for the present local
-  runtime path, not a permanent requirement that Ollama be the only supported
-  runtime. The architectural intent is to keep transport concerns centralized
-  now so broader local-runtime abstraction can remain possible later, including
-  future backends such as `llama.cpp`; users should not be forced onto Ollama
-  as the only long-term local inference option.
+  handling. Higher-layer code is now also shaped around a small client
+  protocol, so the current `OllamaClient` remains the concrete implementation
+  without becoming the permanent type-level dependency. It remains isolated
+  from canonical parsing and deterministic L1/L2 processing. This is a current
+  implementation choice for the present local runtime path, not a permanent
+  requirement that Ollama be the only supported runtime. The architectural
+  intent is to keep transport concerns centralized now so broader local-runtime
+  abstraction can remain possible later, including future backends such as
+  `llama.cpp`; users should not be forced onto Ollama as the only long-term
+  local inference option.
   For Ollama-backed runs, oversized window text is chunked automatically with a
   deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
   one final embedding per window.

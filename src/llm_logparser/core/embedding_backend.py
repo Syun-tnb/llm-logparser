@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+from .llm_client_protocol import LLMClient
 from .ollama_client import OllamaClient
 
 
@@ -101,7 +102,7 @@ class OllamaEmbeddingBackend:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.model_id = f"ollama/{self.model}"
-        self._client = OllamaClient(
+        self._client: LLMClient = OllamaClient(
             base_url=self.base_url,
             timeout=self.timeout_seconds,
         )

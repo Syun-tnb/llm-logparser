@@ -15,6 +15,7 @@ from .analyzer_semantic_preview import (
     load_window_preview_index,
     select_representative_cluster_windows,
 )
+from .llm_client_protocol import LLMClient
 from .ollama_client import OllamaClient
 from .semantic_state import (
     aggregate_topic_state,
@@ -203,7 +204,7 @@ def _call_ollama(
     timeout_seconds: float,
 ) -> str:
     try:
-        client = OllamaClient(
+        client: LLMClient = OllamaClient(
             base_url=base_url,
             timeout=timeout_seconds,
         )
