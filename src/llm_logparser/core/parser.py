@@ -588,33 +588,3 @@ def extract_to_json(
     if not isinstance(result, dict):
         raise LLPAdapterError("extractor returned invalid result")
     return result
-
-
-# ============================================================
-# 6. CLI Entry (Debug Only)
-# ============================================================
-
-if __name__ == "__main__":
-    import argparse
-    from ..cli.cli import setup_logger
-
-    setup_logger()
-
-    parser = argparse.ArgumentParser(description="Parse LLM export logs to JSONL (final robust version)")
-    parser.add_argument("--provider", required=True)
-    parser.add_argument("--input", required=True, type=Path)
-    parser.add_argument("--outdir", type=Path, default=Path("artifacts/output"))
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--fail-fast", action="store_true")
-    parser.add_argument("--progress-interval", type=int, default=100)
-
-    args = parser.parse_args()
-
-    parse_to_jsonl(
-        args.provider,
-        args.input,
-        args.outdir,
-        dry_run=args.dry_run,
-        fail_fast=args.fail_fast,
-        progress_interval=args.progress_interval,
-    )
