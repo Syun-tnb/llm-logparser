@@ -235,7 +235,16 @@ def adapter(messages: Any, *, source: str | None = None) -> list[dict]:
 
 
 def get_adapter():
-    return adapter
+    def _adapter(
+        messages: Any,
+        *,
+        source: str | None = None,
+        logger=None,
+    ) -> list[dict]:
+        del logger
+        return adapter(messages, source=source)
+
+    return _adapter
 
 
 def get_input_records():

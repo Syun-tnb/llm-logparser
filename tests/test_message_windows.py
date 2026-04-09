@@ -31,7 +31,8 @@ def _canonical_message(
     }
 
 
-def _fake_adapter(_raw):
+def _fake_adapter(_raw, *, source=None, logger=None):
+    del source, logger
     return [
         {
             "conversation_id": "conv-1",

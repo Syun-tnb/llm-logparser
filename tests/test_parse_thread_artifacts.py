@@ -63,7 +63,8 @@ def test_parse_dry_run_does_not_write_thread_stats_artifact(tmp_path):
     assert not (thread_dir / "thread_stats.json").exists()
 
 
-def _adapter_without_record_type(_raw):
+def _adapter_without_record_type(_raw, *, source=None, logger=None):
+    del source, logger
     return [
         {
             "conversation_id": "conv-validate-schema",

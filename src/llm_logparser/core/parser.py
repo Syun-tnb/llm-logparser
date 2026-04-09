@@ -16,6 +16,11 @@ except Exception:  # pragma: no cover
 from .l1_derivation import ThreadMetrics, build_thread_stats_artifact
 from .i18n import _
 from .message_windows import render_message_windows_jsonl
+from .provider_adapter_protocol import (
+    ProviderAdapter,
+    ProviderInputRecords,
+    ProviderRecordExpander,
+)
 from .utils import format_display_path
 
 # ============================================================
@@ -49,19 +54,23 @@ def load_adapter(provider: str):
     get_adapter = getattr(mod, "get_adapter", None)
     if not get_adapter:
         raise LLPAdapterError(f"adapter missing for provider={provider}")
-    adapter = get_adapter()
+    adapter: ProviderAdapter = get_adapter()
     get_record_expander = getattr(mod, "get_record_expander", None)
+    record_expander: ProviderRecordExpander | None = None
     if callable(get_record_expander):
         try:
-            setattr(adapter, "__llp_record_expander__", get_record_expander())
+            record_expander = get_record_expander()
         except Exception:
-            pass
+            record_expander = None
+    setattr(adapter, "__llp_record_expander__", record_expander)
     get_input_records = getattr(mod, "get_input_records", None)
+    input_records: ProviderInputRecords | None = None
     if callable(get_input_records):
         try:
-            setattr(adapter, "__llp_input_records__", get_input_records())
+            input_records = get_input_records()
         except Exception:
-            pass
+            input_records = None
+    setattr(adapter, "__llp_input_records__", input_records)
     manifest = getattr(mod, "get_manifest", lambda: {})()
     policy = getattr(mod, "get_policy", lambda: {})()
     return adapter, manifest, policy
@@ -286,46 +295,24 @@ def write_message_windows_artifact(
 
 
 def _invoke_adapter(
-    adapter_func,
+    adapter_func: ProviderAdapter,
     raw: dict,
     *,
     source: str,
     logger: logging.Logger | None = None,
 ) -> list[dict]:
-    """Call provider adapter with optional source context and TypeError fallback."""
-    try:
-        try:
-            params = signature(adapter_func).parameters
-        except Exception:
-            params = {}
-        adapter_kwargs: dict[str, Any] = {}
-        if "source" in params:
-            adapter_kwargs["source"] = source
-        if "logger" in params:
-            adapter_kwargs["logger"] = logger
-        recs_iter = adapter_func(raw, **adapter_kwargs)
-    except TypeError:
-        recs_iter = adapter_func(raw)
-    return list(recs_iter)
+    """Call provider adapter through the explicit provider boundary."""
+    return list(adapter_func(raw, source=source, logger=logger))
 
 
-def _iter_provider_input_records(adapter_func, input_path: Path, logger: logging.Logger):
-    """Call provider input iterator with TypeError fallback and normalize tuples."""
-    input_records_func = getattr(adapter_func, "__llp_input_records__", None)
-    if not callable(input_records_func):
-        input_records_func = iter_input_records
-
-    try:
-        try:
-            params = signature(input_records_func).parameters
-        except Exception:
-            params = {}
-        if "logger" in params or len(params) >= 2:
-            records_iter = input_records_func(input_path, logger)
-        else:
-            records_iter = input_records_func(input_path)
-    except TypeError:
-        records_iter = input_records_func(input_path)
+def _iter_provider_input_records(
+    adapter_func: ProviderAdapter,
+    input_path: Path,
+    logger: logging.Logger,
+):
+    """Call the provider input iterator and normalize tuple output."""
+    input_records_func = getattr(adapter_func, "__llp_input_records__", None) or iter_input_records
+    records_iter = input_records_func(input_path, logger)
 
     for item in records_iter:
         if (
@@ -365,7 +352,7 @@ def parse_to_jsonl(
         _("runtime.parser.start_parse", provider=provider, dry_run=dry_run, fail_fast=fail_fast)
     )
 
-    adapter_func, manifest, policy = load_adapter(provider)
+    adapter_func, _manifest, policy = load_adapter(provider)
     provider_dir = outdir / provider
     provider_dir.mkdir(parents=True, exist_ok=True)
     manifest_old = load_manifest_if_exists(provider_dir)
@@ -385,7 +372,7 @@ def parse_to_jsonl(
     stats = {"threads": 0, "messages": 0}
     manifest_index = []
     record_expander = getattr(adapter_func, "__llp_record_expander__", None)
-    if not callable(record_expander):
+    if record_expander is None:
         record_expander = lambda raw: [raw]
 
     for raw, raw_source in _iter_provider_input_records(adapter_func, input_path, log):

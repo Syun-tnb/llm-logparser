@@ -141,4 +141,13 @@ def adapter(conversation: dict, *, source: str | None = None) -> list[dict]:
 
 
 def get_adapter():
-    return adapter
+    def _adapter(
+        conversation: dict,
+        *,
+        source: str | None = None,
+        logger=None,
+    ) -> list[dict]:
+        del logger
+        return adapter(conversation, source=source)
+
+    return _adapter

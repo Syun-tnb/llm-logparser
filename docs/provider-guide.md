@@ -63,7 +63,9 @@ Supported scopes:
 ## Adding a Provider
 
 1. Create a package under `src/llm_logparser/core/providers/<id>/`.
-2. Implement `adapter.py` with a function `adapter(conversation: dict) -> list[dict]` and `get_adapter() -> Callable`.
+2. Implement `adapter.py` with a function that normalizes one provider record into message rows, and a `get_adapter()` callable that matches the parser boundary:
+   `adapter(record, *, source: str | None = None, logger: logging.Logger | None = None) -> Iterable[dict]`.
+   Adapters may ignore `source` and `logger`, but the callable shape should remain explicit.
 3. Optionally implement `extractor.py` with `get_extractor()`.
 4. Ensure golden tests for sample → expected Markdown.
 
