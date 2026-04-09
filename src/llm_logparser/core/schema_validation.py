@@ -76,6 +76,21 @@ WINDOW_NEIGHBORS_SCHEMA_NAME = "window_neighbors.schema.json"
 WINDOW_CLUSTERS_SCHEMA_NAME = "window_clusters.schema.json"
 TOPICS_SCHEMA_NAME = "topics.schema.json"
 TOPIC_MEMBERSHIP_SCHEMA_NAME = "topic_membership.schema.json"
+SCHEMA_FILE_NAMES = frozenset(
+    {
+        MESSAGE_SCHEMA_NAME,
+        MANIFEST_SCHEMA_NAME,
+        TOKEN_STATS_SCHEMA_NAME,
+        METRICS_SCHEMA_NAME,
+        THREAD_STATS_SCHEMA_NAME,
+        MESSAGE_WINDOWS_SCHEMA_NAME,
+        WINDOW_EMBEDDING_SCHEMA_NAME,
+        WINDOW_NEIGHBORS_SCHEMA_NAME,
+        WINDOW_CLUSTERS_SCHEMA_NAME,
+        TOPICS_SCHEMA_NAME,
+        TOPIC_MEMBERSHIP_SCHEMA_NAME,
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +176,17 @@ def _make_validator(schema_path: Path):
     return ValidatorCls(schema)
 
 
+def load_validator(
+    schema_name: str,
+    schema_path: Optional[Path] = None,
+):
+    """Return a validator for one explicit schema file name."""
+    if schema_name not in SCHEMA_FILE_NAMES:
+        raise ValueError(f"unknown schema name: {schema_name}")
+    resolved_path = schema_path or (SCHEMAS_ROOT / schema_name)
+    return _make_validator(resolved_path)
+
+
 def load_message_validator(
     schema_path: Optional[Path] = None,
 ):
@@ -172,9 +198,7 @@ def load_message_validator(
     schema_path:
         If None, SCHEMAS_ROOT / MESSAGE_SCHEMA_NAME is used.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / MESSAGE_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(MESSAGE_SCHEMA_NAME, schema_path)
 
 
 def load_manifest_validator(
@@ -183,9 +207,7 @@ def load_manifest_validator(
     """
     Returns a validator for manifest.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / MANIFEST_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(MANIFEST_SCHEMA_NAME, schema_path)
 
 
 def load_token_stats_validator(
@@ -194,9 +216,7 @@ def load_token_stats_validator(
     """
     Returns a validator for token_stats.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / TOKEN_STATS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(TOKEN_STATS_SCHEMA_NAME, schema_path)
 
 
 def load_metrics_validator(
@@ -205,9 +225,7 @@ def load_metrics_validator(
     """
     Returns a validator for metrics.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / METRICS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(METRICS_SCHEMA_NAME, schema_path)
 
 
 def load_thread_stats_validator(
@@ -216,9 +234,7 @@ def load_thread_stats_validator(
     """
     Returns a validator for thread_stats.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / THREAD_STATS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(THREAD_STATS_SCHEMA_NAME, schema_path)
 
 
 def load_message_windows_validator(
@@ -227,9 +243,7 @@ def load_message_windows_validator(
     """
     Returns a validator for message_windows.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / MESSAGE_WINDOWS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(MESSAGE_WINDOWS_SCHEMA_NAME, schema_path)
 
 
 def load_window_embedding_validator(
@@ -238,9 +252,7 @@ def load_window_embedding_validator(
     """
     Returns a validator for window_embedding.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / WINDOW_EMBEDDING_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(WINDOW_EMBEDDING_SCHEMA_NAME, schema_path)
 
 
 def load_window_neighbors_validator(
@@ -249,9 +261,7 @@ def load_window_neighbors_validator(
     """
     Returns a validator for window_neighbors.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / WINDOW_NEIGHBORS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(WINDOW_NEIGHBORS_SCHEMA_NAME, schema_path)
 
 
 def load_window_clusters_validator(
@@ -260,9 +270,7 @@ def load_window_clusters_validator(
     """
     Returns a validator for window_clusters.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / WINDOW_CLUSTERS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(WINDOW_CLUSTERS_SCHEMA_NAME, schema_path)
 
 
 def load_topics_validator(
@@ -271,9 +279,7 @@ def load_topics_validator(
     """
     Returns a validator for topics.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / TOPICS_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(TOPICS_SCHEMA_NAME, schema_path)
 
 
 def load_topic_membership_validator(
@@ -282,9 +288,7 @@ def load_topic_membership_validator(
     """
     Returns a validator for topic_membership.schema.json.
     """
-    if schema_path is None:
-        schema_path = SCHEMAS_ROOT / TOPIC_MEMBERSHIP_SCHEMA_NAME
-    return _make_validator(schema_path)
+    return load_validator(TOPIC_MEMBERSHIP_SCHEMA_NAME, schema_path)
 
 
 class MessageValidationError(RuntimeError):
@@ -296,7 +300,7 @@ class MessageValidationError(RuntimeError):
 class MessageSchemaValidator:
     def __init__(self, schema_path: Optional[Path] = None):
         self.schema_path = schema_path or (SCHEMAS_ROOT / MESSAGE_SCHEMA_NAME)
-        self._validator = load_message_validator(self.schema_path)
+        self._validator = load_validator(MESSAGE_SCHEMA_NAME, self.schema_path)
 
     @property
     def validator(self):
@@ -321,7 +325,7 @@ class MessageSchemaValidator:
 class ManifestSchemaValidator:
     def __init__(self, schema_path: Optional[Path] = None):
         self.schema_path = schema_path or (SCHEMAS_ROOT / MANIFEST_SCHEMA_NAME)
-        self._validator = load_manifest_validator(self.schema_path)
+        self._validator = load_validator(MANIFEST_SCHEMA_NAME, self.schema_path)
 
     def validate_manifest(self, obj: Mapping[str, Any]) -> None:
         violations = list(self._validator.iter_errors(obj))
@@ -391,7 +395,7 @@ def validate_parsed_jsonl(
     if isinstance(validator, MessageSchemaValidator):
         validator = validator.validator
     if validator is None:
-        validator = load_message_validator(schema_path)
+        validator = load_validator(MESSAGE_SCHEMA_NAME, schema_path)
 
     violations: list[SchemaViolation] = []
 
@@ -450,7 +454,7 @@ def validate_manifest_file(
     Helper to validate manifest.json using manifest.schema.json.
     """
     if validator is None:
-        validator = load_manifest_validator(schema_path)
+        validator = load_validator(MANIFEST_SCHEMA_NAME, schema_path)
 
     summary = validate_json_file(path, validator=validator, location=None)
     if stop_on_first_error and not summary.ok:

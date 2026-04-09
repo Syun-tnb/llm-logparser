@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from llm_logparser.core.schema_validation import MessageSchemaValidator, MessageValidationError
+from llm_logparser.core.schema_validation import (
+    MESSAGE_SCHEMA_NAME,
+    MessageSchemaValidator,
+    MessageValidationError,
+    load_validator,
+)
 
 
 GOOD_MESSAGE = {
@@ -28,3 +33,13 @@ def test_message_validator_rejects_missing_required_field():
     invalid.pop("role")
     with pytest.raises(MessageValidationError):
         validator.validate_message(invalid)
+
+
+def test_load_validator_loads_message_schema():
+    validator = load_validator(MESSAGE_SCHEMA_NAME)
+    assert list(validator.iter_errors(GOOD_MESSAGE)) == []
+
+
+def test_load_validator_rejects_unknown_schema_name():
+    with pytest.raises(ValueError, match="unknown schema name"):
+        load_validator("unknown.schema.json")
