@@ -554,6 +554,11 @@ deterministic and model-derived capabilities.
   message-window stride smaller than window size.
   It supports a default `deterministic-hash` backend for local plumbing/tests
   and an `ollama` backend for real local embeddings via a local Ollama model.
+  Ollama HTTP integration is centralized in
+  `llm_logparser.core.ollama_client.OllamaClient`, which keeps a single
+  stdlib-only I/O boundary for Ollama-backed L3/L4 work and standardizes
+  request/response error handling. It is not part of canonical parsing or
+  deterministic L1/L2 processing.
   For Ollama-backed runs, oversized window text is chunked automatically with a
   deterministic UTF-8 byte budget and chunk embeddings are aggregated back into
   one final embedding per window.
