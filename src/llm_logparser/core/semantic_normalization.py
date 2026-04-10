@@ -9,6 +9,8 @@ from .structured_llm import generate_structured_json
 
 SEED_TAXONOMY_VERSION = "seed_taxonomy_v0"
 RAW_LABEL_CONFIDENCE_THRESHOLD = 0.65
+MethodKind = Literal["llm", "rule", "hybrid"]
+MappingStatus = Literal["mapped", "needs_review", "taxonomy_gap", "unmapped"]
 STABLE_NORMALIZED_LABELS = (
     "proposal",
     "request",
@@ -21,7 +23,12 @@ STABLE_NORMALIZED_LABELS = (
     "status_update",
     "reflection",
 )
-MAPPING_STATUSES = ("mapped", "needs_review", "taxonomy_gap", "unmapped")
+MAPPING_STATUSES: tuple[MappingStatus, ...] = (
+    "mapped",
+    "needs_review",
+    "taxonomy_gap",
+    "unmapped",
+)
 NO_DOMINANT_RAW_LABELS = frozenset(
     {
         "no_dominant_act",
@@ -154,7 +161,7 @@ Span:
 
 @dataclass(frozen=True)
 class SemanticNormalizationMethod:
-    kind: Literal["llm", "rule", "hybrid"]
+    kind: MethodKind
     model: str | None
     mapping_version: str = SEED_TAXONOMY_VERSION
 
@@ -168,7 +175,7 @@ class SemanticNormalizationResult:
     unit_kind: Literal["representative_span"]
     raw_label: str
     normalized_label: str | None
-    mapping_status: Literal["mapped", "needs_review", "taxonomy_gap", "unmapped"]
+    mapping_status: MappingStatus
     confidence: float | None
     method: SemanticNormalizationMethod
 
@@ -207,7 +214,7 @@ def _stable_label(value: Any) -> str | None:
     return normalized if normalized in STABLE_NORMALIZED_LABELS else None
 
 
-def _mapping_status(value: Any) -> str | None:
+def _mapping_status(value: Any) -> MappingStatus | None:
     if not isinstance(value, str):
         return None
     normalized = value.strip().casefold()
@@ -222,9 +229,9 @@ def _result(
     message_ids: list[str],
     raw_label: str,
     normalized_label: str | None,
-    mapping_status: str,
+    mapping_status: MappingStatus,
     confidence: float | None,
-    method_kind: Literal["llm", "rule", "hybrid"],
+    method_kind: MethodKind,
     model: str | None,
 ) -> SemanticNormalizationResult:
     return SemanticNormalizationResult(
@@ -235,7 +242,7 @@ def _result(
         unit_kind="representative_span",
         raw_label=raw_label,
         normalized_label=normalized_label,
-        mapping_status=mapping_status,  # type: ignore[arg-type]
+        mapping_status=mapping_status,
         confidence=confidence,
         method=SemanticNormalizationMethod(
             kind=method_kind,
@@ -294,6 +301,11 @@ def normalize_representative_span(
     message_ids: list[str],
     text: str,
 ) -> SemanticNormalizationResult:
+    """Return an ephemeral L3 helper signal for one representative span.
+
+    Model choice is supplied by the caller at runtime. This module does not
+    prescribe or hardcode any specific local model.
+    """
     compact_text = " ".join(text.split()).strip()
     if not compact_text:
         return _result(

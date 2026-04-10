@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 from unittest.mock import call, patch
 
 import pytest
@@ -268,7 +269,7 @@ def _normalization_result(
     message_ids: list[str],
     raw_label: str = "implementation_decision",
     normalized_label: str | None = "decision",
-    mapping_status: str = "mapped",
+    mapping_status: Literal["mapped", "needs_review", "taxonomy_gap", "unmapped"] = "mapped",
     confidence: float | None = 0.9,
 ) -> SemanticNormalizationResult:
     return SemanticNormalizationResult(
@@ -279,7 +280,7 @@ def _normalization_result(
         unit_kind="representative_span",
         raw_label=raw_label,
         normalized_label=normalized_label,
-        mapping_status=mapping_status,  # type: ignore[arg-type]
+        mapping_status=mapping_status,
         confidence=confidence,
         method=SemanticNormalizationMethod(
             kind="hybrid",

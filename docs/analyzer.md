@@ -61,6 +61,8 @@ Current L3 note:
   signal in semantic topic inspection flows
 - it remains non-canonical, non-deterministic, and ephemeral in this phase
 - it does not create a new persisted artifact or alter canonical/L1/L2 contracts
+- local model choice for this helper remains runtime-specific; any model names
+  mentioned in tests or exploratory notes are examples, not required settings
 
 Architecture boundary:
 

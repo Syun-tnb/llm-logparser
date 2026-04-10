@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+TEST_LOCAL_MODEL = "test-local-model"
+
 from llm_logparser.core.semantic_normalization import (
     normalize_representative_span,
 )
@@ -29,7 +31,7 @@ def _normalize_with_payloads(payloads: list[dict]):
     client = _FakeClient(payloads)
     return normalize_representative_span(
         client=client,
-        model="gpt-oss-20b:latest",
+        model=TEST_LOCAL_MODEL,
         conversation_id="conv-a",
         span_id="span-123",
         window_id="window-0001",
@@ -53,7 +55,7 @@ def test_semantic_normalization_result_shape_for_mapped_request():
     assert result.mapping_status == "mapped"
     assert result.confidence == 0.91
     assert result.method.kind == "hybrid"
-    assert result.method.model == "gpt-oss-20b:latest"
+    assert result.method.model == TEST_LOCAL_MODEL
     assert result.method.mapping_version == "seed_taxonomy_v0"
 
 
