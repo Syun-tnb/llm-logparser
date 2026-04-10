@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import json
+
+from llm_logparser.core.semantic_normalization import (
+    normalize_representative_span,
+)
+
+
+class _FakeClient:
+    def __init__(self, payloads: list[dict]) -> None:
+        self._payloads = list(payloads)
+
+    def generate_text(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        response_format: str | None = None,
+        options: dict[str, object] | None = None,
+    ) -> str:
+        del model, prompt, response_format, options
+        if not self._payloads:
+            raise AssertionError("unexpected generate_text call")
+        return json.dumps(self._payloads.pop(0))
+
+
+def _normalize_with_payloads(payloads: list[dict]):
+    client = _FakeClient(payloads)
+    return normalize_representative_span(
+        client=client,
+        model="gpt-oss-20b:latest",
+        conversation_id="conv-a",
+        span_id="span-123",
+        window_id="window-0001",
+        message_ids=["m1", "m2"],
+        text="Please update the rollout checklist and let me know what changed.",
+    )
+
+
+def test_semantic_normalization_result_shape_for_mapped_request():
+    result = _normalize_with_payloads(
+        [{"raw_label": "update_request", "confidence": 0.91}]
+    )
+
+    assert result.conversation_id == "conv-a"
+    assert result.span_id == "span-123"
+    assert result.window_id == "window-0001"
+    assert result.message_ids == ["m1", "m2"]
+    assert result.unit_kind == "representative_span"
+    assert result.raw_label == "update_request"
+    assert result.normalized_label == "request"
+    assert result.mapping_status == "mapped"
+    assert result.confidence == 0.91
+    assert result.method.kind == "hybrid"
+    assert result.method.model == "gpt-oss-20b:latest"
+    assert result.method.mapping_version == "seed_taxonomy_v0"
+
+
+def test_semantic_normalization_distinguishes_request_from_question():
+    request_result = _normalize_with_payloads(
+        [{"raw_label": "review_request", "confidence": 0.88}]
+    )
+    question_result = _normalize_with_payloads(
+        [{"raw_label": "open_question", "confidence": 0.87}]
+    )
+
+    assert request_result.normalized_label == "request"
+    assert question_result.normalized_label == "question"
+    assert request_result.normalized_label != question_result.normalized_label
+
+
+def test_semantic_normalization_never_exposes_other_as_stable_label():
+    result = _normalize_with_payloads(
+        [{"raw_label": "other", "confidence": 0.93}]
+    )
+
+    assert result.normalized_label is None
+    assert result.mapping_status == "unmapped"
+    assert result.raw_label == "other"
+
+
+def test_semantic_normalization_uses_needs_review_for_low_confidence_alias_mapping():
+    result = _normalize_with_payloads(
+        [{"raw_label": "implementation_decision", "confidence": 0.4}]
+    )
+
+    assert result.normalized_label is None
+    assert result.mapping_status == "needs_review"
+    assert result.method.kind == "hybrid"
+
+
+def test_semantic_normalization_uses_taxonomy_gap_for_meaningful_unmapped_label():
+    result = _normalize_with_payloads(
+        [
+            {"raw_label": "emotional_reassurance", "confidence": 0.82},
+            {
+                "normalized_label": None,
+                "mapping_status": "taxonomy_gap",
+                "confidence": 0.73,
+            },
+        ]
+    )
+
+    assert result.normalized_label is None
+    assert result.mapping_status == "taxonomy_gap"
+    assert result.confidence == 0.73
+    assert result.method.kind == "llm"

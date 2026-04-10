@@ -17,6 +17,10 @@ from .analyzer_semantic_preview import (
 from .llm_client_protocol import LLMClient
 from .ollama_client import OllamaClient
 from .structured_llm import generate_structured_json
+from .semantic_normalization import (
+    normalize_representative_span,
+    semantic_normalization_to_dict,
+)
 from .semantic_state import (
     aggregate_topic_state,
     classify_span_state,
@@ -103,6 +107,8 @@ def _build_topic_clusters(
     window_cap: int,
     max_window_chars: int,
     state_locale: str | None = None,
+    normalization_client: LLMClient | None = None,
+    normalization_model: str | None = None,
 ) -> list[TopicClusterInput]:
     try:
         windows = load_window_preview_index(input_root)
@@ -147,18 +153,33 @@ def _build_topic_clusters(
         representative_spans: list[dict[str, Any]] = []
         for row in topic_windows[:3]:
             state_row = span_states_by_ref[(row["conversation_id"], row["window_id"])]
-            representative_spans.append(
-                {
-                    "conversation_id": row["conversation_id"],
-                    "span_id": row["span_id"],
-                    "message_ids": list(row["message_ids"]),
-                    "window_id": row["window_id"],
-                    "excerpt": row["excerpt"],
-                    "state": state_row.state,
-                    "state_confidence": state_row.state_confidence,
-                    "state_signals": list(state_row.state_signals),
-                }
-            )
+            representative_span = {
+                "conversation_id": row["conversation_id"],
+                "span_id": row["span_id"],
+                "message_ids": list(row["message_ids"]),
+                "window_id": row["window_id"],
+                "excerpt": row["excerpt"],
+                "state": state_row.state,
+                "state_confidence": state_row.state_confidence,
+                "state_signals": list(state_row.state_signals),
+            }
+            if normalization_client is not None and normalization_model is not None:
+                record = windows.get((row["conversation_id"], row["window_id"]))
+                if record is not None:
+                    representative_span["semantic_normalization"] = (
+                        semantic_normalization_to_dict(
+                            normalize_representative_span(
+                                client=normalization_client,
+                                model=normalization_model,
+                                conversation_id=row["conversation_id"],
+                                span_id=row["span_id"],
+                                window_id=row["window_id"],
+                                message_ids=list(row["message_ids"]),
+                                text=record.text,
+                            )
+                        )
+                    )
+            representative_spans.append(representative_span)
         topic_clusters.append(
             TopicClusterInput(
                 cluster_id=item_cluster_id,
@@ -306,6 +327,11 @@ def analyze_semantic_topic(
         window_cap=DEFAULT_TOPIC_WINDOW_CAP,
         max_window_chars=DEFAULT_TOPIC_MAX_WINDOW_CHARS,
         state_locale=state_locale,
+        normalization_client=OllamaClient(
+            base_url=base_url,
+            timeout=timeout_seconds,
+        ),
+        normalization_model=model.strip(),
     )
 
     topics: list[dict[str, Any]] = []
@@ -352,11 +378,45 @@ def _render_text(result: dict[str, Any]) -> str:
         lines.append(f"Keywords: {', '.join(keywords) if keywords else '(none)'}")
         lines.append("")
         lines.append("Representative:")
+        representative_spans = topic.get("representative_spans", [])
+        normalization_by_ref = {
+            (row.get("conversation_id"), row.get("window_id")): row.get(
+                "semantic_normalization"
+            )
+            for row in representative_spans
+            if isinstance(row, dict)
+        }
         for row in topic["representative_windows"]:
             lines.append(
                 f"- [{row['conversation_id']} / {row['window_id']}] "
                 f"\"{row['excerpt']}\""
             )
+            normalization = normalization_by_ref.get(
+                (row["conversation_id"], row["window_id"])
+            )
+            if isinstance(normalization, dict):
+                normalized_label = normalization.get("normalized_label")
+                mapping_status = normalization.get("mapping_status")
+                raw_label = normalization.get("raw_label")
+                confidence = normalization.get("confidence")
+                label_text = (
+                    str(normalized_label)
+                    if isinstance(normalized_label, str) and normalized_label
+                    else str(mapping_status or "?")
+                )
+                detail = (
+                    f" raw={raw_label}"
+                    if isinstance(raw_label, str) and raw_label
+                    else ""
+                )
+                confidence_text = (
+                    f" {float(confidence):.2f}"
+                    if isinstance(confidence, (int, float))
+                    else ""
+                )
+                lines.append(
+                    f"  normalization: {label_text}{detail}{confidence_text}"
+                )
     return "\n".join(lines)
 
 

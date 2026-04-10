@@ -55,6 +55,13 @@ L4  Optional external/API LLM layer
 
 Each layer builds on the same canonical JSONL conversation structure.
 
+Current L3 note:
+
+- Phase 0 semantic normalization now exists as a representative-span helper
+  signal in semantic topic inspection flows
+- it remains non-canonical, non-deterministic, and ephemeral in this phase
+- it does not create a new persisted artifact or alter canonical/L1/L2 contracts
+
 Architecture boundary:
 
 - command level:

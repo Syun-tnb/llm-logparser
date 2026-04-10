@@ -11,6 +11,10 @@ from llm_logparser.core.analyzer_semantic_topic import (
     SemanticTopicError,
     render_semantic_topic,
 )
+from llm_logparser.core.semantic_normalization import (
+    SemanticNormalizationMethod,
+    SemanticNormalizationResult,
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -256,12 +260,85 @@ def _write_japanese_topic_fixture(root: Path) -> None:
     )
 
 
+def _normalization_result(
+    *,
+    conversation_id: str,
+    span_id: str,
+    window_id: str,
+    message_ids: list[str],
+    raw_label: str = "implementation_decision",
+    normalized_label: str | None = "decision",
+    mapping_status: str = "mapped",
+    confidence: float | None = 0.9,
+) -> SemanticNormalizationResult:
+    return SemanticNormalizationResult(
+        conversation_id=conversation_id,
+        span_id=span_id,
+        window_id=window_id,
+        message_ids=message_ids,
+        unit_kind="representative_span",
+        raw_label=raw_label,
+        normalized_label=normalized_label,
+        mapping_status=mapping_status,  # type: ignore[arg-type]
+        confidence=confidence,
+        method=SemanticNormalizationMethod(
+            kind="hybrid",
+            model="llama3.1:latest",
+        ),
+    )
+
+
 def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topic_fixture(root)
     del monkeypatch
 
-    with patch("llm_logparser.core.analyzer_semantic_topic.OllamaClient") as client_cls:
+    with (
+        patch("llm_logparser.core.analyzer_semantic_topic.OllamaClient") as client_cls,
+        patch(
+            "llm_logparser.core.analyzer_semantic_topic.normalize_representative_span",
+            side_effect=[
+                _normalization_result(
+                    conversation_id="conv-a",
+                    span_id="span-a",
+                    window_id="window-0001",
+                    message_ids=["window-0001-m1", "window-0001-m2"],
+                ),
+                _normalization_result(
+                    conversation_id="conv-a",
+                    span_id="span-b",
+                    window_id="window-0002",
+                    message_ids=["window-0002-m1"],
+                    raw_label="review_request",
+                    normalized_label="request",
+                ),
+                _normalization_result(
+                    conversation_id="conv-b",
+                    span_id="span-c",
+                    window_id="window-0001",
+                    message_ids=["window-0001-m1"],
+                    raw_label="status_update",
+                    normalized_label="status_update",
+                ),
+                _normalization_result(
+                    conversation_id="conv-c",
+                    span_id="span-d",
+                    window_id="window-0001",
+                    message_ids=["window-0001-m1"],
+                    raw_label="proposal",
+                    normalized_label="proposal",
+                ),
+                _normalization_result(
+                    conversation_id="conv-c",
+                    span_id="span-e",
+                    window_id="window-0002",
+                    message_ids=["window-0002-m1"],
+                    raw_label="reflection",
+                    normalized_label="reflection",
+                ),
+            ],
+        ),
+    ):
         client = client_cls.return_value
         client.generate_text.side_effect = [
             "{invalid",
@@ -294,7 +371,9 @@ def test_render_semantic_topic_text_output(tmp_path, monkeypatch):
     assert "Keywords: launch, rollback, monitoring" in rendered
     assert "Representative:" in rendered
     assert "[conv-a / window-0001]" in rendered
+    assert "normalization: decision raw=implementation_decision 0.90" in rendered
     assert client_cls.call_args_list == [
+        call(base_url="http://localhost:11434", timeout=120.0),
         call(base_url="http://localhost:11434", timeout=120.0),
         call(base_url="http://localhost:11434", timeout=120.0),
     ]
@@ -314,13 +393,18 @@ def test_render_semantic_topic_json_filters_cross_thread_clusters(tmp_path, monk
 
     with patch(
         "llm_logparser.core.analyzer_semantic_topic.OllamaClient.generate_text",
-        return_value=json.dumps(
-            {
-                "topic_label": "Launch Readiness",
-                "summary": "Deployment readiness and rollback planning dominate the cluster.",
-                "keywords": ["launch", "rollback", "risk"],
-            }
-        ),
+        side_effect=[
+            json.dumps({"raw_label": "implementation_decision", "confidence": 0.91}),
+            json.dumps({"raw_label": "review_request", "confidence": 0.89}),
+            json.dumps({"raw_label": "status_update", "confidence": 0.92}),
+            json.dumps(
+                {
+                    "topic_label": "Launch Readiness",
+                    "summary": "Deployment readiness and rollback planning dominate the cluster.",
+                    "keywords": ["launch", "rollback", "risk"],
+                }
+            ),
+        ],
     ):
         rendered = render_semantic_topic(
             input_root=root,
@@ -342,6 +426,18 @@ def test_render_semantic_topic_json_filters_cross_thread_clusters(tmp_path, monk
     assert payload["topics"][0]["representative_spans"][0]["span_id"]
     assert payload["topics"][0]["representative_spans"][0]["message_ids"]
     assert payload["topics"][0]["representative_spans"][0]["state"] == "done"
+    assert (
+        payload["topics"][0]["representative_spans"][0]["semantic_normalization"][
+            "normalized_label"
+        ]
+        == "decision"
+    )
+    assert (
+        payload["topics"][0]["representative_spans"][1]["semantic_normalization"][
+            "normalized_label"
+        ]
+        == "request"
+    )
     assert payload["topics"][0]["representative_windows"][0]["window_id"] == "window-0001"
     assert payload["topics"][0]["quality_signals"] == {
         "cluster_size": 3,

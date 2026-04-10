@@ -28,6 +28,12 @@ from .analyzer_semantic_topic import (
     TOPIC_PROMPT_TEMPLATE,
     _generate_topic_output,
 )
+from .llm_client_protocol import LLMClient
+from .ollama_client import OllamaClient
+from .semantic_normalization import (
+    normalize_representative_span,
+    semantic_normalization_to_dict,
+)
 from .semantic_state import (
     SpanStateResult,
     aggregate_topic_state,
@@ -617,6 +623,7 @@ def build_semantic_topics_artifact(
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     state_locale: str | None = None,
+    include_representative_span_normalization: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if min_cluster_size <= 0:
         raise SemanticTopicsError("--min-cluster-size must be > 0")
@@ -643,6 +650,10 @@ def build_semantic_topics_artifact(
 
     provider_id = next(iter(windows.values())).provider_id
     normalized_model = model.strip() if isinstance(model, str) else None
+    if include_representative_span_normalization and normalized_model is None:
+        raise SemanticTopicsError(
+            "--model is required when representative span normalization is enabled"
+        )
     prompt_variant, prompt_hash = _labeling_prompt_provenance(normalized_model)
     embedding_model, neighbor_k, has_neighbors = _semantic_neighbor_provenance(input_root)
     edge_policies = sorted({member.edge_policy for _cluster_id, members in items for member in members})
@@ -661,6 +672,12 @@ def build_semantic_topics_artifact(
             for key, record in windows.items()
         )
     }
+    normalization_client: LLMClient | None = None
+    if include_representative_span_normalization and normalized_model is not None:
+        normalization_client = OllamaClient(
+            base_url=base_url,
+            timeout=timeout_seconds,
+        )
     topics: list[dict[str, Any]] = []
     membership_rows: list[dict[str, Any]] = []
     for item_cluster_id, members in items:
@@ -687,6 +704,26 @@ def build_semantic_topics_artifact(
             prompt_windows,
             span_state_by_ref=span_state_by_ref,
         )
+        if normalization_client is not None and normalized_model is not None:
+            for span_row in representative_spans:
+                conversation_id = span_row["conversation_id"]
+                window_id = span_row.get("window_id")
+                if not isinstance(window_id, str):
+                    continue
+                record = windows.get((conversation_id, window_id))
+                if record is None:
+                    continue
+                span_row["semantic_normalization"] = semantic_normalization_to_dict(
+                    normalize_representative_span(
+                        client=normalization_client,
+                        model=normalized_model,
+                        conversation_id=conversation_id,
+                        span_id=span_row["span_id"],
+                        window_id=window_id,
+                        message_ids=list(span_row["message_ids"]),
+                        text=record.text,
+                    )
+                )
         topic_id = _topic_id(provider_id, members, windows)
         topic_state, topic_state_confidence = aggregate_topic_state(
             [
