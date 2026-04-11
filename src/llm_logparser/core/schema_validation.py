@@ -76,6 +76,18 @@ WINDOW_NEIGHBORS_SCHEMA_NAME = "window_neighbors.schema.json"
 WINDOW_CLUSTERS_SCHEMA_NAME = "window_clusters.schema.json"
 TOPICS_SCHEMA_NAME = "topics.schema.json"
 TOPIC_MEMBERSHIP_SCHEMA_NAME = "topic_membership.schema.json"
+SEMANTIC_NORMALIZATION_JOB_CONFIG_SCHEMA_NAME = (
+    "semantic_normalization_job_config.schema.json"
+)
+SEMANTIC_NORMALIZATION_JOB_SPAN_SCHEMA_NAME = (
+    "semantic_normalization_job_span.schema.json"
+)
+SEMANTIC_NORMALIZATION_JOB_RESULT_SCHEMA_NAME = (
+    "semantic_normalization_job_result.schema.json"
+)
+SEMANTIC_NORMALIZATION_JOB_FAILURE_SCHEMA_NAME = (
+    "semantic_normalization_job_failure.schema.json"
+)
 SCHEMA_FILE_NAMES = frozenset(
     {
         MESSAGE_SCHEMA_NAME,
@@ -89,6 +101,10 @@ SCHEMA_FILE_NAMES = frozenset(
         WINDOW_CLUSTERS_SCHEMA_NAME,
         TOPICS_SCHEMA_NAME,
         TOPIC_MEMBERSHIP_SCHEMA_NAME,
+        SEMANTIC_NORMALIZATION_JOB_CONFIG_SCHEMA_NAME,
+        SEMANTIC_NORMALIZATION_JOB_SPAN_SCHEMA_NAME,
+        SEMANTIC_NORMALIZATION_JOB_RESULT_SCHEMA_NAME,
+        SEMANTIC_NORMALIZATION_JOB_FAILURE_SCHEMA_NAME,
     }
 )
 
@@ -289,6 +305,34 @@ def load_topic_membership_validator(
     Returns a validator for topic_membership.schema.json.
     """
     return load_validator(TOPIC_MEMBERSHIP_SCHEMA_NAME, schema_path)
+
+
+def load_semantic_normalization_job_config_validator(
+    schema_path: Optional[Path] = None,
+):
+    """Returns a validator for semantic_normalization_job_config.schema.json."""
+    return load_validator(SEMANTIC_NORMALIZATION_JOB_CONFIG_SCHEMA_NAME, schema_path)
+
+
+def load_semantic_normalization_job_span_validator(
+    schema_path: Optional[Path] = None,
+):
+    """Returns a validator for semantic_normalization_job_span.schema.json."""
+    return load_validator(SEMANTIC_NORMALIZATION_JOB_SPAN_SCHEMA_NAME, schema_path)
+
+
+def load_semantic_normalization_job_result_validator(
+    schema_path: Optional[Path] = None,
+):
+    """Returns a validator for semantic_normalization_job_result.schema.json."""
+    return load_validator(SEMANTIC_NORMALIZATION_JOB_RESULT_SCHEMA_NAME, schema_path)
+
+
+def load_semantic_normalization_job_failure_validator(
+    schema_path: Optional[Path] = None,
+):
+    """Returns a validator for semantic_normalization_job_failure.schema.json."""
+    return load_validator(SEMANTIC_NORMALIZATION_JOB_FAILURE_SCHEMA_NAME, schema_path)
 
 
 class MessageValidationError(RuntimeError):

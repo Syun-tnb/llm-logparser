@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/semantic_normalization_job_span.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "job_id",
+    "provider_id",
+    "source_mode",
+    "source_path",
+    "parsed_path",
+    "conversation_id",
+    "span_id",
+    "window_id",
+    "message_ids",
+    "text_sha1",
+    "text_char_count",
+    "message_count",
+    "window_size",
+    "window_stride",
+    "ts_start",
+    "ts_end"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "semantic_normalization_span" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "job_id": { "type": "string", "minLength": 1 },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "source_mode": {
+      "type": "string",
+      "enum": ["stored_windows", "derived_windows"]
+    },
+    "source_path": { "type": "string", "minLength": 1 },
+    "parsed_path": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "span_id": { "type": "string", "minLength": 1 },
+    "window_id": { "type": "string", "minLength": 1 },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "text_sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "text_char_count": { "type": "integer", "minimum": 0 },
+    "message_count": { "type": "integer", "minimum": 1 },
+    "window_size": { "type": "integer", "minimum": 1 },
+    "window_stride": { "type": "integer", "minimum": 1 },
+    "ts_start": { "type": ["integer", "null"] },
+    "ts_end": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": false
+}

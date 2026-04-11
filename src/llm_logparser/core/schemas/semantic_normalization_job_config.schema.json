@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/semantic_normalization_job_config.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "job_id",
+    "created_at",
+    "input_root",
+    "output_dir",
+    "source_strategy",
+    "selected_inputs",
+    "normalization",
+    "prompt_provenance",
+    "worklist"
+  ],
+  "properties": {
+    "artifact_type": { "type": "string", "const": "semantic_normalization_job" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "job_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "input_root": { "type": "string", "minLength": 1 },
+    "output_dir": { "type": "string", "minLength": 1 },
+    "source_strategy": {
+      "type": "object",
+      "required": ["mode", "window_size", "window_stride"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "message_windows_preferred_with_parsed_fallback"
+        },
+        "window_size": { "type": "integer", "minimum": 1 },
+        "window_stride": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "selected_inputs": {
+      "type": "object",
+      "required": [
+        "thread_count",
+        "message_windows_files",
+        "parsed_only_files",
+        "invalid_threads"
+      ],
+      "properties": {
+        "thread_count": { "type": "integer", "minimum": 0 },
+        "message_windows_files": { "type": "integer", "minimum": 0 },
+        "parsed_only_files": { "type": "integer", "minimum": 0 },
+        "invalid_threads": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "normalization": {
+      "type": "object",
+      "required": [
+        "model",
+        "base_url",
+        "timeout_seconds",
+        "temperature",
+        "raw_num_predict",
+        "mapping_num_predict",
+        "taxonomy_version",
+        "confidence_threshold"
+      ],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "base_url": { "type": "string", "minLength": 1 },
+        "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "temperature": { "type": "number" },
+        "raw_num_predict": { "type": "integer", "minimum": 1 },
+        "mapping_num_predict": { "type": "integer", "minimum": 1 },
+        "taxonomy_version": { "type": "string", "minLength": 1 },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "prompt_provenance": {
+      "type": "object",
+      "required": ["raw_label_prompt_sha1", "mapping_prompt_sha1"],
+      "properties": {
+        "raw_label_prompt_sha1": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "mapping_prompt_sha1": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "worklist": {
+      "type": "object",
+      "required": ["total_spans", "span_key_kind"],
+      "properties": {
+        "total_spans": { "type": "integer", "minimum": 1 },
+        "span_key_kind": {
+          "type": "string",
+          "const": "conversation_id+span_id+ordered_message_ids"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -6,6 +6,7 @@ import shutil
 import statistics
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from hashlib import sha1
 from pathlib import Path
 from typing import Any, Callable
@@ -34,6 +35,12 @@ from .semantic_normalization import (
     semantic_normalization_prompt_hashes,
     semantic_normalization_runtime_options_to_dict,
     semantic_normalization_to_dict,
+)
+from .schema_validation import (
+    load_semantic_normalization_job_config_validator,
+    load_semantic_normalization_job_failure_validator,
+    load_semantic_normalization_job_result_validator,
+    load_semantic_normalization_job_span_validator,
 )
 
 JOB_CONFIG_SCHEMA_VERSION = "0.1"
@@ -154,6 +161,90 @@ def _percentile(values: list[float], percentile: float) -> float | None:
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> Path:
     return write_json_artifact(path, payload)
+
+
+@lru_cache(maxsize=1)
+def _job_config_validator():
+    return load_semantic_normalization_job_config_validator()
+
+
+@lru_cache(maxsize=1)
+def _job_span_validator():
+    return load_semantic_normalization_job_span_validator()
+
+
+@lru_cache(maxsize=1)
+def _job_result_validator():
+    return load_semantic_normalization_job_result_validator()
+
+
+@lru_cache(maxsize=1)
+def _job_failure_validator():
+    return load_semantic_normalization_job_failure_validator()
+
+
+def _require_valid_payload(
+    *,
+    path: Path,
+    payload: dict[str, Any],
+    validator: Any,
+    artifact_name: str,
+    location: str | None = None,
+) -> dict[str, Any]:
+    errors = list(validator.iter_errors(payload))
+    if not errors:
+        return payload
+    suffix = f":{location}" if location is not None else ""
+    raise SemanticNormalizationJobError(
+        f"{artifact_name} schema validation failed for {path}{suffix}: {errors[0].message}"
+    )
+
+
+def _load_job_config(job_dir: Path) -> dict[str, Any]:
+    path = _config_path(job_dir)
+    payload = _load_json(path)
+    return _require_valid_payload(
+        path=path,
+        payload=payload,
+        validator=_job_config_validator(),
+        artifact_name="semantic normalization config",
+    )
+
+
+def _load_validated_jsonl_rows(
+    path: Path,
+    *,
+    validator: Any,
+    artifact_name: str,
+) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, raw_line in enumerate(handle, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise SemanticNormalizationJobError(
+                    f"invalid JSON in {path}:{line_no}: {exc.msg}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise SemanticNormalizationJobError(
+                    f"invalid JSON object in {path}:{line_no}"
+                )
+            rows.append(
+                _require_valid_payload(
+                    path=path,
+                    payload=row,
+                    validator=validator,
+                    artifact_name=artifact_name,
+                    location=f"line {line_no}",
+                )
+            )
+    return rows
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -359,12 +450,11 @@ def _client(
 
 
 def _load_worklist(job_dir: Path) -> list[dict[str, Any]]:
-    rows = _load_jsonl_rows(_spans_path(job_dir))
-    return [
-        row
-        for row in rows
-        if row.get("record_type") == SPAN_RECORD_TYPE
-    ]
+    return _load_validated_jsonl_rows(
+        _spans_path(job_dir),
+        validator=_job_span_validator(),
+        artifact_name="semantic normalization spans",
+    )
 
 
 def _result_key(row: dict[str, Any]) -> SpanKey:
@@ -377,19 +467,21 @@ def _result_key(row: dict[str, Any]) -> SpanKey:
 
 def _success_index(job_dir: Path) -> dict[SpanKey, dict[str, Any]]:
     index: dict[SpanKey, dict[str, Any]] = {}
-    for row in _load_jsonl_rows(_results_path(job_dir)):
-        if row.get("record_type") != RESULT_RECORD_TYPE:
-            continue
+    for row in _load_validated_jsonl_rows(
+        _results_path(job_dir),
+        validator=_job_result_validator(),
+        artifact_name="semantic normalization results",
+    ):
         index[_result_key(row)] = row
     return index
 
 
 def _failure_rows(job_dir: Path) -> list[dict[str, Any]]:
-    return [
-        row
-        for row in _load_jsonl_rows(_failures_path(job_dir))
-        if row.get("record_type") == FAILURE_RECORD_TYPE
-    ]
+    return _load_validated_jsonl_rows(
+        _failures_path(job_dir),
+        validator=_job_failure_validator(),
+        artifact_name="semantic normalization failures",
+    )
 
 
 def _active_failures(job_dir: Path) -> dict[SpanKey, dict[str, Any]]:
@@ -467,7 +559,7 @@ def _update_progress(
     started_at: str | None = None,
     completed_at: str | None = None,
 ) -> dict[str, Any]:
-    config = _load_json(_config_path(job_dir))
+    config = _load_job_config(job_dir)
     total_spans = int(config["worklist"]["total_spans"])
     successes = _success_index(job_dir)
     active_failures = _active_failures(job_dir)
@@ -501,7 +593,7 @@ def _latencies(job_dir: Path) -> list[float]:
 
 
 def _build_summary(job_dir: Path) -> dict[str, Any]:
-    config = _load_json(_config_path(job_dir))
+    config = _load_job_config(job_dir)
     progress = _load_progress(job_dir)
     statuses = {
         "mapped": 0,
@@ -654,7 +746,7 @@ def _span_rows_by_key(rows: list[dict[str, Any]]) -> dict[SpanKey, dict[str, Any
 
 
 def _validate_resume_inputs(job_dir: Path, target_keys: set[SpanKey]) -> None:
-    config = _load_json(_config_path(job_dir))
+    config = _load_job_config(job_dir)
     input_root = Path(str(config["input_root"]))
     current_rows, _selected_counts, _invalid = _build_worklist(
         input_root=input_root,
@@ -855,8 +947,20 @@ def _write_processing_result(
 ) -> None:
     try:
         if success_row is not None:
+            _require_valid_payload(
+                path=_results_path(job_dir),
+                payload=success_row,
+                validator=_job_result_validator(),
+                artifact_name="semantic normalization results",
+            )
             _append_jsonl_row(_results_path(job_dir), success_row)
         elif failure_row is not None:
+            _require_valid_payload(
+                path=_failures_path(job_dir),
+                payload=failure_row,
+                validator=_job_failure_validator(),
+                artifact_name="semantic normalization failures",
+            )
             _append_jsonl_row(_failures_path(job_dir), failure_row)
     except Exception as exc:
         raise SemanticNormalizationJobError(str(exc)) from exc
@@ -868,7 +972,7 @@ def _process_rows(
     rows: list[dict[str, Any]],
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    config = _load_json(_config_path(job_dir))
+    config = _load_job_config(job_dir)
     runtime_options = SemanticNormalizationRuntimeOptions(
         temperature=float(config["normalization"]["temperature"]),
         raw_num_predict=int(config["normalization"]["raw_num_predict"]),
@@ -1041,9 +1145,21 @@ def run_semantic_normalization_job(
         selected_input_counts=selected_input_counts,
         total_spans=len(spans),
     )
+    _require_valid_payload(
+        path=_config_path(job_dir),
+        payload=config,
+        validator=_job_config_validator(),
+        artifact_name="semantic normalization config",
+    )
     _atomic_write_json(_config_path(job_dir), config)
     with _spans_path(job_dir).open("w", encoding="utf-8") as handle:
         for row in spans:
+            _require_valid_payload(
+                path=_spans_path(job_dir),
+                payload=row,
+                validator=_job_span_validator(),
+                artifact_name="semantic normalization spans",
+            )
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     _results_path(job_dir).touch()
     _failures_path(job_dir).touch()
@@ -1099,7 +1215,7 @@ def resume_semantic_normalization_job(
             completed_at=_load_progress(job_dir).get("completed_at"),
         )
     return {
-        "job_id": _load_json(_config_path(job_dir))["job_id"],
+        "job_id": _load_job_config(job_dir)["job_id"],
         "job_dir": str(job_dir),
         "summary": summary,
     }
@@ -1123,7 +1239,7 @@ def retry_semantic_normalization_job_failures(
     else:
         summary = _build_summary(job_dir)
     return {
-        "job_id": _load_json(_config_path(job_dir))["job_id"],
+        "job_id": _load_job_config(job_dir)["job_id"],
         "job_dir": str(job_dir),
         "retried_span_count": len(failed_rows),
         "summary": summary,
@@ -1167,8 +1283,12 @@ def load_semantic_normalization_job_results(
         raise SemanticNormalizationJobError(f"job not found: {job_dir}")
     return SemanticNormalizationJobResults(
         job_dir=job_dir,
-        config=_load_json(_config_path(job_dir)),
-        result_rows=_load_jsonl_rows(_results_path(job_dir)),
+        config=_load_job_config(job_dir),
+        result_rows=_load_validated_jsonl_rows(
+            _results_path(job_dir),
+            validator=_job_result_validator(),
+            artifact_name="semantic normalization results",
+        ),
     )
 
 

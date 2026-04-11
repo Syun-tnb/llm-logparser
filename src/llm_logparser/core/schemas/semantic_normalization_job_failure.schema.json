@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/semantic_normalization_job_failure.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "job_id",
+    "provider_id",
+    "conversation_id",
+    "span_id",
+    "window_id",
+    "message_ids",
+    "text_sha1",
+    "attempt_no",
+    "error_kind",
+    "error_message",
+    "retriable",
+    "failed_at"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "semantic_normalization_failure" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "job_id": { "type": "string", "minLength": 1 },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "span_id": { "type": "string", "minLength": 1 },
+    "window_id": { "type": "string", "minLength": 1 },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "text_sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "attempt_no": { "type": "integer", "minimum": 1 },
+    "error_kind": {
+      "type": "string",
+      "enum": [
+        "transport_error",
+        "structured_output_error",
+        "input_resolution_error",
+        "runtime_error",
+        "write_error"
+      ]
+    },
+    "error_message": { "type": "string", "minLength": 1 },
+    "retriable": { "type": "boolean" },
+    "failed_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

@@ -14,11 +14,18 @@ from llm_logparser.core.semantic_normalization import (
 )
 from llm_logparser.core.semantic_normalization_jobs import (
     SemanticNormalizationJobError,
+    load_semantic_normalization_job_results,
     render_semantic_normalization_job_status,
     render_semantic_normalization_job_summary,
     resume_semantic_normalization_job,
     retry_semantic_normalization_job_failures,
     run_semantic_normalization_job,
+)
+from llm_logparser.core.schema_validation import (
+    load_semantic_normalization_job_config_validator,
+    load_semantic_normalization_job_failure_validator,
+    load_semantic_normalization_job_result_validator,
+    load_semantic_normalization_job_span_validator,
 )
 
 
@@ -221,6 +228,39 @@ def test_run_accepts_provider_root_with_usable_threads_and_creates_job_layout(tm
     assert config["selected_inputs"]["message_windows_files"] == 1
     assert config["selected_inputs"]["parsed_only_files"] == 1
     assert len(result["invalid_threads"]) == 1
+
+
+def test_semantic_normalization_job_artifacts_validate_against_schemas(tmp_path):
+    root = _make_provider_root(tmp_path)
+    _setup_provider_with_windows_and_parsed(root)
+    _setup_provider_with_parsed_only(root)
+
+    with patch(
+        "llm_logparser.core.semantic_normalization_jobs.normalize_representative_span",
+        side_effect=lambda **kwargs: _fake_result(
+            conversation_id=kwargs["conversation_id"],
+            span_id=kwargs["span_id"],
+            window_id=kwargs["window_id"],
+            message_ids=kwargs["message_ids"],
+        ),
+    ):
+        result = run_semantic_normalization_job(root, model="test-model", job_id="schema-job")
+
+    job_dir = Path(result["job_dir"])
+    config_validator = load_semantic_normalization_job_config_validator()
+    span_validator = load_semantic_normalization_job_span_validator()
+    result_validator = load_semantic_normalization_job_result_validator()
+    failure_validator = load_semantic_normalization_job_failure_validator()
+
+    config = _read_json(job_dir / "config.json")
+    span_rows = _read_jsonl(job_dir / "spans.jsonl")
+    result_rows = _read_jsonl(job_dir / "results.jsonl")
+    failure_rows = _read_jsonl(job_dir / "failures.jsonl")
+
+    assert list(config_validator.iter_errors(config)) == []
+    assert all(list(span_validator.iter_errors(row)) == [] for row in span_rows)
+    assert all(list(result_validator.iter_errors(row)) == [] for row in result_rows)
+    assert all(list(failure_validator.iter_errors(row)) == [] for row in failure_rows)
 
 
 def test_run_rejects_provider_root_with_no_usable_threads(tmp_path):
@@ -442,6 +482,70 @@ def test_retry_failures_retries_failed_spans_only_and_supports_explicit_span_id(
 
     results_rows = _read_jsonl(job_dir / "results.jsonl")
     assert any(row["span_id"] == failed_span_id for row in results_rows)
+
+
+def test_loading_results_fails_clearly_for_malformed_result_rows(tmp_path):
+    root = _make_provider_root(tmp_path)
+    _setup_provider_with_windows_and_parsed(root)
+
+    with patch(
+        "llm_logparser.core.semantic_normalization_jobs.normalize_representative_span",
+        side_effect=lambda **kwargs: _fake_result(
+            conversation_id=kwargs["conversation_id"],
+            span_id=kwargs["span_id"],
+            window_id=kwargs["window_id"],
+            message_ids=kwargs["message_ids"],
+        ),
+    ):
+        result = run_semantic_normalization_job(root, model="test-model", job_id="bad-result-job")
+
+    job_dir = Path(result["job_dir"])
+    rows = _read_jsonl(job_dir / "results.jsonl")
+    rows[0].pop("mapping_status")
+    _write_jsonl(job_dir / "results.jsonl", rows)
+
+    with pytest.raises(SemanticNormalizationJobError) as exc:
+        load_semantic_normalization_job_results(root, job_id="bad-result-job")
+
+    assert "semantic normalization results schema validation failed" in str(exc.value)
+
+
+def test_resume_fails_clearly_for_malformed_span_rows(tmp_path):
+    root = _make_provider_root(tmp_path)
+    _setup_provider_with_windows_and_parsed(root)
+
+    with patch(
+        "llm_logparser.core.semantic_normalization_jobs.normalize_representative_span",
+        side_effect=lambda **kwargs: _fake_result(
+            conversation_id=kwargs["conversation_id"],
+            span_id=kwargs["span_id"],
+            window_id=kwargs["window_id"],
+            message_ids=kwargs["message_ids"],
+        ),
+    ):
+        result = run_semantic_normalization_job(root, model="test-model", job_id="bad-span-job")
+
+    job_dir = Path(result["job_dir"])
+    results_rows = _read_jsonl(job_dir / "results.jsonl")
+    (job_dir / "results.jsonl").write_text("", encoding="utf-8")
+    progress = _read_json(job_dir / "progress.json")
+    progress["status"] = "interrupted"
+    progress["success_count"] = 0
+    progress["failure_count"] = 0
+    progress["pending_count"] = len(results_rows)
+    (job_dir / "progress.json").write_text(
+        json.dumps(progress, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    span_rows = _read_jsonl(job_dir / "spans.jsonl")
+    span_rows[0].pop("text_sha1")
+    _write_jsonl(job_dir / "spans.jsonl", span_rows)
+
+    with pytest.raises(SemanticNormalizationJobError) as exc:
+        resume_semantic_normalization_job(root, job_id="bad-span-job")
+
+    assert "semantic normalization spans schema validation failed" in str(exc.value)
 
 
 def test_status_and_summary_commands_render_text_and_json(tmp_path, capsys):
