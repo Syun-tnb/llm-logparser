@@ -20,6 +20,7 @@ from llm_logparser.core.semantic_normalization import (
     SemanticNormalizationMethod,
     SemanticNormalizationResult,
     semantic_normalization_prompt_hashes,
+    semantic_normalization_prompt_provenance,
 )
 from llm_logparser.core.schema_validation import (
     load_topic_membership_validator,
@@ -288,7 +289,7 @@ def _write_semantic_normalization_job(
     job_id: str,
     result_rows: list[dict],
     taxonomy_version: str = SEED_TAXONOMY_VERSION,
-    prompt_provenance: dict[str, str] | None = None,
+    prompt_provenance: dict[str, object] | None = None,
 ) -> Path:
     job_dir = root / "l3" / "semantic-normalization" / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -1368,6 +1369,48 @@ def test_semantic_topics_attaches_matching_batch_normalization_results(tmp_path)
 
     topics_validator = load_topics_validator()
     assert list(topics_validator.iter_errors(topics_payload)) == []
+
+
+def test_semantic_topics_batch_normalization_provenance_includes_prompt_source_metadata(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_prompt_sources"
+    prompt_provenance = semantic_normalization_prompt_provenance()
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        prompt_provenance=prompt_provenance,
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    artifact, _membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        normalization_job=job_id,
+    )
+
+    assert artifact["provenance"]["normalization"]["prompt_provenance"] == (
+        prompt_provenance
+    )
 
 
 def test_semantic_topics_batch_normalization_matching_provenance_emits_no_warning(

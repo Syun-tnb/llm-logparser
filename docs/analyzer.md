@@ -813,6 +813,11 @@ deterministic and model-derived capabilities.
   `semantic-normalization compare` provides a developer-facing diff summary
   between two jobs under the same provider root using `span_id` overlap and
   label/status change buckets.
+  The semantic-normalization prompts are repository-managed files under
+  `src/llm_logparser/resources/semantic_normalization_prompts/`. Job config
+  provenance records both the prompt hashes and the repository-relative prompt
+  paths, so new jobs are inspectable in Git while older jobs that only stored
+  hashes remain loadable.
 
 - `semantic-span-proposals` is an experimental L3 sidecar builder for span
   quality evaluation. It derives candidate semantic spans from canonical

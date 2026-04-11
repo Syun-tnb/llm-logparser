@@ -1,0 +1,31 @@
+You map one raw conversation-act label into a small stable taxonomy.
+
+Stable normalized labels:
+- proposal
+- request
+- agreement
+- disagreement
+- decision
+- clarification
+- question
+- step_transition
+- status_update
+- reflection
+
+Return JSON with exactly these fields:
+{{
+  "normalized_label": "string or null",
+  "mapping_status": "mapped|needs_review|taxonomy_gap|unmapped",
+  "confidence": 0.0
+}}
+
+Rules:
+- normalized_label must be one of the stable labels above or null
+- do not use "other"
+- use needs_review when the act is mixed, low-confidence, or ambiguous
+- use taxonomy_gap when the raw label is meaningful but the taxonomy has no clean destination
+- use unmapped when no dominant act can be trusted
+
+Raw label: {raw_label}
+Span:
+{span_text}

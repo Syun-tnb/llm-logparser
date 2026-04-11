@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from .llm_client_protocol import LLMClient
@@ -13,6 +14,18 @@ RAW_LABEL_CONFIDENCE_THRESHOLD = 0.65
 DEFAULT_RAW_LABEL_NUM_PREDICT = 180
 DEFAULT_MAPPING_NUM_PREDICT = 160
 DEFAULT_NORMALIZATION_TEMPERATURE = 0.0
+SEMANTIC_NORMALIZATION_PROMPT_SET = "semantic_normalization_v0"
+_PROMPT_RESOURCE_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "resources"
+    / "semantic_normalization_prompts"
+)
+_RAW_LABEL_PROMPT_REPO_PATH = (
+    "src/llm_logparser/resources/semantic_normalization_prompts/raw_label.prompt.txt"
+)
+_MAPPING_PROMPT_REPO_PATH = (
+    "src/llm_logparser/resources/semantic_normalization_prompts/raw_label_mapping.prompt.txt"
+)
 MethodKind = Literal["llm", "rule", "hybrid"]
 MappingStatus = Literal["mapped", "needs_review", "taxonomy_gap", "unmapped"]
 STABLE_NORMALIZED_LABELS = (
@@ -110,57 +123,17 @@ RAW_LABEL_ALIASES = {
     "analysis_reflection": "reflection",
 }
 
-RAW_LABEL_PROMPT = """You analyze one conversation span and identify its dominant conversation act.
+def _load_prompt_text(path: Path) -> tuple[str, str]:
+    payload = path.read_bytes()
+    return payload.decode("utf-8"), hashlib.sha1(payload).hexdigest()
 
-Return JSON with exactly these fields:
-{{
-  "raw_label": "snake_case slug",
-  "confidence": 0.0
-}}
 
-Rules:
-- raw_label must be lowercase snake_case
-- raw_label must be 1 to 3 words
-- raw_label must be act-oriented, not topic-oriented
-- prefer labels like proposal, request, agreement, disagreement, decision, clarification, question, step_transition, status_update, reflection
-- if there is no dominant act, use no_dominant_act
-
-Span:
-{span_text}
-"""
-
-RAW_LABEL_MAPPING_PROMPT = """You map one raw conversation-act label into a small stable taxonomy.
-
-Stable normalized labels:
-- proposal
-- request
-- agreement
-- disagreement
-- decision
-- clarification
-- question
-- step_transition
-- status_update
-- reflection
-
-Return JSON with exactly these fields:
-{{
-  "normalized_label": "string or null",
-  "mapping_status": "mapped|needs_review|taxonomy_gap|unmapped",
-  "confidence": 0.0
-}}
-
-Rules:
-- normalized_label must be one of the stable labels above or null
-- do not use "other"
-- use needs_review when the act is mixed, low-confidence, or ambiguous
-- use taxonomy_gap when the raw label is meaningful but the taxonomy has no clean destination
-- use unmapped when no dominant act can be trusted
-
-Raw label: {raw_label}
-Span:
-{span_text}
-"""
+RAW_LABEL_PROMPT, _RAW_LABEL_PROMPT_SHA1 = _load_prompt_text(
+    _PROMPT_RESOURCE_DIR / "raw_label.prompt.txt"
+)
+RAW_LABEL_MAPPING_PROMPT, _RAW_LABEL_MAPPING_PROMPT_SHA1 = _load_prompt_text(
+    _PROMPT_RESOURCE_DIR / "raw_label_mapping.prompt.txt"
+)
 
 
 @dataclass(frozen=True)
@@ -205,12 +178,23 @@ def semantic_normalization_runtime_options_to_dict(
 
 def semantic_normalization_prompt_hashes() -> dict[str, str]:
     return {
-        "raw_label_prompt_sha1": hashlib.sha1(
-            RAW_LABEL_PROMPT.encode("utf-8")
-        ).hexdigest(),
-        "mapping_prompt_sha1": hashlib.sha1(
-            RAW_LABEL_MAPPING_PROMPT.encode("utf-8")
-        ).hexdigest(),
+        "raw_label_prompt_sha1": _RAW_LABEL_PROMPT_SHA1,
+        "mapping_prompt_sha1": _RAW_LABEL_MAPPING_PROMPT_SHA1,
+    }
+
+
+def semantic_normalization_prompt_provenance() -> dict[str, str]:
+    """Return inspectable prompt provenance for semantic normalization.
+
+    Hashes are computed over the exact UTF-8 file bytes stored in the repository
+    prompt files. No newline or whitespace normalization is applied before
+    hashing.
+    """
+    return {
+        "prompt_set": SEMANTIC_NORMALIZATION_PROMPT_SET,
+        "raw_label_prompt_path": _RAW_LABEL_PROMPT_REPO_PATH,
+        "mapping_prompt_path": _MAPPING_PROMPT_REPO_PATH,
+        **semantic_normalization_prompt_hashes(),
     }
 
 

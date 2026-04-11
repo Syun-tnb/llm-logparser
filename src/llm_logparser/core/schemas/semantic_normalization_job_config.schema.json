@@ -83,6 +83,18 @@
       "type": "object",
       "required": ["raw_label_prompt_sha1", "mapping_prompt_sha1"],
       "properties": {
+        "prompt_set": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_label_prompt_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mapping_prompt_path": {
+          "type": "string",
+          "minLength": 1
+        },
         "raw_label_prompt_sha1": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"

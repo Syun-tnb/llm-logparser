@@ -11,6 +11,7 @@ from llm_logparser.core.semantic_normalization import (
     MappingStatus,
     SemanticNormalizationMethod,
     SemanticNormalizationResult,
+    semantic_normalization_prompt_provenance,
 )
 from llm_logparser.core.semantic_normalization_jobs import (
     SemanticNormalizationJobError,
@@ -241,6 +242,7 @@ def test_run_accepts_provider_root_with_usable_threads_and_creates_job_layout(tm
     assert config["selected_inputs"]["thread_count"] == 2
     assert config["selected_inputs"]["message_windows_files"] == 1
     assert config["selected_inputs"]["parsed_only_files"] == 1
+    assert config["prompt_provenance"] == semantic_normalization_prompt_provenance()
     assert len(result["invalid_threads"]) == 1
 
 
@@ -522,6 +524,40 @@ def test_loading_results_fails_clearly_for_malformed_result_rows(tmp_path):
         load_semantic_normalization_job_results(root, job_id="bad-result-job")
 
     assert "semantic normalization results schema validation failed" in str(exc.value)
+
+
+def test_loading_old_job_config_without_prompt_paths_remains_compatible(tmp_path):
+    root = _make_provider_root(tmp_path)
+    _setup_provider_with_windows_and_parsed(root)
+
+    with patch(
+        "llm_logparser.core.semantic_normalization_jobs.normalize_representative_span",
+        side_effect=lambda **kwargs: _fake_result(
+            conversation_id=kwargs["conversation_id"],
+            span_id=kwargs["span_id"],
+            window_id=kwargs["window_id"],
+            message_ids=kwargs["message_ids"],
+        ),
+    ):
+        result = run_semantic_normalization_job(
+            root,
+            model="test-model",
+            job_id="old-prompt-job",
+        )
+
+    job_dir = Path(result["job_dir"])
+    config = _read_json(job_dir / "config.json")
+    config["prompt_provenance"] = {
+        "raw_label_prompt_sha1": config["prompt_provenance"]["raw_label_prompt_sha1"],
+        "mapping_prompt_sha1": config["prompt_provenance"]["mapping_prompt_sha1"],
+    }
+    (job_dir / "config.json").write_text(
+        json.dumps(config, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    loaded = load_semantic_normalization_job_results(root, job_id="old-prompt-job")
+    assert loaded.config["job_id"] == "old-prompt-job"
 
 
 def test_resume_fails_clearly_for_malformed_span_rows(tmp_path):

@@ -838,15 +838,20 @@ def _normalization_provenance(
     prompt_provenance = config.get("prompt_provenance")
     normalization_row = normalization if isinstance(normalization, dict) else {}
     prompt_row = prompt_provenance if isinstance(prompt_provenance, dict) else {}
+    prompt_payload = {
+        "raw_label_prompt_sha1": prompt_row.get("raw_label_prompt_sha1"),
+        "mapping_prompt_sha1": prompt_row.get("mapping_prompt_sha1"),
+    }
+    for key in ("prompt_set", "raw_label_prompt_path", "mapping_prompt_path"):
+        value = prompt_row.get(key)
+        if isinstance(value, str) and value.strip():
+            prompt_payload[key] = value
     return {
         "source_kind": "batch",
         "job_id": job_id,
         "model": normalization_row.get("model"),
         "taxonomy_version": normalization_row.get("taxonomy_version"),
-        "prompt_provenance": {
-            "raw_label_prompt_sha1": prompt_row.get("raw_label_prompt_sha1"),
-            "mapping_prompt_sha1": prompt_row.get("mapping_prompt_sha1"),
-        },
+        "prompt_provenance": prompt_payload,
         **counts,
     }
 

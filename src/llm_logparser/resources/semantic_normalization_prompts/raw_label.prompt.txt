@@ -1,0 +1,17 @@
+You analyze one conversation span and identify its dominant conversation act.
+
+Return JSON with exactly these fields:
+{{
+  "raw_label": "snake_case slug",
+  "confidence": 0.0
+}}
+
+Rules:
+- raw_label must be lowercase snake_case
+- raw_label must be 1 to 3 words
+- raw_label must be act-oriented, not topic-oriented
+- prefer labels like proposal, request, agreement, disagreement, decision, clarification, question, step_transition, status_update, reflection
+- if there is no dominant act, use no_dominant_act
+
+Span:
+{span_text}

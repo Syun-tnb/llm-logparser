@@ -33,7 +33,7 @@ from .semantic_normalization import (
     SemanticNormalizationResult,
     SemanticNormalizationRuntimeOptions,
     normalize_representative_span,
-    semantic_normalization_prompt_hashes,
+    semantic_normalization_prompt_provenance,
     semantic_normalization_runtime_options_to_dict,
     semantic_normalization_to_dict,
 )
@@ -1263,7 +1263,7 @@ def _build_config(
             "taxonomy_version": SEED_TAXONOMY_VERSION,
             "confidence_threshold": RAW_LABEL_CONFIDENCE_THRESHOLD,
         },
-        "prompt_provenance": semantic_normalization_prompt_hashes(),
+        "prompt_provenance": semantic_normalization_prompt_provenance(),
         "worklist": {
             "total_spans": total_spans,
             "span_key_kind": "conversation_id+span_id+ordered_message_ids",
