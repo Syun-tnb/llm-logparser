@@ -1,0 +1,228 @@
+{
+  "schema_version": "0.1",
+  "scenarios": [
+    {
+      "id": "split_positive_two_qa_pairs",
+      "description": "One four-message U-A-U-A window contains two separate request/response acts and should split into two spans.",
+      "windows": [
+        {
+          "conversation_id": "conv-split-positive",
+          "window_id": "window-0001",
+          "messages": [
+            {
+              "message_id": "sp-1",
+              "role": "user",
+              "text": "How do I audit the schema before rollout?"
+            },
+            {
+              "message_id": "sp-2",
+              "role": "assistant",
+              "text": "Check the migration table and compare expected columns."
+            },
+            {
+              "message_id": "sp-3",
+              "role": "user",
+              "text": "What rollback gate should we add?"
+            },
+            {
+              "message_id": "sp-4",
+              "role": "assistant",
+              "text": "Require a verified backup and a reversible migration step."
+            }
+          ],
+          "ts_start": 100
+        }
+      ],
+      "clusters": [],
+      "expected_proposals": [
+        {
+          "proposal_kind": "split",
+          "message_ids": ["sp-1", "sp-2"]
+        },
+        {
+          "proposal_kind": "split",
+          "message_ids": ["sp-3", "sp-4"]
+        }
+      ]
+    },
+    {
+      "id": "split_negative_continuous_explanation",
+      "description": "A four-message explanation with continued assistant detail should stay together and must not be split.",
+      "windows": [
+        {
+          "conversation_id": "conv-split-negative",
+          "window_id": "window-0001",
+          "messages": [
+            {
+              "message_id": "sn-1",
+              "role": "user",
+              "text": "Walk me through the release checklist."
+            },
+            {
+              "message_id": "sn-2",
+              "role": "assistant",
+              "text": "Start by checking the schema migration state."
+            },
+            {
+              "message_id": "sn-3",
+              "role": "assistant",
+              "text": "Then verify rollback scripts and alert routing."
+            },
+            {
+              "message_id": "sn-4",
+              "role": "user",
+              "text": "Okay, that sequence makes sense."
+            }
+          ],
+          "ts_start": 200
+        }
+      ],
+      "clusters": [],
+      "expected_proposals": [
+        {
+          "proposal_kind": "keep",
+          "message_ids": ["sn-1", "sn-2", "sn-3", "sn-4"]
+        }
+      ]
+    },
+    {
+      "id": "merge_positive_short_continuation",
+      "description": "A short same-cluster continuation window should merge with the immediately preceding planning window.",
+      "windows": [
+        {
+          "conversation_id": "conv-merge-positive",
+          "window_id": "window-0001",
+          "messages": [
+            {
+              "message_id": "mp-1",
+              "role": "user",
+              "text": "Draft the rollout checklist."
+            },
+            {
+              "message_id": "mp-2",
+              "role": "assistant",
+              "text": "Include rollback guardrails and preflight checks."
+            }
+          ],
+          "ts_start": 300
+        },
+        {
+          "conversation_id": "conv-merge-positive",
+          "window_id": "window-0002",
+          "messages": [
+            {
+              "message_id": "mp-3",
+              "role": "user",
+              "text": "Add monitoring gates too."
+            }
+          ],
+          "ts_start": 303
+        }
+      ],
+      "clusters": [
+        {
+          "conversation_id": "conv-merge-positive",
+          "window_id": "window-0001",
+          "cluster_id": "cluster-merge-positive",
+          "cluster_size": 2
+        },
+        {
+          "conversation_id": "conv-merge-positive",
+          "window_id": "window-0002",
+          "cluster_id": "cluster-merge-positive",
+          "cluster_size": 2
+        }
+      ],
+      "expected_proposals": [
+        {
+          "proposal_kind": "merge",
+          "message_ids": ["mp-1", "mp-2", "mp-3"]
+        }
+      ]
+    },
+    {
+      "id": "merge_negative_topic_shift",
+      "description": "Adjacent windows in the same conversation but different clusters must remain separate.",
+      "windows": [
+        {
+          "conversation_id": "conv-merge-negative",
+          "window_id": "window-0001",
+          "messages": [
+            {
+              "message_id": "mn-1",
+              "role": "user",
+              "text": "Prepare the rollout checklist."
+            },
+            {
+              "message_id": "mn-2",
+              "role": "assistant",
+              "text": "Start with schema checks and rollback notes."
+            }
+          ],
+          "ts_start": 400
+        },
+        {
+          "conversation_id": "conv-merge-negative",
+          "window_id": "window-0002",
+          "messages": [
+            {
+              "message_id": "mn-3",
+              "role": "user",
+              "text": "Also compare lunch spots for next week."
+            }
+          ],
+          "ts_start": 403
+        }
+      ],
+      "clusters": [
+        {
+          "conversation_id": "conv-merge-negative",
+          "window_id": "window-0001",
+          "cluster_id": "cluster-merge-negative-a",
+          "cluster_size": 1
+        },
+        {
+          "conversation_id": "conv-merge-negative",
+          "window_id": "window-0002",
+          "cluster_id": "cluster-merge-negative-b",
+          "cluster_size": 1
+        }
+      ],
+      "expected_proposals": [
+        {
+          "proposal_kind": "keep",
+          "message_ids": ["mn-1", "mn-2"]
+        },
+        {
+          "proposal_kind": "keep",
+          "message_ids": ["mn-3"]
+        }
+      ]
+    },
+    {
+      "id": "keep_single_message",
+      "description": "A standalone one-message window should remain unchanged.",
+      "windows": [
+        {
+          "conversation_id": "conv-keep",
+          "window_id": "window-0001",
+          "messages": [
+            {
+              "message_id": "kp-1",
+              "role": "user",
+              "text": "Plan lunch options for next week."
+            }
+          ],
+          "ts_start": 500
+        }
+      ],
+      "clusters": [],
+      "expected_proposals": [
+        {
+          "proposal_kind": "keep",
+          "message_ids": ["kp-1"]
+        }
+      ]
+    }
+  ]
+}

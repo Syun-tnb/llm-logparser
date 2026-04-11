@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_semantic_span_proposals import (
     build_semantic_span_proposal_rows,
@@ -10,6 +12,10 @@ from llm_logparser.core.analyzer_semantic_span_proposals import (
 )
 from llm_logparser.core.analyzer_semantic_topics import build_semantic_topics_artifact
 from llm_logparser.core.schema_validation import load_semantic_span_proposal_validator
+
+GOLD_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "semantic_span_proposals_gold.json"
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -109,6 +115,19 @@ def _message_window_row(
     }
 
 
+def _message_window_row_from_fixture(window: dict) -> dict:
+    messages = window["messages"]
+    return _message_window_row(
+        str(window["conversation_id"]),
+        str(window["window_id"]),
+        message_ids=[str(message["message_id"]) for message in messages],
+        roles=[str(message["role"]) for message in messages],
+        text="\n\n".join(str(message["text"]) for message in messages),
+        ts_start=int(window["ts_start"]),
+        ts_end=int(window["ts_start"]) + len(messages) - 1,
+    )
+
+
 def _window_cluster_row(
     conversation_id: str,
     window_id: str,
@@ -126,6 +145,32 @@ def _window_cluster_row(
         "cluster_size": cluster_size,
         "edge_policy": "mutual-only",
     }
+
+
+def _load_gold_fixture() -> dict:
+    return json.loads(GOLD_FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def _write_gold_scenario_fixture(root: Path, scenario: dict) -> None:
+    thread = root / f"thread-{scenario['id']}"
+    _write_jsonl(
+        thread / "message_windows.jsonl",
+        [_message_window_row_from_fixture(window) for window in scenario["windows"]],
+    )
+    clusters = scenario.get("clusters") or []
+    if clusters:
+        _write_jsonl(
+            thread / "window_clusters.jsonl",
+            [
+                _window_cluster_row(
+                    str(cluster["conversation_id"]),
+                    str(cluster["window_id"]),
+                    cluster_id=str(cluster["cluster_id"]),
+                    cluster_size=int(cluster["cluster_size"]),
+                )
+                for cluster in clusters
+            ],
+        )
 
 
 def _write_proposal_fixture(root: Path) -> None:
@@ -316,3 +361,44 @@ def test_semantic_span_proposals_do_not_change_semantic_topics_output(tmp_path):
 
     assert artifact_after == baseline_artifact
     assert rows_after == baseline_rows
+
+
+@pytest.mark.parametrize(
+    ("scenario",),
+    [
+        (scenario,)
+        for scenario in _load_gold_fixture()["scenarios"]
+    ],
+    ids=lambda item: str(item["id"]),
+)
+def test_semantic_span_proposal_gold_fixtures_lock_expected_groupings(
+    tmp_path: Path,
+    scenario: dict,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_gold_scenario_fixture(root, scenario)
+
+    rows = build_semantic_span_proposal_rows(root)
+
+    actual = [
+        {
+            "proposal_kind": row["proposal_kind"],
+            "message_ids": row["message_ids"],
+        }
+        for row in rows
+    ]
+
+    assert actual == scenario["expected_proposals"], scenario["description"]
+
+
+def test_semantic_span_proposal_gold_fixture_rows_remain_schema_valid(tmp_path):
+    root = tmp_path / "artifacts" / "openai"
+    fixture = _load_gold_fixture()
+    for scenario in fixture["scenarios"]:
+        _write_gold_scenario_fixture(root, scenario)
+
+    rows = build_semantic_span_proposal_rows(root)
+
+    validator = load_semantic_span_proposal_validator()
+    for row in rows:
+        assert not list(validator.iter_errors(row))
