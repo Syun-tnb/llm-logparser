@@ -350,6 +350,7 @@ def run_analyze_semantic_topic_explore(args, logger: logging.Logger) -> None:
 def run_analyze_semantic_normalization(args, logger: logging.Logger) -> None:
     from llm_logparser.core.semantic_normalization_jobs import (
         SemanticNormalizationJobError,
+        render_semantic_normalization_job_compare,
         render_semantic_normalization_job_status,
         render_semantic_normalization_job_summary,
         resume_semantic_normalization_job,
@@ -428,6 +429,18 @@ def run_analyze_semantic_normalization(args, logger: logging.Logger) -> None:
                 render_semantic_normalization_job_summary(
                     input_root,
                     job_id=args.job_id,
+                    json_output=args.json_output,
+                ),
+                None,
+            )
+            return
+
+        if args.semantic_normalization_command == "compare":
+            write_or_print(
+                render_semantic_normalization_job_compare(
+                    input_root,
+                    job_a=args.job_a,
+                    job_b=args.job_b,
                     json_output=args.json_output,
                 ),
                 None,

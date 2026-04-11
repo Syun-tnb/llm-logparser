@@ -131,8 +131,11 @@ messages:
   cli.analyze.semantic_normalization.resume.help: semantic-normalization job の pending span を再開する
   cli.analyze.semantic_normalization.retry_failures.help: semantic-normalization job の failed span を再試行する
   cli.analyze.semantic_normalization.summary.help: semantic-normalization job の集計結果を表示する
+  cli.analyze.semantic_normalization.compare.help: 同じ provider root 配下の 2 つの semantic-normalization job を比較する
   cli.analyze.semantic_normalization.opt.input.help: "入力: ディレクトリのみ。parsed.jsonl thread と任意の message_windows.jsonl sidecar を含む provider 成果物ルート"
   cli.analyze.semantic_normalization.opt.job_id.help: 既存または新規の semantic-normalization job ID
+  cli.analyze.semantic_normalization.opt.job_a.help: 比較対象の 1 つ目の semantic-normalization job ID
+  cli.analyze.semantic_normalization.opt.job_b.help: 比較対象の 2 つ目の semantic-normalization job ID
   cli.analyze.semantic_normalization.opt.model.help: semantic normalization に使うローカル生成モデル ID
   cli.analyze.semantic_normalization.opt.base_url.help: ローカル Ollama サーバーの base URL
   cli.analyze.semantic_normalization.opt.timeout_seconds.help: Ollama リクエストごとの timeout 秒数

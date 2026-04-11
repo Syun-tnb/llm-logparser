@@ -808,6 +808,11 @@ deterministic and model-derived capabilities.
   `l3/semantic-normalization/jobs/<job_id>/`. It remains additive only: it
   does not modify canonical parsing outputs, `message_windows.jsonl`, or the
   `semantic-topics` artifact set.
+  For inspection, `semantic-normalization summary` reports one job's label
+  distribution, mapping-status counts, and failure kinds, while
+  `semantic-normalization compare` provides a developer-facing diff summary
+  between two jobs under the same provider root using `span_id` overlap and
+  label/status change buckets.
 
 - `semantic-span-proposals` is an experimental L3 sidecar builder for span
   quality evaluation. It derives candidate semantic spans from canonical

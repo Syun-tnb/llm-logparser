@@ -5,6 +5,7 @@ import os
 import shutil
 import statistics
 import time
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha1
@@ -47,8 +48,10 @@ JOB_CONFIG_SCHEMA_VERSION = "0.1"
 JOB_RESULT_SCHEMA_VERSION = "0.1"
 JOB_FAILURE_SCHEMA_VERSION = "0.1"
 JOB_SPAN_SCHEMA_VERSION = "0.1"
+JOB_COMPARE_SCHEMA_VERSION = "0.1"
 JOB_ID_PREFIX = "snorm_"
 JOB_ARTIFACT_TYPE = "semantic_normalization_job"
+JOB_COMPARE_ARTIFACT_TYPE = "semantic_normalization_job_compare"
 SPAN_RECORD_TYPE = "semantic_normalization_span"
 RESULT_RECORD_TYPE = "semantic_normalization_result"
 FAILURE_RECORD_TYPE = "semantic_normalization_failure"
@@ -602,12 +605,31 @@ def _build_summary(job_dir: Path) -> dict[str, Any]:
         "unmapped": 0,
     }
     results = list(_success_index(job_dir).values())
+    failures = _failure_rows(job_dir)
     for row in results:
         status = row.get("mapping_status")
         if isinstance(status, str) and status in statuses:
             statuses[status] += 1
-    latencies = _latencies(job_dir)
+    latencies = [
+        float(row["latency_ms"])
+        for row in results
+        if isinstance(row.get("latency_ms"), (int, float))
+    ]
     total_successes = len(results)
+    raw_label_counts: Counter[str | None] = Counter()
+    normalized_label_counts: Counter[str | None] = Counter()
+    failure_kind_counts: Counter[str] = Counter()
+    for row in results:
+        raw_label = row.get("raw_label")
+        raw_label_counts[str(raw_label) if raw_label is not None else None] += 1
+        normalized_label = row.get("normalized_label")
+        normalized_label_counts[
+            str(normalized_label) if normalized_label is not None else None
+        ] += 1
+    for row in failures:
+        error_kind = row.get("error_kind")
+        if isinstance(error_kind, str):
+            failure_kind_counts[error_kind] += 1
     summary = {
         "artifact_type": JOB_ARTIFACT_TYPE,
         "schema_version": JOB_CONFIG_SCHEMA_VERSION,
@@ -651,6 +673,13 @@ def _build_summary(job_dir: Path) -> dict[str, Any]:
             "median": round(statistics.median(latencies), 3) if latencies else None,
             "p95": round(_percentile(latencies, 0.95), 3) if latencies else None,
         },
+        "labels": {
+            "top_raw_labels": _top_label_items(raw_label_counts),
+            "top_normalized_labels": _top_label_items(normalized_label_counts),
+        },
+        "failures": {
+            "by_error_kind": _top_error_kind_items(failure_kind_counts),
+        },
         "normalization": config["normalization"],
     }
     _atomic_write_json(_summary_path(job_dir), summary)
@@ -661,6 +690,8 @@ def _render_summary_text(summary: dict[str, Any]) -> str:
     counts = summary["counts"]
     rates = summary["rates"]
     latency = summary["latency_ms"]
+    labels = summary.get("labels", {})
+    failures = summary.get("failures", {})
     lines = [
         f"Job: {summary['job_id']}",
         f"Status: {summary['status']}",
@@ -672,6 +703,21 @@ def _render_summary_text(summary: dict[str, Any]) -> str:
         f"Retryable failures: {counts['retryable_failure_count']}",
         f"Latency ms: median={latency['median']} p95={latency['p95']}",
     ]
+    lines.append(
+        "Top raw labels: "
+        + _format_count_items(labels.get("top_raw_labels", []), label_key="label")
+    )
+    lines.append(
+        "Top normalized labels: "
+        + _format_count_items(labels.get("top_normalized_labels", []), label_key="label")
+    )
+    lines.append(
+        "Failure kinds: "
+        + _format_count_items(
+            failures.get("by_error_kind", []),
+            label_key="error_kind",
+        )
+    )
     return "\n".join(lines)
 
 
@@ -743,6 +789,136 @@ class _JobLock:
 
 def _span_rows_by_key(rows: list[dict[str, Any]]) -> dict[SpanKey, dict[str, Any]]:
     return {_result_key(row): row for row in rows}
+
+
+def _top_label_items(
+    counts: Counter[str | None],
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    ordered = sorted(
+        counts.items(),
+        key=lambda item: (-item[1], "" if item[0] is None else str(item[0])),
+    )
+    return [
+        {"label": label, "count": count}
+        for label, count in ordered[:limit]
+    ]
+
+
+def _top_error_kind_items(
+    counts: Counter[str],
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [
+        {"error_kind": error_kind, "count": count}
+        for error_kind, count in ordered[:limit]
+    ]
+
+
+def _top_transition_items(
+    counts: Counter[tuple[str | None, str | None]],
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    ordered = sorted(
+        counts.items(),
+        key=lambda item: (
+            -item[1],
+            "" if item[0][0] is None else str(item[0][0]),
+            "" if item[0][1] is None else str(item[0][1]),
+        ),
+    )
+    return [
+        {"from": old_value, "to": new_value, "count": count}
+        for (old_value, new_value), count in ordered[:limit]
+    ]
+
+
+def _format_count_items(
+    items: list[dict[str, Any]],
+    *,
+    label_key: str,
+) -> str:
+    if not items:
+        return "none"
+    rendered: list[str] = []
+    for item in items:
+        label = item.get(label_key)
+        rendered.append(f"{'<none>' if label is None else label}={item['count']}")
+    return ", ".join(rendered)
+
+
+def _rows_by_span_id(
+    rows: list[dict[str, Any]],
+    *,
+    job_id: str,
+) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    duplicates: set[str] = set()
+    for row in rows:
+        span_id = str(row["span_id"])
+        if span_id in index:
+            duplicates.add(span_id)
+            continue
+        index[span_id] = row
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates)[:5])
+        raise SemanticNormalizationJobError(
+            f"duplicate span_id values in semantic normalization results for job {job_id}: {duplicate_text}"
+        )
+    return index
+
+
+def _job_compare_view(summary: dict[str, Any]) -> dict[str, Any]:
+    counts = summary["counts"]
+    return {
+        "job_id": summary["job_id"],
+        "model": summary["model"],
+        "temperature": summary["temperature"],
+        "rows": counts["success_count"],
+        "failure_count": counts["failure_count"],
+        "mapping_status_counts": {
+            "mapped": counts["mapped_count"],
+            "needs_review": counts["needs_review_count"],
+            "taxonomy_gap": counts["taxonomy_gap_count"],
+            "unmapped": counts["unmapped_count"],
+        },
+        "top_raw_labels": summary["labels"]["top_raw_labels"],
+        "top_normalized_labels": summary["labels"]["top_normalized_labels"],
+        "failure_kinds": summary["failures"]["by_error_kind"],
+    }
+
+
+def _render_compare_text(payload: dict[str, Any]) -> str:
+    counts = payload["counts"]
+    changes = payload["changes"]
+    lines = [
+        f"Job A: {payload['job_a']['job_id']}",
+        f"Job B: {payload['job_b']['job_id']}",
+        f"Rows: a={counts['rows_a']} b={counts['rows_b']} shared={counts['shared_span_count']} only_in_a={counts['only_in_a_count']} only_in_b={counts['only_in_b_count']}",
+        f"Changes: raw_label={counts['raw_label_changed_count']} normalized_label={counts['normalized_label_changed_count']} mapping_status={counts['mapping_status_changed_count']} unchanged={counts['unchanged_shared_span_count']}",
+        "Top normalized label changes: "
+        + _format_transition_items(changes["top_normalized_label_changes"]),
+        "Top raw label changes: "
+        + _format_transition_items(changes["top_raw_label_changes"]),
+        "Top mapping-status changes: "
+        + _format_transition_items(changes["top_mapping_status_changes"]),
+    ]
+    return "\n".join(lines)
+
+
+def _format_transition_items(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return "none"
+    rendered: list[str] = []
+    for item in items:
+        from_value = "<none>" if item.get("from") is None else str(item["from"])
+        to_value = "<none>" if item.get("to") is None else str(item["to"])
+        rendered.append(f"{from_value}->{to_value}={item['count']}")
+    return ", ".join(rendered)
 
 
 def _validate_resume_inputs(job_dir: Path, target_keys: set[SpanKey]) -> None:
@@ -1273,6 +1449,92 @@ def semantic_normalization_job_summary(
     return summary
 
 
+def compare_semantic_normalization_jobs(
+    input_root: Path,
+    *,
+    job_a: str,
+    job_b: str,
+) -> dict[str, Any]:
+    job_dir_a = _job_dir(input_root, job_a)
+    job_dir_b = _job_dir(input_root, job_b)
+    if not job_dir_a.exists():
+        raise SemanticNormalizationJobError(f"job not found: {job_dir_a}")
+    if not job_dir_b.exists():
+        raise SemanticNormalizationJobError(f"job not found: {job_dir_b}")
+
+    summary_a = _build_summary(job_dir_a)
+    summary_b = _build_summary(job_dir_b)
+    rows_a = list(_success_index(job_dir_a).values())
+    rows_b = list(_success_index(job_dir_b).values())
+    by_span_id_a = _rows_by_span_id(rows_a, job_id=str(summary_a["job_id"]))
+    by_span_id_b = _rows_by_span_id(rows_b, job_id=str(summary_b["job_id"]))
+
+    span_ids_a = set(by_span_id_a)
+    span_ids_b = set(by_span_id_b)
+    shared_span_ids = sorted(span_ids_a & span_ids_b)
+    only_in_a = span_ids_a - span_ids_b
+    only_in_b = span_ids_b - span_ids_a
+
+    raw_label_changes: Counter[tuple[str | None, str | None]] = Counter()
+    normalized_label_changes: Counter[tuple[str | None, str | None]] = Counter()
+    mapping_status_changes: Counter[tuple[str | None, str | None]] = Counter()
+    raw_label_changed_count = 0
+    normalized_label_changed_count = 0
+    mapping_status_changed_count = 0
+    unchanged_shared_span_count = 0
+    for span_id in shared_span_ids:
+        row_a = by_span_id_a[span_id]
+        row_b = by_span_id_b[span_id]
+        raw_changed = row_a.get("raw_label") != row_b.get("raw_label")
+        normalized_changed = row_a.get("normalized_label") != row_b.get(
+            "normalized_label"
+        )
+        status_changed = row_a.get("mapping_status") != row_b.get("mapping_status")
+        if raw_changed:
+            raw_label_changed_count += 1
+            raw_label_changes[(row_a.get("raw_label"), row_b.get("raw_label"))] += 1
+        if normalized_changed:
+            normalized_label_changed_count += 1
+            normalized_label_changes[
+                (row_a.get("normalized_label"), row_b.get("normalized_label"))
+            ] += 1
+        if status_changed:
+            mapping_status_changed_count += 1
+            mapping_status_changes[
+                (row_a.get("mapping_status"), row_b.get("mapping_status"))
+            ] += 1
+        if not raw_changed and not normalized_changed and not status_changed:
+            unchanged_shared_span_count += 1
+
+    return {
+        "artifact_type": JOB_COMPARE_ARTIFACT_TYPE,
+        "schema_version": JOB_COMPARE_SCHEMA_VERSION,
+        "input_root": str(input_root.resolve()),
+        "job_a": _job_compare_view(summary_a),
+        "job_b": _job_compare_view(summary_b),
+        "counts": {
+            "rows_a": len(rows_a),
+            "rows_b": len(rows_b),
+            "shared_span_count": len(shared_span_ids),
+            "only_in_a_count": len(only_in_a),
+            "only_in_b_count": len(only_in_b),
+            "raw_label_changed_count": raw_label_changed_count,
+            "normalized_label_changed_count": normalized_label_changed_count,
+            "mapping_status_changed_count": mapping_status_changed_count,
+            "unchanged_shared_span_count": unchanged_shared_span_count,
+        },
+        "changes": {
+            "top_raw_label_changes": _top_transition_items(raw_label_changes),
+            "top_normalized_label_changes": _top_transition_items(
+                normalized_label_changes
+            ),
+            "top_mapping_status_changes": _top_transition_items(
+                mapping_status_changes
+            ),
+        },
+    }
+
+
 def load_semantic_normalization_job_results(
     input_root: Path,
     *,
@@ -1314,3 +1576,20 @@ def render_semantic_normalization_job_summary(
     if json_output:
         return json.dumps(summary, ensure_ascii=False, indent=2)
     return _render_summary_text(summary)
+
+
+def render_semantic_normalization_job_compare(
+    input_root: Path,
+    *,
+    job_a: str,
+    job_b: str,
+    json_output: bool = False,
+) -> str:
+    comparison = compare_semantic_normalization_jobs(
+        input_root,
+        job_a=job_a,
+        job_b=job_b,
+    )
+    if json_output:
+        return json.dumps(comparison, ensure_ascii=False, indent=2)
+    return _render_compare_text(comparison)

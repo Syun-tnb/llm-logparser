@@ -127,8 +127,11 @@ messages:
   cli.analyze.semantic_normalization.resume.help: Resume pending spans for one semantic-normalization job
   cli.analyze.semantic_normalization.retry_failures.help: Retry failed spans for one semantic-normalization job
   cli.analyze.semantic_normalization.summary.help: Show the current summary for one semantic-normalization job
+  cli.analyze.semantic_normalization.compare.help: Compare two semantic-normalization jobs under the same provider root
   cli.analyze.semantic_normalization.opt.input.help: "Input: directory only; provider artifact root containing parsed.jsonl threads and optional message_windows.jsonl sidecars"
   cli.analyze.semantic_normalization.opt.job_id.help: Existing or requested semantic-normalization job ID
+  cli.analyze.semantic_normalization.opt.job_a.help: First semantic-normalization job ID to compare
+  cli.analyze.semantic_normalization.opt.job_b.help: Second semantic-normalization job ID to compare
   cli.analyze.semantic_normalization.opt.model.help: Local generation model identifier used for semantic normalization
   cli.analyze.semantic_normalization.opt.base_url.help: Base URL for the local Ollama server
   cli.analyze.semantic_normalization.opt.timeout_seconds.help: Per-request Ollama timeout in seconds

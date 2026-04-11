@@ -939,6 +939,37 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_normalization.opt.json.help"),
     )
 
+    analyze_semantic_normalization_compare_cmd = (
+        analyze_semantic_normalization_subparsers.add_parser(
+            "compare",
+            help=_("cli.analyze.semantic_normalization.compare.help"),
+        )
+    )
+    analyze_semantic_normalization_compare_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_normalization.opt.input.help"),
+    )
+    analyze_semantic_normalization_compare_cmd.add_argument(
+        "--job-a",
+        dest="job_a",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.job_a.help"),
+    )
+    analyze_semantic_normalization_compare_cmd.add_argument(
+        "--job-b",
+        dest="job_b",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.job_b.help"),
+    )
+    analyze_semantic_normalization_compare_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_normalization.opt.json.help"),
+    )
+
     chain_cmd = subparsers.add_parser(
         "chain",
         help=_("cli.chain.help"),

@@ -220,6 +220,7 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
     assert "resume" in help_text
     assert "retry-failures" in help_text
     assert "summary" in help_text
+    assert "compare" in help_text
 
 
 @pytest.mark.parametrize(

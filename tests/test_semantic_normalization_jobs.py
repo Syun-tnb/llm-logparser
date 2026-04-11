@@ -15,6 +15,7 @@ from llm_logparser.core.semantic_normalization import (
 from llm_logparser.core.semantic_normalization_jobs import (
     SemanticNormalizationJobError,
     load_semantic_normalization_job_results,
+    render_semantic_normalization_job_compare,
     render_semantic_normalization_job_status,
     render_semantic_normalization_job_summary,
     resume_semantic_normalization_job,
@@ -166,6 +167,19 @@ def _setup_provider_with_parsed_only(root: Path) -> None:
         messages=[
             _message("conv-b", "b-1", role="user", text="What is the next step?", ts=3),
             _message("conv-b", "b-2", role="assistant", text="Review the checklist", ts=4),
+        ],
+    )
+
+
+def _setup_provider_with_extra_parsed_only(root: Path) -> None:
+    thread_c = root / "thread-conv-c"
+    _write_parsed_thread(
+        thread_c,
+        provider_id="openai",
+        conversation_id="conv-c",
+        messages=[
+            _message("conv-c", "c-1", role="user", text="Confirm the launch gate", ts=5),
+            _message("conv-c", "c-2", role="assistant", text="The gate is still yellow", ts=6),
         ],
     )
 
@@ -593,6 +607,126 @@ def test_status_and_summary_commands_render_text_and_json(tmp_path, capsys):
     summary_payload = json.loads(summary_output)
     assert summary_payload["job_id"] == "cli-job"
     assert summary_payload["status"] == "completed"
+    assert summary_payload["labels"]["top_raw_labels"][0]["label"] == "request"
+    assert summary_payload["labels"]["top_raw_labels"][0]["count"] == 1
+    assert summary_payload["labels"]["top_normalized_labels"][0]["label"] == "request"
+    assert summary_payload["failures"]["by_error_kind"] == []
 
     assert "Job:" in render_semantic_normalization_job_status(root, job_id="cli-job")
-    assert "Job:" in render_semantic_normalization_job_summary(root, job_id="cli-job")
+    summary_text = render_semantic_normalization_job_summary(root, job_id="cli-job")
+    assert "Job:" in summary_text
+    assert "Top raw labels:" in summary_text
+
+
+def test_compare_reports_overlap_and_label_changes_between_two_jobs(tmp_path, capsys):
+    root = _make_provider_root(tmp_path)
+    _setup_provider_with_windows_and_parsed(root)
+    _setup_provider_with_parsed_only(root)
+    _setup_provider_with_extra_parsed_only(root)
+
+    def _normalize_job_a(**kwargs):
+        conversation_id = kwargs["conversation_id"]
+        if conversation_id == "conv-c":
+            raise RuntimeError("Ollama request failed for /api/generate: timeout")
+        if conversation_id == "conv-b":
+            return _fake_result(
+                conversation_id=conversation_id,
+                span_id=kwargs["span_id"],
+                window_id=kwargs["window_id"],
+                message_ids=kwargs["message_ids"],
+                raw_label="clarify",
+                normalized_label="clarification",
+                mapping_status="mapped",
+            )
+        return _fake_result(
+            conversation_id=conversation_id,
+            span_id=kwargs["span_id"],
+            window_id=kwargs["window_id"],
+            message_ids=kwargs["message_ids"],
+            raw_label="request",
+            normalized_label="request",
+            mapping_status="mapped",
+        )
+
+    with patch(
+        "llm_logparser.core.semantic_normalization_jobs.normalize_representative_span",
+        side_effect=_normalize_job_a,
+    ):
+        run_semantic_normalization_job(root, model="test-model", job_id="compare-a")
+
+    def _normalize_job_b(**kwargs):
+        conversation_id = kwargs["conversation_id"]
+        if conversation_id == "conv-a":
+            raise RuntimeError("Ollama request failed for /api/generate: timeout")
+        if conversation_id == "conv-b":
+            return _fake_result(
+                conversation_id=conversation_id,
+                span_id=kwargs["span_id"],
+                window_id=kwargs["window_id"],
+                message_ids=kwargs["message_ids"],
+                raw_label="follow up",
+                normalized_label="question",
+                mapping_status="needs_review",
+                confidence=0.44,
+            )
+        return _fake_result(
+            conversation_id=conversation_id,
+            span_id=kwargs["span_id"],
+            window_id=kwargs["window_id"],
+            message_ids=kwargs["message_ids"],
+            raw_label="decision",
+            normalized_label="decision",
+            mapping_status="mapped",
+        )
+
+    with patch(
+        "llm_logparser.core.semantic_normalization_jobs.normalize_representative_span",
+        side_effect=_normalize_job_b,
+    ):
+        run_semantic_normalization_job(root, model="test-model", job_id="compare-b")
+
+    main(
+        [
+            "analyze",
+            "semantic-normalization",
+            "compare",
+            "--input",
+            str(root),
+            "--job-a",
+            "compare-a",
+            "--job-b",
+            "compare-b",
+            "--json",
+        ]
+    )
+    compare_output = capsys.readouterr().out
+    compare_payload = json.loads(compare_output)
+    assert compare_payload["job_a"]["job_id"] == "compare-a"
+    assert compare_payload["job_b"]["job_id"] == "compare-b"
+    assert compare_payload["counts"]["rows_a"] == 2
+    assert compare_payload["counts"]["rows_b"] == 2
+    assert compare_payload["counts"]["shared_span_count"] == 1
+    assert compare_payload["counts"]["only_in_a_count"] == 1
+    assert compare_payload["counts"]["only_in_b_count"] == 1
+    assert compare_payload["counts"]["raw_label_changed_count"] == 1
+    assert compare_payload["counts"]["normalized_label_changed_count"] == 1
+    assert compare_payload["counts"]["mapping_status_changed_count"] == 1
+    assert compare_payload["counts"]["unchanged_shared_span_count"] == 0
+    assert compare_payload["changes"]["top_raw_label_changes"] == [
+        {"from": "clarify", "to": "follow up", "count": 1}
+    ]
+    assert compare_payload["changes"]["top_normalized_label_changes"] == [
+        {"from": "clarification", "to": "question", "count": 1}
+    ]
+    assert compare_payload["changes"]["top_mapping_status_changes"] == [
+        {"from": "mapped", "to": "needs_review", "count": 1}
+    ]
+
+    compare_text = render_semantic_normalization_job_compare(
+        root,
+        job_a="compare-a",
+        job_b="compare-b",
+    )
+    assert "Job A: compare-a" in compare_text
+    assert "shared=1" in compare_text
+    assert "clarification->question=1" in compare_text
