@@ -81,6 +81,8 @@ messages:
   cli.analyze.semantic_preview.opt.include_text.help: Include reconstructed window text in the preview (use --no-include-text to disable)
   cli.analyze.semantic_preview.opt.max_chars.help: Maximum number of characters to show per window before truncation
   cli.analyze.semantic_preview.opt.show_meta.help: Include metadata blocks in the preview (use --no-show-meta to disable)
+  cli.analyze.semantic_span_proposals.help: Build an experimental semantic-span proposal sidecar from canonical messages and current window-backed L3 inputs
+  cli.analyze.semantic_span_proposals.opt.input.help: "Input: directory only; provider artifact root containing parsed.jsonl threads, message_windows.jsonl sidecars, and optional window_clusters.jsonl files"
   cli.analyze.semantic_topic.help: Generate experimental L4 topic labels and summaries from stored L3 clusters using a local Ollama model
   cli.analyze.semantic_topic.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl and window_clusters.jsonl files"
   cli.analyze.semantic_topic.opt.model.help: Local Ollama generation model identifier

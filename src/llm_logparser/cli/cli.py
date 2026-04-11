@@ -23,6 +23,7 @@ from llm_logparser.cli.handlers import (
     run_analyze_metrics,
     run_analyze_semantic_normalization,
     run_analyze_semantic_preview,
+    run_analyze_semantic_span_proposals,
     run_analyze_semantic_prototype,
     run_analyze_semantic_topic,
     run_analyze_semantic_topic_explore,
@@ -188,6 +189,7 @@ def _prompt_missing_required(
             "sqlite-build",
             "semantic-prototype",
             "semantic-preview",
+            "semantic-span-proposals",
             "semantic-normalization",
             "semantic-topic",
             "semantic-topics",
@@ -199,7 +201,12 @@ def _prompt_missing_required(
                 prompt_label = (
                     _("runtime.prompt.analyze_provider_root")
                     if args.analyze_command
-                    in {"sqlite-build", "semantic-normalization", "semantic-topics"}
+                    in {
+                        "sqlite-build",
+                        "semantic-normalization",
+                        "semantic-span-proposals",
+                        "semantic-topics",
+                    }
                     else _("runtime.prompt.analyze_input")
                 )
                 raw_input = prompt_text(prompt_label)
@@ -243,6 +250,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_semantic_prototype(args, logger)
         elif args.analyze_command == "semantic-preview":
             run_analyze_semantic_preview(args, logger)
+        elif args.analyze_command == "semantic-span-proposals":
+            run_analyze_semantic_span_proposals(args, logger)
         elif args.analyze_command == "semantic-normalization":
             run_analyze_semantic_normalization(args, logger)
         elif args.analyze_command == "semantic-topic":

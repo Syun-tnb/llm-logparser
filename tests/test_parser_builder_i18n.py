@@ -122,6 +122,20 @@ def test_analyze_semantic_preview_help_mentions_lookup_options(capsys):
     assert "--max-chars" in help_text
 
 
+def test_analyze_semantic_span_proposals_help_mentions_experimental_sidecar(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-span-proposals", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "experimental" in help_text
+    assert "semantic-span proposal" in help_text
+    assert "--input" in help_text
+
+
 def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):
     set_locale("en-US")
     parser = build_parser()

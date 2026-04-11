@@ -85,6 +85,8 @@ messages:
   cli.analyze.semantic_preview.opt.include_text.help: プレビューに復元テキストを含める (`--no-include-text` で無効化)
   cli.analyze.semantic_preview.opt.max_chars.help: 各 window で切り詰める前に表示する最大文字数
   cli.analyze.semantic_preview.opt.show_meta.help: プレビューにメタデータブロックを含める (`--no-show-meta` で無効化)
+  cli.analyze.semantic_span_proposals.help: canonical message と現在の window ベース L3 入力から実験的な semantic-span proposal sidecar を構築する
+  cli.analyze.semantic_span_proposals.opt.input.help: "入力: ディレクトリのみ。parsed.jsonl thread、message_windows.jsonl sidecar、任意の window_clusters.jsonl を含む provider 成果物ルート"
   cli.analyze.semantic_topic.help: 保存済み L3 cluster からローカル Ollama モデルで実験的な L4 topic label / summary を生成する
   cli.analyze.semantic_topic.opt.input.help: "入力: ディレクトリのみ。message_windows.jsonl と window_clusters.jsonl を含む provider 成果物ルート"
   cli.analyze.semantic_topic.opt.model.help: 使用するローカル Ollama 生成モデル ID

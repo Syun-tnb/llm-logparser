@@ -520,6 +520,7 @@ Possible modes:
 | sqlite-build | L2 |
 | semantic-prototype | L3 prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
+| semantic-span-proposals | L3 experimental span-derivation sidecar |
 | semantic-normalization | L3 sidecar batch job runner |
 | semantic-topics | L3 topic artifact builder (experimental) |
 | semantic-topic | L3/L4 topic renderer (experimental) |
@@ -799,6 +800,15 @@ deterministic and model-derived capabilities.
   `l3/semantic-normalization/jobs/<job_id>/`. It remains additive only: it
   does not modify canonical parsing outputs, `message_windows.jsonl`, or the
   `semantic-topics` artifact set.
+
+- `semantic-span-proposals` is an experimental L3 sidecar builder for span
+  quality evaluation. It derives candidate semantic spans from canonical
+  message sequences plus current window-backed inputs, writes
+  `l3/semantic-span-proposals/span_proposals.jsonl`, and records whether each
+  proposal is a conservative `split`, `merge`, or `keep` relative to the
+  current window-backed unit. It remains additive only: `semantic-topics`,
+  cluster membership, normalization jobs, and topic IDs do not consume this
+  artifact yet.
 
 Current limitations remain explicit:
 

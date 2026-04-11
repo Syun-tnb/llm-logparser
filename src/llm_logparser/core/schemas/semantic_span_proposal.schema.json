@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/semantic_span_proposal.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "span_id",
+    "message_ids",
+    "text_sha1",
+    "source_window_ids",
+    "proposal_kind",
+    "reason_code",
+    "message_count",
+    "char_count",
+    "window_count",
+    "ts_start",
+    "ts_end"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "semantic_span_proposal" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "span_id": { "type": "string", "minLength": 1 },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "text_sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source_window_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "proposal_kind": {
+      "type": "string",
+      "enum": ["split", "merge", "keep"]
+    },
+    "reason_code": { "type": "string", "minLength": 1 },
+    "message_count": { "type": "integer", "minimum": 1 },
+    "char_count": { "type": "integer", "minimum": 0 },
+    "window_count": { "type": "integer", "minimum": 1 },
+    "ts_start": { "type": ["integer", "null"] },
+    "ts_end": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": false
+}

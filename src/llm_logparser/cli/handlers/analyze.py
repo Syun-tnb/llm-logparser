@@ -237,6 +237,26 @@ def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
     write_or_print(rendered, None)
 
 
+def run_analyze_semantic_span_proposals(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_semantic_span_proposals import (
+        SemanticSpanProposalError,
+        write_semantic_span_proposals_artifact,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_semantic_span_proposals_artifact(input_root)
+    except SemanticSpanProposalError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "experimental semantic span proposals written: "
+        f"{result['proposal_count']} proposal(s) -> "
+        f"{format_display_path(result['proposals_path'])}"
+    )
+
+
 def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_topic import (
         SemanticTopicError,

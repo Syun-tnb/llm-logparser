@@ -526,6 +526,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_preview.opt.show_meta.help"),
     )
 
+    analyze_semantic_span_proposals_cmd = analyze_subparsers.add_parser(
+        "semantic-span-proposals",
+        help=_("cli.analyze.semantic_span_proposals.help"),
+        description=_("cli.analyze.semantic_span_proposals.help"),
+    )
+    analyze_semantic_span_proposals_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_span_proposals.opt.input.help"),
+    )
+
     analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
         "semantic-topic",
         help=_("cli.analyze.semantic_topic.help"),
