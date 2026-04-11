@@ -150,6 +150,7 @@ def test_analyze_cross_thread_candidates_help_mentions_experimental_sidecar(caps
     assert "--input" in help_text
     assert "--min-score" in help_text
     assert "--top-per-source" in help_text
+    assert "--embedding-model" in help_text
 
 
 def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):

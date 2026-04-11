@@ -562,6 +562,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help=_("cli.analyze.cross_thread_candidates.opt.top_per_source.help"),
     )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--embedding-model",
+        dest="embedding_model",
+        default=None,
+        help=_("cli.analyze.cross_thread_candidates.opt.embedding_model.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--embedding-base-url",
+        dest="embedding_base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.cross_thread_candidates.opt.embedding_base_url.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--embedding-timeout-seconds",
+        dest="embedding_timeout_seconds",
+        type=float,
+        default=30.0,
+        help=_("cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help"),
+    )
 
     analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
         "semantic-topic",

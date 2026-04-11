@@ -116,6 +116,9 @@ messages:
   cli.analyze.cross_thread_candidates.opt.input.help: "入力: ディレクトリのみ。l3/semantic-topics/topics.json を含む provider 成果物ルート"
   cli.analyze.cross_thread_candidates.opt.min_score.help: cross-thread candidate link を出力するために必要な最小 deterministic evidence score
   cli.analyze.cross_thread_candidates.opt.top_per_source.help: source representative span ごとに出力する candidate link の最大数
+  cli.analyze.cross_thread_candidates.opt.embedding_model.help: 既に出力対象になった candidate row に embedding similarity を追加するためだけに使う任意のローカル Ollama embedding model
+  cli.analyze.cross_thread_candidates.opt.embedding_base_url.help: 任意のローカル Ollama embedding endpoint の base URL
+  cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help: 任意のローカル Ollama embedding request に使う timeout 秒数
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: "入力: ディレクトリのみ。topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する

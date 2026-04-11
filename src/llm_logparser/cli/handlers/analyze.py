@@ -269,6 +269,9 @@ def run_analyze_cross_thread_candidates(args, logger: logging.Logger) -> None:
             input_root,
             min_score=args.min_score,
             top_per_source=args.top_per_source,
+            embedding_model=args.embedding_model,
+            embedding_base_url=args.embedding_base_url,
+            embedding_timeout_seconds=args.embedding_timeout_seconds,
         )
     except CrossThreadCandidateError as exc:
         logger.error(str(exc))

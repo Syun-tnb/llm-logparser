@@ -112,6 +112,9 @@ messages:
   cli.analyze.cross_thread_candidates.opt.input.help: "Input: directory only; provider artifact root containing l3/semantic-topics/topics.json"
   cli.analyze.cross_thread_candidates.opt.min_score.help: Minimum deterministic evidence score required to emit one cross-thread candidate link
   cli.analyze.cross_thread_candidates.opt.top_per_source.help: Maximum candidate links to emit per source representative span
+  cli.analyze.cross_thread_candidates.opt.embedding_model.help: Optional local Ollama embedding model used only to enrich already-emitted candidate rows with embedding similarity
+  cli.analyze.cross_thread_candidates.opt.embedding_base_url.help: Base URL for the optional local Ollama embedding endpoint
+  cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help: Timeout in seconds for optional local Ollama embedding requests
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline

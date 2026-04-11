@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from llm_logparser.cli.cli import main
+from llm_logparser.core import analyzer_cross_thread_candidates as cross_thread_module
 from llm_logparser.core.analyzer_cross_thread_candidates import (
     build_cross_thread_candidate_rows,
     cross_thread_candidates_path,
@@ -19,6 +21,13 @@ from llm_logparser.core.schema_validation import (
 def _write_json(path: Path, obj: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def _representative_span(
@@ -243,6 +252,207 @@ def _write_topics_fixture(root: Path) -> Path:
     return topics_path
 
 
+def _message_row(
+    *,
+    conversation_id: str,
+    message_id: str,
+    role: str,
+    text: str,
+    ts: int,
+) -> dict[str, Any]:
+    return {
+        "record_type": "message",
+        "schema_version": "3.0",
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "role": role,
+        "text": text,
+        "ts": ts,
+    }
+
+
+def _message_window_row(
+    *,
+    conversation_id: str,
+    window_id: str,
+    message_ids: list[str],
+    char_count: int,
+    ts_start: int,
+    ts_end: int,
+) -> dict[str, Any]:
+    return {
+        "record_type": "message_window",
+        "schema_version": "3.0",
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "window_id": window_id,
+        "message_ids": message_ids,
+        "char_count": char_count,
+        "ts_start": ts_start,
+        "ts_end": ts_end,
+        "window_size": len(message_ids),
+        "window_stride": len(message_ids),
+    }
+
+
+def _write_preview_fixture(root: Path) -> None:
+    conversation_rows: dict[str, dict[str, list[dict[str, Any]]]] = {
+        "conv-a": {
+            "messages": [
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    role="user",
+                    text="Draft the migration checklist.",
+                    ts=100,
+                ),
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-2",
+                    role="assistant",
+                    text="Add rollback gates for production.",
+                    ts=110,
+                ),
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-3",
+                    role="user",
+                    text="Continue the migration checklist and verify rollback gates.",
+                    ts=120,
+                ),
+            ],
+            "windows": [
+                _message_window_row(
+                    conversation_id="conv-a",
+                    window_id="window-a",
+                    message_ids=["a-1", "a-2"],
+                    char_count=len("Draft the migration checklist.") + len("Add rollback gates for production."),
+                    ts_start=100,
+                    ts_end=110,
+                ),
+                _message_window_row(
+                    conversation_id="conv-a",
+                    window_id="window-a-2",
+                    message_ids=["a-3"],
+                    char_count=len("Continue the migration checklist and verify rollback gates."),
+                    ts_start=120,
+                    ts_end=120,
+                ),
+            ],
+        },
+        "conv-b": {
+            "messages": [
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    role="user",
+                    text="Revise the migration checklist.",
+                    ts=200,
+                ),
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-2",
+                    role="assistant",
+                    text="Confirm rollback gates before rollout.",
+                    ts=210,
+                ),
+            ],
+            "windows": [
+                _message_window_row(
+                    conversation_id="conv-b",
+                    window_id="window-b",
+                    message_ids=["b-1", "b-2"],
+                    char_count=len("Revise the migration checklist.") + len("Confirm rollback gates before rollout."),
+                    ts_start=200,
+                    ts_end=210,
+                ),
+            ],
+        },
+        "conv-c": {
+            "messages": [
+                _message_row(
+                    conversation_id="conv-c",
+                    message_id="c-1",
+                    role="user",
+                    text="Add rollout monitoring checks.",
+                    ts=300,
+                ),
+                _message_row(
+                    conversation_id="conv-c",
+                    message_id="c-2",
+                    role="assistant",
+                    text="Review the migration checklist before release.",
+                    ts=310,
+                ),
+            ],
+            "windows": [
+                _message_window_row(
+                    conversation_id="conv-c",
+                    window_id="window-c",
+                    message_ids=["c-1", "c-2"],
+                    char_count=len("Add rollout monitoring checks.") + len("Review the migration checklist before release."),
+                    ts_start=300,
+                    ts_end=310,
+                ),
+            ],
+        },
+        "conv-d": {
+            "messages": [
+                _message_row(
+                    conversation_id="conv-d",
+                    message_id="d-1",
+                    role="user",
+                    text="Track deployment steps.",
+                    ts=400,
+                ),
+                _message_row(
+                    conversation_id="conv-d",
+                    message_id="d-2",
+                    role="assistant",
+                    text="Capture rollback notes for the release handoff.",
+                    ts=410,
+                ),
+            ],
+            "windows": [
+                _message_window_row(
+                    conversation_id="conv-d",
+                    window_id="window-d",
+                    message_ids=["d-1", "d-2"],
+                    char_count=len("Track deployment steps.") + len("Capture rollback notes for the release handoff."),
+                    ts_start=400,
+                    ts_end=410,
+                ),
+            ],
+        },
+        "conv-z": {
+            "messages": [
+                _message_row(
+                    conversation_id="conv-z",
+                    message_id="z-1",
+                    role="user",
+                    text="Plan lunch options and compare cafe seating.",
+                    ts=500,
+                ),
+            ],
+            "windows": [
+                _message_window_row(
+                    conversation_id="conv-z",
+                    window_id="window-z",
+                    message_ids=["z-1"],
+                    char_count=len("Plan lunch options and compare cafe seating."),
+                    ts_start=500,
+                    ts_end=500,
+                ),
+            ],
+        },
+    }
+    for conversation_id, payload in conversation_rows.items():
+        thread_dir = root / f"thread-{conversation_id}"
+        _write_jsonl(thread_dir / "parsed.jsonl", payload["messages"])
+        _write_jsonl(thread_dir / "message_windows.jsonl", payload["windows"])
+
+
 def _read_jsonl(path: Path) -> list[dict]:
     rows: list[dict] = []
     with path.open("r", encoding="utf-8") as handle:
@@ -251,6 +461,17 @@ def _read_jsonl(path: Path) -> list[dict]:
             if stripped:
                 rows.append(json.loads(stripped))
     return rows
+
+
+class _FakeEmbeddingBackend:
+    def __init__(self, vectors_by_text: dict[str, list[float]], calls: list[list[str]]) -> None:
+        self.model_id = "fake/test-embedding"
+        self._vectors_by_text = vectors_by_text
+        self._calls = calls
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self._calls.append(list(texts))
+        return [self._vectors_by_text[text] for text in texts]
 
 
 def test_build_cross_thread_candidate_rows_emits_clear_cross_thread_link(tmp_path: Path):
@@ -268,6 +489,56 @@ def test_build_cross_thread_candidate_rows_emits_clear_cross_thread_link(tmp_pat
     assert row["score"] >= 0.9
     assert "normalized_label_match" in row["evidence"]["reason_codes"]
     assert "shared_keywords_high" in row["evidence"]["reason_codes"]
+
+
+def test_build_cross_thread_candidate_rows_adds_embedding_similarity_when_enabled(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+    _write_preview_fixture(root)
+
+    calls: list[list[str]] = []
+    vectors_by_text = {
+        "Draft the migration checklist.\n\nAdd rollback gates for production.": [1.0, 0.0],
+        "Revise the migration checklist.\n\nConfirm rollback gates before rollout.": [0.95, 0.05],
+        "Add rollout monitoring checks.\n\nReview the migration checklist before release.": [0.5, 0.5],
+        "Track deployment steps.\n\nCapture rollback notes for the release handoff.": [0.0, 1.0],
+        "Plan lunch options and compare cafe seating.": [-1.0, 0.0],
+        "Continue the migration checklist and verify rollback gates.": [0.9, 0.1],
+    }
+    monkeypatch.setattr(
+        cross_thread_module,
+        "create_embedding_backend",
+        lambda **_: _FakeEmbeddingBackend(vectors_by_text, calls),
+    )
+
+    baseline_rows = build_cross_thread_candidate_rows(root, top_per_source=2)
+    embedded_rows = build_cross_thread_candidate_rows(
+        root,
+        top_per_source=2,
+        embedding_model="fake-embedding",
+    )
+
+    assert len(embedded_rows) == len(baseline_rows)
+    assert any("embedding_similarity" in row for row in embedded_rows)
+    row = next(
+        candidate
+        for candidate in embedded_rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["embedding_similarity"] > 0.9
+    unique_spans = {
+        (row["source_conversation_id"], row["source_span_id"])
+        for row in embedded_rows
+    } | {
+        (row["target_conversation_id"], row["target_span_id"])
+        for row in embedded_rows
+    }
+    assert len(calls) == 1
+    assert len(calls[0]) == len(unique_spans)
 
 
 def test_build_cross_thread_candidate_rows_excludes_same_thread_and_unrelated_pairs(
@@ -304,6 +575,83 @@ def test_build_cross_thread_candidate_rows_respects_top_per_source_and_threshold
 
     strict_rows = build_cross_thread_candidate_rows(root, min_score=0.95, top_per_source=3)
     assert not any(row["source_topic_id"] == "topic-a" and row["target_topic_id"] == "topic-c" for row in strict_rows)
+
+
+def test_build_cross_thread_candidate_rows_embedding_is_optional_and_unavailable_is_non_fatal(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+    _write_preview_fixture(root)
+
+    baseline_rows = build_cross_thread_candidate_rows(root, top_per_source=2)
+    monkeypatch.setattr(
+        cross_thread_module,
+        "create_embedding_backend",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("ollama unavailable")),
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        top_per_source=2,
+        embedding_model="missing-local-model",
+    )
+
+    assert rows == baseline_rows
+    assert all("embedding_similarity" not in row for row in rows)
+
+
+def test_build_cross_thread_candidate_rows_embedding_tie_break_is_predictable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+    _write_preview_fixture(root)
+
+    evidence = cross_thread_module._Evidence(
+        score=0.7,
+        reason_codes=("excerpt_similarity_high",),
+        excerpt_similarity=0.8,
+        topic_label_similarity=0.1,
+        shared_keywords=(),
+        normalized_label_match=False,
+        raw_label_match=False,
+    )
+
+    def fake_evidence(source, target):
+        if source.topic_id != "topic-a":
+            return None
+        if target.topic_id in {"topic-b", "topic-c"}:
+            return evidence
+        return None
+
+    calls: list[list[str]] = []
+    vectors_by_text = {
+        "Draft the migration checklist.\n\nAdd rollback gates for production.": [1.0, 0.0],
+        "Revise the migration checklist.\n\nConfirm rollback gates before rollout.": [0.2, 0.98],
+        "Add rollout monitoring checks.\n\nReview the migration checklist before release.": [0.98, 0.2],
+        "Track deployment steps.\n\nCapture rollback notes for the release handoff.": [0.0, 1.0],
+        "Plan lunch options and compare cafe seating.": [-1.0, 0.0],
+        "Continue the migration checklist and verify rollback gates.": [0.5, 0.5],
+    }
+    monkeypatch.setattr(cross_thread_module, "_evidence_for_pair", fake_evidence)
+    monkeypatch.setattr(
+        cross_thread_module,
+        "create_embedding_backend",
+        lambda **_: _FakeEmbeddingBackend(vectors_by_text, calls),
+    )
+
+    baseline_rows = build_cross_thread_candidate_rows(root, top_per_source=2)
+    embedded_rows = build_cross_thread_candidate_rows(
+        root,
+        top_per_source=2,
+        embedding_model="fake-embedding",
+    )
+
+    assert [row["target_topic_id"] for row in baseline_rows] == ["topic-b", "topic-c"]
+    assert [row["target_topic_id"] for row in embedded_rows] == ["topic-c", "topic-b"]
 
 
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):
