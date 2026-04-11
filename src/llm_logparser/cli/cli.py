@@ -19,6 +19,7 @@ from llm_logparser.cli.config_apply import (
 )
 from llm_logparser.cli.config_loader import load_config_with_discovery
 from llm_logparser.cli.handlers import (
+    run_analyze_cross_thread_candidates,
     run_analyze_datasheet,
     run_analyze_metrics,
     run_analyze_semantic_normalization,
@@ -190,6 +191,7 @@ def _prompt_missing_required(
             "semantic-prototype",
             "semantic-preview",
             "semantic-span-proposals",
+            "cross-thread-candidates",
             "semantic-normalization",
             "semantic-topic",
             "semantic-topics",
@@ -205,6 +207,7 @@ def _prompt_missing_required(
                         "sqlite-build",
                         "semantic-normalization",
                         "semantic-span-proposals",
+                        "cross-thread-candidates",
                         "semantic-topics",
                     }
                     else _("runtime.prompt.analyze_input")
@@ -252,6 +255,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_semantic_preview(args, logger)
         elif args.analyze_command == "semantic-span-proposals":
             run_analyze_semantic_span_proposals(args, logger)
+        elif args.analyze_command == "cross-thread-candidates":
+            run_analyze_cross_thread_candidates(args, logger)
         elif args.analyze_command == "semantic-normalization":
             run_analyze_semantic_normalization(args, logger)
         elif args.analyze_command == "semantic-topic":

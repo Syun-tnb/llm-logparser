@@ -538,6 +538,31 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_span_proposals.opt.input.help"),
     )
 
+    analyze_cross_thread_candidates_cmd = analyze_subparsers.add_parser(
+        "cross-thread-candidates",
+        help=_("cli.analyze.cross_thread_candidates.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.cross_thread_candidates.opt.input.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--min-score",
+        dest="min_score",
+        type=float,
+        default=0.6,
+        help=_("cli.analyze.cross_thread_candidates.opt.min_score.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--top-per-source",
+        dest="top_per_source",
+        type=int,
+        default=3,
+        help=_("cli.analyze.cross_thread_candidates.opt.top_per_source.help"),
+    )
+
     analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
         "semantic-topic",
         help=_("cli.analyze.semantic_topic.help"),

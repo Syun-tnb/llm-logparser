@@ -1,4 +1,5 @@
 from .analyze import (
+    run_analyze_cross_thread_candidates,
     run_analyze_datasheet,
     run_analyze_metrics,
     run_analyze_semantic_normalization,
@@ -20,6 +21,7 @@ from .extract import run_extract
 from .parse import run_parse
 
 __all__ = [
+    "run_analyze_cross_thread_candidates",
     "run_analyze_datasheet",
     "run_analyze_metrics",
     "run_analyze_semantic_normalization",

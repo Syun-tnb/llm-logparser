@@ -112,6 +112,10 @@ messages:
   cli.analyze.semantic_topics.opt.refine_representative_spans_from_proposals.help: 実験的な semantic-span-proposals sidecar から representative span を refinement する。opt-in のみで、cluster membership や topic ID は変更しない。
   cli.analyze.semantic_topics.opt.expected_taxonomy_version.help: batch から取り込む semantic normalization に期待する taxonomy version
   cli.analyze.semantic_topics.opt.strict_normalization.help: semantic-normalization の taxonomy または prompt provenance の不一致を warning ではなく error として扱う
+  cli.analyze.cross_thread_candidates.help: semantic-topics の representative span から実験的な cross-thread continuity candidate を抽出する
+  cli.analyze.cross_thread_candidates.opt.input.help: "入力: ディレクトリのみ。l3/semantic-topics/topics.json を含む provider 成果物ルート"
+  cli.analyze.cross_thread_candidates.opt.min_score.help: cross-thread candidate link を出力するために必要な最小 deterministic evidence score
+  cli.analyze.cross_thread_candidates.opt.top_per_source.help: source representative span ごとに出力する candidate link の最大数
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: "入力: ディレクトリのみ。topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する

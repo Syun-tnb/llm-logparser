@@ -257,6 +257,30 @@ def run_analyze_semantic_span_proposals(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_cross_thread_candidates(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_cross_thread_candidates import (
+        CrossThreadCandidateError,
+        write_cross_thread_candidates_artifact,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_cross_thread_candidates_artifact(
+            input_root,
+            min_score=args.min_score,
+            top_per_source=args.top_per_source,
+        )
+    except CrossThreadCandidateError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "cross-thread candidate artifact written: "
+        f"{result['candidate_count']} candidate link(s) -> "
+        f"{format_display_path(result['candidates_path'])}"
+    )
+
+
 def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_topic import (
         SemanticTopicError,

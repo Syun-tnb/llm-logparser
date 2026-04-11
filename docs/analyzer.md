@@ -521,6 +521,7 @@ Possible modes:
 | semantic-prototype | L3 prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
 | semantic-span-proposals | L3 experimental span-derivation sidecar |
+| cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
 | semantic-normalization | L3 sidecar batch job runner |
 | semantic-topics | L3 topic artifact builder (experimental) |
 | semantic-topic | L3/L4 topic renderer (experimental) |
@@ -827,6 +828,14 @@ deterministic and model-derived capabilities.
   current window-backed unit. It remains additive only: `semantic-topics`,
   cluster membership, normalization jobs, and topic IDs do not consume this
   artifact yet.
+
+- `cross-thread-candidates` is an experimental L3 sidecar builder for
+  cross-thread continuity inspection. It reads existing
+  `l3/semantic-topics/topics.json`, compares representative spans across
+  different conversations with a small deterministic evidence stack, and
+  writes `l3/cross-thread-candidates/candidates.jsonl` plus `summary.json`.
+  It emits reviewable candidate links only; it does not merge topics, rewrite
+  membership, or change `topic_id`.
 
 Current limitations remain explicit:
 

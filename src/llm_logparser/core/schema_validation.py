@@ -89,6 +89,7 @@ SEMANTIC_NORMALIZATION_JOB_FAILURE_SCHEMA_NAME = (
     "semantic_normalization_job_failure.schema.json"
 )
 SEMANTIC_SPAN_PROPOSAL_SCHEMA_NAME = "semantic_span_proposal.schema.json"
+CROSS_THREAD_CANDIDATE_SCHEMA_NAME = "cross_thread_candidate.schema.json"
 SCHEMA_FILE_NAMES = frozenset(
     {
         MESSAGE_SCHEMA_NAME,
@@ -107,6 +108,7 @@ SCHEMA_FILE_NAMES = frozenset(
         SEMANTIC_NORMALIZATION_JOB_RESULT_SCHEMA_NAME,
         SEMANTIC_NORMALIZATION_JOB_FAILURE_SCHEMA_NAME,
         SEMANTIC_SPAN_PROPOSAL_SCHEMA_NAME,
+        CROSS_THREAD_CANDIDATE_SCHEMA_NAME,
     }
 )
 
@@ -342,6 +344,13 @@ def load_semantic_span_proposal_validator(
 ):
     """Returns a validator for semantic_span_proposal.schema.json."""
     return load_validator(SEMANTIC_SPAN_PROPOSAL_SCHEMA_NAME, schema_path)
+
+
+def load_cross_thread_candidate_validator(
+    schema_path: Optional[Path] = None,
+):
+    """Returns a validator for cross_thread_candidate.schema.json."""
+    return load_validator(CROSS_THREAD_CANDIDATE_SCHEMA_NAME, schema_path)
 
 
 class MessageValidationError(RuntimeError):

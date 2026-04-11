@@ -136,6 +136,22 @@ def test_analyze_semantic_span_proposals_help_mentions_experimental_sidecar(caps
     assert "--input" in help_text
 
 
+def test_analyze_cross_thread_candidates_help_mentions_experimental_sidecar(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "cross-thread-candidates", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "cross-thread" in help_text
+    assert "representative span" in help_text
+    assert "--input" in help_text
+    assert "--min-score" in help_text
+    assert "--top-per-source" in help_text
+
+
 def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):
     set_locale("en-US")
     parser = build_parser()
@@ -245,6 +261,10 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
         (
             ["analyze", "semantic-normalization", "run", "--help"],
             "Input: directory only; provider artifact root containing parsed.jsonl threads and optional message_windows.jsonl sidecars",
+        ),
+        (
+            ["analyze", "cross-thread-candidates", "--help"],
+            "Input: directory only; provider artifact root containing l3/semantic-topics/topics.json",
         ),
     ],
 )

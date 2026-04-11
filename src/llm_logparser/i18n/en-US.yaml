@@ -108,6 +108,10 @@ messages:
   cli.analyze.semantic_topics.opt.refine_representative_spans_from_proposals.help: Refine representative spans from the experimental semantic-span-proposals sidecar. Opt-in only; does not change cluster membership or topic IDs.
   cli.analyze.semantic_topics.opt.expected_taxonomy_version.help: Expected semantic-normalization taxonomy version for batch-consumed normalization
   cli.analyze.semantic_topics.opt.strict_normalization.help: Treat semantic-normalization taxonomy or prompt provenance mismatches as errors instead of warnings
+  cli.analyze.cross_thread_candidates.help: Extract experimental cross-thread continuity candidates from semantic-topics representative spans
+  cli.analyze.cross_thread_candidates.opt.input.help: "Input: directory only; provider artifact root containing l3/semantic-topics/topics.json"
+  cli.analyze.cross_thread_candidates.opt.min_score.help: Minimum deterministic evidence score required to emit one cross-thread candidate link
+  cli.analyze.cross_thread_candidates.opt.top_per_source.help: Maximum candidate links to emit per source representative span
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline
