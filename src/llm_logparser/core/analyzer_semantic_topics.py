@@ -41,6 +41,11 @@ from .semantic_normalization_jobs import (
     SemanticNormalizationJobError,
     load_semantic_normalization_job_results,
 )
+from .analyzer_semantic_span_proposals import (
+    SemanticSpanProposalError,
+    load_semantic_span_proposal_rows,
+    semantic_span_proposals_path,
+)
 from .semantic_state import (
     SpanStateResult,
     aggregate_topic_state,
@@ -479,6 +484,67 @@ def _representative_spans(
     return rows
 
 
+def _representative_span_excerpt(text: str) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= DEFAULT_TOPIC_MAX_WINDOW_CHARS:
+        return compact
+    return compact[: DEFAULT_TOPIC_MAX_WINDOW_CHARS - 3] + "..."
+
+
+def _effective_source_window_ids(span_row: dict[str, Any]) -> tuple[str, ...]:
+    source_window_ids = span_row.get("source_window_ids")
+    if isinstance(source_window_ids, list) and source_window_ids:
+        values = tuple(
+            str(window_id)
+            for window_id in source_window_ids
+            if isinstance(window_id, str) and window_id
+        )
+        if values:
+            return values
+    window_id = span_row.get("window_id")
+    if isinstance(window_id, str) and window_id:
+        return (window_id,)
+    return ()
+
+
+def _reconstructed_span_record(
+    *,
+    conversation_id: str,
+    message_ids: list[str] | tuple[str, ...],
+    source_window_ids: list[str] | tuple[str, ...],
+    windows: dict[WindowRef, WindowPreviewRecord],
+) -> WindowPreviewRecord | None:
+    if not source_window_ids:
+        return None
+    ordered_message_ids = tuple(str(message_id) for message_id in message_ids)
+    message_lookup: dict[str, Any] = {}
+    provider_id: str | None = None
+    for window_id in source_window_ids:
+        record = windows.get((conversation_id, window_id))
+        if record is None:
+            return None
+        provider_id = provider_id or record.provider_id
+        for message in record.messages:
+            message_lookup.setdefault(message.message_id, message)
+    selected_messages = []
+    for message_id in ordered_message_ids:
+        message = message_lookup.get(message_id)
+        if message is None:
+            return None
+        selected_messages.append(message)
+    timestamps = [message.ts for message in selected_messages if isinstance(message.ts, int)]
+    return WindowPreviewRecord(
+        provider_id=provider_id or windows[(conversation_id, source_window_ids[0])].provider_id,
+        conversation_id=conversation_id,
+        window_id=source_window_ids[0],
+        message_ids=ordered_message_ids,
+        char_count=sum(len(message.text) for message in selected_messages),
+        ts_start=min(timestamps) if timestamps else None,
+        ts_end=max(timestamps) if timestamps else None,
+        messages=tuple(selected_messages),
+    )
+
+
 def _representative_windows(prompt_windows: list[dict[str, Any]]) -> list[dict[str, str]]:
     return [
         {
@@ -534,6 +600,179 @@ def _batch_normalization_index(
     return indexed
 
 
+def _semantic_span_proposal_index(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    indexed: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        conversation_id = row.get("conversation_id")
+        source_window_ids = row.get("source_window_ids")
+        if not isinstance(conversation_id, str):
+            continue
+        if not isinstance(source_window_ids, list):
+            continue
+        for window_id in source_window_ids:
+            if not isinstance(window_id, str) or not window_id:
+                continue
+            indexed.setdefault((conversation_id, window_id), []).append(row)
+    return indexed
+
+
+def _is_message_id_prefix(
+    candidate_ids: list[str] | tuple[str, ...],
+    current_ids: list[str] | tuple[str, ...],
+) -> bool:
+    candidate_tuple = tuple(str(message_id) for message_id in candidate_ids)
+    current_tuple = tuple(str(message_id) for message_id in current_ids)
+    if not candidate_tuple or len(candidate_tuple) >= len(current_tuple):
+        return False
+    return current_tuple[: len(candidate_tuple)] == candidate_tuple
+
+
+def _eligible_refinement_candidate(
+    *,
+    span_row: dict[str, Any],
+    proposal_row: dict[str, Any],
+) -> bool:
+    anchor_window_id = span_row.get("window_id")
+    if not isinstance(anchor_window_id, str) or not anchor_window_id:
+        return False
+    proposal_kind = proposal_row.get("proposal_kind")
+    source_window_ids = proposal_row.get("source_window_ids")
+    proposal_message_ids = proposal_row.get("message_ids")
+    current_message_ids = span_row.get("message_ids")
+    if not isinstance(source_window_ids, list) or not isinstance(proposal_message_ids, list):
+        return False
+    if not isinstance(current_message_ids, list):
+        return False
+    if proposal_kind == "split":
+        return (
+            source_window_ids == [anchor_window_id]
+            and _is_message_id_prefix(proposal_message_ids, current_message_ids)
+        )
+    if proposal_kind == "merge":
+        proposal_ids = tuple(str(message_id) for message_id in proposal_message_ids)
+        current_ids = tuple(str(message_id) for message_id in current_message_ids)
+        return (
+            len(source_window_ids) > 1
+            and source_window_ids[0] == anchor_window_id
+            and len(proposal_ids) > len(current_ids)
+            and proposal_ids[: len(current_ids)] == current_ids
+        )
+    return False
+
+
+def _proposal_refinement_provenance(
+    *,
+    input_root: Path,
+    proposal_count: int,
+    counts: dict[str, int],
+) -> dict[str, Any]:
+    return {
+        "source_kind": "semantic_span_proposals",
+        "artifact_path": str(semantic_span_proposals_path(input_root).resolve()),
+        "proposal_count": proposal_count,
+        **counts,
+    }
+
+
+def _refine_representative_spans_from_proposals(
+    representative_spans: list[dict[str, Any]],
+    *,
+    input_root: Path,
+    windows: dict[WindowRef, WindowPreviewRecord],
+    proposal_index: dict[tuple[str, str], list[dict[str, Any]]],
+    dataset_max_ts: int | None,
+    state_locale: str | None,
+) -> dict[str, int]:
+    counts = {
+        "refined_representative_span_count": 0,
+        "unchanged_representative_span_count": 0,
+        "ambiguous_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
+    for span_row in representative_spans:
+        conversation_id = span_row["conversation_id"]
+        anchor_window_id = span_row.get("window_id")
+        if not isinstance(anchor_window_id, str):
+            counts["unchanged_representative_span_count"] += 1
+            continue
+        candidates = proposal_index.get((conversation_id, anchor_window_id), [])
+        if not candidates:
+            counts["unchanged_representative_span_count"] += 1
+            continue
+        eligible: list[tuple[dict[str, Any], WindowPreviewRecord]] = []
+        drifted = False
+        for proposal_row in candidates:
+            if not _eligible_refinement_candidate(
+                span_row=span_row,
+                proposal_row=proposal_row,
+            ):
+                continue
+            source_window_ids = proposal_row.get("source_window_ids")
+            proposal_message_ids = proposal_row.get("message_ids")
+            if not isinstance(source_window_ids, list) or not isinstance(proposal_message_ids, list):
+                continue
+            record = _reconstructed_span_record(
+                conversation_id=conversation_id,
+                message_ids=[str(message_id) for message_id in proposal_message_ids],
+                source_window_ids=[str(window_id) for window_id in source_window_ids],
+                windows=windows,
+            )
+            if record is None:
+                drifted = True
+                continue
+            current_text_sha1 = _normalization_text_sha1(record.text)
+            proposal_text_sha1 = proposal_row.get("text_sha1")
+            if not isinstance(proposal_text_sha1, str) or proposal_text_sha1 != current_text_sha1:
+                drifted = True
+                LOGGER.warning(
+                    "semantic span proposal drift detected for representative span "
+                    "conversation_id=%s window_id=%s span_id=%s; expected text_sha1=%r current=%r; skipping refinement candidate",
+                    conversation_id,
+                    anchor_window_id,
+                    proposal_row.get("span_id"),
+                    proposal_text_sha1,
+                    current_text_sha1,
+                )
+                continue
+            eligible.append((proposal_row, record))
+        if len(eligible) > 1:
+            counts["ambiguous_representative_span_count"] += 1
+            continue
+        if not eligible:
+            if drifted:
+                counts["drifted_representative_span_count"] += 1
+            else:
+                counts["unchanged_representative_span_count"] += 1
+            continue
+        proposal_row, record = eligible[0]
+        state_row = classify_span_state(
+            record,
+            dataset_max_ts=dataset_max_ts,
+            state_locale=state_locale,
+        )
+        span_row["conversation_id"] = conversation_id
+        span_row["span_id"] = proposal_row["span_id"]
+        span_row["message_ids"] = [str(message_id) for message_id in proposal_row["message_ids"]]
+        span_row["excerpt"] = _representative_span_excerpt(record.text)
+        span_row["state"] = state_row.state
+        span_row["state_confidence"] = state_row.state_confidence
+        span_row["state_signals"] = list(state_row.state_signals)
+        span_row["source_window_ids"] = [str(window_id) for window_id in proposal_row["source_window_ids"]]
+        span_row["refinement"] = {
+            "source_kind": "semantic_span_proposals",
+            "proposal_kind": proposal_row["proposal_kind"],
+            "reason_code": proposal_row["reason_code"],
+        }
+        if len(span_row["source_window_ids"]) == 1:
+            span_row["window_id"] = span_row["source_window_ids"][0]
+        else:
+            span_row.pop("window_id", None)
+        counts["refined_representative_span_count"] += 1
+    return counts
+
+
 def _attach_batch_semantic_normalization(
     representative_spans: list[dict[str, Any]],
     *,
@@ -561,11 +800,12 @@ def _attach_batch_semantic_normalization(
             counts["unmatched_representative_span_count"] += 1
             continue
         conversation_id = span_row["conversation_id"]
-        window_id = span_row.get("window_id")
-        if not isinstance(window_id, str):
-            counts["unmatched_representative_span_count"] += 1
-            continue
-        record = windows.get((conversation_id, window_id))
+        record = _reconstructed_span_record(
+            conversation_id=conversation_id,
+            message_ids=span_row["message_ids"],
+            source_window_ids=_effective_source_window_ids(span_row),
+            windows=windows,
+        )
         if record is None:
             counts["unmatched_representative_span_count"] += 1
             continue
@@ -810,6 +1050,7 @@ def build_semantic_topics_artifact(
     state_locale: str | None = None,
     include_representative_span_normalization: bool = False,
     normalization_job: str | None = None,
+    refine_representative_spans_from_proposals: bool = False,
     expected_taxonomy_version: str | None = None,
     strict_normalization: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -886,11 +1127,26 @@ def build_semantic_topics_artifact(
     normalization_client: LLMClient | None = None
     batch_normalization_config: dict[str, Any] | None = None
     batch_normalization_index: dict[str, dict[str, Any]] | None = None
+    proposal_refinement_index: dict[tuple[str, str], list[dict[str, Any]]] | None = None
+    proposal_refinement_count = 0
+    proposal_refinement_counts = {
+        "refined_representative_span_count": 0,
+        "unchanged_representative_span_count": 0,
+        "ambiguous_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
     batch_normalization_counts = {
         "matched_representative_span_count": 0,
         "unmatched_representative_span_count": 0,
         "drifted_representative_span_count": 0,
     }
+    if refine_representative_spans_from_proposals:
+        try:
+            proposal_rows = load_semantic_span_proposal_rows(input_root)
+        except SemanticSpanProposalError as exc:
+            raise SemanticTopicsError(str(exc)) from exc
+        proposal_refinement_index = _semantic_span_proposal_index(proposal_rows)
+        proposal_refinement_count = len(proposal_rows)
     if normalized_job_id is not None:
         try:
             batch_job = load_semantic_normalization_job_results(
@@ -946,6 +1202,17 @@ def build_semantic_topics_artifact(
             prompt_windows,
             span_state_by_ref=span_state_by_ref,
         )
+        if proposal_refinement_index is not None:
+            counts = _refine_representative_spans_from_proposals(
+                representative_spans,
+                input_root=input_root,
+                windows=windows,
+                proposal_index=proposal_refinement_index,
+                dataset_max_ts=dataset_max_ts,
+                state_locale=state_locale,
+            )
+            for key, value in counts.items():
+                proposal_refinement_counts[key] += value
         if batch_normalization_index is not None and normalized_job_id is not None:
             counts = _attach_batch_semantic_normalization(
                 representative_spans,
@@ -959,9 +1226,12 @@ def build_semantic_topics_artifact(
             for span_row in representative_spans:
                 conversation_id = span_row["conversation_id"]
                 window_id = span_row.get("window_id")
-                if not isinstance(window_id, str):
-                    continue
-                record = windows.get((conversation_id, window_id))
+                record = _reconstructed_span_record(
+                    conversation_id=conversation_id,
+                    message_ids=span_row["message_ids"],
+                    source_window_ids=_effective_source_window_ids(span_row),
+                    windows=windows,
+                )
                 if record is None:
                     continue
                 span_row["semantic_normalization"] = semantic_normalization_to_dict(
@@ -1083,6 +1353,11 @@ def build_semantic_topics_artifact(
             "message_windows.jsonl",
             "window_clusters.jsonl",
             *(
+                ["span_proposals.jsonl"]
+                if proposal_refinement_index is not None
+                else []
+            ),
+            *(
                 ["window_neighbors.jsonl"]
                 if has_neighbors
                 else []
@@ -1120,6 +1395,17 @@ def build_semantic_topics_artifact(
                 if normalized_job_id is not None
                 else {}
             ),
+            **(
+                {
+                    "representative_span_refinement": _proposal_refinement_provenance(
+                        input_root=input_root,
+                        proposal_count=proposal_refinement_count,
+                        counts=proposal_refinement_counts,
+                    )
+                }
+                if proposal_refinement_index is not None
+                else {}
+            ),
         },
         "topics": topics,
     }
@@ -1138,6 +1424,7 @@ def write_semantic_topics_artifacts(
     state_locale: str | None = None,
     include_representative_span_normalization: bool = False,
     normalization_job: str | None = None,
+    refine_representative_spans_from_proposals: bool = False,
     expected_taxonomy_version: str | None = None,
     strict_normalization: bool = False,
 ) -> dict[str, Any]:
@@ -1152,6 +1439,7 @@ def write_semantic_topics_artifacts(
         state_locale=state_locale,
         include_representative_span_normalization=include_representative_span_normalization,
         normalization_job=normalization_job,
+        refine_representative_spans_from_proposals=refine_representative_spans_from_proposals,
         expected_taxonomy_version=expected_taxonomy_version,
         strict_normalization=strict_normalization,
     )

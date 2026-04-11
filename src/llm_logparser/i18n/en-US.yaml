@@ -105,6 +105,7 @@ messages:
   cli.analyze.semantic_topics.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
   cli.analyze.semantic_topics.opt.normalization_job.help: Attach precomputed representative-span normalization from one semantic-normalization batch job. Must be provided explicitly at runtime; not read from config for safety.
   cli.analyze.semantic_topics.opt.normalize_representative_spans.help: Enable inline representative-span normalization during this semantic-topics run. Distinct from --normalization-job.
+  cli.analyze.semantic_topics.opt.refine_representative_spans_from_proposals.help: Refine representative spans from the experimental semantic-span-proposals sidecar. Opt-in only; does not change cluster membership or topic IDs.
   cli.analyze.semantic_topics.opt.expected_taxonomy_version.help: Expected semantic-normalization taxonomy version for batch-consumed normalization
   cli.analyze.semantic_topics.opt.strict_normalization.help: Treat semantic-normalization taxonomy or prompt provenance mismatches as errors instead of warnings
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines

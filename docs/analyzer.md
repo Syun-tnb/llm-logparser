@@ -697,6 +697,14 @@ deterministic and model-derived capabilities.
   `representative_spans` via `--normalization-job <job_id>`. That bridge uses a
   strict span-oriented join contract.
 
+  `semantic-topics` may also opt in to representative-span refinement from the
+  experimental `semantic-span-proposals` sidecar via
+  `--refine-representative-spans-from-proposals`. This consults
+  `l3/semantic-span-proposals/span_proposals.jsonl` and may replace only the
+  `representative_spans` surface when one proposal-backed replacement is
+  unambiguous and text-consistent. It does not change cluster membership,
+  `topic_id`, `topic_membership.jsonl`, or the current clustering substrate.
+
   Span identity:
 
   - `span_id` is the primary join key

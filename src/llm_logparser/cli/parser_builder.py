@@ -660,6 +660,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topics.opt.normalize_representative_spans.help"),
     )
     analyze_semantic_topics_cmd.add_argument(
+        "--refine-representative-spans-from-proposals",
+        dest="refine_representative_spans_from_proposals",
+        action="store_true",
+        help=_(
+            "cli.analyze.semantic_topics.opt.refine_representative_spans_from_proposals.help"
+        ),
+    )
+    analyze_semantic_topics_cmd.add_argument(
         "--expected-taxonomy-version",
         dest="expected_taxonomy_version",
         help=_("cli.analyze.semantic_topics.opt.expected_taxonomy_version.help"),

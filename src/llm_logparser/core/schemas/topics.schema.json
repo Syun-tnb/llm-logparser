@@ -127,6 +127,12 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "window_id": { "type": "string", "minLength": 1 },
+        "source_window_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "refinement": { "$ref": "#/$defs/representativeSpanRefinement" },
         "semantic_normalization": {
           "$ref": "#/$defs/semanticNormalization"
         }
@@ -253,6 +259,59 @@
       },
       "additionalProperties": false
     },
+    "representativeSpanRefinement": {
+      "type": "object",
+      "required": ["source_kind", "proposal_kind", "reason_code"],
+      "properties": {
+        "source_kind": {
+          "type": "string",
+          "const": "semantic_span_proposals"
+        },
+        "proposal_kind": {
+          "type": "string",
+          "enum": ["split", "merge"]
+        },
+        "reason_code": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "representativeSpanRefinementProvenance": {
+      "type": "object",
+      "required": [
+        "source_kind",
+        "artifact_path",
+        "proposal_count",
+        "refined_representative_span_count",
+        "unchanged_representative_span_count",
+        "ambiguous_representative_span_count",
+        "drifted_representative_span_count"
+      ],
+      "properties": {
+        "source_kind": {
+          "type": "string",
+          "const": "semantic_span_proposals"
+        },
+        "artifact_path": { "type": "string", "minLength": 1 },
+        "proposal_count": { "type": "integer", "minimum": 0 },
+        "refined_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unchanged_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ambiguous_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drifted_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
     "qualitySignals": {
       "type": "object",
       "required": [
@@ -330,7 +389,10 @@
         "max_window_chars": { "type": "integer", "minimum": 1 },
         "clustering": { "$ref": "#/$defs/clusteringProvenance" },
         "filters": { "$ref": "#/$defs/filters" },
-        "normalization": { "$ref": "#/$defs/normalizationProvenance" }
+        "normalization": { "$ref": "#/$defs/normalizationProvenance" },
+        "representative_span_refinement": {
+          "$ref": "#/$defs/representativeSpanRefinementProvenance"
+        }
       },
       "additionalProperties": false
     },

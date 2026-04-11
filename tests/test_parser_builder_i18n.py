@@ -174,6 +174,7 @@ def test_analyze_semantic_topics_help_mentions_artifact_builder_options(capsys):
     assert "--state-locale" in help_text
     assert "--normalization-job" in help_text
     assert "--normalize-representative-spans" in help_text
+    assert "--refine-representative-spans-from-proposals" in help_text
     assert "--expected-taxonomy-version" in help_text
     assert "--strict-normalization" in help_text
     assert "provided explicitly at runtime" in help_text

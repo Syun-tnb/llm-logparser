@@ -14,6 +14,7 @@ from llm_logparser.core.analyzer_semantic_topics import (
     build_semantic_topics_artifact,
     write_semantic_topics_artifacts,
 )
+from llm_logparser.core.analyzer_semantic_prototype import derive_semantic_span_id
 from llm_logparser.core.semantic_normalization import (
     SEED_TAXONOMY_VERSION,
     SemanticNormalizationMethod,
@@ -234,6 +235,53 @@ def _inline_normalization_result(
     )
 
 
+def _semantic_span_proposal_row(
+    *,
+    conversation_id: str,
+    message_ids: list[str],
+    text: str,
+    source_window_ids: list[str],
+    proposal_kind: str,
+    reason_code: str,
+    ts_start: int | None,
+    ts_end: int | None,
+) -> dict:
+    return {
+        "record_type": "semantic_span_proposal",
+        "schema_version": "0.1",
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "span_id": derive_semantic_span_id(
+            provider_id="openai",
+            conversation_id=conversation_id,
+            message_ids=tuple(message_ids),
+            window_id=source_window_ids[0],
+        ),
+        "message_ids": message_ids,
+        "text_sha1": _text_sha1(text),
+        "source_window_ids": source_window_ids,
+        "proposal_kind": proposal_kind,
+        "reason_code": reason_code,
+        "message_count": len(message_ids),
+        "char_count": len(text),
+        "window_count": len(source_window_ids),
+        "ts_start": ts_start,
+        "ts_end": ts_end,
+    }
+
+
+def _write_semantic_span_proposals(
+    root: Path,
+    *,
+    rows: list[dict],
+) -> Path:
+    proposals_dir = root / "l3" / "semantic-span-proposals"
+    proposals_dir.mkdir(parents=True, exist_ok=True)
+    path = proposals_dir / "span_proposals.jsonl"
+    _write_jsonl(path, rows)
+    return path
+
+
 def _write_semantic_normalization_job(
     root: Path,
     *,
@@ -422,6 +470,40 @@ def _write_topics_fixture(root: Path) -> None:
                 cluster_id="cluster_000002",
                 cluster_size=2,
             ),
+        ],
+    )
+
+
+def _write_split_refinement_fixture(root: Path) -> None:
+    thread = root / "thread-split-refine"
+    _write_jsonl(
+        thread / "message_windows.jsonl",
+        [
+            _message_window_row(
+                "conv-split-refine",
+                "window-0001",
+                message_ids=["sr-1", "sr-2", "sr-3", "sr-4"],
+                roles=["user", "assistant", "user", "assistant"],
+                text=(
+                    "How do I audit the schema before rollout?\n\n"
+                    "Check the migration table and compare expected columns.\n\n"
+                    "What rollback gate should we add?\n\n"
+                    "Require a verified backup and reversible migration steps."
+                ),
+                ts_start=100,
+                ts_end=103,
+            )
+        ],
+    )
+    _write_jsonl(
+        thread / "window_clusters.jsonl",
+        [
+            _window_cluster_row(
+                "conv-split-refine",
+                "window-0001",
+                cluster_id="cluster_split_refine",
+                cluster_size=1,
+            )
         ],
     )
 
@@ -1599,6 +1681,283 @@ def test_semantic_topics_model_alone_does_not_enable_inline_normalization(tmp_pa
         "semantic_normalization" not in span
         for span in artifact["topics"][0]["representative_spans"]
     )
+
+
+def test_semantic_topics_representative_refinement_is_opt_in(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    _write_semantic_span_proposals(
+        root,
+        rows=[
+            _semantic_span_proposal_row(
+                conversation_id="conv-a",
+                message_ids=["a-1", "a-2", "a-3"],
+                text=(
+                    "Draft the production migration checklist\n\n"
+                    "Include schema audit and rollback steps\n\n"
+                    "Capture monitoring gates for rollout readiness"
+                ),
+                source_window_ids=["window-0001", "window-0002"],
+                proposal_kind="merge",
+                reason_code="merge_adjacent_same_cluster_short_continuation",
+                ts_start=100,
+                ts_end=130,
+            )
+        ],
+    )
+
+    baseline_artifact, baseline_membership = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    artifact, membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+
+    assert artifact == baseline_artifact
+    assert membership_rows == baseline_membership
+
+
+def test_semantic_topics_refines_representative_span_from_split_proposal(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_split_refinement_fixture(root)
+    baseline_artifact, baseline_membership = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_split_refine",
+    )
+    baseline_topic_id = baseline_artifact["topics"][0]["topic_id"]
+    baseline_span = baseline_artifact["topics"][0]["representative_spans"][0]
+    _write_semantic_span_proposals(
+        root,
+        rows=[
+            _semantic_span_proposal_row(
+                conversation_id="conv-split-refine",
+                message_ids=["sr-1", "sr-2"],
+                text=(
+                    "How do I audit the schema before rollout?\n\n"
+                    "Check the migration table and compare expected columns."
+                ),
+                source_window_ids=["window-0001"],
+                proposal_kind="split",
+                reason_code="split_two_turn_pairs",
+                ts_start=100,
+                ts_end=101,
+            ),
+            _semantic_span_proposal_row(
+                conversation_id="conv-split-refine",
+                message_ids=["sr-3", "sr-4"],
+                text=(
+                    "What rollback gate should we add?\n\n"
+                    "Require a verified backup and reversible migration steps."
+                ),
+                source_window_ids=["window-0001"],
+                proposal_kind="split",
+                reason_code="split_two_turn_pairs",
+                ts_start=102,
+                ts_end=103,
+            ),
+        ],
+    )
+
+    artifact, membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_split_refine",
+        refine_representative_spans_from_proposals=True,
+    )
+
+    refined_topic = artifact["topics"][0]
+    refined_span = refined_topic["representative_spans"][0]
+    assert refined_topic["topic_id"] == baseline_topic_id
+    assert membership_rows == baseline_membership
+    assert refined_span["message_ids"] == ["sr-1", "sr-2"]
+    assert refined_span["span_id"] != baseline_span["span_id"]
+    assert refined_span["window_id"] == "window-0001"
+    assert refined_span["source_window_ids"] == ["window-0001"]
+    assert refined_span["refinement"] == {
+        "source_kind": "semantic_span_proposals",
+        "proposal_kind": "split",
+        "reason_code": "split_two_turn_pairs",
+    }
+    assert artifact["provenance"]["representative_span_refinement"] == {
+        "source_kind": "semantic_span_proposals",
+        "artifact_path": str(
+            (root / "l3" / "semantic-span-proposals" / "span_proposals.jsonl").resolve()
+        ),
+        "proposal_count": 2,
+        "refined_representative_span_count": 1,
+        "unchanged_representative_span_count": 0,
+        "ambiguous_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
+    assert "span_proposals.jsonl" in artifact["source_inputs"]
+
+    topics_validator = load_topics_validator()
+    assert list(topics_validator.iter_errors(artifact)) == []
+
+
+def test_semantic_topics_refines_representative_span_from_merge_proposal(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, baseline_membership = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    baseline_topic_id = baseline_artifact["topics"][0]["topic_id"]
+    _write_semantic_span_proposals(
+        root,
+        rows=[
+            _semantic_span_proposal_row(
+                conversation_id="conv-a",
+                message_ids=["a-1", "a-2", "a-3"],
+                text=(
+                    "Draft the production migration checklist\n\n"
+                    "Include schema audit and rollback steps\n\n"
+                    "Capture monitoring gates for rollout readiness"
+                ),
+                source_window_ids=["window-0001", "window-0002"],
+                proposal_kind="merge",
+                reason_code="merge_adjacent_same_cluster_short_continuation",
+                ts_start=100,
+                ts_end=130,
+            )
+        ],
+    )
+
+    artifact, membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        refine_representative_spans_from_proposals=True,
+    )
+
+    refined_topic = artifact["topics"][0]
+    refined_span = refined_topic["representative_spans"][0]
+    assert refined_topic["topic_id"] == baseline_topic_id
+    assert membership_rows == baseline_membership
+    assert refined_span["message_ids"] == ["a-1", "a-2", "a-3"]
+    assert "window_id" not in refined_span
+    assert refined_span["source_window_ids"] == ["window-0001", "window-0002"]
+    assert refined_span["refinement"] == {
+        "source_kind": "semantic_span_proposals",
+        "proposal_kind": "merge",
+        "reason_code": "merge_adjacent_same_cluster_short_continuation",
+    }
+    assert artifact["provenance"]["representative_span_refinement"][
+        "refined_representative_span_count"
+    ] == 1
+
+
+def test_semantic_topics_ambiguous_or_missing_proposals_leave_representative_spans_unchanged(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_split_refinement_fixture(root)
+    baseline_artifact, baseline_membership = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_split_refine",
+    )
+    baseline_topic = baseline_artifact["topics"][0]
+    _write_semantic_span_proposals(
+        root,
+        rows=[
+            _semantic_span_proposal_row(
+                conversation_id="conv-split-refine",
+                message_ids=["sr-1"],
+                text="How do I audit the schema before rollout?",
+                source_window_ids=["window-0001"],
+                proposal_kind="split",
+                reason_code="ambiguous_prefix_short",
+                ts_start=100,
+                ts_end=100,
+            ),
+            _semantic_span_proposal_row(
+                conversation_id="conv-split-refine",
+                message_ids=["sr-1", "sr-2"],
+                text=(
+                    "How do I audit the schema before rollout?\n\n"
+                    "Check the migration table and compare expected columns."
+                ),
+                source_window_ids=["window-0001"],
+                proposal_kind="split",
+                reason_code="ambiguous_prefix_long",
+                ts_start=100,
+                ts_end=101,
+            ),
+        ],
+    )
+
+    artifact, membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_split_refine",
+        refine_representative_spans_from_proposals=True,
+    )
+
+    assert artifact["topics"][0]["topic_id"] == baseline_topic["topic_id"]
+    assert membership_rows == baseline_membership
+    assert artifact["topics"][0]["representative_spans"] == baseline_topic[
+        "representative_spans"
+    ]
+    assert artifact["provenance"]["representative_span_refinement"] == {
+        "source_kind": "semantic_span_proposals",
+        "artifact_path": str(
+            (root / "l3" / "semantic-span-proposals" / "span_proposals.jsonl").resolve()
+        ),
+        "proposal_count": 2,
+        "refined_representative_span_count": 0,
+        "unchanged_representative_span_count": 0,
+        "ambiguous_representative_span_count": 1,
+        "drifted_representative_span_count": 0,
+    }
+
+
+def test_semantic_topics_missing_proposal_match_leaves_representative_spans_unchanged(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, baseline_membership = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    baseline_topic = baseline_artifact["topics"][0]
+    _write_semantic_span_proposals(
+        root,
+        rows=[
+            _semantic_span_proposal_row(
+                conversation_id="conv-missing",
+                message_ids=["missing-1"],
+                text="Unrelated semantic span proposal",
+                source_window_ids=["window-9999"],
+                proposal_kind="keep",
+                reason_code="keep_window_as_span",
+                ts_start=999,
+                ts_end=999,
+            )
+        ],
+    )
+
+    artifact, membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        refine_representative_spans_from_proposals=True,
+    )
+
+    assert artifact["topics"][0]["topic_id"] == baseline_topic["topic_id"]
+    assert membership_rows == baseline_membership
+    assert artifact["topics"][0]["representative_spans"] == baseline_topic[
+        "representative_spans"
+    ]
+    assert artifact["provenance"]["representative_span_refinement"] == {
+        "source_kind": "semantic_span_proposals",
+        "artifact_path": str(
+            (root / "l3" / "semantic-span-proposals" / "span_proposals.jsonl").resolve()
+        ),
+        "proposal_count": 1,
+        "refined_representative_span_count": 0,
+        "unchanged_representative_span_count": 3,
+        "ambiguous_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
 
 
 def test_analyze_semantic_topics_cli_model_alone_does_not_enable_inline_normalization(

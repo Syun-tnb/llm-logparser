@@ -63,6 +63,10 @@ def _load_jsonl_rows(path: Path) -> list[tuple[int, dict[str, Any]]]:
     return rows
 
 
+def semantic_span_proposals_path(input_root: Path) -> Path:
+    return input_root / "l3" / "semantic-span-proposals" / "span_proposals.jsonl"
+
+
 def _text_sha1(text: str) -> str:
     return sha1(text.encode("utf-8")).hexdigest()
 
@@ -264,6 +268,25 @@ def build_semantic_span_proposal_rows(input_root: Path) -> list[dict[str, Any]]:
             row["span_id"],
         )
     )
+    return rows
+
+
+def load_semantic_span_proposal_rows(input_root: Path) -> list[dict[str, Any]]:
+    path = semantic_span_proposals_path(input_root)
+    if not path.exists():
+        raise SemanticSpanProposalError(
+            f"semantic span proposals artifact not found: {path}"
+        )
+    validator = load_semantic_span_proposal_validator()
+    rows: list[dict[str, Any]] = []
+    for line_no, row in _load_jsonl_rows(path):
+        errors = list(validator.iter_errors(row))
+        if errors:
+            raise SemanticSpanProposalError(
+                f"semantic span proposal schema validation failed for "
+                f"{path}:{line_no}: {errors[0].message}"
+            )
+        rows.append(row)
     return rows
 
 

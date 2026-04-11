@@ -303,6 +303,7 @@ def run_analyze_semantic_topics(args, logger: logging.Logger) -> None:
             state_locale=args.state_locale,
             include_representative_span_normalization=args.normalize_representative_spans,
             normalization_job=args.normalization_job,
+            refine_representative_spans_from_proposals=args.refine_representative_spans_from_proposals,
             expected_taxonomy_version=args.expected_taxonomy_version,
             strict_normalization=args.strict_normalization,
         )
