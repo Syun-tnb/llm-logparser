@@ -32,7 +32,9 @@ from .analyzer_semantic_topic import (
 from .llm_client_protocol import LLMClient
 from .ollama_client import OllamaClient
 from .semantic_normalization import (
+    SEED_TAXONOMY_VERSION,
     normalize_representative_span,
+    semantic_normalization_prompt_hashes,
     semantic_normalization_to_dict,
 )
 from .semantic_normalization_jobs import (
@@ -609,6 +611,60 @@ def _normalization_provenance(
     }
 
 
+def _batch_normalization_consistency_messages(
+    *,
+    job_id: str,
+    config: dict[str, Any],
+    expected_taxonomy_version: str | None,
+) -> list[str]:
+    normalization = config.get("normalization")
+    prompt_provenance = config.get("prompt_provenance")
+    normalization_row = normalization if isinstance(normalization, dict) else {}
+    prompt_row = prompt_provenance if isinstance(prompt_provenance, dict) else {}
+
+    expected_taxonomy = expected_taxonomy_version or SEED_TAXONOMY_VERSION
+    messages: list[str] = []
+    actual_taxonomy = normalization_row.get("taxonomy_version")
+    if actual_taxonomy != expected_taxonomy:
+        messages.append(
+            "semantic normalization taxonomy mismatch for "
+            f"job {job_id}: expected {expected_taxonomy!r}, got {actual_taxonomy!r}"
+        )
+
+    expected_prompt_hashes = semantic_normalization_prompt_hashes()
+    for key, expected_hash in expected_prompt_hashes.items():
+        actual_hash = prompt_row.get(key)
+        if actual_hash != expected_hash:
+            messages.append(
+                "semantic normalization prompt hash mismatch for "
+                f"job {job_id} ({key}): expected {expected_hash!r}, got {actual_hash!r}"
+            )
+    return messages
+
+
+def _enforce_batch_normalization_consistency(
+    *,
+    job_id: str,
+    config: dict[str, Any],
+    expected_taxonomy_version: str | None,
+    strict_normalization: bool,
+) -> None:
+    messages = _batch_normalization_consistency_messages(
+        job_id=job_id,
+        config=config,
+        expected_taxonomy_version=expected_taxonomy_version,
+    )
+    if not messages:
+        return
+    for message in messages:
+        LOGGER.warning(message)
+    if strict_normalization:
+        raise SemanticTopicsError(
+            "semantic normalization consistency check failed: "
+            + "; ".join(messages)
+        )
+
+
 def _time_bounds(
     members: list[WindowClusterMember],
     windows: dict[WindowRef, WindowPreviewRecord],
@@ -754,6 +810,8 @@ def build_semantic_topics_artifact(
     state_locale: str | None = None,
     include_representative_span_normalization: bool = False,
     normalization_job: str | None = None,
+    expected_taxonomy_version: str | None = None,
+    strict_normalization: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if min_cluster_size <= 0:
         raise SemanticTopicsError("--min-cluster-size must be > 0")
@@ -766,6 +824,13 @@ def build_semantic_topics_artifact(
     ):
         raise SemanticTopicsError(
             "--normalization-job must be a non-empty string when provided"
+        )
+    if expected_taxonomy_version is not None and (
+        not isinstance(expected_taxonomy_version, str)
+        or not expected_taxonomy_version.strip()
+    ):
+        raise SemanticTopicsError(
+            "--expected-taxonomy-version must be a non-empty string when provided"
         )
 
     try:
@@ -835,6 +900,12 @@ def build_semantic_topics_artifact(
         except SemanticNormalizationJobError as exc:
             raise SemanticTopicsError(str(exc)) from exc
         batch_normalization_config = batch_job.config
+        _enforce_batch_normalization_consistency(
+            job_id=normalized_job_id,
+            config=batch_normalization_config,
+            expected_taxonomy_version=expected_taxonomy_version,
+            strict_normalization=strict_normalization,
+        )
         batch_normalization_index = _batch_normalization_index(
             batch_job.result_rows,
             job_id=normalized_job_id,
@@ -1066,6 +1137,8 @@ def write_semantic_topics_artifacts(
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     state_locale: str | None = None,
     normalization_job: str | None = None,
+    expected_taxonomy_version: str | None = None,
+    strict_normalization: bool = False,
 ) -> dict[str, Any]:
     artifact, membership_rows = build_semantic_topics_artifact(
         input_root,
@@ -1077,6 +1150,8 @@ def write_semantic_topics_artifacts(
         timeout_seconds=timeout_seconds,
         state_locale=state_locale,
         normalization_job=normalization_job,
+        expected_taxonomy_version=expected_taxonomy_version,
+        strict_normalization=strict_normalization,
     )
 
     topics_validator = load_topics_validator()

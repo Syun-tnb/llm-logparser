@@ -641,6 +641,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topics.opt.normalization_job.help"),
     )
     analyze_semantic_topics_cmd.add_argument(
+        "--expected-taxonomy-version",
+        dest="expected_taxonomy_version",
+        help=_("cli.analyze.semantic_topics.opt.expected_taxonomy_version.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
+        "--strict-normalization",
+        dest="strict_normalization",
+        action="store_true",
+        help=_("cli.analyze.semantic_topics.opt.strict_normalization.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
         "--timeout-seconds",
         dest="timeout_seconds",
         type=float,

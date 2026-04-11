@@ -159,6 +159,8 @@ def test_analyze_semantic_topics_help_mentions_artifact_builder_options(capsys):
     assert "--timeout-seconds" in help_text
     assert "--state-locale" in help_text
     assert "--normalization-job" in help_text
+    assert "--expected-taxonomy-version" in help_text
+    assert "--strict-normalization" in help_text
 
 
 def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys):

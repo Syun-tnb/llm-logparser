@@ -14,6 +14,10 @@ from llm_logparser.core.analyzer_semantic_topics import (
     build_semantic_topics_artifact,
     write_semantic_topics_artifacts,
 )
+from llm_logparser.core.semantic_normalization import (
+    SEED_TAXONOMY_VERSION,
+    semantic_normalization_prompt_hashes,
+)
 from llm_logparser.core.schema_validation import (
     load_topic_membership_validator,
     load_topics_validator,
@@ -205,9 +209,16 @@ def _write_semantic_normalization_job(
     *,
     job_id: str,
     result_rows: list[dict],
+    taxonomy_version: str = SEED_TAXONOMY_VERSION,
+    prompt_provenance: dict[str, str] | None = None,
 ) -> Path:
     job_dir = root / "l3" / "semantic-normalization" / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    effective_prompt_provenance = (
+        dict(prompt_provenance)
+        if prompt_provenance is not None
+        else semantic_normalization_prompt_hashes()
+    )
     (job_dir / "config.json").write_text(
         json.dumps(
             {
@@ -226,6 +237,7 @@ def _write_semantic_normalization_job(
                     "thread_count": 3,
                     "message_windows_files": 3,
                     "parsed_only_files": 0,
+                    "invalid_threads": 0,
                 },
                 "normalization": {
                     "model": "batch-model:latest",
@@ -234,13 +246,10 @@ def _write_semantic_normalization_job(
                     "temperature": 0.0,
                     "raw_num_predict": 180,
                     "mapping_num_predict": 160,
-                    "taxonomy_version": "seed_taxonomy_v0",
+                    "taxonomy_version": taxonomy_version,
                     "confidence_threshold": 0.65,
                 },
-                "prompt_provenance": {
-                    "raw_label_prompt_sha1": "a" * 40,
-                    "mapping_prompt_sha1": "b" * 40,
-                },
+                "prompt_provenance": effective_prompt_provenance,
                 "worklist": {
                     "total_spans": len(result_rows),
                     "span_key_kind": "conversation_id+span_id+ordered_message_ids",
@@ -1059,11 +1068,8 @@ def test_semantic_topics_attaches_matching_batch_normalization_results(tmp_path)
         "source_kind": "batch",
         "job_id": job_id,
         "model": "batch-model:latest",
-        "taxonomy_version": "seed_taxonomy_v0",
-        "prompt_provenance": {
-            "raw_label_prompt_sha1": "a" * 40,
-            "mapping_prompt_sha1": "b" * 40,
-        },
+        "taxonomy_version": SEED_TAXONOMY_VERSION,
+        "prompt_provenance": semantic_normalization_prompt_hashes(),
         "matched_representative_span_count": 3,
         "unmatched_representative_span_count": 0,
         "drifted_representative_span_count": 0,
@@ -1079,6 +1085,46 @@ def test_semantic_topics_attaches_matching_batch_normalization_results(tmp_path)
 
     topics_validator = load_topics_validator()
     assert list(topics_validator.iter_errors(topics_payload)) == []
+
+
+def test_semantic_topics_batch_normalization_matching_provenance_emits_no_warning(
+    tmp_path, caplog
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_consistent"
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    caplog.set_level(logging.WARNING)
+    build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        normalization_job=job_id,
+    )
+
+    assert "semantic normalization taxonomy mismatch" not in caplog.text
+    assert "semantic normalization prompt hash mismatch" not in caplog.text
 
 
 def test_semantic_topics_batch_normalization_drift_warns_and_skips(tmp_path, caplog):
@@ -1119,15 +1165,134 @@ def test_semantic_topics_batch_normalization_drift_warns_and_skips(tmp_path, cap
         "source_kind": "batch",
         "job_id": job_id,
         "model": "batch-model:latest",
-        "taxonomy_version": "seed_taxonomy_v0",
-        "prompt_provenance": {
-            "raw_label_prompt_sha1": "a" * 40,
-            "mapping_prompt_sha1": "b" * 40,
-        },
+        "taxonomy_version": SEED_TAXONOMY_VERSION,
+        "prompt_provenance": semantic_normalization_prompt_hashes(),
         "matched_representative_span_count": 0,
         "unmatched_representative_span_count": 2,
         "drifted_representative_span_count": 1,
     }
+
+
+def test_semantic_topics_warns_on_batch_normalization_taxonomy_mismatch(
+    tmp_path, caplog
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_taxonomy_warning"
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        taxonomy_version="seed_taxonomy_v999",
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    caplog.set_level(logging.WARNING)
+    build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        normalization_job=job_id,
+    )
+
+    assert "semantic normalization taxonomy mismatch" in caplog.text
+
+
+def test_semantic_topics_warns_on_batch_normalization_prompt_hash_mismatch(
+    tmp_path, caplog
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_prompt_warning"
+    prompt_provenance = semantic_normalization_prompt_hashes()
+    prompt_provenance["raw_label_prompt_sha1"] = "0" * 40
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        prompt_provenance=prompt_provenance,
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    caplog.set_level(logging.WARNING)
+    build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        normalization_job=job_id,
+    )
+
+    assert "semantic normalization prompt hash mismatch" in caplog.text
+
+
+def test_semantic_topics_strict_normalization_fails_on_mismatch(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_strict"
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        taxonomy_version="seed_taxonomy_v999",
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    with pytest.raises(
+        SemanticTopicsError,
+        match="semantic normalization consistency check failed",
+    ):
+        build_semantic_topics_artifact(
+            root,
+            cluster_id="cluster_000001",
+            normalization_job=job_id,
+            strict_normalization=True,
+        )
 
 
 def test_semantic_topics_missing_normalization_job_fails_clearly(tmp_path):
