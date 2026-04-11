@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import statistics
 import time
 from dataclasses import dataclass
@@ -1020,9 +1021,7 @@ def run_semantic_normalization_job(
         job_id=normalized_job_id,
     )
     if job_dir.exists():
-        for artifact_path in job_dir.iterdir():
-            if artifact_path.is_file():
-                artifact_path.unlink()
+        shutil.rmtree(job_dir)
     job_dir.mkdir(parents=True, exist_ok=True)
     config = _build_config(
         job_id=normalized_job_id,

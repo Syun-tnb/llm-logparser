@@ -8,6 +8,7 @@ import pytest
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core.semantic_normalization import (
+    MappingStatus,
     SemanticNormalizationMethod,
     SemanticNormalizationResult,
 )
@@ -103,7 +104,7 @@ def _fake_result(
     message_ids: list[str],
     raw_label: str = "request",
     normalized_label: str | None = "request",
-    mapping_status: str = "mapped",
+    mapping_status: MappingStatus = "mapped",
     confidence: float | None = 0.91,
 ) -> SemanticNormalizationResult:
     return SemanticNormalizationResult(
@@ -114,7 +115,7 @@ def _fake_result(
         unit_kind="representative_span",
         raw_label=raw_label,
         normalized_label=normalized_label,
-        mapping_status=mapping_status,  # type: ignore[arg-type]
+        mapping_status=mapping_status,
         confidence=confidence,
         method=SemanticNormalizationMethod(kind="llm", model="test-model"),
     )
