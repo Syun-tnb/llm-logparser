@@ -198,13 +198,17 @@ def _prompt_missing_required(
             if can_prompt:
                 prompt_label = (
                     _("runtime.prompt.analyze_provider_root")
-                    if args.analyze_command in {"sqlite-build", "semantic-normalization"}
+                    if args.analyze_command
+                    in {"sqlite-build", "semantic-normalization", "semantic-topics"}
                     else _("runtime.prompt.analyze_input")
                 )
                 raw_input = prompt_text(prompt_label)
                 args.input = Path(raw_input) if raw_input else None
             else:
-                logger.error(_("runtime.analyze.missing_input", command=args.analyze_command))
+                if args.analyze_command == "semantic-topics":
+                    logger.error(_("runtime.analyze.semantic_topics.missing_input_explicit"))
+                else:
+                    logger.error(_("runtime.analyze.missing_input", command=args.analyze_command))
                 sys.exit(2)
 
         if args.analyze_command == "sqlite-build" and not args.provider:
@@ -280,10 +284,9 @@ def main(argv: list[str] | None = None):
     config_path: Path | None = None
     config_locale: str | None = None
     if args.command in {"parse", "export", "chain", "extract", "analyze"}:
-        # Keep analyze on the same locale resolution path as the other runtime
-        # commands. Today it only consumes profile data for locale selection,
-        # but that still needs the documented CLI -> env -> profile -> en-US
-        # precedence instead of a command-specific exception.
+        # Keep analyze on the same locale resolution and profile-default path as
+        # the other runtime commands. Individual analyze subcommands still own
+        # which options are safe to inherit from config.
         profile, _profiles, _config, config_path = _resolve_profile(
             args,
             can_prompt=can_prompt,

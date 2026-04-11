@@ -93,15 +93,15 @@ messages:
   cli.analyze.semantic_topic.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
   cli.analyze.semantic_topic.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.analyze.semantic_topics.help: Build formal semantic topic artifacts with forward and reverse lookup from stored L3 clusters
-  cli.analyze.semantic_topics.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl and window_clusters.jsonl files"
+  cli.analyze.semantic_topics.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl and window_clusters.jsonl files. Must be provided explicitly at runtime; not read from config for safety."
   cli.analyze.semantic_topics.opt.model.help: Optional local Ollama generation model. Omit for structural-only topic artifacts.
-  cli.analyze.semantic_topics.opt.cluster_id.help: Build artifacts for one cluster only
+  cli.analyze.semantic_topics.opt.cluster_id.help: Build artifacts for one cluster only. When used, it must be provided explicitly at runtime; not read from config for safety.
   cli.analyze.semantic_topics.opt.min_cluster_size.help: Minimum cluster size to include in the generated topic set
   cli.analyze.semantic_topics.opt.cross_thread_only.help: Restrict the generated topic set to clusters spanning more than one conversation
   cli.analyze.semantic_topics.opt.base_url.help: Base URL for the local Ollama server
   cli.analyze.semantic_topics.opt.timeout_seconds.help: Per-cluster Ollama request timeout in seconds when --model is used
   cli.analyze.semantic_topics.opt.state_locale.help: Locale tag for L3 span-state phrase matching. Keeps UI locale separate and falls back to en-US.
-  cli.analyze.semantic_topics.opt.normalization_job.help: Attach precomputed representative-span normalization from one semantic-normalization batch job
+  cli.analyze.semantic_topics.opt.normalization_job.help: Attach precomputed representative-span normalization from one semantic-normalization batch job. Must be provided explicitly at runtime; not read from config for safety.
   cli.analyze.semantic_topics.opt.expected_taxonomy_version.help: Expected semantic-normalization taxonomy version for batch-consumed normalization
   cli.analyze.semantic_topics.opt.strict_normalization.help: Treat semantic-normalization taxonomy or prompt provenance mismatches as errors instead of warnings
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
@@ -186,6 +186,8 @@ messages:
   runtime.config.deprecated_profile_key: "Deprecated config key profiles.{profile_name}.{legacy_key} is still supported for schema_version 1; use {replacement} instead. Removal is planned for a future schema_version 2 cleanup."
   runtime.config.deprecated_semantic_embedding_key: "Deprecated config key {context}.{legacy_key} is still supported; use {context}.{replacement} instead."
   runtime.config.unknown_sanitize_keys: "Unknown sanitize config key(s) under {context}: {keys}"
+  runtime.config.unknown_semantic_topics_keys: "Unknown semantic-topics config key(s) under {context}: {keys}"
+  runtime.config.semantic_topics_runtime_required_keys: "{context} cannot set {keys}. These semantic-topics options must be provided explicitly at runtime for safety."
   runtime.config.must_be_mapping: "{context} must be a mapping"
   runtime.config.must_be_string: "{context} must be a string"
   runtime.config.must_be_boolean: "{context} must be a boolean"
@@ -278,6 +280,10 @@ messages:
   runtime.analyze.missing_input: |-
     Missing required options for 'analyze {command}':
       - input: --input
+  runtime.analyze.semantic_topics.missing_input_explicit: |-
+    Missing required options for 'analyze semantic-topics':
+      - input: --input
+    semantic-topics does not read input from config for safety. Pass the provider-root explicitly.
   runtime.analyze.missing_provider: |-
     Missing required options for 'analyze sqlite-build':
       - provider: --provider

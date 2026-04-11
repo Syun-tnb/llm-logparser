@@ -161,6 +161,10 @@ def test_analyze_semantic_topics_help_mentions_artifact_builder_options(capsys):
     assert "--normalization-job" in help_text
     assert "--expected-taxonomy-version" in help_text
     assert "--strict-normalization" in help_text
+    assert "provided explicitly at runtime" in help_text
+    assert "config for" in help_text
+    assert "--no-cross-thread-only" in help_text
+    assert "--no-strict-normalization" in help_text
 
 
 def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys):

@@ -613,10 +613,103 @@ class SemanticPrototypeConfig:
 
 
 @dataclass(frozen=True)
+class SemanticTopicsConfig:
+    model: str | None = None
+    min_cluster_size: int | None = None
+    cross_thread_only: bool | None = None
+    base_url: str | None = None
+    state_locale: str | None = None
+    expected_taxonomy_version: str | None = None
+    strict_normalization: bool | None = None
+    timeout_seconds: float | int | None = None
+
+    @classmethod
+    def from_raw(cls, raw: Any, *, context: str) -> SemanticTopicsConfig:
+        data = _optional_mapping(raw, context)
+        forbidden_keys = sorted(
+            key
+            for key in data.keys()
+            if isinstance(key, str) and key in {"input", "cluster_id", "normalization_job"}
+        )
+        if forbidden_keys:
+            _raise_config_error(
+                _(
+                    "runtime.config.semantic_topics_runtime_required_keys",
+                    context=context,
+                    keys=", ".join(forbidden_keys),
+                )
+            )
+        known_keys = {
+            "model",
+            "min_cluster_size",
+            "cross_thread_only",
+            "base_url",
+            "state_locale",
+            "expected_taxonomy_version",
+            "strict_normalization",
+            "timeout_seconds",
+        }
+        unknown_keys = sorted(
+            key for key in data.keys() if isinstance(key, str) and key not in known_keys
+        )
+        if unknown_keys:
+            _CONFIG_LOG.warning(
+                _(
+                    "runtime.config.unknown_semantic_topics_keys",
+                    context=context,
+                    keys=", ".join(unknown_keys),
+                )
+            )
+        return cls(
+            model=_optional_string(data.get("model"), f"{context}.model"),
+            min_cluster_size=_optional_int(
+                data.get("min_cluster_size"),
+                f"{context}.min_cluster_size",
+            ),
+            cross_thread_only=_optional_bool(
+                data.get("cross_thread_only"),
+                f"{context}.cross_thread_only",
+            ),
+            base_url=_optional_string(data.get("base_url"), f"{context}.base_url"),
+            state_locale=_optional_string(
+                data.get("state_locale"),
+                f"{context}.state_locale",
+            ),
+            expected_taxonomy_version=_optional_string(
+                data.get("expected_taxonomy_version"),
+                f"{context}.expected_taxonomy_version",
+            ),
+            strict_normalization=_optional_bool(
+                data.get("strict_normalization"),
+                f"{context}.strict_normalization",
+            ),
+            timeout_seconds=_optional_number(
+                data.get("timeout_seconds"),
+                f"{context}.timeout_seconds",
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact_dict(
+            {
+                "model": self.model,
+                "min_cluster_size": self.min_cluster_size,
+                "cross_thread_only": self.cross_thread_only,
+                "base_url": self.base_url,
+                "state_locale": self.state_locale,
+                "expected_taxonomy_version": self.expected_taxonomy_version,
+                "strict_normalization": self.strict_normalization,
+                "timeout_seconds": self.timeout_seconds,
+            }
+        )
+
+
+@dataclass(frozen=True)
 class AnalyzeConfig:
     semantic_prototype: SemanticPrototypeConfig = field(
         default_factory=SemanticPrototypeConfig
     )
+    semantic_topics: SemanticTopicsConfig = field(default_factory=SemanticTopicsConfig)
 
     @classmethod
     def from_raw(cls, raw: Any, *, context: str) -> AnalyzeConfig:
@@ -625,13 +718,18 @@ class AnalyzeConfig:
             semantic_prototype=SemanticPrototypeConfig.from_raw(
                 data.get("semantic_prototype"),
                 context=f"{context}.semantic_prototype",
-            )
+            ),
+            semantic_topics=SemanticTopicsConfig.from_raw(
+                data.get("semantic_topics"),
+                context=f"{context}.semantic_topics",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return _compact_dict(
             {
                 "semantic_prototype": self.semantic_prototype.to_dict(),
+                "semantic_topics": self.semantic_topics.to_dict(),
             }
         )
 

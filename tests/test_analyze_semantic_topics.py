@@ -1029,6 +1029,177 @@ def test_analyze_semantic_topics_cli_accepts_state_locale(tmp_path):
     assert payload["topics"][0]["span_refs"][0]["state"] == "done"
 
 
+def test_semantic_topics_reads_safe_config_defaults(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: local",
+                "profiles:",
+                "  local:",
+                "    input:",
+                f"      path: {tmp_path / 'wrong-artifacts'}",
+                "    analyze:",
+                "      semantic_topics:",
+                "        model: gemma4-Q8_K_XL:latest",
+                "        min_cluster_size: 3",
+                "        cross_thread_only: true",
+                "        base_url: http://localhost:22434",
+                "        state_locale: ja-JP",
+                "        expected_taxonomy_version: seed_taxonomy_v0",
+                "        strict_normalization: true",
+                "        timeout_seconds: 45.5",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_write(input_root, **kwargs):
+        captured["input_root"] = input_root
+        captured.update(kwargs)
+        return {
+            "topic_count": 0,
+            "topics_path": str(root / "l3" / "semantic-topics" / "topics.json"),
+            "membership_path": str(root / "l3" / "semantic-topics" / "topic_membership.jsonl"),
+            "label_mode": "structural-only",
+        }
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topics.write_semantic_topics_artifacts",
+        side_effect=fake_write,
+    ):
+        main(
+            [
+                "--config",
+                str(config_path),
+                "analyze",
+                "semantic-topics",
+                "--input",
+                str(root),
+            ]
+        )
+
+    assert captured["input_root"] == root.resolve()
+    assert captured["model"] == "gemma4-Q8_K_XL:latest"
+    assert captured["min_cluster_size"] == 3
+    assert captured["cross_thread_only"] is True
+    assert captured["base_url"] == "http://localhost:22434"
+    assert captured["state_locale"] == "ja-JP"
+    assert captured["expected_taxonomy_version"] == "seed_taxonomy_v0"
+    assert captured["strict_normalization"] is True
+    assert captured["timeout_seconds"] == 45.5
+
+
+def test_semantic_topics_cli_overrides_safe_config_defaults(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: local",
+                "profiles:",
+                "  local:",
+                "    analyze:",
+                "      semantic_topics:",
+                "        model: gemma4-Q8_K_XL:latest",
+                "        min_cluster_size: 3",
+                "        cross_thread_only: true",
+                "        base_url: http://localhost:22434",
+                "        strict_normalization: true",
+                "        timeout_seconds: 45.5",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_write(input_root, **kwargs):
+        captured["input_root"] = input_root
+        captured.update(kwargs)
+        return {
+            "topic_count": 0,
+            "topics_path": str(root / "l3" / "semantic-topics" / "topics.json"),
+            "membership_path": str(root / "l3" / "semantic-topics" / "topic_membership.jsonl"),
+            "label_mode": "structural-only",
+        }
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topics.write_semantic_topics_artifacts",
+        side_effect=fake_write,
+    ):
+        main(
+            [
+                "--config",
+                str(config_path),
+                "analyze",
+                "semantic-topics",
+                "--input",
+                str(root),
+                "--model",
+                "llama3.1:latest",
+                "--min-cluster-size",
+                "1",
+                "--no-cross-thread-only",
+                "--base-url",
+                "http://localhost:11434",
+                "--no-strict-normalization",
+                "--timeout-seconds",
+                "12.0",
+            ]
+        )
+
+    assert captured["model"] == "llama3.1:latest"
+    assert captured["min_cluster_size"] == 1
+    assert captured["cross_thread_only"] is False
+    assert captured["base_url"] == "http://localhost:11434"
+    assert captured["strict_normalization"] is False
+    assert captured["timeout_seconds"] == 12.0
+
+
+def test_semantic_topics_requires_explicit_input_even_with_config(tmp_path, caplog):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: local",
+                "profiles:",
+                "  local:",
+                "    input:",
+                f"      path: {tmp_path / 'artifacts' / 'output' / 'openai'}",
+                "    analyze:",
+                "      semantic_topics:",
+                "        model: gemma4-Q8_K_XL:latest",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    caplog.set_level(logging.ERROR)
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "--config",
+                str(config_path),
+                "--non-interactive",
+                "analyze",
+                "semantic-topics",
+            ]
+        )
+
+    assert exc.value.code == 2
+    assert "semantic-topics does not read input from config for safety" in caplog.text
+
+
 def test_semantic_topics_attaches_matching_batch_normalization_results(tmp_path):
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)

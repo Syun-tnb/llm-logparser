@@ -644,3 +644,78 @@ def test_config_show_preserves_unicode_yaml_output(tmp_path, monkeypatch, capsys
 
     captured = capsys.readouterr()
     assert "日本語/messages.json" in captured.out
+
+
+def test_load_config_file_reads_semantic_topics_settings(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    analyze:",
+                "      semantic_topics:",
+                "        model: gemma4-Q8_K_XL:latest",
+                "        min_cluster_size: 3",
+                "        cross_thread_only: true",
+                "        base_url: http://localhost:22434",
+                "        state_locale: ja-JP",
+                "        expected_taxonomy_version: seed_taxonomy_v0",
+                "        strict_normalization: true",
+                "        timeout_seconds: 45.5",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config_file(config_path)
+
+    semantic_topics = config.profiles["default"].analyze.semantic_topics
+    assert semantic_topics.model == "gemma4-Q8_K_XL:latest"
+    assert semantic_topics.min_cluster_size == 3
+    assert semantic_topics.cross_thread_only is True
+    assert semantic_topics.base_url == "http://localhost:22434"
+    assert semantic_topics.state_locale == "ja-JP"
+    assert semantic_topics.expected_taxonomy_version == "seed_taxonomy_v0"
+    assert semantic_topics.strict_normalization is True
+    assert semantic_topics.timeout_seconds == 45.5
+    assert config.to_dict()["profiles"]["default"]["analyze"]["semantic_topics"] == {
+        "model": "gemma4-Q8_K_XL:latest",
+        "min_cluster_size": 3,
+        "cross_thread_only": True,
+        "base_url": "http://localhost:22434",
+        "state_locale": "ja-JP",
+        "expected_taxonomy_version": "seed_taxonomy_v0",
+        "strict_normalization": True,
+        "timeout_seconds": 45.5,
+    }
+
+
+@pytest.mark.parametrize("forbidden_key", ["input", "cluster_id", "normalization_job"])
+def test_load_config_file_rejects_runtime_required_semantic_topics_keys(
+    tmp_path, forbidden_key
+):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "active_profile: default",
+                "profiles:",
+                "  default:",
+                "    analyze:",
+                "      semantic_topics:",
+                f"        {forbidden_key}: forbidden",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        load_config_file(config_path)
+    assert forbidden_key in str(exc.value)
+    assert "semantic-topics" in str(exc.value)

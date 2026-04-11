@@ -621,7 +621,8 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_semantic_topics_cmd.add_argument(
         "--cross-thread-only",
         dest="cross_thread_only",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help=_("cli.analyze.semantic_topics.opt.cross_thread_only.help"),
     )
     analyze_semantic_topics_cmd.add_argument(
@@ -648,7 +649,8 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_semantic_topics_cmd.add_argument(
         "--strict-normalization",
         dest="strict_normalization",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help=_("cli.analyze.semantic_topics.opt.strict_normalization.help"),
     )
     analyze_semantic_topics_cmd.add_argument(

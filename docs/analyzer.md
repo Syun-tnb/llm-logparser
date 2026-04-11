@@ -853,12 +853,31 @@ Key `semantic-topics` flags:
 
 - `--model`: optional local Ollama generation model; omit it to write
   structural-only artifacts
-- `--cluster-id`: build artifacts for one cluster only
+- `--cluster-id`: build artifacts for one cluster only; keep this explicit at
+  runtime because it changes which exact artifact slice is built
 - `--min-cluster-size`: skip very small clusters before artifact generation
-- `--cross-thread-only`: limit artifact generation to multi-conversation
-  clusters
+- `--cross-thread-only` / `--no-cross-thread-only`: limit artifact generation
+  to multi-conversation clusters or explicitly turn that config-backed default
+  back off at the CLI
 - `--base-url` / `--timeout-seconds`: control the local Ollama endpoint when
   `--model` is used
+- `--input`: must be passed explicitly at runtime; `semantic-topics` does not
+  read its provider-root target from config for safety
+- `--normalization-job`: must be passed explicitly at runtime; `semantic-topics`
+  does not read batch-job selectors from config for safety
+- `--strict-normalization` / `--no-strict-normalization`: allow config-backed
+  consistency policy while preserving explicit CLI override in either
+  direction
+
+`semantic-topics` config behavior is intentionally split:
+
+- stable runtime knobs such as `model`, `min_cluster_size`,
+  `cross_thread_only`, `base_url`, `state_locale`,
+  `expected_taxonomy_version`, `strict_normalization`, and
+  `timeout_seconds` may come from `config.yaml`
+- target selectors such as `--input`, `--cluster-id`, and
+  `--normalization-job` must stay explicit at runtime because they choose the
+  exact provider root, cluster slice, or batch sidecar to consume
 
 Key `semantic-topic-explore` flags:
 

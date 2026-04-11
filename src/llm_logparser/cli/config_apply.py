@@ -163,7 +163,6 @@ def apply_profile_defaults(
                 "semantic-prototype",
                 "semantic-preview",
                 "semantic-topic",
-                "semantic-topics",
                 "semantic-topic-explore",
             }
         )
@@ -404,6 +403,64 @@ def apply_profile_defaults(
             "aggregate",
             ("--aggregate",),
             semantic.embedding.aggregate,
+        )
+    elif args.command == "analyze" and args.analyze_command == "semantic-topics":
+        semantic = profile.analyze.semantic_topics
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "model",
+            ("--model",),
+            semantic.model,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "min_cluster_size",
+            ("--min-cluster-size",),
+            semantic.min_cluster_size,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "cross_thread_only",
+            ("--cross-thread-only", "--no-cross-thread-only"),
+            semantic.cross_thread_only,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "base_url",
+            ("--base-url",),
+            semantic.base_url,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "state_locale",
+            ("--state-locale",),
+            semantic.state_locale,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "expected_taxonomy_version",
+            ("--expected-taxonomy-version",),
+            semantic.expected_taxonomy_version,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "strict_normalization",
+            ("--strict-normalization", "--no-strict-normalization"),
+            semantic.strict_normalization,
+        )
+        _set_if_not_cli(
+            args,
+            explicit_flags,
+            "timeout_seconds",
+            ("--timeout-seconds",),
+            semantic.timeout_seconds,
         )
 
     return info

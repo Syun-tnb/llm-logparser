@@ -249,9 +249,49 @@ Current command scope:
 
 * `parse`, `export`, `chain`, and `extract` use broader profile-backed CLI defaults
 * `analyze semantic-prototype` supports profile-backed defaults for its input path and embedding settings
-* other `analyze` modes currently share locale resolution only; their command-specific options should still be passed explicitly
+* `analyze semantic-topics` supports profile-backed defaults for stable runtime options under `profiles.<name>.analyze.semantic_topics`
+* `analyze semantic-topics` still requires `--input` explicitly at runtime and does not read it from config for safety
 * `profiles.<name>.locale` can still affect `analyze` because locale resolution is shared across runtime commands
 * `config` can apply profile locale after config/profile resolution
+
+`semantic-topics` config precedence follows the normal command rule:
+
+1️⃣ CLI arguments  
+2️⃣ selected profile values  
+3️⃣ built-in CLI defaults
+
+For safety, these `semantic-topics` selectors are not read from config and must
+stay explicit at runtime:
+
+* `--input`
+* `--cluster-id`
+* `--normalization-job`
+
+They determine the exact artifact root, cluster slice, or batch job to consume.
+Silently inheriting them would make it too easy to write to or consume from the
+wrong target.
+
+Safe `semantic-topics` profile-backed options live under:
+
+```yaml
+profiles:
+  default:
+    analyze:
+      semantic_topics:
+        model: llama3.1:latest
+        min_cluster_size: 2
+        cross_thread_only: false
+        base_url: http://localhost:11434
+        state_locale: ja-JP
+        expected_taxonomy_version: seed_taxonomy_v0
+        strict_normalization: false
+        timeout_seconds: 120.0
+```
+
+Two boolean options support explicit CLI override in both directions:
+
+* `--cross-thread-only` / `--no-cross-thread-only`
+* `--strict-normalization` / `--no-strict-normalization`
 
 Analyzer text output policy:
 
