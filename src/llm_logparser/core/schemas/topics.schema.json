@@ -14,7 +14,7 @@
   ],
   "properties": {
     "artifact_type": { "type": "string", "const": "semantic_topics" },
-    "schema_version": { "type": "string", "const": "2.1" },
+    "schema_version": { "type": "string", "const": "2.2" },
     "provider_id": { "type": "string", "minLength": 1 },
     "topic_count": { "type": "integer", "minimum": 0 },
     "generated_at": { "type": "string", "format": "date-time" },
@@ -126,7 +126,130 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         },
-        "window_id": { "type": "string", "minLength": 1 }
+        "window_id": { "type": "string", "minLength": 1 },
+        "semantic_normalization": {
+          "$ref": "#/$defs/semanticNormalization"
+        }
+      },
+      "additionalProperties": false
+    },
+    "semanticNormalizationMethod": {
+      "type": "object",
+      "required": ["kind", "model", "mapping_version"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["llm", "rule", "hybrid"]
+        },
+        "model": { "type": ["string", "null"], "minLength": 1 },
+        "mapping_version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "semanticNormalization": {
+      "type": "object",
+      "required": [
+        "conversation_id",
+        "span_id",
+        "window_id",
+        "message_ids",
+        "unit_kind",
+        "raw_label",
+        "normalized_label",
+        "mapping_status",
+        "confidence",
+        "method"
+      ],
+      "properties": {
+        "conversation_id": { "type": "string", "minLength": 1 },
+        "span_id": { "type": "string", "minLength": 1 },
+        "window_id": { "type": ["string", "null"], "minLength": 1 },
+        "message_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "unit_kind": {
+          "type": "string",
+          "const": "representative_span"
+        },
+        "raw_label": { "type": "string", "minLength": 1 },
+        "normalized_label": {
+          "type": ["string", "null"],
+          "enum": [
+            "proposal",
+            "request",
+            "agreement",
+            "disagreement",
+            "decision",
+            "clarification",
+            "question",
+            "step_transition",
+            "status_update",
+            "reflection",
+            null
+          ]
+        },
+        "mapping_status": {
+          "type": "string",
+          "enum": ["mapped", "needs_review", "taxonomy_gap", "unmapped"]
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "method": { "$ref": "#/$defs/semanticNormalizationMethod" }
+      },
+      "additionalProperties": false
+    },
+    "normalizationPromptProvenance": {
+      "type": "object",
+      "required": ["raw_label_prompt_sha1", "mapping_prompt_sha1"],
+      "properties": {
+        "raw_label_prompt_sha1": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "mapping_prompt_sha1": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "normalizationProvenance": {
+      "type": "object",
+      "required": [
+        "source_kind",
+        "job_id",
+        "model",
+        "taxonomy_version",
+        "prompt_provenance",
+        "matched_representative_span_count",
+        "unmatched_representative_span_count",
+        "drifted_representative_span_count"
+      ],
+      "properties": {
+        "source_kind": { "type": "string", "const": "batch" },
+        "job_id": { "type": "string", "minLength": 1 },
+        "model": { "type": ["string", "null"], "minLength": 1 },
+        "taxonomy_version": { "type": ["string", "null"], "minLength": 1 },
+        "prompt_provenance": {
+          "$ref": "#/$defs/normalizationPromptProvenance"
+        },
+        "matched_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unmatched_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drifted_representative_span_count": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
       "additionalProperties": false
     },
@@ -206,7 +329,8 @@
         "window_cap": { "type": "integer", "minimum": 1 },
         "max_window_chars": { "type": "integer", "minimum": 1 },
         "clustering": { "$ref": "#/$defs/clusteringProvenance" },
-        "filters": { "$ref": "#/$defs/filters" }
+        "filters": { "$ref": "#/$defs/filters" },
+        "normalization": { "$ref": "#/$defs/normalizationProvenance" }
       },
       "additionalProperties": false
     },

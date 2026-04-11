@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -34,6 +35,10 @@ from .semantic_normalization import (
     normalize_representative_span,
     semantic_normalization_to_dict,
 )
+from .semantic_normalization_jobs import (
+    SemanticNormalizationJobError,
+    load_semantic_normalization_job_results,
+)
 from .semantic_state import (
     SpanStateResult,
     aggregate_topic_state,
@@ -47,7 +52,7 @@ from .schema_validation import (
 )
 
 WindowRef = tuple[str, str]
-TOPICS_SCHEMA_VERSION = "2.1"
+TOPICS_SCHEMA_VERSION = "2.2"
 TOPIC_MEMBERSHIP_SCHEMA_VERSION = "1.0"
 TOPIC_MEMBERSHIP_MODE = "span-and-message-v2"
 TOPIC_CLUSTERING_METHOD = "connected-components"
@@ -161,6 +166,9 @@ TOPIC_HEURISTIC_STOPWORDS = frozenset(
 
 class SemanticTopicsError(RuntimeError):
     pass
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _displayable_label_text(text: Any) -> str:
@@ -480,6 +488,117 @@ def _representative_windows(prompt_windows: list[dict[str, Any]]) -> list[dict[s
     ]
 
 
+def _normalization_text_sha1(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def _semantic_normalization_payload_from_job_row(
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "conversation_id": row["conversation_id"],
+        "span_id": row["span_id"],
+        "window_id": row.get("window_id"),
+        "message_ids": list(row["message_ids"]),
+        "unit_kind": "representative_span",
+        "raw_label": row["raw_label"],
+        "normalized_label": row.get("normalized_label"),
+        "mapping_status": row["mapping_status"],
+        "confidence": row.get("confidence"),
+        "method": row["method"],
+    }
+
+
+def _batch_normalization_index(
+    rows: list[dict[str, Any]],
+    *,
+    job_id: str,
+) -> dict[str, dict[str, Any]]:
+    indexed: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        span_id = row.get("span_id")
+        if not isinstance(span_id, str) or not span_id:
+            continue
+        if span_id in indexed:
+            LOGGER.warning(
+                "semantic normalization job %s has duplicate result rows for span_id=%s; using first row",
+                job_id,
+                span_id,
+            )
+            continue
+        indexed[span_id] = row
+    return indexed
+
+
+def _attach_batch_semantic_normalization(
+    representative_spans: list[dict[str, Any]],
+    *,
+    windows: dict[WindowRef, WindowPreviewRecord],
+    batch_index: dict[str, dict[str, Any]],
+    job_id: str,
+) -> dict[str, int]:
+    counts = {
+        "matched_representative_span_count": 0,
+        "unmatched_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
+    for span_row in representative_spans:
+        span_id = span_row["span_id"]
+        batch_row = batch_index.get(span_id)
+        if batch_row is None:
+            counts["unmatched_representative_span_count"] += 1
+            continue
+        conversation_id = span_row["conversation_id"]
+        window_id = span_row.get("window_id")
+        if not isinstance(window_id, str):
+            counts["unmatched_representative_span_count"] += 1
+            continue
+        record = windows.get((conversation_id, window_id))
+        if record is None:
+            counts["unmatched_representative_span_count"] += 1
+            continue
+        current_text_sha1 = _normalization_text_sha1(record.text)
+        batch_text_sha1 = batch_row.get("text_sha1")
+        if not isinstance(batch_text_sha1, str) or batch_text_sha1 != current_text_sha1:
+            counts["drifted_representative_span_count"] += 1
+            LOGGER.warning(
+                "semantic normalization drift detected for job %s span_id=%s; expected text_sha1=%r current=%r; skipping attachment",
+                job_id,
+                span_id,
+                batch_text_sha1,
+                current_text_sha1,
+            )
+            continue
+        span_row["semantic_normalization"] = _semantic_normalization_payload_from_job_row(
+            batch_row
+        )
+        counts["matched_representative_span_count"] += 1
+    return counts
+
+
+def _normalization_provenance(
+    *,
+    job_id: str,
+    config: dict[str, Any],
+    counts: dict[str, int],
+) -> dict[str, Any]:
+    normalization = config.get("normalization")
+    prompt_provenance = config.get("prompt_provenance")
+    normalization_row = normalization if isinstance(normalization, dict) else {}
+    prompt_row = prompt_provenance if isinstance(prompt_provenance, dict) else {}
+    return {
+        "source_kind": "batch",
+        "job_id": job_id,
+        "model": normalization_row.get("model"),
+        "taxonomy_version": normalization_row.get("taxonomy_version"),
+        "prompt_provenance": {
+            "raw_label_prompt_sha1": prompt_row.get("raw_label_prompt_sha1"),
+            "mapping_prompt_sha1": prompt_row.get("mapping_prompt_sha1"),
+        },
+        **counts,
+    }
+
+
 def _time_bounds(
     members: list[WindowClusterMember],
     windows: dict[WindowRef, WindowPreviewRecord],
@@ -624,6 +743,7 @@ def build_semantic_topics_artifact(
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     state_locale: str | None = None,
     include_representative_span_normalization: bool = False,
+    normalization_job: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if min_cluster_size <= 0:
         raise SemanticTopicsError("--min-cluster-size must be > 0")
@@ -631,6 +751,12 @@ def build_semantic_topics_artifact(
         raise SemanticTopicsError("--timeout-seconds must be > 0")
     if model is not None and (not isinstance(model, str) or not model.strip()):
         raise SemanticTopicsError("--model must be a non-empty string when provided")
+    if normalization_job is not None and (
+        not isinstance(normalization_job, str) or not normalization_job.strip()
+    ):
+        raise SemanticTopicsError(
+            "--normalization-job must be a non-empty string when provided"
+        )
 
     try:
         windows = load_window_preview_index(input_root)
@@ -650,6 +776,16 @@ def build_semantic_topics_artifact(
 
     provider_id = next(iter(windows.values())).provider_id
     normalized_model = model.strip() if isinstance(model, str) else None
+    normalized_job_id = (
+        normalization_job.strip() if isinstance(normalization_job, str) else None
+    )
+    if (
+        include_representative_span_normalization
+        and normalized_job_id is not None
+    ):
+        raise SemanticTopicsError(
+            "batch normalization (--normalization-job) cannot be combined with inline representative span normalization"
+        )
     if include_representative_span_normalization and normalized_model is None:
         raise SemanticTopicsError(
             "--model is required when representative span normalization is enabled"
@@ -673,6 +809,31 @@ def build_semantic_topics_artifact(
         )
     }
     normalization_client: LLMClient | None = None
+    batch_normalization_config: dict[str, Any] | None = None
+    batch_normalization_index: dict[str, dict[str, Any]] | None = None
+    batch_normalization_counts = {
+        "matched_representative_span_count": 0,
+        "unmatched_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
+    if normalized_job_id is not None:
+        try:
+            batch_job = load_semantic_normalization_job_results(
+                input_root,
+                job_id=normalized_job_id,
+            )
+        except SemanticNormalizationJobError as exc:
+            raise SemanticTopicsError(str(exc)) from exc
+        batch_normalization_config = batch_job.config
+        batch_normalization_index = _batch_normalization_index(
+            batch_job.result_rows,
+            job_id=normalized_job_id,
+        )
+        if not batch_normalization_index:
+            LOGGER.warning(
+                "semantic normalization job %s has no successful results to attach",
+                normalized_job_id,
+            )
     if include_representative_span_normalization and normalized_model is not None:
         normalization_client = OllamaClient(
             base_url=base_url,
@@ -704,7 +865,16 @@ def build_semantic_topics_artifact(
             prompt_windows,
             span_state_by_ref=span_state_by_ref,
         )
-        if normalization_client is not None and normalized_model is not None:
+        if batch_normalization_index is not None and normalized_job_id is not None:
+            counts = _attach_batch_semantic_normalization(
+                representative_spans,
+                windows=windows,
+                batch_index=batch_normalization_index,
+                job_id=normalized_job_id,
+            )
+            for key, value in counts.items():
+                batch_normalization_counts[key] += value
+        elif normalization_client is not None and normalized_model is not None:
             for span_row in representative_spans:
                 conversation_id = span_row["conversation_id"]
                 window_id = span_row.get("window_id")
@@ -858,6 +1028,17 @@ def build_semantic_topics_artifact(
                 "min_cluster_size": min_cluster_size,
                 "cross_thread_only": cross_thread_only,
             },
+            **(
+                {
+                    "normalization": _normalization_provenance(
+                        job_id=normalized_job_id,
+                        config=batch_normalization_config or {},
+                        counts=batch_normalization_counts,
+                    )
+                }
+                if normalized_job_id is not None
+                else {}
+            ),
         },
         "topics": topics,
     }
@@ -874,6 +1055,7 @@ def write_semantic_topics_artifacts(
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     state_locale: str | None = None,
+    normalization_job: str | None = None,
 ) -> dict[str, Any]:
     artifact, membership_rows = build_semantic_topics_artifact(
         input_root,
@@ -884,6 +1066,7 @@ def write_semantic_topics_artifacts(
         base_url=base_url,
         timeout_seconds=timeout_seconds,
         state_locale=state_locale,
+        normalization_job=normalization_job,
     )
 
     topics_validator = load_topics_validator()

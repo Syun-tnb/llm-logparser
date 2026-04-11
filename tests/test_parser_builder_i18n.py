@@ -158,6 +158,7 @@ def test_analyze_semantic_topics_help_mentions_artifact_builder_options(capsys):
     assert "--base-url" in help_text
     assert "--timeout-seconds" in help_text
     assert "--state-locale" in help_text
+    assert "--normalization-job" in help_text
 
 
 def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys):

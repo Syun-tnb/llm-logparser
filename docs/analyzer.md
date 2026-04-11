@@ -650,7 +650,7 @@ deterministic and model-derived capabilities.
   reverse lookup index. Current membership is intentionally conservative:
   one topic per L3 cluster. Structural fields are always written;
   model-derived fields are added only when `--model` is supplied.
-  `topics.json` now emits `schema_version: "2.1"` and
+  `topics.json` now emits `schema_version: "2.2"` and
   `topic_membership.jsonl` now emits `schema_version: "1.0"`, with top-level
   `generated_at`, `source_inputs`, and `provenance`. Per-topic records are now
   grounded primarily by `span_refs`, `message_refs`, and
@@ -659,7 +659,10 @@ deterministic and model-derived capabilities.
   `membership_type=cluster|span|message`, so semantic membership is no longer
   inferred from L1 window text; semantic excerpts are reconstructed from
   canonical message rows via `message_ids` when needed for prompting or browse
-  output.
+  output. `semantic-topics` also accepts `--normalization-job <job_id>` to
+  attach precomputed representative-span semantic normalization from
+  `l3/semantic-normalization/jobs/<job_id>/results.jsonl` as an optional L3
+  sidecar, with drift checks against current reconstructed text.
   window-based. Topic records still include `cluster_ids` for provenance and
   now include heuristic L3 state fields:
   `state` with canonical values `unresolved|in_progress|done`,

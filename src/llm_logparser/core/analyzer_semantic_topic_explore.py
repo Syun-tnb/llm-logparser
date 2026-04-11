@@ -22,7 +22,7 @@ from .schema_validation import (
 )
 
 WindowRef = tuple[str, str]
-EXPECTED_TOPICS_SCHEMA_VERSION = "2.1"
+EXPECTED_TOPICS_SCHEMA_VERSION = "2.2"
 EXPECTED_TOPIC_MEMBERSHIP_SCHEMA_VERSION = "1.0"
 EXPECTED_TOPIC_MEMBERSHIP_MODE = "span-and-message-v2"
 

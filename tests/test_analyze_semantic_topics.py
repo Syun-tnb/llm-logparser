@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_semantic_topics import (
+    SemanticTopicsError,
     build_semantic_topics_artifact,
     write_semantic_topics_artifacts,
 )
@@ -139,6 +141,117 @@ def _window_neighbor_row(
         "neighbor_count": len(neighbors),
         "neighbors": neighbors,
     }
+
+
+def _text_sha1(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def _fixture_window_text(conversation_id: str, window_id: str) -> str:
+    window_texts = {
+        ("conv-a", "window-0001"): (
+            "Draft the production migration checklist\n\n"
+            "Include schema audit and rollback steps"
+        ),
+        ("conv-a", "window-0002"): "Capture monitoring gates for rollout readiness",
+        ("conv-b", "window-0001"): (
+            "Review launch risk controls\n\n"
+            "Add deployment rollback checks"
+        ),
+        ("conv-c", "window-0001"): "Plan lunch options for next week",
+        ("conv-c", "window-0002"): "Compare ramen shops and cafe seating",
+    }
+    return window_texts[(conversation_id, window_id)]
+
+
+def _normalization_result_row(
+    *,
+    job_id: str,
+    conversation_id: str,
+    span_id: str,
+    window_id: str,
+    message_ids: list[str],
+    text_sha1: str,
+    raw_label: str = "request",
+    normalized_label: str | None = "request",
+    mapping_status: str = "mapped",
+) -> dict:
+    return {
+        "record_type": "semantic_normalization_result",
+        "schema_version": "0.1",
+        "job_id": job_id,
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "span_id": span_id,
+        "window_id": window_id,
+        "message_ids": message_ids,
+        "text_sha1": text_sha1,
+        "raw_label": raw_label,
+        "normalized_label": normalized_label,
+        "mapping_status": mapping_status,
+        "confidence": 0.91,
+        "method": {
+            "kind": "llm",
+            "model": "batch-model:latest",
+            "mapping_version": "seed_taxonomy_v0",
+        },
+        "latency_ms": 1.5,
+        "completed_at": "2026-04-11T00:00:00Z",
+    }
+
+
+def _write_semantic_normalization_job(
+    root: Path,
+    *,
+    job_id: str,
+    result_rows: list[dict],
+) -> Path:
+    job_dir = root / "l3" / "semantic-normalization" / "jobs" / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "artifact_type": "semantic_normalization_job",
+                "schema_version": "0.1",
+                "job_id": job_id,
+                "created_at": "2026-04-11T00:00:00Z",
+                "input_root": str(root.resolve()),
+                "output_dir": str(job_dir.resolve()),
+                "source_strategy": {
+                    "mode": "message_windows_preferred_with_parsed_fallback",
+                    "window_size": 4,
+                    "window_stride": 4,
+                },
+                "selected_inputs": {
+                    "thread_count": 3,
+                    "message_windows_files": 3,
+                    "parsed_only_files": 0,
+                },
+                "normalization": {
+                    "model": "batch-model:latest",
+                    "base_url": "http://localhost:11434",
+                    "timeout_seconds": 120.0,
+                    "temperature": 0.0,
+                    "raw_num_predict": 180,
+                    "mapping_num_predict": 160,
+                    "taxonomy_version": "seed_taxonomy_v0",
+                    "confidence_threshold": 0.65,
+                },
+                "prompt_provenance": {
+                    "raw_label_prompt_sha1": "a" * 40,
+                    "mapping_prompt_sha1": "b" * 40,
+                },
+                "worklist": {
+                    "total_spans": len(result_rows),
+                    "span_key_kind": "conversation_id+span_id+ordered_message_ids",
+                },
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+    _write_jsonl(job_dir / "results.jsonl", result_rows)
+    return job_dir
 
 
 class _FakeHTTPResponse:
@@ -579,7 +692,7 @@ def test_write_semantic_topics_artifacts_happy_path(tmp_path, monkeypatch):
     assert result["topic_count"] == 1
     assert result["label_mode"] == "model-enriched"
     assert topics_payload["artifact_type"] == "semantic_topics"
-    assert topics_payload["schema_version"] == "2.1"
+    assert topics_payload["schema_version"] == "2.2"
     assert topics_payload["generated_at"].endswith("Z")
     assert topics_payload["provenance"]["label_mode"] == "model-enriched"
     assert topics_payload["provenance"]["pipeline_version"]
@@ -808,8 +921,14 @@ def test_semantic_topics_structural_only_without_optional_model_or_neighbors(tmp
     assert topics_payload["provenance"]["labeling_model"] is None
     assert topics_payload["provenance"]["prompt_variant"] is None
     assert topics_payload["provenance"]["prompt_hash"] is None
+    assert "normalization" not in topics_payload["provenance"]
     assert topics_payload["provenance"]["embedding_model"] is None
     assert topics_payload["provenance"]["clustering"]["neighbor_k"] is None
+    assert all(
+        "semantic_normalization" not in span
+        for topic in topics_payload["topics"]
+        for span in topic["representative_spans"]
+    )
     assert all(isinstance(topic["label"], str) and topic["label"] for topic in topics_payload["topics"])
     assert all(topic["summary"] is None for topic in topics_payload["topics"])
     assert all(topic["keywords"] == [] for topic in topics_payload["topics"])
@@ -899,3 +1018,193 @@ def test_analyze_semantic_topics_cli_accepts_state_locale(tmp_path):
     )
     assert payload["topics"][0]["state"] == "done"
     assert payload["topics"][0]["span_refs"][0]["state"] == "done"
+
+
+def test_semantic_topics_attaches_matching_batch_normalization_results(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_001"
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    result = write_semantic_topics_artifacts(
+        root,
+        cluster_id="cluster_000001",
+        normalization_job=job_id,
+    )
+    topics_payload = json.loads(Path(result["topics_path"]).read_text(encoding="utf-8"))
+
+    normalization = topics_payload["provenance"]["normalization"]
+    assert normalization == {
+        "source_kind": "batch",
+        "job_id": job_id,
+        "model": "batch-model:latest",
+        "taxonomy_version": "seed_taxonomy_v0",
+        "prompt_provenance": {
+            "raw_label_prompt_sha1": "a" * 40,
+            "mapping_prompt_sha1": "b" * 40,
+        },
+        "matched_representative_span_count": 3,
+        "unmatched_representative_span_count": 0,
+        "drifted_representative_span_count": 0,
+    }
+    assert all(
+        span["semantic_normalization"]["mapping_status"] == "mapped"
+        for span in topics_payload["topics"][0]["representative_spans"]
+    )
+    assert all(
+        span["semantic_normalization"]["unit_kind"] == "representative_span"
+        for span in topics_payload["topics"][0]["representative_spans"]
+    )
+
+    topics_validator = load_topics_validator()
+    assert list(topics_validator.iter_errors(topics_payload)) == []
+
+
+def test_semantic_topics_batch_normalization_drift_warns_and_skips(tmp_path, caplog):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    target_span = baseline_artifact["topics"][0]["representative_spans"][0]
+    job_id = "snorm_job_drift"
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=target_span["conversation_id"],
+                span_id=target_span["span_id"],
+                window_id=target_span["window_id"],
+                message_ids=list(target_span["message_ids"]),
+                text_sha1="0" * 40,
+            )
+        ],
+    )
+
+    caplog.set_level(logging.WARNING)
+    artifact, _membership_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+        normalization_job=job_id,
+    )
+
+    representative_spans = artifact["topics"][0]["representative_spans"]
+    assert "semantic normalization drift detected" in caplog.text
+    assert "semantic_normalization" not in representative_spans[0]
+    assert artifact["provenance"]["normalization"] == {
+        "source_kind": "batch",
+        "job_id": job_id,
+        "model": "batch-model:latest",
+        "taxonomy_version": "seed_taxonomy_v0",
+        "prompt_provenance": {
+            "raw_label_prompt_sha1": "a" * 40,
+            "mapping_prompt_sha1": "b" * 40,
+        },
+        "matched_representative_span_count": 0,
+        "unmatched_representative_span_count": 2,
+        "drifted_representative_span_count": 1,
+    }
+
+
+def test_semantic_topics_missing_normalization_job_fails_clearly(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    with pytest.raises(SemanticTopicsError, match="job not found"):
+        build_semantic_topics_artifact(
+            root,
+            cluster_id="cluster_000001",
+            normalization_job="missing-job",
+        )
+
+
+def test_semantic_topics_rejects_batch_and_inline_normalization_together(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    with pytest.raises(
+        SemanticTopicsError,
+        match="cannot be combined with inline representative span normalization",
+    ):
+        build_semantic_topics_artifact(
+            root,
+            cluster_id="cluster_000001",
+            normalization_job="snorm_job_conflict",
+            include_representative_span_normalization=True,
+        )
+
+
+def test_analyze_semantic_topics_cli_accepts_normalization_job(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+    job_id = "snorm_job_cli"
+    _write_semantic_normalization_job(
+        root,
+        job_id=job_id,
+        result_rows=[
+            _normalization_result_row(
+                job_id=job_id,
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                text_sha1=_text_sha1(
+                    _fixture_window_text(span["conversation_id"], span["window_id"])
+                ),
+            )
+            for span in representative_spans
+        ],
+    )
+
+    main(
+        [
+            "--locale",
+            "en-US",
+            "analyze",
+            "semantic-topics",
+            "--input",
+            str(root),
+            "--cluster-id",
+            "cluster_000001",
+            "--normalization-job",
+            job_id,
+        ]
+    )
+
+    payload = json.loads(
+        (root / "l3" / "semantic-topics" / "topics.json").read_text(encoding="utf-8")
+    )
+    assert payload["provenance"]["normalization"]["job_id"] == job_id
+    assert all(
+        "semantic_normalization" in span
+        for span in payload["topics"][0]["representative_spans"]
+    )

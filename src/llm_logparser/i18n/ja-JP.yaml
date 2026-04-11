@@ -105,6 +105,7 @@ messages:
   cli.analyze.semantic_topics.opt.base_url.help: ローカル Ollama サーバーの base URL
   cli.analyze.semantic_topics.opt.timeout_seconds.help: --model 使用時の cluster ごとの Ollama リクエスト timeout 秒数
   cli.analyze.semantic_topics.opt.state_locale.help: L3 span state 判定で使う phrase locale。UI locale とは分離され、未対応時は en-US に fallback する
+  cli.analyze.semantic_topics.opt.normalization_job.help: semantic-normalization batch job の事前計算済み representative-span normalization を付与する
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: "入力: ディレクトリのみ。topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する

@@ -636,6 +636,11 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topics.opt.state_locale.help"),
     )
     analyze_semantic_topics_cmd.add_argument(
+        "--normalization-job",
+        dest="normalization_job",
+        help=_("cli.analyze.semantic_topics.opt.normalization_job.help"),
+    )
+    analyze_semantic_topics_cmd.add_argument(
         "--timeout-seconds",
         dest="timeout_seconds",
         type=float,

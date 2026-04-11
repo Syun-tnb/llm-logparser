@@ -333,7 +333,7 @@ def _write_manual_topic_artifacts(root: Path) -> None:
         json.dumps(
             {
                 "artifact_type": "semantic_topics",
-                "schema_version": "2.1",
+                "schema_version": "2.2",
                 "provider_id": "openai",
                 "topic_count": 3,
                 "generated_at": "2026-03-28T00:00:00Z",

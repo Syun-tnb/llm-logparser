@@ -281,6 +281,7 @@ def run_analyze_semantic_topics(args, logger: logging.Logger) -> None:
             base_url=args.base_url,
             timeout_seconds=args.timeout_seconds,
             state_locale=args.state_locale,
+            normalization_job=args.normalization_job,
         )
     except SemanticTopicsError as exc:
         logger.error(str(exc))

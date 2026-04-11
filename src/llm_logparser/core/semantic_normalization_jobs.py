@@ -75,6 +75,13 @@ class ThreadInput:
     conversation_id: str | None
 
 
+@dataclass(frozen=True)
+class SemanticNormalizationJobResults:
+    job_dir: Path
+    config: dict[str, Any]
+    result_rows: list[dict[str, Any]]
+
+
 def _utc_now_isoformat() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -1148,6 +1155,21 @@ def semantic_normalization_job_summary(
     summary["status"] = _job_status(job_dir)
     _atomic_write_json(_summary_path(job_dir), summary)
     return summary
+
+
+def load_semantic_normalization_job_results(
+    input_root: Path,
+    *,
+    job_id: str,
+) -> SemanticNormalizationJobResults:
+    job_dir = _job_dir(input_root, job_id)
+    if not job_dir.exists():
+        raise SemanticNormalizationJobError(f"job not found: {job_dir}")
+    return SemanticNormalizationJobResults(
+        job_dir=job_dir,
+        config=_load_json(_config_path(job_dir)),
+        result_rows=_load_jsonl_rows(_results_path(job_dir)),
+    )
 
 
 def render_semantic_normalization_job_status(
