@@ -16,6 +16,8 @@ from llm_logparser.core.analyzer_semantic_topics import (
 )
 from llm_logparser.core.semantic_normalization import (
     SEED_TAXONOMY_VERSION,
+    SemanticNormalizationMethod,
+    SemanticNormalizationResult,
     semantic_normalization_prompt_hashes,
 )
 from llm_logparser.core.schema_validation import (
@@ -202,6 +204,34 @@ def _normalization_result_row(
         "latency_ms": 1.5,
         "completed_at": "2026-04-11T00:00:00Z",
     }
+
+
+def _inline_normalization_result(
+    *,
+    conversation_id: str,
+    span_id: str,
+    window_id: str,
+    message_ids: list[str],
+    raw_label: str = "implementation_decision",
+    normalized_label: str | None = "decision",
+    mapping_status: str = "mapped",
+    confidence: float | None = 0.91,
+) -> SemanticNormalizationResult:
+    return SemanticNormalizationResult(
+        conversation_id=conversation_id,
+        span_id=span_id,
+        window_id=window_id,
+        message_ids=message_ids,
+        unit_kind="representative_span",
+        raw_label=raw_label,
+        normalized_label=normalized_label,
+        mapping_status=mapping_status,
+        confidence=confidence,
+        method=SemanticNormalizationMethod(
+            kind="hybrid",
+            model="llama3.1:latest",
+        ),
+    )
 
 
 def _write_semantic_normalization_job(
@@ -1492,6 +1522,164 @@ def test_semantic_topics_rejects_batch_and_inline_normalization_together(tmp_pat
             normalization_job="snorm_job_conflict",
             include_representative_span_normalization=True,
         )
+
+
+def test_semantic_topics_inline_normalization_attaches_successfully(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+    baseline_artifact, _baseline_rows = build_semantic_topics_artifact(
+        root,
+        cluster_id="cluster_000001",
+    )
+    representative_spans = baseline_artifact["topics"][0]["representative_spans"]
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span",
+        side_effect=[
+            _inline_normalization_result(
+                conversation_id=span["conversation_id"],
+                span_id=span["span_id"],
+                window_id=span["window_id"],
+                message_ids=list(span["message_ids"]),
+                raw_label=f"label_{index}",
+                normalized_label="decision" if index == 1 else "request",
+                mapping_status="mapped",
+            )
+            for index, span in enumerate(representative_spans, start=1)
+        ],
+    ) as normalize_mock:
+        artifact, _membership_rows = build_semantic_topics_artifact(
+            root,
+            cluster_id="cluster_000001",
+            model="llama3.1:latest",
+            include_representative_span_normalization=True,
+        )
+
+    output_spans = artifact["topics"][0]["representative_spans"]
+    assert normalize_mock.call_count == len(representative_spans)
+    assert all("semantic_normalization" in span for span in output_spans)
+    assert output_spans[0]["semantic_normalization"]["unit_kind"] == "representative_span"
+    assert output_spans[0]["semantic_normalization"]["normalized_label"] == "decision"
+    assert output_spans[1]["semantic_normalization"]["normalized_label"] == "request"
+
+    topics_validator = load_topics_validator()
+    assert list(topics_validator.iter_errors(artifact)) == []
+
+
+def test_semantic_topics_inline_normalization_requires_model(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    with pytest.raises(
+        SemanticTopicsError,
+        match="--model is required when representative span normalization is enabled",
+    ):
+        build_semantic_topics_artifact(
+            root,
+            cluster_id="cluster_000001",
+            include_representative_span_normalization=True,
+        )
+
+
+def test_semantic_topics_model_alone_does_not_enable_inline_normalization(tmp_path):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span"
+    ) as normalize_mock:
+        artifact, _membership_rows = build_semantic_topics_artifact(
+            root,
+            cluster_id="cluster_000001",
+            model="llama3.1:latest",
+        )
+
+    normalize_mock.assert_not_called()
+    assert all(
+        "semantic_normalization" not in span
+        for span in artifact["topics"][0]["representative_spans"]
+    )
+
+
+def test_analyze_semantic_topics_cli_model_alone_does_not_enable_inline_normalization(
+    tmp_path,
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    with patch(
+        "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span"
+    ) as normalize_mock:
+        main(
+            [
+                "--locale",
+                "en-US",
+                "analyze",
+                "semantic-topics",
+                "--input",
+                str(root),
+                "--cluster-id",
+                "cluster_000001",
+                "--model",
+                "llama3.1:latest",
+            ]
+        )
+
+    normalize_mock.assert_not_called()
+
+
+def test_analyze_semantic_topics_cli_inline_normalization_requires_model(
+    tmp_path, caplog
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    caplog.set_level(logging.ERROR)
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "--locale",
+                "en-US",
+                "analyze",
+                "semantic-topics",
+                "--input",
+                str(root),
+                "--cluster-id",
+                "cluster_000001",
+                "--normalize-representative-spans",
+            ]
+        )
+    assert exc.value.code == 2
+    assert "--model is required when representative span normalization is enabled" in caplog.text
+
+
+def test_analyze_semantic_topics_cli_inline_normalization_conflicts_with_batch_job(
+    tmp_path, caplog
+):
+    root = tmp_path / "artifacts" / "output" / "openai"
+    _write_topics_fixture(root)
+
+    caplog.set_level(logging.ERROR)
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "--locale",
+                "en-US",
+                "analyze",
+                "semantic-topics",
+                "--input",
+                str(root),
+                "--cluster-id",
+                "cluster_000001",
+                "--model",
+                "llama3.1:latest",
+                "--normalize-representative-spans",
+                "--normalization-job",
+                "snorm_job_conflict",
+            ]
+        )
+    assert exc.value.code == 2
+    assert "cannot be combined with inline representative span normalization" in caplog.text
 
 
 def test_analyze_semantic_topics_cli_accepts_normalization_job(tmp_path):

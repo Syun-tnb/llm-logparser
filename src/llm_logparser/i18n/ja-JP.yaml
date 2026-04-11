@@ -106,6 +106,7 @@ messages:
   cli.analyze.semantic_topics.opt.timeout_seconds.help: --model 使用時の cluster ごとの Ollama リクエスト timeout 秒数
   cli.analyze.semantic_topics.opt.state_locale.help: L3 span state 判定で使う phrase locale。UI locale とは分離され、未対応時は en-US に fallback する
   cli.analyze.semantic_topics.opt.normalization_job.help: semantic-normalization batch job の事前計算済み representative-span normalization を付与する。安全のため config からは読まず、実行時に明示指定が必要。
+  cli.analyze.semantic_topics.opt.normalize_representative_spans.help: この semantic-topics 実行中に representative-span の inline normalization を有効にする。--normalization-job とは別モード。
   cli.analyze.semantic_topics.opt.expected_taxonomy_version.help: batch から取り込む semantic normalization に期待する taxonomy version
   cli.analyze.semantic_topics.opt.strict_normalization.help: semantic-normalization の taxonomy または prompt provenance の不一致を warning ではなく error として扱う
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
