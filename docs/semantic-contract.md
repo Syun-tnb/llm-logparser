@@ -99,6 +99,9 @@ In the current implementation, `span_id` is derived from ordered
 - the same ordered `message_ids` produce the same semantic identity
 - changing message order changes semantic identity
 - `window_id` is no longer the semantic identity anchor
+- `window_id` is only a compatibility/presentation overlay unless ordered
+  `message_ids` are unavailable, in which case it may appear only in a
+  deterministic fallback identity path for older or partial rows
 
 This change matters because semantic nodes are now grounded in the content span
 itself rather than the current L1 window label.
@@ -112,6 +115,36 @@ to compatibility and presentation:
 
 Future changes should treat `span_id` as semantic truth and `window_id` as an
 overlay unless a field is explicitly documented otherwise.
+
+### Semantic Normalization Join Contract
+
+When `semantic-topics` consumes a semantic-normalization batch job, the join
+contract is:
+
+- primary key: `span_id`
+- validation key: `text_sha1`
+- payload target: `representative_spans[*].semantic_normalization`
+
+`text_sha1` is computed from reconstructed full span text, not from excerpts.
+The hashed text is the canonical ordered message text sequence for the span,
+joined with `"\n\n"` between non-empty message texts and encoded as UTF-8
+before SHA-1 hashing.
+
+Producer and consumer must use the same reconstruction contract. A
+`text_sha1` mismatch is treated as drift:
+
+- warn
+- skip attachment for that representative span
+- keep the representative span otherwise unchanged
+
+Missing `span_id` matches are not errors. They leave the representative span
+unannotated.
+
+The contract does not allow:
+
+- fuzzy matching
+- fallback joins on `window_id`
+- partial attachment after drift
 
 ## 5. Candidate Providers
 
@@ -166,7 +199,7 @@ The current Step 5 semantic artifact contract is span/message-first.
 
 ### `topics.json`
 
-`topics.json` is now version `2.1`.
+`topics.json` is now version `2.2`.
 
 Its primary semantic grounding is:
 
@@ -201,6 +234,14 @@ Window-shaped fields remain only as overlays:
 
 Those fields are still useful for browse flows and current compatibility, but
 they are not the semantic contract core.
+
+If batch semantic normalization is consumed, `provenance.normalization`
+documents that the batch job was consulted during artifact build. It does not
+mean every representative span attached successfully. The counts
+`matched_representative_span_count`,
+`unmatched_representative_span_count`, and
+`drifted_representative_span_count` are disjoint categories over evaluated
+representative spans.
 
 ### `topic_membership.jsonl`
 

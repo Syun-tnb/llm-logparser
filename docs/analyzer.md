@@ -690,6 +690,48 @@ deterministic and model-derived capabilities.
   regenerated from canonical inputs under the current pipeline rather than
   reused through compatibility fallbacks.
 
+  ### Semantic Normalization Join Contract
+
+  `semantic-topics` may optionally attach batch semantic normalization to
+  `representative_spans` via `--normalization-job <job_id>`. That bridge uses a
+  strict span-oriented join contract.
+
+  Span identity:
+
+  - `span_id` is the primary join key
+  - `span_id` is derived from ordered `message_ids`
+  - `window_id` is not semantic identity; it remains a compatibility/display
+    overlay and a deterministic fallback input only when ordered `message_ids`
+    are unavailable in older or partial inputs
+  - changing ordered `message_ids` or their order changes `span_id`
+
+  Text hash contract:
+
+  - `text_sha1` is computed from reconstructed full span text, not from
+    truncated excerpts
+  - the text source is the canonical ordered message text sequence for the
+    span, joined with `"\n\n"` between non-empty message texts
+  - producer and consumer must use the same reconstruction contract and the
+    same UTF-8 SHA-1 hash bytes
+  - `text_sha1` mismatch is treated as input drift, not as a hard job failure
+
+  Join semantics:
+
+  - `span_id` match plus `text_sha1` match: attach `semantic_normalization`
+  - `span_id` match plus `text_sha1` mismatch: warn and skip attachment
+  - no `span_id` match: leave the representative span unannotated
+  - no silent fallback, fuzzy match, or partial attach is allowed
+
+  Provenance semantics:
+
+  - `provenance.normalization` records that a batch normalization job was
+    consulted during artifact build; it does not imply that every
+    representative span was annotated
+  - `matched_representative_span_count`,
+    `unmatched_representative_span_count`, and
+    `drifted_representative_span_count` are disjoint categories over the
+    representative spans evaluated for attachment
+
   ### Heuristic Topic Labeling (Structural-only mode)
 
   In structural-only `semantic-topics` runs (no `--model`), topic labels are

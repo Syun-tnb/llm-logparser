@@ -489,6 +489,8 @@ def _representative_windows(prompt_windows: list[dict[str, Any]]) -> list[dict[s
 
 
 def _normalization_text_sha1(text: str) -> str:
+    # Batch normalization joins are only valid when producer and consumer hash
+    # the same reconstructed span text bytes.
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
@@ -537,6 +539,14 @@ def _attach_batch_semantic_normalization(
     batch_index: dict[str, dict[str, Any]],
     job_id: str,
 ) -> dict[str, int]:
+    """Attach batch normalization by stable span identity plus text drift check.
+
+    Join contract:
+    - primary key is ``span_id``
+    - ``text_sha1`` validates that the current reconstructed span text still
+      matches the batch producer's text contract
+    - missing or drifted rows are skipped; there is no fuzzy fallback
+    """
     counts = {
         "matched_representative_span_count": 0,
         "unmatched_representative_span_count": 0,

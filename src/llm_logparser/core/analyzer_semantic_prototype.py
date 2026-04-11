@@ -139,7 +139,14 @@ def derive_semantic_span_id(
     message_ids: tuple[str, ...],
     window_id: str,
 ) -> str:
-    """Return a stable semantic span identity from ordered message membership."""
+    """Return the semantic span identity used across L3 join surfaces.
+
+    Contract:
+    - ordered ``message_ids`` are the primary semantic identity input
+    - ``window_id`` is used only as a deterministic fallback when message_ids
+      are unavailable
+    - any change to ordered membership changes the resulting ``span_id``
+    """
     if message_ids:
         payload = [provider_id, conversation_id, list(message_ids)]
     else:

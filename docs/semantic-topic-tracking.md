@@ -291,6 +291,16 @@ Current semantic identity is span-based:
 - semantic topic grounding is expressed through `span_refs` and `message_refs`
 - `window_id` may still appear in topic artifacts, but only as a compatibility
   or presentation overlay rather than semantic identity
+- `representative_spans` are span-oriented overlays used for browse and prompt
+  grounding; they are not a separate identity layer from `span_refs`
+
+When batch semantic normalization is attached to `representative_spans`, the
+join contract remains span-oriented:
+
+- join by `span_id`
+- validate with `text_sha1` from reconstructed full span text
+- drift warns and skips attachment
+- missing matches leave the span unannotated
 
 This keeps the first formal topic artifact pass reversible without adding
 speculative cross-cluster merge logic.
