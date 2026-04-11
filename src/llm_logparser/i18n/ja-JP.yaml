@@ -118,6 +118,24 @@ messages:
   cli.analyze.semantic_topic_explore.opt.full_messages.help: --view と組み合わせて representative span の代わりに topic 全体の message を時系列表示する
   cli.analyze.semantic_topic_explore.opt.max_chars.help: --view 出力で各 message に表示する最大文字数
   cli.analyze.semantic_topic_explore.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
+  cli.analyze.semantic_normalization.help: provider-root 配下の thread 成果物から resumable な semantic-normalization sidecar job を実行する
+  cli.analyze.semantic_normalization.run.help: semantic-normalization batch job を新規作成して実行する
+  cli.analyze.semantic_normalization.status.help: semantic-normalization job の進捗を表示する
+  cli.analyze.semantic_normalization.resume.help: semantic-normalization job の pending span を再開する
+  cli.analyze.semantic_normalization.retry_failures.help: semantic-normalization job の failed span を再試行する
+  cli.analyze.semantic_normalization.summary.help: semantic-normalization job の集計結果を表示する
+  cli.analyze.semantic_normalization.opt.input.help: "入力: ディレクトリのみ。parsed.jsonl thread と任意の message_windows.jsonl sidecar を含む provider 成果物ルート"
+  cli.analyze.semantic_normalization.opt.job_id.help: 既存または新規の semantic-normalization job ID
+  cli.analyze.semantic_normalization.opt.model.help: semantic normalization に使うローカル生成モデル ID
+  cli.analyze.semantic_normalization.opt.base_url.help: ローカル Ollama サーバーの base URL
+  cli.analyze.semantic_normalization.opt.timeout_seconds.help: Ollama リクエストごとの timeout 秒数
+  cli.analyze.semantic_normalization.opt.temperature.help: raw-label と mapping の両ステップで使う生成 temperature
+  cli.analyze.semantic_normalization.opt.raw_num_predict.help: raw-label step の最大出力トークン数
+  cli.analyze.semantic_normalization.opt.mapping_num_predict.help: mapping step の最大出力トークン数
+  cli.analyze.semantic_normalization.opt.overwrite.help: 指定した job ID が既に存在する場合に既存 job ディレクトリを上書きする
+  cli.analyze.semantic_normalization.opt.span_id.help: retry-failures を特定の span_id のみに制限する。複数回指定可能。
+  cli.analyze.semantic_normalization.opt.limit.help: 1 回の実行で再試行する failed span 数の上限
+  cli.analyze.semantic_normalization.opt.json.help: 整形テキストではなく機械可読 JSON を出力する
   cli.chain.opt.input.help: "入力: raw export のファイルまたはディレクトリ"
   cli.chain.opt.outdir.help: 成果物のルートディレクトリ (parse+export)。Parsed JSONL は outdir/<provider>/... 配下になる
   cli.chain.opt.export_outdir.help: すべての Markdown を置く任意のルートディレクトリ。未指定の場合は各スレッドディレクトリの隣に書き込む

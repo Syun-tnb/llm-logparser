@@ -21,6 +21,7 @@ from llm_logparser.cli.config_loader import load_config_with_discovery
 from llm_logparser.cli.handlers import (
     run_analyze_datasheet,
     run_analyze_metrics,
+    run_analyze_semantic_normalization,
     run_analyze_semantic_preview,
     run_analyze_semantic_prototype,
     run_analyze_semantic_topic,
@@ -187,6 +188,7 @@ def _prompt_missing_required(
             "sqlite-build",
             "semantic-prototype",
             "semantic-preview",
+            "semantic-normalization",
             "semantic-topic",
             "semantic-topics",
             "semantic-topic-explore",
@@ -196,7 +198,7 @@ def _prompt_missing_required(
             if can_prompt:
                 prompt_label = (
                     _("runtime.prompt.analyze_provider_root")
-                    if args.analyze_command == "sqlite-build"
+                    if args.analyze_command in {"sqlite-build", "semantic-normalization"}
                     else _("runtime.prompt.analyze_input")
                 )
                 raw_input = prompt_text(prompt_label)
@@ -237,6 +239,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_semantic_prototype(args, logger)
         elif args.analyze_command == "semantic-preview":
             run_analyze_semantic_preview(args, logger)
+        elif args.analyze_command == "semantic-normalization":
+            run_analyze_semantic_normalization(args, logger)
         elif args.analyze_command == "semantic-topic":
             run_analyze_semantic_topic(args, logger)
         elif args.analyze_command == "semantic-topics":

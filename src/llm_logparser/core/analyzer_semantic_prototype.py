@@ -132,7 +132,7 @@ class CandidatePoolProvider(Protocol):
     ) -> CandidatePools: ...
 
 
-def _derive_span_id(
+def derive_semantic_span_id(
     *,
     provider_id: str,
     conversation_id: str,
@@ -151,6 +151,21 @@ def _derive_span_id(
         "utf-8"
     )
     return sha1(encoded).hexdigest()
+
+
+def _derive_span_id(
+    *,
+    provider_id: str,
+    conversation_id: str,
+    message_ids: tuple[str, ...],
+    window_id: str,
+) -> str:
+    return derive_semantic_span_id(
+        provider_id=provider_id,
+        conversation_id=conversation_id,
+        message_ids=message_ids,
+        window_id=window_id,
+    )
 
 
 def discover_message_windows_jsonl(input_path: Path) -> list[Path]:

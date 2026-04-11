@@ -722,6 +722,179 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_topic_explore.opt.json.help"),
     )
 
+    analyze_semantic_normalization_cmd = analyze_subparsers.add_parser(
+        "semantic-normalization",
+        help=_("cli.analyze.semantic_normalization.help"),
+    )
+    analyze_semantic_normalization_subparsers = (
+        analyze_semantic_normalization_cmd.add_subparsers(
+            dest="semantic_normalization_command",
+            required=True,
+        )
+    )
+
+    analyze_semantic_normalization_run_cmd = (
+        analyze_semantic_normalization_subparsers.add_parser(
+            "run",
+            help=_("cli.analyze.semantic_normalization.run.help"),
+        )
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_normalization.opt.input.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--job-id",
+        dest="job_id",
+        help=_("cli.analyze.semantic_normalization.opt.job_id.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--model",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.model.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.semantic_normalization.opt.base_url.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.semantic_normalization.opt.timeout_seconds.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help=_("cli.analyze.semantic_normalization.opt.temperature.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--raw-num-predict",
+        dest="raw_num_predict",
+        type=int,
+        default=180,
+        help=_("cli.analyze.semantic_normalization.opt.raw_num_predict.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--mapping-num-predict",
+        dest="mapping_num_predict",
+        type=int,
+        default=160,
+        help=_("cli.analyze.semantic_normalization.opt.mapping_num_predict.help"),
+    )
+    analyze_semantic_normalization_run_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.semantic_normalization.opt.overwrite.help"),
+    )
+
+    analyze_semantic_normalization_status_cmd = (
+        analyze_semantic_normalization_subparsers.add_parser(
+            "status",
+            help=_("cli.analyze.semantic_normalization.status.help"),
+        )
+    )
+    analyze_semantic_normalization_status_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_normalization.opt.input.help"),
+    )
+    analyze_semantic_normalization_status_cmd.add_argument(
+        "--job-id",
+        dest="job_id",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.job_id.help"),
+    )
+    analyze_semantic_normalization_status_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_normalization.opt.json.help"),
+    )
+
+    analyze_semantic_normalization_resume_cmd = (
+        analyze_semantic_normalization_subparsers.add_parser(
+            "resume",
+            help=_("cli.analyze.semantic_normalization.resume.help"),
+        )
+    )
+    analyze_semantic_normalization_resume_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_normalization.opt.input.help"),
+    )
+    analyze_semantic_normalization_resume_cmd.add_argument(
+        "--job-id",
+        dest="job_id",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.job_id.help"),
+    )
+
+    analyze_semantic_normalization_retry_cmd = (
+        analyze_semantic_normalization_subparsers.add_parser(
+            "retry-failures",
+            help=_("cli.analyze.semantic_normalization.retry_failures.help"),
+        )
+    )
+    analyze_semantic_normalization_retry_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_normalization.opt.input.help"),
+    )
+    analyze_semantic_normalization_retry_cmd.add_argument(
+        "--job-id",
+        dest="job_id",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.job_id.help"),
+    )
+    analyze_semantic_normalization_retry_cmd.add_argument(
+        "--span-id",
+        dest="span_ids",
+        action="append",
+        help=_("cli.analyze.semantic_normalization.opt.span_id.help"),
+    )
+    analyze_semantic_normalization_retry_cmd.add_argument(
+        "--limit",
+        dest="limit",
+        type=int,
+        help=_("cli.analyze.semantic_normalization.opt.limit.help"),
+    )
+
+    analyze_semantic_normalization_summary_cmd = (
+        analyze_semantic_normalization_subparsers.add_parser(
+            "summary",
+            help=_("cli.analyze.semantic_normalization.summary.help"),
+        )
+    )
+    analyze_semantic_normalization_summary_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.semantic_normalization.opt.input.help"),
+    )
+    analyze_semantic_normalization_summary_cmd.add_argument(
+        "--job-id",
+        dest="job_id",
+        required=True,
+        help=_("cli.analyze.semantic_normalization.opt.job_id.help"),
+    )
+    analyze_semantic_normalization_summary_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.semantic_normalization.opt.json.help"),
+    )
+
     chain_cmd = subparsers.add_parser(
         "chain",
         help=_("cli.chain.help"),

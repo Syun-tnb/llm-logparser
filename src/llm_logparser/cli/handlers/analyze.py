@@ -320,3 +320,94 @@ def run_analyze_semantic_topic_explore(args, logger: logging.Logger) -> None:
         raise SystemExit(2) from None
 
     write_or_print(rendered, None)
+
+
+def run_analyze_semantic_normalization(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.semantic_normalization_jobs import (
+        SemanticNormalizationJobError,
+        render_semantic_normalization_job_status,
+        render_semantic_normalization_job_summary,
+        resume_semantic_normalization_job,
+        retry_semantic_normalization_job_failures,
+        run_semantic_normalization_job,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        if args.semantic_normalization_command == "run":
+            result = run_semantic_normalization_job(
+                input_root,
+                model=args.model,
+                job_id=args.job_id,
+                base_url=args.base_url,
+                timeout_seconds=args.timeout_seconds,
+                temperature=args.temperature,
+                raw_num_predict=args.raw_num_predict,
+                mapping_num_predict=args.mapping_num_predict,
+                overwrite=args.overwrite,
+                progress=logger.info,
+            )
+            logger.info(
+                "semantic normalization job completed: "
+                f"{result['job_id']} -> {format_display_path(result['summary_path'])}"
+            )
+            invalid_threads = result.get("invalid_threads") or []
+            if invalid_threads:
+                logger.warning(
+                    "semantic normalization skipped invalid threads: "
+                    f"{len(invalid_threads)}"
+                )
+                for detail in invalid_threads[:5]:
+                    logger.warning(detail)
+            return
+
+        if args.semantic_normalization_command == "resume":
+            result = resume_semantic_normalization_job(
+                input_root,
+                job_id=args.job_id,
+                progress=logger.info,
+            )
+            logger.info(
+                "semantic normalization job resumed: "
+                f"{result['job_id']}"
+            )
+            return
+
+        if args.semantic_normalization_command == "retry-failures":
+            result = retry_semantic_normalization_job_failures(
+                input_root,
+                job_id=args.job_id,
+                span_ids=args.span_ids,
+                limit=args.limit,
+                progress=logger.info,
+            )
+            logger.info(
+                "semantic normalization retries completed: "
+                f"{result['retried_span_count']} span(s)"
+            )
+            return
+
+        if args.semantic_normalization_command == "status":
+            write_or_print(
+                render_semantic_normalization_job_status(
+                    input_root,
+                    job_id=args.job_id,
+                    json_output=args.json_output,
+                ),
+                None,
+            )
+            return
+
+        if args.semantic_normalization_command == "summary":
+            write_or_print(
+                render_semantic_normalization_job_summary(
+                    input_root,
+                    job_id=args.job_id,
+                    json_output=args.json_output,
+                ),
+                None,
+            )
+            return
+    except SemanticNormalizationJobError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None

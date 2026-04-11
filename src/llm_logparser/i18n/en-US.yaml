@@ -114,6 +114,24 @@ messages:
   cli.analyze.semantic_topic_explore.opt.full_messages.help: With --view, show the full topic message sequence ordered by time instead of representative spans
   cli.analyze.semantic_topic_explore.opt.max_chars.help: Maximum characters to show per reconstructed message in --view output
   cli.analyze.semantic_topic_explore.opt.json.help: Emit machine-readable JSON instead of pretty text
+  cli.analyze.semantic_normalization.help: Run resumable semantic-normalization sidecar jobs from provider-root thread artifacts
+  cli.analyze.semantic_normalization.run.help: Create and run one semantic-normalization batch job
+  cli.analyze.semantic_normalization.status.help: Show current progress for one semantic-normalization job
+  cli.analyze.semantic_normalization.resume.help: Resume pending spans for one semantic-normalization job
+  cli.analyze.semantic_normalization.retry_failures.help: Retry failed spans for one semantic-normalization job
+  cli.analyze.semantic_normalization.summary.help: Show the current summary for one semantic-normalization job
+  cli.analyze.semantic_normalization.opt.input.help: "Input: directory only; provider artifact root containing parsed.jsonl threads and optional message_windows.jsonl sidecars"
+  cli.analyze.semantic_normalization.opt.job_id.help: Existing or requested semantic-normalization job ID
+  cli.analyze.semantic_normalization.opt.model.help: Local generation model identifier used for semantic normalization
+  cli.analyze.semantic_normalization.opt.base_url.help: Base URL for the local Ollama server
+  cli.analyze.semantic_normalization.opt.timeout_seconds.help: Per-request Ollama timeout in seconds
+  cli.analyze.semantic_normalization.opt.temperature.help: Generation temperature for both raw-label and mapping steps
+  cli.analyze.semantic_normalization.opt.raw_num_predict.help: Max output tokens for the raw-label step
+  cli.analyze.semantic_normalization.opt.mapping_num_predict.help: Max output tokens for the mapping step
+  cli.analyze.semantic_normalization.opt.overwrite.help: Overwrite an existing job directory if the requested job ID already exists
+  cli.analyze.semantic_normalization.opt.span_id.help: Limit retry-failures to one span_id. Repeatable.
+  cli.analyze.semantic_normalization.opt.limit.help: Maximum number of failed spans to retry in one invocation
+  cli.analyze.semantic_normalization.opt.json.help: Emit machine-readable JSON instead of pretty text
   cli.chain.opt.input.help: "Input: raw export file or directory"
   cli.chain.opt.outdir.help: Root directory for artifacts (parse+export). Parsed JSONL will be under outdir/<provider>/...
   cli.chain.opt.export_outdir.help: Optional root directory to place all exported Markdown files. If omitted, Markdown is written next to each thread directory.

@@ -183,6 +183,22 @@ def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys)
     assert "--json" in help_text
 
 
+def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "semantic-normalization", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "run" in help_text
+    assert "status" in help_text
+    assert "resume" in help_text
+    assert "retry-failures" in help_text
+    assert "summary" in help_text
+
+
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
@@ -201,6 +217,10 @@ def test_analyze_semantic_topic_explore_help_mentions_navigation_options(capsys)
         (
             ["analyze", "semantic-preview", "--help"],
             "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files",
+        ),
+        (
+            ["analyze", "semantic-normalization", "run", "--help"],
+            "Input: directory only; provider artifact root containing parsed.jsonl threads and optional message_windows.jsonl sidecars",
         ),
     ],
 )

@@ -1,6 +1,7 @@
 from .analyze import (
     run_analyze_datasheet,
     run_analyze_metrics,
+    run_analyze_semantic_normalization,
     run_analyze_semantic_preview,
     run_analyze_semantic_prototype,
     run_analyze_semantic_topic,
@@ -20,6 +21,7 @@ from .parse import run_parse
 __all__ = [
     "run_analyze_datasheet",
     "run_analyze_metrics",
+    "run_analyze_semantic_normalization",
     "run_analyze_semantic_preview",
     "run_analyze_semantic_prototype",
     "run_analyze_semantic_topic",

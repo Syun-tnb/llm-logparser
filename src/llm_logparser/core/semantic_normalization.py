@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
@@ -9,6 +10,9 @@ from .structured_llm import generate_structured_json
 
 SEED_TAXONOMY_VERSION = "seed_taxonomy_v0"
 RAW_LABEL_CONFIDENCE_THRESHOLD = 0.65
+DEFAULT_RAW_LABEL_NUM_PREDICT = 180
+DEFAULT_MAPPING_NUM_PREDICT = 160
+DEFAULT_NORMALIZATION_TEMPERATURE = 0.0
 MethodKind = Literal["llm", "rule", "hybrid"]
 MappingStatus = Literal["mapped", "needs_review", "taxonomy_gap", "unmapped"]
 STABLE_NORMALIZED_LABELS = (
@@ -180,10 +184,34 @@ class SemanticNormalizationResult:
     method: SemanticNormalizationMethod
 
 
+@dataclass(frozen=True)
+class SemanticNormalizationRuntimeOptions:
+    temperature: float = DEFAULT_NORMALIZATION_TEMPERATURE
+    raw_num_predict: int = DEFAULT_RAW_LABEL_NUM_PREDICT
+    mapping_num_predict: int = DEFAULT_MAPPING_NUM_PREDICT
+
+
 def semantic_normalization_to_dict(
     result: SemanticNormalizationResult,
 ) -> dict[str, Any]:
     return asdict(result)
+
+
+def semantic_normalization_runtime_options_to_dict(
+    runtime_options: SemanticNormalizationRuntimeOptions,
+) -> dict[str, Any]:
+    return asdict(runtime_options)
+
+
+def semantic_normalization_prompt_hashes() -> dict[str, str]:
+    return {
+        "raw_label_prompt_sha1": hashlib.sha1(
+            RAW_LABEL_PROMPT.encode("utf-8")
+        ).hexdigest(),
+        "mapping_prompt_sha1": hashlib.sha1(
+            RAW_LABEL_MAPPING_PROMPT.encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def _coerce_confidence(value: Any) -> float | None:
@@ -256,12 +284,16 @@ def _generate_raw_label(
     client: LLMClient,
     model: str,
     text: str,
+    runtime_options: SemanticNormalizationRuntimeOptions,
 ) -> tuple[str, float | None]:
     payload = generate_structured_json(
         client,
         model=model,
         prompt=RAW_LABEL_PROMPT.format(span_text=text),
-        options={"temperature": 0.0, "num_predict": 180},
+        options={
+            "temperature": runtime_options.temperature,
+            "num_predict": runtime_options.raw_num_predict,
+        },
     )
     return _sanitize_raw_label(payload.get("raw_label")), _coerce_confidence(
         payload.get("confidence")
@@ -274,6 +306,7 @@ def _llm_map_raw_label(
     model: str,
     raw_label: str,
     text: str,
+    runtime_options: SemanticNormalizationRuntimeOptions,
 ) -> tuple[str | None, str | None, float | None]:
     payload = generate_structured_json(
         client,
@@ -282,7 +315,10 @@ def _llm_map_raw_label(
             raw_label=raw_label,
             span_text=text,
         ),
-        options={"temperature": 0.0, "num_predict": 160},
+        options={
+            "temperature": runtime_options.temperature,
+            "num_predict": runtime_options.mapping_num_predict,
+        },
     )
     return (
         _stable_label(payload.get("normalized_label")),
@@ -300,6 +336,7 @@ def normalize_representative_span(
     window_id: str | None,
     message_ids: list[str],
     text: str,
+    runtime_options: SemanticNormalizationRuntimeOptions | None = None,
 ) -> SemanticNormalizationResult:
     """Return an ephemeral L3 helper signal for one representative span.
 
@@ -307,6 +344,11 @@ def normalize_representative_span(
     prescribe or hardcode any specific local model.
     """
     compact_text = " ".join(text.split()).strip()
+    effective_runtime_options = (
+        runtime_options
+        if runtime_options is not None
+        else SemanticNormalizationRuntimeOptions()
+    )
     if not compact_text:
         return _result(
             conversation_id=conversation_id,
@@ -325,6 +367,7 @@ def normalize_representative_span(
         client=client,
         model=model,
         text=compact_text,
+        runtime_options=effective_runtime_options,
     )
     if raw_label in NO_DOMINANT_RAW_LABELS:
         return _result(
@@ -373,6 +416,7 @@ def normalize_representative_span(
         model=model,
         raw_label=raw_label,
         text=compact_text,
+        runtime_options=effective_runtime_options,
     )
     final_confidence = mapped_confidence if mapped_confidence is not None else raw_confidence
     if (

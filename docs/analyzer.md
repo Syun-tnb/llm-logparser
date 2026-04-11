@@ -520,6 +520,7 @@ Possible modes:
 | sqlite-build | L2 |
 | semantic-prototype | L3 prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
+| semantic-normalization | L3 sidecar batch job runner |
 | semantic-topics | L3 topic artifact builder (experimental) |
 | semantic-topic | L3/L4 topic renderer (experimental) |
 | semantic-topic-explore | L3/L4 topic navigation UX (experimental) |
@@ -744,6 +745,15 @@ deterministic and model-derived capabilities.
   the current heuristic topic state/confidence.
   When span IDs are available, browse labels prefer span-grounded references
   and keep `window_id` only as a compatibility overlay.
+
+- `semantic-normalization` is an independent L3 sidecar batch CLI. It is
+  provider-root scoped, discovers deterministic window-backed spans from
+  stored `message_windows.jsonl` with sibling `parsed.jsonl` or falls back to
+  `parsed.jsonl`-only deterministic window derivation, freezes a resumable
+  worklist, and writes job-scoped sidecar artifacts under
+  `l3/semantic-normalization/jobs/<job_id>/`. It remains additive only: it
+  does not modify canonical parsing outputs, `message_windows.jsonl`, or the
+  `semantic-topics` artifact set.
 
 Current limitations remain explicit:
 
