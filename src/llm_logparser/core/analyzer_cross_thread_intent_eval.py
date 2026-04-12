@@ -25,7 +25,7 @@ DEFAULT_OLLAMA_NUM_PREDICT = 280
 PROMPT_VARIANT = "same_intent_v0_1"
 _LOGGER = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """You are evaluating whether cross-thread candidate spans express the same underlying intent, event, or task continuation as one source span.
+_PROMPT_TEMPLATE = """You are evaluating whether one cross-thread candidate target span expresses the same underlying intent, event, or task continuation as one source span.
 
 Definitions:
 - "same intent" means the target refers to the same action, event, or state change as the source, or a clear continuation of the same task or project state.
@@ -37,15 +37,13 @@ Definitions:
 - If unsure, answer "no" with "low" confidence.
 
 Return JSON only.
-Return one array of objects.
-Do NOT include any text before or after the JSON array.
+Return exactly one JSON object.
+Do NOT include any text before or after the JSON object.
 Do NOT wrap the output in markdown.
 Do NOT use ```json fences.
-Your entire response MUST start with "[" and end with "]".
-If you cannot comply exactly, return [].
-Use each target_index exactly once.
-Each object must have exactly these keys:
-- target_index
+Your entire response MUST start with "{{" and end with "}}".
+If you cannot comply exactly, return {{}}.
+The object must have exactly these keys:
 - same_intent
 - confidence
 - reason
@@ -57,8 +55,8 @@ Allowed values:
 Source:
 {source_block}
 
-Targets:
-{targets_block}
+Target:
+{target_block}
 """
 
 
@@ -121,31 +119,24 @@ def _source_key(row: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def _build_prompt(source_row: dict[str, Any], target_rows: list[dict[str, Any]]) -> str:
+def _build_prompt(source_row: dict[str, Any], target_row: dict[str, Any]) -> str:
     source_lines = [f'excerpt: "{source_row["source_excerpt"]}"']
     source_topic_label = source_row.get("source_topic_label")
     if isinstance(source_topic_label, str) and source_topic_label:
         source_lines.append(f'topic_label: "{source_topic_label}"')
 
-    target_blocks: list[str] = []
-    for index, row in enumerate(target_rows, start=1):
-        lines = [f"{index}. excerpt: \"{row['target_excerpt']}\""]
-        target_topic_label = row.get("target_topic_label")
-        if isinstance(target_topic_label, str) and target_topic_label:
-            lines.append(f'   topic_label: "{target_topic_label}"')
-        target_blocks.append("\n".join(lines))
+    target_lines = [f'excerpt: "{target_row["target_excerpt"]}"']
+    target_topic_label = target_row.get("target_topic_label")
+    if isinstance(target_topic_label, str) and target_topic_label:
+        target_lines.append(f'topic_label: "{target_topic_label}"')
 
     return _PROMPT_TEMPLATE.format(
         source_block="\n".join(source_lines),
-        targets_block="\n".join(target_blocks),
+        target_block="\n".join(target_lines),
     )
 
 
-def _parse_response(
-    *,
-    response_text: str,
-    target_count: int,
-) -> list[dict[str, Any]]:
+def _parse_response(*, response_text: str) -> dict[str, Any]:
     try:
         payload = json.loads(response_text)
     except json.JSONDecodeError as exc:
@@ -155,94 +146,68 @@ def _parse_response(
 
     tolerance_notes: list[str] = []
     if isinstance(payload, dict):
-        payload = [payload]
-        tolerance_notes.append("wrapped object into array")
-    elif not isinstance(payload, list):
+        item = payload
+    elif isinstance(payload, list):
+        if len(payload) != 1:
+            raise CrossThreadIntentEvalError(
+                "cross-thread intent evaluation response must contain exactly one item"
+            )
+        item = payload[0]
+        tolerance_notes.append("unwrapped single-item array")
+    else:
         raise CrossThreadIntentEvalError(
-            "cross-thread intent evaluation response must be a JSON array"
+            "cross-thread intent evaluation response must be a JSON object"
         )
 
-    if payload and any(isinstance(item, dict) for item in payload):
-        indices = [item.get("target_index") for item in payload]
-        if (
-            any(index == 0 for index in indices)
-            and all(isinstance(index, int) for index in indices)
-            and (
-                target_count == 1
-                or all(0 <= int(index) <= target_count - 1 for index in indices)
+    if not isinstance(item, dict):
+        raise CrossThreadIntentEvalError(
+            "cross-thread intent evaluation response must contain a JSON object"
+        )
+
+    target_index = item.get("target_index")
+    if target_index == 0:
+        item = {
+            **item,
+            "target_index": 1,
+        }
+        tolerance_notes.append("normalized 0-based index")
+
+    if "target_index" in item:
+        normalized_target_index = item.get("target_index")
+        if not isinstance(normalized_target_index, int) or normalized_target_index != 1:
+            raise CrossThreadIntentEvalError(
+                "cross-thread intent evaluation target_index must be 1 when provided"
             )
-        ):
-            payload = [
-                {
-                    **item,
-                    "target_index": int(item["target_index"]) + 1,
-                }
-                if isinstance(item, dict)
-                else item
-                for item in payload
-            ]
-            tolerance_notes.append("normalized 0-based index")
 
     for note in tolerance_notes:
         _LOGGER.debug("applied tolerance: %s", note)
 
-    if len(payload) != target_count:
+    same_intent = item.get("same_intent")
+    confidence = item.get("confidence")
+    reason = item.get("reason")
+
+    if not isinstance(same_intent, str) or same_intent not in {"yes", "no"}:
         raise CrossThreadIntentEvalError(
-            "cross-thread intent evaluation response did not return one item "
-            f"per target ({len(payload)} != {target_count})"
+            'cross-thread intent evaluation same_intent must be "yes" or "no"'
+        )
+    if not isinstance(confidence, str) or confidence not in {
+        "high",
+        "medium",
+        "low",
+    }:
+        raise CrossThreadIntentEvalError(
+            "cross-thread intent evaluation confidence must be high, medium, or low"
+        )
+    if not isinstance(reason, str) or not reason.strip():
+        raise CrossThreadIntentEvalError(
+            "cross-thread intent evaluation reason must be a non-empty string"
         )
 
-    seen_indexes: set[int] = set()
-    normalized: list[dict[str, Any]] = []
-    for item in payload:
-        if not isinstance(item, dict):
-            raise CrossThreadIntentEvalError(
-                "cross-thread intent evaluation items must be JSON objects"
-            )
-        target_index = item.get("target_index")
-        same_intent = item.get("same_intent")
-        confidence = item.get("confidence")
-        reason = item.get("reason")
-
-        if not isinstance(target_index, int) or not (1 <= target_index <= target_count):
-            raise CrossThreadIntentEvalError(
-                "cross-thread intent evaluation target_index must be an integer "
-                f"between 1 and {target_count}"
-            )
-        if target_index in seen_indexes:
-            raise CrossThreadIntentEvalError(
-                "cross-thread intent evaluation returned duplicate target_index values"
-            )
-        seen_indexes.add(target_index)
-
-        if not isinstance(same_intent, str) or same_intent not in {"yes", "no"}:
-            raise CrossThreadIntentEvalError(
-                'cross-thread intent evaluation same_intent must be "yes" or "no"'
-            )
-        if not isinstance(confidence, str) or confidence not in {
-            "high",
-            "medium",
-            "low",
-        }:
-            raise CrossThreadIntentEvalError(
-                "cross-thread intent evaluation confidence must be high, medium, or low"
-            )
-        if not isinstance(reason, str) or not reason.strip():
-            raise CrossThreadIntentEvalError(
-                "cross-thread intent evaluation reason must be a non-empty string"
-            )
-
-        normalized.append(
-            {
-                "target_index": target_index,
-                "same_intent": same_intent,
-                "confidence": confidence,
-                "reason": " ".join(reason.split()),
-            }
-        )
-
-    normalized.sort(key=lambda item: item["target_index"])
-    return normalized
+    return {
+        "same_intent": same_intent,
+        "confidence": confidence,
+        "reason": " ".join(reason.split()),
+    }
 
 
 def _write_debug_raw_response(
@@ -264,15 +229,14 @@ def _write_debug_raw_response(
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def _evaluate_source_group(
+def _evaluate_candidate(
     *,
     client: LLMClient,
     model: str,
-    source_row: dict[str, Any],
-    target_rows: list[dict[str, Any]],
+    candidate_row: dict[str, Any],
     debug_path: Path,
-) -> list[dict[str, Any]]:
-    prompt = _build_prompt(source_row, target_rows)
+) -> dict[str, Any]:
+    prompt = _build_prompt(candidate_row, candidate_row)
     response_text = client.generate_text(
         model=model,
         prompt=prompt,
@@ -284,11 +248,11 @@ def _evaluate_source_group(
     )
     _write_debug_raw_response(
         debug_path=debug_path,
-        source_row=source_row,
+        source_row=candidate_row,
         model=model,
         response_text=response_text,
     )
-    return _parse_response(response_text=response_text, target_count=len(target_rows))
+    return _parse_response(response_text=response_text)
 
 
 def _evaluation_row(
@@ -357,10 +321,6 @@ def build_cross_thread_intent_evaluation_rows(
             row["target_span_id"],
         )
     )
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for row in rows:
-        grouped.setdefault(_source_key(row), []).append(row)
-
     debug_path = _debug_raw_responses_path(input_root)
     debug_path.parent.mkdir(parents=True, exist_ok=True)
     debug_path.write_text("", encoding="utf-8")
@@ -370,27 +330,19 @@ def build_cross_thread_intent_evaluation_rows(
         timeout=timeout_seconds,
     )
     evaluated_rows: list[dict[str, Any]] = []
-    for source_key in sorted(grouped):
-        target_rows = grouped[source_key]
-        evaluations = _evaluate_source_group(
+    for candidate_row in rows:
+        evaluation = _evaluate_candidate(
             client=client,
             model=model.strip(),
-            source_row=target_rows[0],
-            target_rows=target_rows,
+            candidate_row=candidate_row,
             debug_path=debug_path,
         )
-        for evaluation, candidate_row in zip(evaluations, target_rows, strict=True):
-            if evaluation["target_index"] != candidate_row["rank"]:
-                raise CrossThreadIntentEvalError(
-                    "cross-thread intent evaluation target_index did not match "
-                    "candidate rank ordering"
-                )
-            evaluated_rows.append(
-                _evaluation_row(
-                    candidate_row=candidate_row,
-                    evaluation=evaluation,
-                )
+        evaluated_rows.append(
+            _evaluation_row(
+                candidate_row=candidate_row,
+                evaluation=evaluation,
             )
+        )
 
     evaluated_rows.sort(
         key=lambda row: (

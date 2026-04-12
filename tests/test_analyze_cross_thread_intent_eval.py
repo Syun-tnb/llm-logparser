@@ -181,30 +181,25 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
     calls: list[dict] = []
     responses = [
         json.dumps(
-            [
-                {
-                    "target_index": 1,
-                    "same_intent": "yes",
-                    "confidence": "high",
-                    "reason": "Same release completion event phrased slightly differently.",
-                },
-                {
-                    "target_index": 2,
-                    "same_intent": "no",
-                    "confidence": "high",
-                    "reason": "Greeting text does not continue the release completion event.",
-                },
-            ]
+            {
+                "same_intent": "yes",
+                "confidence": "high",
+                "reason": "Same release completion event phrased slightly differently.",
+            }
         ),
         json.dumps(
-            [
-                {
-                    "target_index": 1,
-                    "same_intent": "yes",
-                    "confidence": "medium",
-                    "reason": "Both snippets describe the same migration checklist status update.",
-                }
-            ]
+            {
+                "same_intent": "no",
+                "confidence": "high",
+                "reason": "Greeting text does not continue the release completion event.",
+            }
+        ),
+        json.dumps(
+            {
+                "same_intent": "yes",
+                "confidence": "medium",
+                "reason": "Both snippets describe the same migration checklist status update.",
+            }
         ),
     ]
     monkeypatch.setattr(
@@ -216,7 +211,7 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
     rows = build_cross_thread_intent_evaluation_rows(root, model="fake-model")
 
     assert len(rows) == 3
-    assert len(calls) == 2
+    assert len(calls) == 3
     first = rows[0]
     assert first["same_intent"] == "yes"
     assert first["confidence"] == "high"
@@ -227,6 +222,9 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
     assert second["candidate_rank"] == 2
     assert calls[0]["response_format"] == "json"
     assert calls[0]["options"]["temperature"] == 0.0
+    assert "Return exactly one JSON object." in calls[0]["prompt"]
+    assert "Target:" in calls[0]["prompt"]
+    assert "Targets:" not in calls[0]["prompt"]
 
 
 def test_build_cross_thread_intent_evaluation_rows_rejects_malformed_model_output(
@@ -240,7 +238,7 @@ def test_build_cross_thread_intent_evaluation_rows_rejects_malformed_model_outpu
         intent_eval_module,
         "OllamaClient",
         lambda **_: _FakeOllamaClient(
-            ['[{"target_index": 1, "same_intent": "yes", "confidence": "high", "reason": "x"}]'],
+            ['[{"same_intent": "yes", "confidence": "high", "reason": "x"}, {"same_intent": "no", "confidence": "low", "reason": "y"}]'],
             [],
         ),
     )
@@ -275,7 +273,6 @@ def test_build_cross_thread_intent_evaluation_rows_accepts_single_object_for_one
             [
                 json.dumps(
                     {
-                        "target_index": 1,
                         "same_intent": "yes",
                         "confidence": "high",
                         "reason": "Same release completion event phrased slightly differently.",
@@ -306,30 +303,28 @@ def test_build_cross_thread_intent_evaluation_rows_normalizes_zero_based_indices
         lambda **_: _FakeOllamaClient(
             [
                 json.dumps(
-                    [
-                        {
-                            "target_index": 0,
-                            "same_intent": "yes",
-                            "confidence": "high",
-                            "reason": "Same release completion event phrased slightly differently.",
-                        },
-                        {
-                            "target_index": 1,
-                            "same_intent": "no",
-                            "confidence": "high",
-                            "reason": "Greeting text does not continue the release completion event.",
-                        },
-                    ]
+                    {
+                        "target_index": 0,
+                        "same_intent": "yes",
+                        "confidence": "high",
+                        "reason": "Same release completion event phrased slightly differently.",
+                    }
                 ),
                 json.dumps(
-                    [
-                        {
-                            "target_index": 0,
-                            "same_intent": "yes",
-                            "confidence": "medium",
-                            "reason": "Both snippets describe the same migration checklist status update.",
-                        }
-                    ]
+                    {
+                        "target_index": 0,
+                        "same_intent": "no",
+                        "confidence": "high",
+                        "reason": "Greeting text does not continue the release completion event.",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "target_index": 0,
+                        "same_intent": "yes",
+                        "confidence": "medium",
+                        "reason": "Both snippets describe the same migration checklist status update.",
+                    }
                 ),
             ],
             [],
@@ -356,20 +351,12 @@ def test_build_cross_thread_intent_evaluation_rows_still_rejects_mixed_invalid_i
         lambda **_: _FakeOllamaClient(
             [
                 json.dumps(
-                    [
-                        {
-                            "target_index": 0,
-                            "same_intent": "yes",
-                            "confidence": "high",
-                            "reason": "Same release completion event phrased slightly differently.",
-                        },
-                        {
-                            "target_index": 2,
-                            "same_intent": "no",
-                            "confidence": "high",
-                            "reason": "Greeting text does not continue the release completion event.",
-                        },
-                    ]
+                    {
+                        "target_index": 2,
+                        "same_intent": "yes",
+                        "confidence": "high",
+                        "reason": "Same release completion event phrased slightly differently.",
+                    }
                 )
             ],
             [],
@@ -389,30 +376,25 @@ def test_cross_thread_intent_evaluation_rows_are_schema_valid(
 
     responses = [
         json.dumps(
-            [
-                {
-                    "target_index": 1,
-                    "same_intent": "yes",
-                    "confidence": "high",
-                    "reason": "Same release completion event phrased slightly differently.",
-                },
-                {
-                    "target_index": 2,
-                    "same_intent": "no",
-                    "confidence": "high",
-                    "reason": "Greeting text does not continue the release completion event.",
-                },
-            ]
+            {
+                "same_intent": "yes",
+                "confidence": "high",
+                "reason": "Same release completion event phrased slightly differently.",
+            }
         ),
         json.dumps(
-            [
-                {
-                    "target_index": 1,
-                    "same_intent": "yes",
-                    "confidence": "medium",
-                    "reason": "Both snippets describe the same migration checklist status update.",
-                }
-            ]
+            {
+                "same_intent": "no",
+                "confidence": "high",
+                "reason": "Greeting text does not continue the release completion event.",
+            }
+        ),
+        json.dumps(
+            {
+                "same_intent": "yes",
+                "confidence": "medium",
+                "reason": "Both snippets describe the same migration checklist status update.",
+            }
         ),
     ]
     monkeypatch.setattr(
@@ -449,30 +431,25 @@ def test_cli_analyze_cross_thread_intent_eval_writes_artifact_without_modifying_
 
     responses = [
         json.dumps(
-            [
-                {
-                    "target_index": 1,
-                    "same_intent": "yes",
-                    "confidence": "high",
-                    "reason": "Same release completion event phrased slightly differently.",
-                },
-                {
-                    "target_index": 2,
-                    "same_intent": "no",
-                    "confidence": "high",
-                    "reason": "Greeting text does not continue the release completion event.",
-                },
-            ]
+            {
+                "same_intent": "yes",
+                "confidence": "high",
+                "reason": "Same release completion event phrased slightly differently.",
+            }
         ),
         json.dumps(
-            [
-                {
-                    "target_index": 1,
-                    "same_intent": "yes",
-                    "confidence": "medium",
-                    "reason": "Both snippets describe the same migration checklist status update.",
-                }
-            ]
+            {
+                "same_intent": "no",
+                "confidence": "high",
+                "reason": "Greeting text does not continue the release completion event.",
+            }
+        ),
+        json.dumps(
+            {
+                "same_intent": "yes",
+                "confidence": "medium",
+                "reason": "Both snippets describe the same migration checklist status update.",
+            }
         ),
     ]
     monkeypatch.setattr(
