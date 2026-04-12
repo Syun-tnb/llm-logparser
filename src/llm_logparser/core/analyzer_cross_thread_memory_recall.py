@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .i18n import _
 from .l1_derivation import iter_input_message_records, ts_to_seconds
 from .schema_validation import load_cross_thread_intent_evaluation_validator
 
@@ -86,7 +87,7 @@ def _first_timestamp(
 def _format_date(ts: int | None) -> str:
     seconds = ts_to_seconds(ts)
     if seconds is None:
-        return "時期不明"
+        return _("memory_recall.date_unknown")
     return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y/%m/%d")
 
 
@@ -108,23 +109,23 @@ def _source_key(row: dict[str, Any]) -> tuple[str, str, str]:
 def _summary_line(excerpt: str) -> str:
     text = excerpt.strip()
     if any(token in text for token in ("公開完了", "リリース", "公開")):
-        return "これは過去の公開完了の流れと同じ話やで"
+        return _("memory_recall.summary_line.release")
     if any(token in text for token in ("現状サマリ", "進捗", "状況", "まとめ")):
-        return "これは前の進捗共有とつながる話やで"
+        return _("memory_recall.summary_line.status")
     if any(token in text for token in ("テンプレ", "updates", "pattern")):
-        return "これは前にも似た更新の話をしてるで"
-    return "これは前にも似た流れの話をしてるで"
+        return _("memory_recall.summary_line.template")
+    return _("memory_recall.summary_line.generic")
 
 
 def _match_line(row: dict[str, Any]) -> str:
     excerpt = str(row["target_excerpt"])
     if any(token in excerpt for token in ("公開完了", "リリース", "公開")):
-        return "前にも公開完了の話してるで"
+        return _("memory_recall.match_line.release")
     if any(token in excerpt for token in ("現状サマリ", "進捗", "状況", "まとめ")):
-        return "前にも似た進み具合の話をしてるで"
+        return _("memory_recall.match_line.status")
     if any(token in excerpt for token in ("テンプレ", "updates", "pattern")):
-        return "前にも似た更新のやり取りやな"
-    return "前にも似た話してるで"
+        return _("memory_recall.match_line.template")
+    return _("memory_recall.match_line.generic")
 
 
 def render_cross_thread_memory_recall(input_root: Path) -> str:
@@ -135,7 +136,7 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
         if row["same_intent"] == "yes" and row["confidence"] in ALLOWED_CONFIDENCE
     ]
     if not filtered:
-        return "前に似た話は見つからへんかった。"
+        return _("memory_recall.no_matches")
 
     message_index = _message_timestamp_index(input_root)
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -173,15 +174,17 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
         )
         if group_index:
             sections.append("")
-        sections.append("前にも似た話してるで")
+        sections.append(_("memory_recall.header"))
         sections.append("")
-        sections.append(f"### Source:")
+        sections.append(_("memory_recall.source_section"))
         sections.append(_truncate(str(source_row["source_excerpt"])))
         sections.append(_summary_line(str(source_row["source_excerpt"])))
         if source_ts is not None:
-            sections.append(f"だいたいの時期: {_format_date(source_ts)}")
+            sections.append(
+                _("memory_recall.approximate_date", date=_format_date(source_ts))
+            )
         sections.append("")
-        sections.append("### Matches:")
+        sections.append(_("memory_recall.matches_section"))
         for row in matches:
             target_ts = _first_timestamp(
                 message_index,

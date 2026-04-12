@@ -122,6 +122,20 @@ messages:
   cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help: Per-source Ollama request timeout in seconds for the L4 same-intent evaluation pass
   cli.analyze.cross_thread_memory_recall.help: Render a short human-readable memory recall view from stored L4 cross-thread intent evaluations
   cli.analyze.cross_thread_memory_recall.opt.input.help: "Input: directory only; provider artifact root containing l4/cross-thread-intent-eval/evaluations.jsonl"
+  memory_recall.header: You have talked about something similar before
+  memory_recall.source_section: "### Source:"
+  memory_recall.matches_section: "### Matches:"
+  memory_recall.approximate_date: "Approximate date: {date}"
+  memory_recall.date_unknown: Unknown date
+  memory_recall.no_matches: No similar past conversation was found.
+  memory_recall.summary_line.release: This appears to follow the same release-completion flow as before.
+  memory_recall.summary_line.status: This appears connected to a previous progress-sharing exchange.
+  memory_recall.summary_line.template: This appears to be about a similar update discussed before.
+  memory_recall.summary_line.generic: This appears to be a similar past exchange.
+  memory_recall.match_line.release: A similar release-completion exchange exists in the past.
+  memory_recall.match_line.status: A similar progress-sharing exchange exists in the past.
+  memory_recall.match_line.template: A similar update exchange exists in the past.
+  memory_recall.match_line.generic: A similar interaction exists in the past.
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline

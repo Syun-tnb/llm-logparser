@@ -10,6 +10,7 @@ from llm_logparser.core.analyzer_cross_thread_memory_recall import (
     CrossThreadMemoryRecallError,
     render_cross_thread_memory_recall,
 )
+from llm_logparser.core.i18n import set_locale
 from llm_logparser.core.schema_validation import (
     load_cross_thread_intent_evaluation_validator,
 )
@@ -186,21 +187,23 @@ def _write_memory_recall_fixture(root: Path) -> None:
 def test_render_cross_thread_memory_recall_filters_and_groups_matches(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     _write_memory_recall_fixture(root)
+    set_locale("ja-JP")
 
     rendered = render_cross_thread_memory_recall(root)
 
-    assert "前にも似た話してるで" in rendered
-    assert "### Source:" in rendered
+    assert "前にも似た話をしています" in rendered
+    assert "### 元の話:" in rendered
     assert "公開完了！おつかれさん！" in rendered
-    assert "### Matches:" in rendered
+    assert "### 過去の一致候補:" in rendered
     assert "2026/02/01" in rendered
-    assert "前にも公開完了の話してるで" in rendered
+    assert "過去にも公開完了に関するやり取りがあります。" in rendered
     assert "OK！公開完了！おつかれさん！" in rendered
     assert "おはよう。レイナ。2025/12/29" not in rendered
 
 
 def test_render_cross_thread_memory_recall_handles_no_yes_matches(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
+    set_locale("ja-JP")
     _write_jsonl(
         root / "thread-conv-a" / "parsed.jsonl",
         _thread_rows(
@@ -239,7 +242,21 @@ def test_render_cross_thread_memory_recall_handles_no_yes_matches(tmp_path: Path
 
     rendered = render_cross_thread_memory_recall(root)
 
-    assert rendered == "前に似た話は見つからへんかった。"
+    assert rendered == "過去の類似した話は見つかりませんでした。"
+
+
+def test_render_cross_thread_memory_recall_uses_locale_strings(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_memory_recall_fixture(root)
+    set_locale("en-US")
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert "You have talked about something similar before" in rendered
+    assert "### Source:" in rendered
+    assert "### Matches:" in rendered
+    assert "Approximate date: 2025/11/23" in rendered
+    assert "A similar release-completion exchange exists in the past." in rendered
 
 
 def test_render_cross_thread_memory_recall_requires_evaluations_artifact(tmp_path: Path):
@@ -252,10 +269,11 @@ def test_render_cross_thread_memory_recall_requires_evaluations_artifact(tmp_pat
 def test_cli_analyze_cross_thread_memory_recall_renders_text(tmp_path: Path, capsys):
     root = tmp_path / "artifacts" / "openai"
     _write_memory_recall_fixture(root)
+    set_locale("ja-JP")
 
     main(["analyze", "cross-thread-memory-recall", "--input", str(root)])
 
     output = capsys.readouterr().out
-    assert "前にも似た話してるで" in output
-    assert "### Matches:" in output
+    assert "前にも似た話をしています" in output
+    assert "### 過去の一致候補:" in output
     assert "2026/02/01" in output

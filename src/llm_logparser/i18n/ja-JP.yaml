@@ -126,6 +126,20 @@ messages:
   cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help: L4 same-intent evaluation で source ごとに使う Ollama request timeout 秒数
   cli.analyze.cross_thread_memory_recall.help: 保存済みの L4 cross-thread intent evaluation から短く読みやすい memory recall view を表示する
   cli.analyze.cross_thread_memory_recall.opt.input.help: "入力: ディレクトリのみ。l4/cross-thread-intent-eval/evaluations.jsonl を含む provider 成果物ルート"
+  memory_recall.header: 前にも似た話をしています
+  memory_recall.source_section: "### 元の話:"
+  memory_recall.matches_section: "### 過去の一致候補:"
+  memory_recall.approximate_date: "おおよその時期: {date}"
+  memory_recall.date_unknown: 時期不明
+  memory_recall.no_matches: 過去の類似した話は見つかりませんでした。
+  memory_recall.summary_line.release: これは過去の公開完了に関するやり取りと同じ流れです。
+  memory_recall.summary_line.status: これは過去の進捗共有とつながる話です。
+  memory_recall.summary_line.template: これは過去の類似した更新に関する話です。
+  memory_recall.summary_line.generic: これは過去の類似したやり取りです。
+  memory_recall.match_line.release: 過去にも公開完了に関するやり取りがあります。
+  memory_recall.match_line.status: 過去にも似た進捗共有があります。
+  memory_recall.match_line.template: 過去にも似た更新のやり取りがあります。
+  memory_recall.match_line.generic: 過去にも同様の内容があります。
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: "入力: ディレクトリのみ。topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する
