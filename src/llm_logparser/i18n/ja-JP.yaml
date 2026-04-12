@@ -119,6 +119,11 @@ messages:
   cli.analyze.cross_thread_candidates.opt.embedding_model.help: 既に出力対象になった candidate row に embedding similarity を追加するためだけに使う任意のローカル Ollama embedding model
   cli.analyze.cross_thread_candidates.opt.embedding_base_url.help: 任意のローカル Ollama embedding endpoint の base URL
   cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help: 任意のローカル Ollama embedding request に使う timeout 秒数
+  cli.analyze.cross_thread_intent_eval.help: 既存の cross-thread candidate pair が同じ意図 / event / task continuity を表すかを評価し、加算的な L4 sidecar を書き出す
+  cli.analyze.cross_thread_intent_eval.opt.input.help: "入力: ディレクトリのみ。l3/cross-thread-candidates/candidates.jsonl を含む provider 成果物ルート"
+  cli.analyze.cross_thread_intent_eval.opt.model.help: 出力済み candidate pair の same-intent continuity 判定に使うローカル Ollama model
+  cli.analyze.cross_thread_intent_eval.opt.base_url.help: ローカル Ollama generation endpoint の base URL
+  cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help: L4 same-intent evaluation で source ごとに使う Ollama request timeout 秒数
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: "入力: ディレクトリのみ。topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する

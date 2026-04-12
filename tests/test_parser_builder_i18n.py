@@ -153,6 +153,23 @@ def test_analyze_cross_thread_candidates_help_mentions_experimental_sidecar(caps
     assert "--embedding-model" in help_text
 
 
+def test_analyze_cross_thread_intent_eval_help_mentions_l4_same_intent_options(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "cross-thread-intent-eval", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "same-intent" in help_text
+    assert "L4" in help_text
+    assert "--input" in help_text
+    assert "--model" in help_text
+    assert "--base-url" in help_text
+    assert "--timeout-seconds" in help_text
+
+
 def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):
     set_locale("en-US")
     parser = build_parser()

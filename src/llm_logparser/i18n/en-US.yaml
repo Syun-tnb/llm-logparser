@@ -115,6 +115,11 @@ messages:
   cli.analyze.cross_thread_candidates.opt.embedding_model.help: Optional local Ollama embedding model used only to enrich already-emitted candidate rows with embedding similarity
   cli.analyze.cross_thread_candidates.opt.embedding_base_url.help: Base URL for the optional local Ollama embedding endpoint
   cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help: Timeout in seconds for optional local Ollama embedding requests
+  cli.analyze.cross_thread_intent_eval.help: Evaluate whether existing cross-thread candidate pairs express the same underlying intent or task continuation and write an additive L4 sidecar
+  cli.analyze.cross_thread_intent_eval.opt.input.help: "Input: directory only; provider artifact root containing l3/cross-thread-candidates/candidates.jsonl"
+  cli.analyze.cross_thread_intent_eval.opt.model.help: Local Ollama model used to judge same-intent continuity for each emitted candidate pair
+  cli.analyze.cross_thread_intent_eval.opt.base_url.help: Base URL for the local Ollama generation endpoint
+  cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help: Per-source Ollama request timeout in seconds for the L4 same-intent evaluation pass
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline

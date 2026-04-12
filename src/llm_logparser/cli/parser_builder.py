@@ -582,6 +582,35 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help"),
     )
 
+    analyze_cross_thread_intent_eval_cmd = analyze_subparsers.add_parser(
+        "cross-thread-intent-eval",
+        help=_("cli.analyze.cross_thread_intent_eval.help"),
+    )
+    analyze_cross_thread_intent_eval_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.cross_thread_intent_eval.opt.input.help"),
+    )
+    analyze_cross_thread_intent_eval_cmd.add_argument(
+        "--model",
+        required=True,
+        help=_("cli.analyze.cross_thread_intent_eval.opt.model.help"),
+    )
+    analyze_cross_thread_intent_eval_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.cross_thread_intent_eval.opt.base_url.help"),
+    )
+    analyze_cross_thread_intent_eval_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help"),
+    )
+
     analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
         "semantic-topic",
         help=_("cli.analyze.semantic_topic.help"),

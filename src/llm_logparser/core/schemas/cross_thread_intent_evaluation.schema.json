@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/cross_thread_intent_evaluation.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "source_conversation_id",
+    "target_conversation_id",
+    "source_topic_id",
+    "target_topic_id",
+    "source_span_id",
+    "target_span_id",
+    "source_message_ids",
+    "target_message_ids",
+    "source_excerpt",
+    "target_excerpt",
+    "candidate_score",
+    "candidate_rank",
+    "candidate_reason_codes",
+    "same_intent",
+    "confidence",
+    "reason"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "cross_thread_intent_evaluation" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "source_conversation_id": { "type": "string", "minLength": 1 },
+    "target_conversation_id": { "type": "string", "minLength": 1 },
+    "source_topic_id": { "type": "string", "minLength": 1 },
+    "target_topic_id": { "type": "string", "minLength": 1 },
+    "source_span_id": { "type": "string", "minLength": 1 },
+    "target_span_id": { "type": "string", "minLength": 1 },
+    "source_message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "target_message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "source_excerpt": { "type": "string" },
+    "target_excerpt": { "type": "string" },
+    "source_topic_label": { "type": ["string", "null"] },
+    "target_topic_label": { "type": ["string", "null"] },
+    "candidate_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "candidate_rank": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "candidate_reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "candidate_embedding_similarity": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1
+    },
+    "same_intent": {
+      "type": "string",
+      "enum": ["yes", "no"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "reason": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

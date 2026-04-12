@@ -522,6 +522,7 @@ Possible modes:
 | semantic-preview | L3 prototype viewer (experimental) |
 | semantic-span-proposals | L3 experimental span-derivation sidecar |
 | cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
+| cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
 | semantic-normalization | L3 sidecar batch job runner |
 | semantic-topics | L3 topic artifact builder (experimental) |
 | semantic-topic | L3/L4 topic renderer (experimental) |
@@ -836,6 +837,14 @@ deterministic and model-derived capabilities.
   writes `l3/cross-thread-candidates/candidates.jsonl` plus `summary.json`.
   It emits reviewable candidate links only; it does not merge topics, rewrite
   membership, or change `topic_id`.
+
+- `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
+  the stored L3 cross-thread candidates. It reads
+  `l3/cross-thread-candidates/candidates.jsonl`, evaluates whether each
+  already-emitted pair expresses the same underlying intent / event / task
+  continuation through a local Ollama model, and writes
+  `l4/cross-thread-intent-eval/evaluations.jsonl` plus `summary.json`. It does
+  not change L3 candidate generation, thresholds, or ranking.
 
 Current limitations remain explicit:
 

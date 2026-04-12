@@ -284,6 +284,31 @@ def run_analyze_cross_thread_candidates(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_cross_thread_intent_eval(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_cross_thread_intent_eval import (
+        CrossThreadIntentEvalError,
+        write_cross_thread_intent_evaluation_artifact,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_cross_thread_intent_evaluation_artifact(
+            input_root,
+            model=args.model,
+            base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
+        )
+    except CrossThreadIntentEvalError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "cross-thread intent evaluation artifact written: "
+        f"{result['evaluation_count']} evaluation(s) -> "
+        f"{format_display_path(result['evaluations_path'])}"
+    )
+
+
 def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_topic import (
         SemanticTopicError,
