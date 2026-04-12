@@ -193,5 +193,10 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
             )
             sections.append(f"* {_format_date(target_ts)}")
             sections.append(f"  → {_match_line(row)}")
+            reason = row.get("reason")
+            if isinstance(reason, str) and reason.strip():
+                sections.append(
+                    _("memory_recall.reason_line", reason=" ".join(reason.split()))
+                )
             sections.append(f"  「{_truncate(str(row['target_excerpt']))}」")
     return "\n".join(sections)

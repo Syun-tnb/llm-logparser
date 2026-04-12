@@ -140,6 +140,7 @@ messages:
   memory_recall.match_line.status: 過去にも似た進捗共有があります。
   memory_recall.match_line.template: 過去にも似た更新のやり取りがあります。
   memory_recall.match_line.generic: 過去にも同様の内容があります。
+  memory_recall.reason_line: "  理由: {reason}"
   cli.analyze.semantic_topic_explore.help: semantic topic を一覧・詳細・逆引きで探索する
   cli.analyze.semantic_topic_explore.opt.input.help: "入力: ディレクトリのみ。topics.json、topic_membership.jsonl、message_windows.jsonl を含む成果物ルート"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: 1 件の topic を詳細表示し、その timeline を表示する

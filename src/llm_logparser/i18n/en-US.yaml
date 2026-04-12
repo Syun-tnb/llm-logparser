@@ -136,6 +136,7 @@ messages:
   memory_recall.match_line.status: A similar progress-sharing exchange exists in the past.
   memory_recall.match_line.template: A similar update exchange exists in the past.
   memory_recall.match_line.generic: A similar interaction exists in the past.
+  memory_recall.reason_line: "  Reason: {reason}"
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline

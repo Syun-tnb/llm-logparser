@@ -197,6 +197,7 @@ def test_render_cross_thread_memory_recall_filters_and_groups_matches(tmp_path: 
     assert "### 過去の一致候補:" in rendered
     assert "2026/02/01" in rendered
     assert "過去にも公開完了に関するやり取りがあります。" in rendered
+    assert "理由: Same release completion event phrased slightly differently." in rendered
     assert "OK！公開完了！おつかれさん！" in rendered
     assert "おはよう。レイナ。2025/12/29" not in rendered
 
@@ -257,6 +258,68 @@ def test_render_cross_thread_memory_recall_uses_locale_strings(tmp_path: Path):
     assert "### Matches:" in rendered
     assert "Approximate date: 2025/11/23" in rendered
     assert "A similar release-completion exchange exists in the past." in rendered
+    assert "Reason: Same release completion event phrased slightly differently." in rendered
+
+
+def test_render_cross_thread_memory_recall_omits_reason_when_missing(
+    tmp_path: Path, monkeypatch
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text="公開完了！おつかれさん！",
+                    ts=1763876721639,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text="OK！公開完了！おつかれさん！",
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    row = _evaluation_row(
+        source_conversation_id="conv-a",
+        source_topic_id="topic-a",
+        source_span_id="span-a",
+        source_message_ids=["a-1"],
+        source_excerpt="公開完了！おつかれさん！",
+        target_conversation_id="conv-b",
+        target_topic_id="topic-b",
+        target_span_id="span-b",
+        target_message_ids=["b-1"],
+        target_excerpt="OK！公開完了！おつかれさん！",
+        same_intent="yes",
+        confidence="high",
+        reason="Placeholder reason.",
+        candidate_rank=1,
+    )
+    row.pop("reason")
+    monkeypatch.setattr(
+        "llm_logparser.core.analyzer_cross_thread_memory_recall._load_evaluation_rows",
+        lambda _input_root: [row],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert "Reason:" not in rendered
+    assert "OK！公開完了！おつかれさん！" in rendered
 
 
 def test_render_cross_thread_memory_recall_requires_evaluations_artifact(tmp_path: Path):
