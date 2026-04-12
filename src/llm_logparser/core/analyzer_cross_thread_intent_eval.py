@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_TIMEOUT_SECONDS = 120.0
 DEFAULT_OLLAMA_NUM_PREDICT = 280
 PROMPT_VARIANT = "same_intent_v0_1"
+_LOGGER = logging.getLogger(__name__)
 
 _PROMPT_TEMPLATE = """You are evaluating whether cross-thread candidate spans express the same underlying intent, event, or task continuation as one source span.
 
@@ -36,6 +38,11 @@ Definitions:
 
 Return JSON only.
 Return one array of objects.
+Do NOT include any text before or after the JSON array.
+Do NOT wrap the output in markdown.
+Do NOT use ```json fences.
+Your entire response MUST start with "[" and end with "]".
+If you cannot comply exactly, return [].
 Use each target_index exactly once.
 Each object must have exactly these keys:
 - target_index
@@ -61,6 +68,10 @@ class CrossThreadIntentEvalError(RuntimeError):
 
 def cross_thread_intent_evaluations_path(input_root: Path) -> Path:
     return input_root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl"
+
+
+def _debug_raw_responses_path(input_root: Path) -> Path:
+    return input_root / "l4" / "cross-thread-intent-eval" / "debug_raw_responses.log"
 
 
 def _candidate_rows_path(input_root: Path) -> Path:
@@ -142,10 +153,39 @@ def _parse_response(
             "cross-thread intent evaluation response was not valid JSON"
         ) from exc
 
-    if not isinstance(payload, list):
+    tolerance_notes: list[str] = []
+    if isinstance(payload, dict):
+        payload = [payload]
+        tolerance_notes.append("wrapped object into array")
+    elif not isinstance(payload, list):
         raise CrossThreadIntentEvalError(
             "cross-thread intent evaluation response must be a JSON array"
         )
+
+    if payload and any(isinstance(item, dict) for item in payload):
+        indices = [item.get("target_index") for item in payload]
+        if (
+            any(index == 0 for index in indices)
+            and all(isinstance(index, int) for index in indices)
+            and (
+                target_count == 1
+                or all(0 <= int(index) <= target_count - 1 for index in indices)
+            )
+        ):
+            payload = [
+                {
+                    **item,
+                    "target_index": int(item["target_index"]) + 1,
+                }
+                if isinstance(item, dict)
+                else item
+                for item in payload
+            ]
+            tolerance_notes.append("normalized 0-based index")
+
+    for note in tolerance_notes:
+        _LOGGER.debug("applied tolerance: %s", note)
+
     if len(payload) != target_count:
         raise CrossThreadIntentEvalError(
             "cross-thread intent evaluation response did not return one item "
@@ -205,12 +245,32 @@ def _parse_response(
     return normalized
 
 
+def _write_debug_raw_response(
+    *,
+    debug_path: Path,
+    source_row: dict[str, Any],
+    model: str,
+    response_text: str,
+) -> None:
+    debug_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "source_span_id": source_row["source_span_id"],
+        "source_conversation_id": source_row["source_conversation_id"],
+        "source_topic_id": source_row["source_topic_id"],
+        "model": model,
+        "raw_response": response_text,
+    }
+    with debug_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 def _evaluate_source_group(
     *,
     client: LLMClient,
     model: str,
     source_row: dict[str, Any],
     target_rows: list[dict[str, Any]],
+    debug_path: Path,
 ) -> list[dict[str, Any]]:
     prompt = _build_prompt(source_row, target_rows)
     response_text = client.generate_text(
@@ -221,6 +281,12 @@ def _evaluate_source_group(
             "temperature": 0.0,
             "num_predict": DEFAULT_OLLAMA_NUM_PREDICT,
         },
+    )
+    _write_debug_raw_response(
+        debug_path=debug_path,
+        source_row=source_row,
+        model=model,
+        response_text=response_text,
     )
     return _parse_response(response_text=response_text, target_count=len(target_rows))
 
@@ -295,6 +361,10 @@ def build_cross_thread_intent_evaluation_rows(
     for row in rows:
         grouped.setdefault(_source_key(row), []).append(row)
 
+    debug_path = _debug_raw_responses_path(input_root)
+    debug_path.parent.mkdir(parents=True, exist_ok=True)
+    debug_path.write_text("", encoding="utf-8")
+
     client: LLMClient = OllamaClient(
         base_url=base_url,
         timeout=timeout_seconds,
@@ -307,6 +377,7 @@ def build_cross_thread_intent_evaluation_rows(
             model=model.strip(),
             source_row=target_rows[0],
             target_rows=target_rows,
+            debug_path=debug_path,
         )
         for evaluation, candidate_row in zip(evaluations, target_rows, strict=True):
             if evaluation["target_index"] != candidate_row["rank"]:

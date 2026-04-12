@@ -124,6 +124,27 @@ def _write_candidate_fixture(root: Path) -> Path:
     return path
 
 
+def _write_single_candidate_fixture(root: Path) -> Path:
+    path = root / "l3" / "cross-thread-candidates" / "candidates.jsonl"
+    _write_jsonl(
+        path,
+        [
+            _candidate_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                source_excerpt="公開完了！おつかれさん！",
+                target_excerpt="OK！公開完了！おつかれさん！",
+                rank=1,
+            )
+        ],
+    )
+    return path
+
+
 class _FakeOllamaClient:
     def __init__(self, responses: list[str], calls: list[dict]) -> None:
         self._responses = responses
@@ -220,6 +241,137 @@ def test_build_cross_thread_intent_evaluation_rows_rejects_malformed_model_outpu
         "OllamaClient",
         lambda **_: _FakeOllamaClient(
             ['[{"target_index": 1, "same_intent": "yes", "confidence": "high", "reason": "x"}]'],
+            [],
+        ),
+    )
+
+    with pytest.raises(CrossThreadIntentEvalError):
+        build_cross_thread_intent_evaluation_rows(root, model="fake-model")
+
+    debug_path = root / "l4" / "cross-thread-intent-eval" / "debug_raw_responses.log"
+    assert debug_path.exists()
+    debug_rows = [
+        json.loads(line)
+        for line in debug_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert debug_rows
+    assert debug_rows[0]["source_span_id"] == "span-a"
+    assert debug_rows[0]["model"] == "fake-model"
+    assert debug_rows[0]["raw_response"].startswith("[")
+
+
+def test_build_cross_thread_intent_evaluation_rows_accepts_single_object_for_one_target(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_single_candidate_fixture(root)
+
+    monkeypatch.setattr(
+        intent_eval_module,
+        "OllamaClient",
+        lambda **_: _FakeOllamaClient(
+            [
+                json.dumps(
+                    {
+                        "target_index": 1,
+                        "same_intent": "yes",
+                        "confidence": "high",
+                        "reason": "Same release completion event phrased slightly differently.",
+                    }
+                )
+            ],
+            [],
+        ),
+    )
+
+    rows = build_cross_thread_intent_evaluation_rows(root, model="fake-model")
+
+    assert len(rows) == 1
+    assert rows[0]["same_intent"] == "yes"
+    assert rows[0]["candidate_rank"] == 1
+
+
+def test_build_cross_thread_intent_evaluation_rows_normalizes_zero_based_indices(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_candidate_fixture(root)
+
+    monkeypatch.setattr(
+        intent_eval_module,
+        "OllamaClient",
+        lambda **_: _FakeOllamaClient(
+            [
+                json.dumps(
+                    [
+                        {
+                            "target_index": 0,
+                            "same_intent": "yes",
+                            "confidence": "high",
+                            "reason": "Same release completion event phrased slightly differently.",
+                        },
+                        {
+                            "target_index": 1,
+                            "same_intent": "no",
+                            "confidence": "high",
+                            "reason": "Greeting text does not continue the release completion event.",
+                        },
+                    ]
+                ),
+                json.dumps(
+                    [
+                        {
+                            "target_index": 0,
+                            "same_intent": "yes",
+                            "confidence": "medium",
+                            "reason": "Both snippets describe the same migration checklist status update.",
+                        }
+                    ]
+                ),
+            ],
+            [],
+        ),
+    )
+
+    rows = build_cross_thread_intent_evaluation_rows(root, model="fake-model")
+
+    assert len(rows) == 3
+    assert [row["candidate_rank"] for row in rows] == [1, 2, 1]
+    assert [row["same_intent"] for row in rows] == ["yes", "no", "yes"]
+
+
+def test_build_cross_thread_intent_evaluation_rows_still_rejects_mixed_invalid_indices(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_candidate_fixture(root)
+
+    monkeypatch.setattr(
+        intent_eval_module,
+        "OllamaClient",
+        lambda **_: _FakeOllamaClient(
+            [
+                json.dumps(
+                    [
+                        {
+                            "target_index": 0,
+                            "same_intent": "yes",
+                            "confidence": "high",
+                            "reason": "Same release completion event phrased slightly differently.",
+                        },
+                        {
+                            "target_index": 2,
+                            "same_intent": "no",
+                            "confidence": "high",
+                            "reason": "Greeting text does not continue the release completion event.",
+                        },
+                    ]
+                )
+            ],
             [],
         ),
     )
