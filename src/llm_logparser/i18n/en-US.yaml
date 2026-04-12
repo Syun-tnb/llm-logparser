@@ -120,6 +120,8 @@ messages:
   cli.analyze.cross_thread_intent_eval.opt.model.help: Local Ollama model used to judge same-intent continuity for each emitted candidate pair
   cli.analyze.cross_thread_intent_eval.opt.base_url.help: Base URL for the local Ollama generation endpoint
   cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help: Per-source Ollama request timeout in seconds for the L4 same-intent evaluation pass
+  cli.analyze.cross_thread_memory_recall.help: Render a short human-readable memory recall view from stored L4 cross-thread intent evaluations
+  cli.analyze.cross_thread_memory_recall.opt.input.help: "Input: directory only; provider artifact root containing l4/cross-thread-intent-eval/evaluations.jsonl"
   cli.analyze.semantic_topic_explore.help: Explore semantic topics, reverse lookup message/topic membership, and browse topic timelines
   cli.analyze.semantic_topic_explore.opt.input.help: "Input: directory only; artifact root containing topics.json, topic_membership.jsonl, and message_windows.jsonl"
   cli.analyze.semantic_topic_explore.opt.topic_id.help: Show one topic in detail with its timeline

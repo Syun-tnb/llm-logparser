@@ -611,6 +611,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.cross_thread_intent_eval.opt.timeout_seconds.help"),
     )
 
+    analyze_cross_thread_memory_recall_cmd = analyze_subparsers.add_parser(
+        "cross-thread-memory-recall",
+        help=_("cli.analyze.cross_thread_memory_recall.help"),
+    )
+    analyze_cross_thread_memory_recall_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.cross_thread_memory_recall.opt.input.help"),
+    )
+
     analyze_semantic_topic_cmd = analyze_subparsers.add_parser(
         "semantic-topic",
         help=_("cli.analyze.semantic_topic.help"),

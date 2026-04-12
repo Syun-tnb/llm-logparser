@@ -170,6 +170,20 @@ def test_analyze_cross_thread_intent_eval_help_mentions_l4_same_intent_options(c
     assert "--timeout-seconds" in help_text
 
 
+def test_analyze_cross_thread_memory_recall_help_mentions_read_only_view(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "cross-thread-memory-recall", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "cross-thread-memory-recall" in help_text
+    assert "evaluations.jsonl" in help_text
+    assert "--input" in help_text
+
+
 def test_analyze_semantic_topic_help_mentions_ollama_options(capsys):
     set_locale("en-US")
     parser = build_parser()

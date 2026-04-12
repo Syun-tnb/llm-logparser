@@ -523,6 +523,7 @@ Possible modes:
 | semantic-span-proposals | L3 experimental span-derivation sidecar |
 | cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
 | cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
+| cross-thread-memory-recall | L4 read-only memory recall presentation layer |
 | semantic-normalization | L3 sidecar batch job runner |
 | semantic-topics | L3 topic artifact builder (experimental) |
 | semantic-topic | L3/L4 topic renderer (experimental) |
@@ -845,6 +846,13 @@ deterministic and model-derived capabilities.
   continuation through a local Ollama model, and writes
   `l4/cross-thread-intent-eval/evaluations.jsonl` plus `summary.json`. It does
   not change L3 candidate generation, thresholds, or ranking.
+
+- `cross-thread-memory-recall` is a read-only presentation layer on top of the
+  stored L4 intent evaluations. It reads
+  `l4/cross-thread-intent-eval/evaluations.jsonl`, keeps only `same_intent=yes`
+  rows with medium-or-higher confidence, groups them by source span, and
+  renders a short human-readable "have I talked about this before?" view. It
+  does not write or mutate any L3/L4 artifacts.
 
 Current limitations remain explicit:
 

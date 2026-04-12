@@ -309,6 +309,21 @@ def run_analyze_cross_thread_intent_eval(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_cross_thread_memory_recall(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_cross_thread_memory_recall import (
+        CrossThreadMemoryRecallError,
+        render_cross_thread_memory_recall,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        rendered = render_cross_thread_memory_recall(input_root)
+    except CrossThreadMemoryRecallError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+    write_or_print(rendered, None)
+
+
 def run_analyze_semantic_topic(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_topic import (
         SemanticTopicError,

@@ -1,6 +1,7 @@
 from .analyze import (
     run_analyze_cross_thread_candidates,
     run_analyze_cross_thread_intent_eval,
+    run_analyze_cross_thread_memory_recall,
     run_analyze_datasheet,
     run_analyze_metrics,
     run_analyze_semantic_normalization,
@@ -24,6 +25,7 @@ from .parse import run_parse
 __all__ = [
     "run_analyze_cross_thread_candidates",
     "run_analyze_cross_thread_intent_eval",
+    "run_analyze_cross_thread_memory_recall",
     "run_analyze_datasheet",
     "run_analyze_metrics",
     "run_analyze_semantic_normalization",
