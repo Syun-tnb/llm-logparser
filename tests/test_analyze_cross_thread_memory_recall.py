@@ -261,6 +261,183 @@ def test_render_cross_thread_memory_recall_uses_locale_strings(tmp_path: Path):
     assert "Reason: Same release completion event phrased slightly differently." in rendered
 
 
+def test_render_cross_thread_memory_recall_prefers_canonical_reconstruction(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text=json.dumps(
+                        {
+                            "updates": [
+                                {
+                                    "pattern": ".*",
+                                    "replacement": "Migration checklist rollout gates for production.",
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                    ts=1763876721639,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text=json.dumps(
+                        {
+                            "summary": "Rollback gate confirmation for the migration checklist.",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt='{"stored":"source preview"}',
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt='{"stored":"target preview"}',
+                same_intent="yes",
+                confidence="high",
+                reason="Both spans describe the same migration checklist work.",
+                candidate_rank=1,
+            ),
+        ],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert "Migration checklist rollout gates for production." in rendered
+    assert "Rollback gate confirmation for the migration checklist." in rendered
+    assert '{"stored":"source preview"}' not in rendered
+    assert '{"stored":"target preview"}' not in rendered
+
+
+def test_render_cross_thread_memory_recall_uses_ordered_message_ids_for_reconstruction(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text="First note about migration.",
+                    ts=1763876721639,
+                ),
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-2",
+                    text="Second message about rollout.",
+                    ts=1763876722640,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text="Target note about rollout continuity.",
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-2", "a-1"],
+                source_excerpt="stored source excerpt",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt="stored target excerpt",
+                same_intent="yes",
+                confidence="high",
+                reason="The rollout discussion continues in the target span.",
+                candidate_rank=1,
+            ),
+        ],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert "Second message about rollout. First note about migration." in rendered
+
+
+def test_render_cross_thread_memory_recall_falls_back_to_stored_excerpt_when_canonical_unavailable(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt="Stored source fallback excerpt",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt="Stored target fallback excerpt",
+                same_intent="yes",
+                confidence="high",
+                reason="The target continues the same work.",
+                candidate_rank=1,
+            ),
+        ],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert "Stored source fallback excerpt" in rendered
+    assert "Stored target fallback excerpt" in rendered
+
+
 def test_render_cross_thread_memory_recall_omits_reason_when_missing(
     tmp_path: Path, monkeypatch
 ):
