@@ -867,6 +867,200 @@ def test_render_cross_thread_memory_recall_keeps_non_duplicate_rows(
     assert "Second recall pair." in rendered
 
 
+def test_render_cross_thread_memory_recall_suppresses_greeting_style_pairs(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text="おはよう。レイナ。2025/12/29",
+                    ts=1763876721639,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text="おはよう。レイナ。2025/12/30",
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt="stored source preview",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt="stored target preview",
+                same_intent="yes",
+                confidence="high",
+                reason="The target continues the same greeting exchange.",
+                candidate_rank=1,
+            ),
+        ],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert rendered == "No similar past conversation was found."
+
+
+def test_render_cross_thread_memory_recall_keeps_meaningful_short_pairs(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_memory_recall_fixture(root)
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert "OK！公開完了！おつかれさん！" in rendered
+    assert "公開完了！おつかれさん！" in rendered
+
+
+def test_render_cross_thread_memory_recall_suppression_uses_reconstructed_excerpts(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text="hello",
+                    ts=1763876721639,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text="good morning",
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt="Migration checklist rollout gates",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt="Rollback gate confirmation",
+                same_intent="yes",
+                confidence="high",
+                reason="The target repeats the same greeting pattern.",
+                candidate_rank=1,
+            ),
+        ],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert rendered == "No similar past conversation was found."
+
+
+def test_render_cross_thread_memory_recall_is_deterministic_after_suppression(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text="Thanks",
+                    ts=1763876721639,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text="Thank you",
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt="stored source",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt="stored target",
+                same_intent="yes",
+                confidence="high",
+                reason="The target repeats the same acknowledgement.",
+                candidate_rank=1,
+            ),
+        ],
+    )
+
+    first = render_cross_thread_memory_recall(root)
+    second = render_cross_thread_memory_recall(root)
+
+    assert first == second == "No similar past conversation was found."
+
+
 def test_render_cross_thread_memory_recall_requires_evaluations_artifact(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
 

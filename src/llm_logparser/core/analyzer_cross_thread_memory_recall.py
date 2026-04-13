@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,6 +19,72 @@ _CONFIDENCE_RANK = {
     "medium": 1,
     "high": 2,
 }
+_GREETING_PREFIXES = (
+    "goodmorning",
+    "goodafternoon",
+    "goodevening",
+    "hello",
+    "hi",
+    "hey",
+    "おはよう",
+    "こんにちは",
+    "こんばんは",
+    "はじめまして",
+)
+_ACK_EXACT = frozenset(
+    {
+        "ok",
+        "okay",
+        "thanks",
+        "thankyou",
+        "gotit",
+        "noted",
+        "sure",
+        "了解",
+        "承知",
+        "はい",
+        "うん",
+        "ありがとう",
+        "ありがとうございます",
+    }
+)
+_STRONG_RECALL_MARKERS = (
+    "公開",
+    "リリース",
+    "現状サマリ",
+    "進捗",
+    "状況",
+    "まとめ",
+    "migration",
+    "rollback",
+    "checklist",
+    "release",
+    "deploy",
+    "deployment",
+    "status",
+    "summary",
+    "task",
+    "project",
+    "issue",
+    "bug",
+    "fix",
+    "review",
+)
+_LOW_VALUE_REASON_MARKERS = (
+    "greeting",
+    "acknowledgement",
+    "acknowledgment",
+    "hello",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "thanks",
+    "thank you",
+    "挨拶",
+    "ありがとう",
+    "了解",
+)
+_WORD_RE = re.compile(r"[a-z]{4,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
 
 
 class CrossThreadMemoryRecallError(RuntimeError):
@@ -28,6 +95,15 @@ class CrossThreadMemoryRecallError(RuntimeError):
 class _CanonicalMessageRecord:
     text: str
     ts: int | None
+
+
+@dataclass(frozen=True)
+class _PreparedRecallRow:
+    row: dict[str, Any]
+    source_excerpt: str
+    target_excerpt: str
+    source_ts: int | None
+    target_ts: int | None
 
 
 def _evaluations_path(input_root: Path) -> Path:
@@ -380,6 +456,105 @@ def _oriented_row(
     return _swap_row_direction(row) if should_swap else row
 
 
+def _normalize_phrase_text(text: str) -> str:
+    chars: list[str] = []
+    for char in text.casefold():
+        if (
+            char.isalpha()
+            or "\u3040" <= char <= "\u30ff"
+            or "\u3400" <= char <= "\u9fff"
+        ):
+            chars.append(char)
+    return "".join(chars)
+
+
+def _has_strong_recall_signal(text: str) -> bool:
+    compact = _compact_candidate(text).casefold()
+    return any(marker.casefold() in compact for marker in _STRONG_RECALL_MARKERS)
+
+
+def _is_greeting_like(text: str) -> bool:
+    normalized = _normalize_phrase_text(text)
+    if not normalized:
+        return False
+    return any(normalized.startswith(prefix) for prefix in _GREETING_PREFIXES)
+
+
+def _is_ack_like(text: str) -> bool:
+    normalized = _normalize_phrase_text(text)
+    if not normalized:
+        return False
+    if normalized in _ACK_EXACT:
+        return True
+    return normalized.startswith(("thankyou", "thanks", "gotit", "了解", "承知")) and len(
+        normalized
+    ) <= 18
+
+
+def _lexical_signal_count(text: str) -> int:
+    compact = _compact_candidate(text).casefold()
+    return sum(1 for token in _WORD_RE.findall(compact) if token)
+
+
+def _is_low_value_excerpt(text: str) -> bool:
+    compact = _compact_candidate(text)
+    if not compact:
+        return True
+    if _has_strong_recall_signal(compact):
+        return False
+    if _is_ack_like(compact):
+        return True
+    if _is_greeting_like(compact) and _textual_char_count(compact) <= 32:
+        return True
+    return _textual_char_count(compact) <= 12 and _lexical_signal_count(compact) <= 1
+
+
+def _reason_supports_recall(reason: str) -> bool:
+    compact = _compact_candidate(reason)
+    if not compact:
+        return False
+    if _has_strong_recall_signal(compact):
+        return True
+    lowered = compact.casefold()
+    if any(marker in lowered for marker in _LOW_VALUE_REASON_MARKERS):
+        return False
+    if _is_greeting_like(compact) or _is_ack_like(compact):
+        return False
+    return _textual_char_count(compact) >= 28 and _lexical_signal_count(compact) >= 2
+
+
+def _should_suppress_prepared_row(prepared: _PreparedRecallRow) -> bool:
+    if _reason_supports_recall(str(prepared.row.get("reason", ""))):
+        return False
+    return _is_low_value_excerpt(prepared.source_excerpt) and _is_low_value_excerpt(
+        prepared.target_excerpt
+    )
+
+
+def _prepare_recall_row(
+    row: dict[str, Any],
+    *,
+    message_index: dict[tuple[str, str], _CanonicalMessageRecord],
+) -> _PreparedRecallRow:
+    return _PreparedRecallRow(
+        row=row,
+        source_excerpt=_rendered_excerpt(
+            message_index=message_index,
+            conversation_id=str(row["source_conversation_id"]),
+            message_ids=list(row["source_message_ids"]),
+            fallback_excerpt=str(row["source_excerpt"]),
+        ),
+        target_excerpt=_rendered_excerpt(
+            message_index=message_index,
+            conversation_id=str(row["target_conversation_id"]),
+            message_ids=list(row["target_message_ids"]),
+            fallback_excerpt=str(row["target_excerpt"]),
+        ),
+        source_ts=_endpoint_timestamp(message_index, row, "source"),
+        target_ts=_endpoint_timestamp(message_index, row, "target"),
+    )
+
+
 def render_cross_thread_memory_recall(input_root: Path) -> str:
     rows = _load_evaluation_rows(input_root)
     filtered = [
@@ -391,23 +566,27 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
         return _("memory_recall.no_matches")
 
     message_index = _message_record_index(input_root)
-    filtered = [
-        _oriented_row(row, message_index=message_index)
+    prepared_rows = [
+        _prepare_recall_row(
+            _oriented_row(row, message_index=message_index),
+            message_index=message_index,
+        )
         for row in _deduplicate_rows(filtered)
     ]
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
-    for row in filtered:
-        grouped[_source_key(row)].append(row)
+    prepared_rows = [
+        prepared for prepared in prepared_rows if not _should_suppress_prepared_row(prepared)
+    ]
+    if not prepared_rows:
+        return _("memory_recall.no_matches")
+
+    grouped: dict[tuple[str, str, str], list[_PreparedRecallRow]] = defaultdict(list)
+    for prepared in prepared_rows:
+        grouped[_source_key(prepared.row)].append(prepared)
 
     ordered_groups = sorted(
         grouped.items(),
         key=lambda item: (
-            _first_timestamp(
-                message_index,
-                item[0][0],
-                item[1][0]["source_message_ids"],
-            )
-            or 0,
+            item[1][0].source_ts or 0,
             item[0],
         ),
     )
@@ -415,56 +594,35 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
     sections: list[str] = []
     for group_index, (_key, matches) in enumerate(ordered_groups):
         matches.sort(
-            key=lambda row: (
-                -1 if row["confidence"] == "high" else 0,
-                row.get("candidate_rank", 9999),
-                row["target_conversation_id"],
-                row["target_span_id"],
+            key=lambda prepared: (
+                -1 if prepared.row["confidence"] == "high" else 0,
+                prepared.row.get("candidate_rank", 9999),
+                prepared.row["target_conversation_id"],
+                prepared.row["target_span_id"],
             )
         )
         source_row = matches[0]
-        source_ts = _first_timestamp(
-            message_index,
-            source_row["source_conversation_id"],
-            source_row["source_message_ids"],
-        )
         if group_index:
             sections.append("")
         sections.append(_("memory_recall.header"))
         sections.append("")
         sections.append(_("memory_recall.source_section"))
-        source_excerpt = _rendered_excerpt(
-            message_index=message_index,
-            conversation_id=str(source_row["source_conversation_id"]),
-            message_ids=list(source_row["source_message_ids"]),
-            fallback_excerpt=str(source_row["source_excerpt"]),
-        )
+        source_excerpt = source_row.source_excerpt
         sections.append(source_excerpt)
         sections.append(_summary_line(source_excerpt))
-        if source_ts is not None:
+        if source_row.source_ts is not None:
             sections.append(
-                _("memory_recall.approximate_date", date=_format_date(source_ts))
+                _("memory_recall.approximate_date", date=_format_date(source_row.source_ts))
             )
         sections.append("")
         sections.append(_("memory_recall.matches_section"))
-        for row in matches:
-            target_ts = _first_timestamp(
-                message_index,
-                row["target_conversation_id"],
-                row["target_message_ids"],
-            )
-            target_excerpt = _rendered_excerpt(
-                message_index=message_index,
-                conversation_id=str(row["target_conversation_id"]),
-                message_ids=list(row["target_message_ids"]),
-                fallback_excerpt=str(row["target_excerpt"]),
-            )
-            sections.append(f"* {_format_date(target_ts)}")
-            sections.append(f"  → {_match_line(target_excerpt)}")
-            reason = row.get("reason")
+        for prepared in matches:
+            sections.append(f"* {_format_date(prepared.target_ts)}")
+            sections.append(f"  → {_match_line(prepared.target_excerpt)}")
+            reason = prepared.row.get("reason")
             if isinstance(reason, str) and reason.strip():
                 sections.append(
                     _("memory_recall.reason_line", reason=" ".join(reason.split()))
                 )
-            sections.append(f"  「{target_excerpt}」")
+            sections.append(f"  「{prepared.target_excerpt}」")
     return "\n".join(sections)
