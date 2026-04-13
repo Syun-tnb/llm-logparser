@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha1
 import json
 import math
+import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -39,6 +40,8 @@ SUPPORTED_SAME_THREAD_POLICIES = frozenset(
 CLUSTER_EDGE_POLICY = "mutual-only"
 DEFAULT_MAX_SAME_THREAD_SHARED_MESSAGES = 1
 DEFAULT_CROSS_THREAD_SCORE_PERCENTILE = 0.75
+DEFAULT_NEAR_SAME_THREAD_WINDOW_DISTANCE = 1
+WINDOW_ID_SEQUENCE_PATTERN = re.compile(r"^window-(\d+)$")
 
 
 class SemanticPrototypeError(RuntimeError):
@@ -365,35 +368,62 @@ def _embedding_lookup(
     )
 
 
-def _ordered_neighbor_indices(
+def _parse_window_sequence(window_id: str) -> int | None:
+    match = WINDOW_ID_SEQUENCE_PATTERN.match(window_id)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _shared_message_count(
+    source: WindowEmbeddingRecord,
+    target: WindowEmbeddingRecord,
+) -> int:
+    if not source.message_ids or not target.message_ids:
+        return 0
+    return len(set(source.message_ids) & set(target.message_ids))
+
+
+def _is_near_same_thread_candidate(
+    source: WindowEmbeddingRecord,
+    target: WindowEmbeddingRecord,
+    *,
+    max_window_distance: int = DEFAULT_NEAR_SAME_THREAD_WINDOW_DISTANCE,
+) -> bool:
+    if source.conversation_id != target.conversation_id:
+        return False
+    if _shared_message_count(source, target) > 0:
+        return True
+    if max_window_distance < 0:
+        return False
+    source_index = _parse_window_sequence(source.window_id)
+    target_index = _parse_window_sequence(target.window_id)
+    if source_index is None or target_index is None:
+        return False
+    return abs(source_index - target_index) <= max_window_distance
+
+
+def _sort_neighbor_indices(
     candidate_indices: np.ndarray,
     scores: np.ndarray,
     embeddings: list[WindowEmbeddingRecord],
     *,
-    top_k: int,
-    min_score: float,
     target_conversation_id: str,
     prefer_same_thread: bool,
 ) -> list[int]:
     if candidate_indices.size == 0:
         return []
 
-    keep_mask = scores >= min_score
-    if not np.any(keep_mask):
-        return []
-
-    filtered_indices = candidate_indices[keep_mask]
-    filtered_scores = scores[keep_mask]
     provider_ids = np.asarray(
-        [embeddings[index].provider_id for index in filtered_indices],
+        [embeddings[index].provider_id for index in candidate_indices],
         dtype=object,
     )
     conversation_ids = np.asarray(
-        [embeddings[index].conversation_id for index in filtered_indices],
+        [embeddings[index].conversation_id for index in candidate_indices],
         dtype=object,
     )
     window_ids = np.asarray(
-        [embeddings[index].window_id for index in filtered_indices],
+        [embeddings[index].window_id for index in candidate_indices],
         dtype=object,
     )
 
@@ -407,10 +437,60 @@ def _ordered_neighbor_indices(
             dtype=np.int64,
         )
         sort_keys.append(same_thread_rank)
-    sort_keys.append(-filtered_scores)
+    sort_keys.append(-scores)
 
-    ordered = filtered_indices[np.lexsort(tuple(sort_keys))]
-    return ordered[:top_k].tolist()
+    return candidate_indices[np.lexsort(tuple(sort_keys))].tolist()
+
+
+def _ordered_neighbor_indices(
+    candidate_indices: np.ndarray,
+    scores: np.ndarray,
+    embeddings: list[WindowEmbeddingRecord],
+    *,
+    top_k: int,
+    min_score: float,
+    target_record: WindowEmbeddingRecord,
+    prefer_same_thread: bool,
+) -> list[int]:
+    if candidate_indices.size == 0:
+        return []
+
+    keep_mask = scores >= min_score
+    if not np.any(keep_mask):
+        return []
+
+    filtered_indices = candidate_indices[keep_mask]
+    filtered_scores = scores[keep_mask]
+    near_same_thread_mask = np.asarray(
+        [
+            _is_near_same_thread_candidate(target_record, embeddings[index])
+            for index in filtered_indices
+        ],
+        dtype=bool,
+    )
+
+    primary_indices = filtered_indices[~near_same_thread_mask]
+    primary_scores = filtered_scores[~near_same_thread_mask]
+    ordered_primary = _sort_neighbor_indices(
+        primary_indices,
+        primary_scores,
+        embeddings,
+        target_conversation_id=target_record.conversation_id,
+        prefer_same_thread=prefer_same_thread,
+    )
+    if len(ordered_primary) >= top_k:
+        return ordered_primary[:top_k]
+
+    backfill_indices = filtered_indices[near_same_thread_mask]
+    backfill_scores = filtered_scores[near_same_thread_mask]
+    ordered_backfill = _sort_neighbor_indices(
+        backfill_indices,
+        backfill_scores,
+        embeddings,
+        target_conversation_id=target_record.conversation_id,
+        prefer_same_thread=prefer_same_thread,
+    )
+    return [*ordered_primary, *ordered_backfill][:top_k]
 
 
 def _neighbor_row_from_indices(
@@ -509,7 +589,7 @@ def _build_neighbor_rows_from_candidate_pools(
                 embeddings,
                 top_k=effective_top_k,
                 min_score=min_score,
-                target_conversation_id=record.conversation_id,
+                target_record=record,
                 prefer_same_thread=prefer_same_thread,
             )
 
@@ -1022,8 +1102,9 @@ def _cluster_edge_allowed(
         return True
     if not source.message_ids or not target.message_ids:
         return True
-    shared_messages = len(set(source.message_ids) & set(target.message_ids))
-    return shared_messages <= max_same_thread_shared_messages
+    return (
+        _shared_message_count(source, target) <= max_same_thread_shared_messages
+    )
 
 
 def _write_jsonl_rows(path: Path, rows: list[dict[str, Any]]) -> Path:

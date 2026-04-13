@@ -985,6 +985,236 @@ def test_min_score_preserves_deterministic_tie_breaks():
     ]
 
 
+def test_near_same_thread_candidates_backfill_after_cross_thread_recurrence():
+    embeddings = build_window_embedding_records(
+        [
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0001",
+                message_ids=("m1",),
+                ts_start=1,
+                ts_end=1,
+                text="target",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0002",
+                message_ids=("m2",),
+                ts_start=2,
+                ts_end=2,
+                text="adjacent same-thread",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-b",
+                window_id="window-0001",
+                message_ids=("n1",),
+                ts_start=3,
+                ts_end=3,
+                text="cross-thread recurrence",
+            ),
+        ],
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [0.9, 0.1],
+            ]
+        ),
+    )
+
+    rows = build_window_neighbor_rows(embeddings, top_k=1, min_score=0.0)
+
+    assert rows[0]["neighbors"] == [
+        {
+            "provider_id": "openai",
+            "conversation_id": "conv-b",
+            "window_id": "window-0001",
+            "score": pytest.approx(0.9939, abs=1e-4),
+        }
+    ]
+
+
+def test_distant_same_thread_candidates_remain_primary_neighbors():
+    embeddings = build_window_embedding_records(
+        [
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0001",
+                message_ids=("m1",),
+                ts_start=1,
+                ts_end=1,
+                text="target",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0002",
+                message_ids=("m2",),
+                ts_start=2,
+                ts_end=2,
+                text="adjacent same-thread",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0003",
+                message_ids=("m3",),
+                ts_start=3,
+                ts_end=3,
+                text="distant same-thread recurrence",
+            ),
+        ],
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [0.9, 0.1],
+            ]
+        ),
+    )
+
+    rows = build_window_neighbor_rows(embeddings, top_k=1, min_score=0.0)
+
+    assert rows[0]["neighbors"] == [
+        {
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "window_id": "window-0003",
+            "score": pytest.approx(0.9939, abs=1e-4),
+        }
+    ]
+
+
+def test_overlapping_same_thread_candidates_are_treated_as_near_backfill():
+    embeddings = build_window_embedding_records(
+        [
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0002",
+                message_ids=("m2", "m3", "m4"),
+                ts_start=2,
+                ts_end=4,
+                text="target overlap window",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0004",
+                message_ids=("m4", "m5", "m6"),
+                ts_start=4,
+                ts_end=6,
+                text="overlapping same-thread",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-b",
+                window_id="window-0001",
+                message_ids=("n1",),
+                ts_start=7,
+                ts_end=7,
+                text="cross-thread recurrence",
+            ),
+        ],
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [0.9, 0.1],
+            ]
+        ),
+    )
+
+    rows = build_window_neighbor_rows(embeddings, top_k=1, min_score=0.0)
+
+    assert rows[0]["neighbors"] == [
+        {
+            "provider_id": "openai",
+            "conversation_id": "conv-b",
+            "window_id": "window-0001",
+            "score": pytest.approx(0.9939, abs=1e-4),
+        }
+    ]
+
+
+def test_near_same_thread_backfill_preserves_deterministic_ordering():
+    embeddings = build_window_embedding_records(
+        [
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-z/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-z",
+                window_id="window-0001",
+                message_ids=("m1",),
+                ts_start=1,
+                ts_end=1,
+                text="target",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-z/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-z",
+                window_id="window-0002",
+                message_ids=("m2",),
+                ts_start=2,
+                ts_end=2,
+                text="adjacent same-thread",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-a/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-a",
+                window_id="window-0001",
+                message_ids=("n1",),
+                ts_start=3,
+                ts_end=3,
+                text="cross-thread left",
+            ),
+            MessageWindowRecord(
+                source_path=Path("/tmp/thread-b/message_windows.jsonl"),
+                provider_id="openai",
+                conversation_id="conv-b",
+                window_id="window-0001",
+                message_ids=("n2",),
+                ts_start=4,
+                ts_end=4,
+                text="cross-thread right",
+            ),
+        ],
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [0.5, 0.5],
+                [0.5, 0.5],
+            ]
+        ),
+    )
+
+    rows_first = build_window_neighbor_rows(embeddings, top_k=3, min_score=0.7)
+    rows_second = build_window_neighbor_rows(embeddings, top_k=3, min_score=0.7)
+
+    assert rows_first == rows_second
+    assert [neighbor["conversation_id"] for neighbor in rows_first[0]["neighbors"]] == [
+        "conv-a",
+        "conv-b",
+        "conv-z",
+    ]
+
+
 def test_build_window_neighbor_rows_progress_callback():
     set_locale("en-US")
     embeddings = build_window_embedding_records(
@@ -1378,8 +1608,8 @@ def test_sqlite_candidate_generation_applies_filters_and_same_thread_policies(tm
     )
 
     assert [neighbor["conversation_id"] for neighbor in allow_rows[0]["neighbors"]] == [
-        "conv-a",
         "conv-b",
+        "conv-a",
     ]
     assert [neighbor["conversation_id"] for neighbor in exclude_rows[0]["neighbors"]] == [
         "conv-b",
@@ -1389,7 +1619,7 @@ def test_sqlite_candidate_generation_applies_filters_and_same_thread_policies(tm
     ]
 
 
-def test_sqlite_candidate_generation_prefer_same_thread_breaks_ties(tmp_path):
+def test_sqlite_candidate_generation_prefer_same_thread_breaks_ties_for_non_near_candidates(tmp_path):
     base_ts = 1000
     embeddings = build_window_embedding_records(
         [
@@ -1406,7 +1636,7 @@ def test_sqlite_candidate_generation_prefer_same_thread_breaks_ties(tmp_path):
                 source_path=Path("/tmp/thread-a/message_windows.jsonl"),
                 provider_id="openai",
                 conversation_id="conv-a",
-                window_id="window-0002",
+                window_id="window-0003",
                 ts_start=base_ts + 10,
                 ts_end=base_ts + 11,
                 text="same-thread",
@@ -1462,7 +1692,7 @@ def test_sqlite_candidate_generation_prefer_same_thread_breaks_ties(tmp_path):
         ],
         window_rows=[
             _window_row("openai", "conv-a", "window-0001", "target", ts_start=base_ts, ts_end=base_ts + 1),
-            _window_row("openai", "conv-a", "window-0002", "same-thread", ts_start=base_ts + 10, ts_end=base_ts + 11),
+            _window_row("openai", "conv-a", "window-0003", "same-thread", ts_start=base_ts + 10, ts_end=base_ts + 11),
             _window_row("openai", "conv-b", "window-0001", "cross-thread", ts_start=base_ts + 20, ts_end=base_ts + 21),
         ],
     )

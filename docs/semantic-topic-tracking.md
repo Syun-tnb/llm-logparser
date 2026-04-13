@@ -28,6 +28,10 @@ Implemented today:
 - opt-in sliding-window generation for `message_windows.jsonl`
 - optional L2-backed candidate generation via `analysis.db`
 - symmetric all-pairs comparison inside narrowed SQLite candidate pools
+- near same-thread window matches are retained as backfill candidates during
+  neighbor selection: they still support local semantic continuity, but they
+  are treated as weaker evidence for topic recurrence than distant same-thread
+  or cross-thread matches when stronger candidates are available
 - minimal connected-component clustering over retained mutual neighbor links,
   with same-thread mutual edges suppressed when paired windows share more than
   one source message and cross-thread mutual edges kept only when they meet
