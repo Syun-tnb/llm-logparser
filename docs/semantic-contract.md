@@ -135,6 +135,7 @@ This means:
 A span is therefore the semantic identity unit used across current L3/L4 join
 surfaces. When the semantic layer refers to "the same span", it means the same
 ordered canonical message sequence, not the same `window_id`.
+Spans are reconstructible from canonical parsed.jsonl using their ordered message_ids.
 
 ### Window Definition
 
@@ -185,6 +186,9 @@ Near-window similarity inside the same thread is primarily a conversation
 continuity signal. It is useful for identifying local semantic proximity,
 constructing neighbor links, and forming cluster structure over nearby or
 related segments.
+
+Similarity between nearby windows within the same thread is weaker evidence of
+topic recurrence than similarity observed across distant spans or across threads.
 
 Distant or cross-thread similarity is stronger evidence of topic recurrence. It
 suggests that similar work, state, or discussion has reappeared outside a
