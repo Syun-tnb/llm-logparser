@@ -116,6 +116,99 @@ to compatibility and presentation:
 Future changes should treat `span_id` as semantic truth and `window_id` as an
 overlay unless a field is explicitly documented otherwise.
 
+### Span Definition
+
+A **span** is defined by:
+
+- `provider_id`
+- `conversation_id`
+- ordered `message_ids`
+
+`span_id` is derived from that ordered message sequence.
+
+This means:
+
+- identical ordered message sequences produce the same `span_id`
+- changing message order changes `span_id`
+- changing message membership changes `span_id`
+
+A span is therefore the semantic identity unit used across current L3/L4 join
+surfaces. When the semantic layer refers to "the same span", it means the same
+ordered canonical message sequence, not the same `window_id`.
+
+### Window Definition
+
+A **window** is a deterministic segmentation unit produced by
+`message_windows.jsonl`.
+
+Its current roles are:
+
+- candidate generation
+- embedding
+- neighbor scoring
+- clustering
+
+`window_id` is not semantic identity. It is a deterministic computational label
+attached to one current segmentation output. It should be treated as
+provenance, compatibility, and computational substrate rather than semantic
+truth.
+
+### Span and Window Relationship
+
+In the current default pipeline, spans are often derived from selected windows.
+That is the present implementation path for many L3 operations, especially when
+representative spans are selected from current window-backed cluster members.
+
+However, that implementation path does not redefine the semantic contract:
+
+- the semantic definition of a span is still ordered canonical `message_ids`
+- a window is still only one deterministic way to surface candidate message
+  sequences
+- `window_id` remains an overlay even when a span currently originates from one
+  selected window
+
+Spans may diverge from single windows when representative-span refinement is
+enabled. In that mode, a span may be a conservative split or merge over one or
+more windows while preserving the same span-first identity rule.
+
+Window configuration affects candidate availability, not semantic identity:
+
+- changing window size or stride changes which candidate windows are available
+- that may change which spans are surfaced or selected in the current pipeline
+- it does not change the definition of span identity itself
+
+### Similarity Interpretation
+
+The current pipeline uses similarity at more than one practical distance.
+
+Near-window similarity inside the same thread is primarily a conversation
+continuity signal. It is useful for identifying local semantic proximity,
+constructing neighbor links, and forming cluster structure over nearby or
+related segments.
+
+Distant or cross-thread similarity is stronger evidence of topic recurrence. It
+suggests that similar work, state, or discussion has reappeared outside a
+single local conversation flow.
+
+Window-level similarity alone does not define a topic. Topics remain higher
+level semantic artifacts built from retained structure and interpreted spans,
+not from a single window-window score in isolation.
+
+### L4 Input Semantics
+
+L4 operates on **span pairs**, not on windows.
+
+The current contract is:
+
+- L3 may use window-backed similarity and clustering to surface candidate spans
+- cross-thread candidate generation emits source-span to target-span pairs
+- L4 evaluates whether those two spans express the same underlying intent,
+  event, or task continuation
+
+Window similarity is therefore proposal evidence only. The L4 question is not
+"are these two windows similar?" but "do these two spans represent the same
+intent?"
+
 ### Semantic Normalization Join Contract
 
 When `semantic-topics` consumes a semantic-normalization batch job, the join
