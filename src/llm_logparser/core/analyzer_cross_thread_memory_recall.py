@@ -13,6 +13,11 @@ from .schema_validation import load_cross_thread_intent_evaluation_validator
 
 ALLOWED_CONFIDENCE = frozenset({"high", "medium"})
 _STRUCTURAL_CHARS = frozenset({'{', '}', '[', ']', ':', ',', '"', "\\"})
+_CONFIDENCE_RANK = {
+    "low": 0,
+    "medium": 1,
+    "high": 2,
+}
 
 
 class CrossThreadMemoryRecallError(RuntimeError):
@@ -267,8 +272,7 @@ def _summary_line(excerpt: str) -> str:
     return _("memory_recall.summary_line.generic")
 
 
-def _match_line(row: dict[str, Any]) -> str:
-    excerpt = str(row["target_excerpt"])
+def _match_line(excerpt: str) -> str:
     if any(token in excerpt for token in ("公開完了", "リリース", "公開")):
         return _("memory_recall.match_line.release")
     if any(token in excerpt for token in ("現状サマリ", "進捗", "状況", "まとめ")):
@@ -276,6 +280,104 @@ def _match_line(row: dict[str, Any]) -> str:
     if any(token in excerpt for token in ("テンプレ", "updates", "pattern")):
         return _("memory_recall.match_line.template")
     return _("memory_recall.match_line.generic")
+
+
+def _endpoint_key(row: dict[str, Any], prefix: str) -> tuple[str, str]:
+    return (
+        str(row[f"{prefix}_conversation_id"]),
+        str(row[f"{prefix}_span_id"]),
+    )
+
+
+def _pair_key(row: dict[str, Any]) -> tuple[tuple[str, str], tuple[str, str]]:
+    endpoints = sorted((_endpoint_key(row, "source"), _endpoint_key(row, "target")))
+    return endpoints[0], endpoints[1]
+
+
+def _row_priority(
+    row: dict[str, Any],
+) -> tuple[int, float, int, tuple[str, str], tuple[str, str]]:
+    confidence = str(row.get("confidence", "low"))
+    candidate_score = row.get("candidate_score")
+    score = float(candidate_score) if isinstance(candidate_score, (int, float)) else -1.0
+    candidate_rank = row.get("candidate_rank")
+    rank = int(candidate_rank) if isinstance(candidate_rank, int) else 9999
+    return (
+        _CONFIDENCE_RANK.get(confidence, -1),
+        score,
+        -rank,
+        _endpoint_key(row, "source"),
+        _endpoint_key(row, "target"),
+    )
+
+
+def _deduplicate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    best_by_pair: dict[tuple[tuple[str, str], tuple[str, str]], dict[str, Any]] = {}
+    for row in rows:
+        pair_key = _pair_key(row)
+        current = best_by_pair.get(pair_key)
+        if current is None or _row_priority(row) > _row_priority(current):
+            best_by_pair[pair_key] = row
+    deduped = list(best_by_pair.values())
+    deduped.sort(
+        key=lambda row: (
+            _pair_key(row),
+            _endpoint_key(row, "source"),
+            _endpoint_key(row, "target"),
+        )
+    )
+    return deduped
+
+
+def _swap_row_direction(row: dict[str, Any]) -> dict[str, Any]:
+    swapped = dict(row)
+    directional_fields = (
+        "conversation_id",
+        "topic_id",
+        "span_id",
+        "message_ids",
+        "excerpt",
+        "topic_label",
+    )
+    for field in directional_fields:
+        source_key = f"source_{field}"
+        target_key = f"target_{field}"
+        swapped[source_key] = row[target_key]
+        swapped[target_key] = row[source_key]
+    return swapped
+
+
+def _endpoint_timestamp(
+    message_index: dict[tuple[str, str], _CanonicalMessageRecord],
+    row: dict[str, Any],
+    prefix: str,
+) -> int | None:
+    return _first_timestamp(
+        message_index,
+        str(row[f"{prefix}_conversation_id"]),
+        list(row[f"{prefix}_message_ids"]),
+    )
+
+
+def _oriented_row(
+    row: dict[str, Any],
+    *,
+    message_index: dict[tuple[str, str], _CanonicalMessageRecord],
+) -> dict[str, Any]:
+    source_key = _endpoint_key(row, "source")
+    target_key = _endpoint_key(row, "target")
+    source_ts = _endpoint_timestamp(message_index, row, "source")
+    target_ts = _endpoint_timestamp(message_index, row, "target")
+
+    should_swap = False
+    if source_ts is not None and target_ts is not None:
+        should_swap = target_ts > source_ts
+    elif source_ts is None and target_ts is not None:
+        should_swap = True
+    elif source_ts == target_ts:
+        should_swap = target_key > source_key
+
+    return _swap_row_direction(row) if should_swap else row
 
 
 def render_cross_thread_memory_recall(input_root: Path) -> str:
@@ -289,6 +391,10 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
         return _("memory_recall.no_matches")
 
     message_index = _message_record_index(input_root)
+    filtered = [
+        _oriented_row(row, message_index=message_index)
+        for row in _deduplicate_rows(filtered)
+    ]
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in filtered:
         grouped[_source_key(row)].append(row)
@@ -347,18 +453,18 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
                 row["target_conversation_id"],
                 row["target_message_ids"],
             )
-            sections.append(f"* {_format_date(target_ts)}")
-            sections.append(f"  → {_match_line(row)}")
-            reason = row.get("reason")
-            if isinstance(reason, str) and reason.strip():
-                sections.append(
-                    _("memory_recall.reason_line", reason=" ".join(reason.split()))
-                )
             target_excerpt = _rendered_excerpt(
                 message_index=message_index,
                 conversation_id=str(row["target_conversation_id"]),
                 message_ids=list(row["target_message_ids"]),
                 fallback_excerpt=str(row["target_excerpt"]),
             )
+            sections.append(f"* {_format_date(target_ts)}")
+            sections.append(f"  → {_match_line(target_excerpt)}")
+            reason = row.get("reason")
+            if isinstance(reason, str) and reason.strip():
+                sections.append(
+                    _("memory_recall.reason_line", reason=" ".join(reason.split()))
+                )
             sections.append(f"  「{target_excerpt}」")
     return "\n".join(sections)
