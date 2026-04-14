@@ -153,6 +153,15 @@ def test_analyze_cross_thread_candidates_help_mentions_experimental_sidecar(caps
     assert "--embedding-model" in help_text
 
 
+def test_analyze_cross_thread_candidates_default_min_score_is_relaxed():
+    set_locale("en-US")
+    parser = build_parser()
+
+    args = parser.parse_args(["analyze", "cross-thread-candidates"])
+
+    assert args.min_score == 0.58
+
+
 def test_analyze_cross_thread_intent_eval_help_mentions_l4_same_intent_options(capsys):
     set_locale("en-US")
     parser = build_parser()

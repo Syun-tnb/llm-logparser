@@ -844,6 +844,110 @@ def test_build_cross_thread_candidate_rows_applies_medium_timestamp_bonus_only_w
     assert row["score"] > 0.55
 
 
+def test_build_cross_thread_candidate_rows_applies_high_topic_excerpt_combination_bonus(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="dia use case browser",
+            keywords=[],
+            excerpt=(
+                "Dia is already installed, but the useful scenario is still unclear. "
+                "We should explain when it actually helps."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="dia use case browser",
+            keywords=[],
+            excerpt=(
+                "Dia is already installed, but the useful scenario is still unclear. "
+                "Let's explain where it actually helps."
+            ),
+            message_ids=["b-1"],
+            first_seen=100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert len(rows) == 2
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["score"] > 0.58
+    assert "topic_label_similarity_high" in row["evidence"]["reason_codes"]
+    assert "excerpt_similarity_high" in row["evidence"]["reason_codes"]
+    assert "topic_excerpt_combination_high" in row["evidence"]["reason_codes"]
+
+
+def test_build_cross_thread_candidate_rows_does_not_apply_high_topic_excerpt_combination_bonus_to_partial_match(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="dia use case browser",
+            keywords=[],
+            excerpt=(
+                "Dia is already installed, but the useful scenario is still unclear. "
+                "We should explain when it actually helps."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="dia use case browser",
+            keywords=[],
+            excerpt=(
+                "Dia seems interesting, but the actual use case is still somewhat vague. "
+                "We can summarize a few possible benefits."
+            ),
+            message_ids=["b-1"],
+            first_seen=100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert rows == []
+    strict_rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+    assert len(strict_rows) == 2
+    row = next(
+        candidate
+        for candidate in strict_rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert "topic_label_similarity_high" in row["evidence"]["reason_codes"]
+    assert "excerpt_similarity_high" not in row["evidence"]["reason_codes"]
+    assert "topic_excerpt_combination_high" not in row["evidence"]["reason_codes"]
+    assert row["score"] < 0.58
+
+
 def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction_pairs(
     tmp_path: Path,
 ):

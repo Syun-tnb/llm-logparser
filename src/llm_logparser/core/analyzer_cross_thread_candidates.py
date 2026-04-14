@@ -19,7 +19,7 @@ from .schema_validation import load_cross_thread_candidate_validator, load_topic
 CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.2"
 CROSS_THREAD_CANDIDATE_RECORD_TYPE = "cross_thread_candidate"
 CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE = "cross_thread_candidates_summary"
-DEFAULT_CROSS_THREAD_MIN_SCORE = 0.6
+DEFAULT_CROSS_THREAD_MIN_SCORE = 0.58
 DEFAULT_CROSS_THREAD_TOP_PER_SOURCE = 3
 _DAY_MS = 24 * 60 * 60 * 1000
 
@@ -32,6 +32,7 @@ _TOPIC_LABEL_SIMILARITY_HIGH_SCORE = 0.2
 _EXCERPT_SIMILARITY_LOW_SCORE = 0.12
 _EXCERPT_SIMILARITY_MEDIUM_SCORE = 0.2
 _EXCERPT_SIMILARITY_HIGH_SCORE = 0.3
+_TOPIC_EXCERPT_COMBINATION_HIGH_SCORE = 0.09
 # Modest recurrence preference: enough to separate temporally distant revisits
 # before top-k pruning, but not enough to overpower semantic similarity.
 _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS = 2 * _DAY_MS
@@ -248,6 +249,10 @@ def _evidence_for_pair(
     elif excerpt_similarity >= 0.52:
         score += _EXCERPT_SIMILARITY_LOW_SCORE
         reason_codes.append("excerpt_similarity_low")
+
+    if topic_label_similarity >= 0.88 and excerpt_similarity >= 0.78:
+        score += _TOPIC_EXCERPT_COMBINATION_HIGH_SCORE
+        reason_codes.append("topic_excerpt_combination_high")
 
     if timestamp_delta_ms is not None:
         if timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
