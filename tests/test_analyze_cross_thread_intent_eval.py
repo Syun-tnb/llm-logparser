@@ -45,7 +45,7 @@ def _candidate_row(
 ) -> dict:
     row = {
         "record_type": "cross_thread_candidate",
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "provider_id": "openai",
         "source_conversation_id": source_conversation_id,
         "target_conversation_id": target_conversation_id,
@@ -63,6 +63,7 @@ def _candidate_row(
         "target_normalized_label": None,
         "source_raw_label": None,
         "target_raw_label": None,
+        "timestamp_delta_ms": None,
         "score": 0.5,
         "rank": rank,
         "evidence": {

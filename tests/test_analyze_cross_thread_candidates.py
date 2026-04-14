@@ -87,6 +87,8 @@ def _topic_record(
     message_ids: list[str],
     normalized_label: str | None = None,
     raw_label: str | None = None,
+    first_seen: int | None = 100,
+    last_seen: int | None = None,
 ) -> dict:
     span_row = _representative_span(
         conversation_id=conversation_id,
@@ -129,8 +131,8 @@ def _topic_record(
         "span_count": 1,
         "window_count": 1,
         "message_count": len(message_ids),
-        "first_seen": 100,
-        "last_seen": 100 + len(message_ids),
+        "first_seen": first_seen,
+        "last_seen": first_seen + len(message_ids) if last_seen is None and first_seen is not None else last_seen,
         "representative_spans": [span_row],
     }
 
@@ -487,6 +489,7 @@ def test_build_cross_thread_candidate_rows_emits_clear_cross_thread_link(tmp_pat
         and candidate["target_topic_id"] == "topic-b"
     )
     assert row["score"] >= 0.9
+    assert row["timestamp_delta_ms"] == 0
     assert "normalized_label_match" in row["evidence"]["reason_codes"]
     assert "shared_keywords_high" in row["evidence"]["reason_codes"]
 
@@ -618,6 +621,7 @@ def test_build_cross_thread_candidate_rows_embedding_tie_break_is_predictable(
         shared_keywords=(),
         normalized_label_match=False,
         raw_label_match=False,
+        timestamp_delta_ms=None,
     )
 
     def fake_evidence(source, target):
@@ -652,6 +656,192 @@ def test_build_cross_thread_candidate_rows_embedding_tie_break_is_predictable(
 
     assert [row["target_topic_id"] for row in baseline_rows] == ["topic-b", "topic-c"]
     assert [row["target_topic_id"] for row in embedded_rows] == ["topic-c", "topic-b"]
+
+
+def test_build_cross_thread_candidate_rows_applies_timestamp_distance_bonus(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Database rollout",
+            keywords=["migration"],
+            excerpt="Need migration review before deploy.",
+            message_ids=["a-1", "a-2"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Deploy review",
+            keywords=["migration"],
+            excerpt="Migration review needed before release deploy.",
+            message_ids=["b-1", "b-2"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100 + (10 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert len(rows) == 2
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["timestamp_delta_ms"] == 10 * 24 * 60 * 60 * 1000
+    assert "timestamp_distance_high" in row["evidence"]["reason_codes"]
+    assert row["score"] > 0.6
+
+
+def test_build_cross_thread_candidate_rows_omits_timestamp_bonus_when_missing(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    timed_root = tmp_path / "artifacts-timed" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Database rollout",
+            keywords=["migration"],
+            excerpt="Need migration review before deploy.",
+            message_ids=["a-1", "a-2"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=None,
+            last_seen=None,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Deploy review",
+            keywords=["migration"],
+            excerpt="Migration review needed before release deploy.",
+            message_ids=["b-1", "b-2"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100 + (10 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_json(
+        timed_root / "l3" / "semantic-topics" / "topics.json",
+        _topics_artifact(
+            [
+                _topic_record(
+                    topic_id="topic-a",
+                    conversation_id="conv-a",
+                    cluster_id="cluster-a",
+                    window_id="window-a",
+                    label="Database rollout",
+                    keywords=["migration"],
+                    excerpt="Need migration review before deploy.",
+                    message_ids=["a-1", "a-2"],
+                    normalized_label="status_update",
+                    raw_label="status_note",
+                    first_seen=100,
+                ),
+                _topic_record(
+                    topic_id="topic-b",
+                    conversation_id="conv-b",
+                    cluster_id="cluster-b",
+                    window_id="window-b",
+                    label="Deploy review",
+                    keywords=["migration"],
+                    excerpt="Migration review needed before release deploy.",
+                    message_ids=["b-1", "b-2"],
+                    normalized_label="status_update",
+                    raw_label="status_note",
+                    first_seen=100 + (10 * 24 * 60 * 60 * 1000),
+                ),
+            ]
+        ),
+    )
+
+    rows = build_cross_thread_candidate_rows(root)
+    timed_rows = build_cross_thread_candidate_rows(timed_root)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    timed_row = next(
+        candidate
+        for candidate in timed_rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["timestamp_delta_ms"] is None
+    assert "timestamp_distance_medium" not in row["evidence"]["reason_codes"]
+    assert "timestamp_distance_high" not in row["evidence"]["reason_codes"]
+    assert timed_row["score"] > row["score"]
+
+
+def test_build_cross_thread_candidate_rows_applies_medium_timestamp_bonus_only_when_expected(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Database rollout",
+            keywords=["migration"],
+            excerpt="Need migration review before deploy.",
+            message_ids=["a-1", "a-2"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Deploy review",
+            keywords=["migration"],
+            excerpt="Migration review needed before release deploy.",
+            message_ids=["b-1", "b-2"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["timestamp_delta_ms"] == 3 * 24 * 60 * 60 * 1000
+    assert "timestamp_distance_medium" in row["evidence"]["reason_codes"]
+    assert "timestamp_distance_high" not in row["evidence"]["reason_codes"]
+    assert row["score"] > 0.55
 
 
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):

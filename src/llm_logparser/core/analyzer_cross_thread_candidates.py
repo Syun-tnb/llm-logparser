@@ -16,11 +16,12 @@ from .analyzer_semantic_preview import WindowPreviewRecord, load_window_preview_
 from .embedding_backend import create_embedding_backend
 from .schema_validation import load_cross_thread_candidate_validator, load_topics_validator
 
-CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.1"
+CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.2"
 CROSS_THREAD_CANDIDATE_RECORD_TYPE = "cross_thread_candidate"
 CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE = "cross_thread_candidates_summary"
 DEFAULT_CROSS_THREAD_MIN_SCORE = 0.6
 DEFAULT_CROSS_THREAD_TOP_PER_SOURCE = 3
+_DAY_MS = 24 * 60 * 60 * 1000
 
 _LABEL_MATCH_SCORE = 0.45
 _RAW_LABEL_MATCH_SCORE = 0.15
@@ -31,6 +32,12 @@ _TOPIC_LABEL_SIMILARITY_HIGH_SCORE = 0.2
 _EXCERPT_SIMILARITY_LOW_SCORE = 0.12
 _EXCERPT_SIMILARITY_MEDIUM_SCORE = 0.2
 _EXCERPT_SIMILARITY_HIGH_SCORE = 0.3
+# Modest recurrence preference: enough to separate temporally distant revisits
+# before top-k pruning, but not enough to overpower semantic similarity.
+_TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS = 2 * _DAY_MS
+_TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS = 7 * _DAY_MS
+_TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.08
+_TIMESTAMP_DISTANCE_HIGH_SCORE = 0.15
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -50,6 +57,8 @@ class _RepresentativeSpanUnit:
     keywords: tuple[str, ...]
     normalized_label: str | None
     raw_label: str | None
+    first_seen: int | None
+    last_seen: int | None
 
 
 @dataclass(frozen=True)
@@ -61,6 +70,7 @@ class _Evidence:
     shared_keywords: tuple[str, ...]
     normalized_label_match: bool
     raw_label_match: bool
+    timestamp_delta_ms: int | None
 
 
 def cross_thread_candidates_path(input_root: Path) -> Path:
@@ -105,6 +115,10 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
     units: list[_RepresentativeSpanUnit] = []
     for topic in topics_artifact["topics"]:
         topic_id = str(topic["topic_id"])
+        first_seen = topic.get("first_seen")
+        topic_first_seen = first_seen if isinstance(first_seen, int) else None
+        last_seen = topic.get("last_seen")
+        topic_last_seen = last_seen if isinstance(last_seen, int) else None
         topic_label = topic.get("label")
         normalized_topic_label = (
             " ".join(str(topic_label).split()) if isinstance(topic_label, str) and topic_label.strip() else None
@@ -147,6 +161,8 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                     keywords=keywords,
                     normalized_label=normalized_label,
                     raw_label=raw_label,
+                    first_seen=topic_first_seen,
+                    last_seen=topic_last_seen,
                 )
             )
     units.sort(
@@ -184,6 +200,9 @@ def _evidence_for_pair(
         and target.raw_label is not None
         and source.raw_label == target.raw_label
     )
+    timestamp_delta_ms: int | None = None
+    if source.first_seen is not None and target.first_seen is not None:
+        timestamp_delta_ms = abs(source.first_seen - target.first_seen)
 
     score = 0.0
     reason_codes: list[str] = []
@@ -218,6 +237,14 @@ def _evidence_for_pair(
         score += _EXCERPT_SIMILARITY_LOW_SCORE
         reason_codes.append("excerpt_similarity_low")
 
+    if timestamp_delta_ms is not None:
+        if timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
+            score += _TIMESTAMP_DISTANCE_HIGH_SCORE
+            reason_codes.append("timestamp_distance_high")
+        elif timestamp_delta_ms >= _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS:
+            score += _TIMESTAMP_DISTANCE_MEDIUM_SCORE
+            reason_codes.append("timestamp_distance_medium")
+
     has_strong_signal = (
         excerpt_similarity >= 0.52
         or topic_label_similarity >= 0.72
@@ -234,6 +261,7 @@ def _evidence_for_pair(
         shared_keywords=shared_keywords,
         normalized_label_match=normalized_label_match,
         raw_label_match=raw_label_match,
+        timestamp_delta_ms=timestamp_delta_ms,
     )
 
 
@@ -265,6 +293,7 @@ def _candidate_row(
         "target_normalized_label": target.normalized_label,
         "source_raw_label": source.raw_label,
         "target_raw_label": target.raw_label,
+        "timestamp_delta_ms": evidence.timestamp_delta_ms,
         "score": evidence.score,
         "rank": rank,
         "evidence": {

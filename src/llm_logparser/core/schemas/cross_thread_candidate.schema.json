@@ -22,7 +22,7 @@
   ],
   "properties": {
     "record_type": { "type": "string", "const": "cross_thread_candidate" },
-    "schema_version": { "type": "string", "const": "0.1" },
+    "schema_version": { "type": "string", "const": "0.2" },
     "provider_id": { "type": "string", "minLength": 1 },
     "source_conversation_id": { "type": "string", "minLength": 1 },
     "target_conversation_id": { "type": "string", "minLength": 1 },
@@ -48,6 +48,10 @@
     "target_normalized_label": { "type": ["string", "null"] },
     "source_raw_label": { "type": ["string", "null"] },
     "target_raw_label": { "type": ["string", "null"] },
+    "timestamp_delta_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
     "embedding_similarity": {
       "type": "number",
       "minimum": -1,
