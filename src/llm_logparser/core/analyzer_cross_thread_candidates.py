@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import bisect
 import json
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,11 +14,12 @@ from .analyzer_common import (
     normalized_similarity,
     write_json_artifact,
 )
+from .l1_derivation import iter_input_message_records
 from .analyzer_semantic_preview import WindowPreviewRecord, load_window_preview_index
 from .embedding_backend import create_embedding_backend
 from .schema_validation import load_cross_thread_candidate_validator, load_topics_validator
 
-CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.2"
+CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.3"
 CROSS_THREAD_CANDIDATE_RECORD_TYPE = "cross_thread_candidate"
 CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE = "cross_thread_candidates_summary"
 DEFAULT_CROSS_THREAD_MIN_SCORE = 0.6
@@ -51,6 +54,57 @@ _TURN_CONTROL_MARKERS = (
     "do not summarize",
     "do not ask follow-up",
 )
+_SPECIFICITY_TOKEN_RE = re.compile(r"[a-z0-9_./:-]{3,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
+_SPECIFICITY_GENERIC_TOKENS = frozenset(
+    {
+        "this",
+        "that",
+        "with",
+        "from",
+        "about",
+        "there",
+        "their",
+        "your",
+        "please",
+        "thank",
+        "thanks",
+        "think",
+        "really",
+        "maybe",
+        "would",
+        "could",
+        "should",
+        "hello",
+        "today",
+        "thing",
+        "stuff",
+        "okay",
+        "おはよう",
+        "こんにちは",
+        "こんばんは",
+        "ありがとう",
+        "了解",
+        "はい",
+        "うん",
+        "それ",
+        "これ",
+        "あれ",
+        "ここ",
+        "そこ",
+        "やね",
+        "やで",
+        "ほんま",
+        "なるほど",
+        "感じ",
+    }
+)
+# Continuity masking is instrumentation only. With fewer than ~12 intervening
+# messages or fewer than ~2 intervening representative spans, the pair is
+# likely ongoing local continuity rather than reactivated recall.
+_CONTINUITY_VOLUME_GAP_MESSAGE_THRESHOLD = 12
+_CONTINUITY_VOLUME_GAP_SPAN_THRESHOLD = 2
+_DORMANCY_MESSAGE_SCALE = 64
+_DORMANCY_SPAN_SCALE = 8
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -72,6 +126,7 @@ class _RepresentativeSpanUnit:
     raw_label: str | None
     first_seen: int | None
     last_seen: int | None
+    excerpt_specificity: float
 
 
 @dataclass(frozen=True)
@@ -84,6 +139,25 @@ class _Evidence:
     normalized_label_match: bool
     raw_label_match: bool
     timestamp_delta_ms: int | None
+    volume_gap: int | None
+    temporal_gap_seconds: int | None
+    continuity_mask: bool
+    dormancy_score: float
+    specificity_score: float
+    local_context_delta: float | None
+
+
+@dataclass(frozen=True)
+class _RecurrenceInstrumentationContext:
+    message_timestamps: tuple[int, ...]
+    span_timestamps: tuple[int, ...]
+    previous_target_by_key: dict[tuple[str, str], _RepresentativeSpanUnit]
+
+
+@dataclass(frozen=True)
+class _VolumeGap:
+    value: int | None
+    unit: str | None
 
 
 def cross_thread_candidates_path(input_root: Path) -> Path:
@@ -121,6 +195,42 @@ def _normalized_keywords(values: tuple[str, ...]) -> tuple[str, ...]:
         if isinstance(value, str) and value.strip()
     ]
     return tuple(value for value in normalized if value)
+
+
+def _text_specificity_score(text: str) -> float:
+    normalized = normalize_analysis_text(text)
+    tokens = [token for token in _SPECIFICITY_TOKEN_RE.findall(normalized) if token]
+    if not tokens:
+        return 0.0
+    unique_ratio = len(set(tokens)) / len(tokens)
+    content_tokens = [
+        token
+        for token in tokens
+        if token not in _SPECIFICITY_GENERIC_TOKENS
+    ]
+    content_ratio = len(content_tokens) / len(tokens)
+    long_content_ratio = (
+        sum(
+            1
+            for token in content_tokens
+            if len(token) >= 6 or any(char.isdigit() for char in token)
+        )
+        / len(tokens)
+    )
+    content_length_factor = min(
+        1.0,
+        sum(len(token) for token in content_tokens) / 80.0,
+    )
+    return round(
+        min(
+            1.0,
+            0.3 * content_ratio
+            + 0.25 * unique_ratio
+            + 0.25 * long_content_ratio
+            + 0.2 * content_length_factor,
+        ),
+        4,
+    )
 
 
 def _representative_units(topics_artifact: dict[str, Any]) -> list[_RepresentativeSpanUnit]:
@@ -176,6 +286,7 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                     raw_label=raw_label,
                     first_seen=topic_first_seen,
                     last_seen=topic_last_seen,
+                    excerpt_specificity=_text_specificity_score(str(span["excerpt"])),
                 )
             )
     units.sort(
@@ -188,9 +299,141 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
     return units
 
 
+def _build_recurrence_instrumentation_context(
+    input_root: Path,
+    units: list[_RepresentativeSpanUnit],
+) -> _RecurrenceInstrumentationContext:
+    message_timestamps: list[int] = []
+    try:
+        for row in iter_input_message_records(input_root):
+            ts = row.get("ts")
+            if isinstance(ts, int):
+                message_timestamps.append(ts)
+    except (FileNotFoundError, ValueError):
+        message_timestamps = []
+    message_timestamps.sort()
+
+    span_timestamps = sorted(
+        unit.first_seen
+        for unit in units
+        if unit.first_seen is not None
+    )
+    previous_target_by_key: dict[tuple[str, str], _RepresentativeSpanUnit] = {}
+    units_by_conversation: dict[str, list[_RepresentativeSpanUnit]] = {}
+    for unit in units:
+        if unit.first_seen is None:
+            continue
+        units_by_conversation.setdefault(unit.conversation_id, []).append(unit)
+    for conversation_units in units_by_conversation.values():
+        conversation_units.sort(
+            key=lambda item: (
+                item.first_seen if item.first_seen is not None else -1,
+                item.last_seen if item.last_seen is not None else -1,
+                item.topic_id,
+                item.span_id,
+            )
+        )
+        previous: _RepresentativeSpanUnit | None = None
+        for unit in conversation_units:
+            previous_target_by_key[(unit.conversation_id, unit.span_id)] = previous
+            previous = unit
+
+    return _RecurrenceInstrumentationContext(
+        message_timestamps=tuple(message_timestamps),
+        span_timestamps=tuple(span_timestamps),
+        previous_target_by_key=previous_target_by_key,
+    )
+
+
+def _volume_gap(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    context: _RecurrenceInstrumentationContext,
+) -> _VolumeGap:
+    if source.first_seen is None or target.first_seen is None:
+        return _VolumeGap(value=None, unit=None)
+
+    earlier, later = sorted(
+        (source, target),
+        key=lambda item: (
+            item.first_seen if item.first_seen is not None else -1,
+            item.last_seen if item.last_seen is not None else -1,
+            item.conversation_id,
+            item.span_id,
+        ),
+    )
+    earlier_end = (
+        earlier.last_seen
+        if earlier.last_seen is not None
+        else earlier.first_seen
+    )
+    later_start = later.first_seen
+    if earlier_end is None or later_start is None:
+        return _VolumeGap(value=None, unit=None)
+
+    if context.message_timestamps:
+        start = bisect.bisect_right(context.message_timestamps, earlier_end)
+        end = bisect.bisect_left(context.message_timestamps, later_start)
+        return _VolumeGap(value=max(0, end - start), unit="message")
+
+    if context.span_timestamps:
+        start = bisect.bisect_right(context.span_timestamps, earlier_end)
+        end = bisect.bisect_left(context.span_timestamps, later_start)
+        return _VolumeGap(value=max(0, end - start), unit="span")
+
+    return _VolumeGap(value=None, unit=None)
+
+
+def _continuity_mask(volume_gap: _VolumeGap) -> bool:
+    if volume_gap.value is None or volume_gap.unit is None:
+        return False
+    if volume_gap.unit == "message":
+        return volume_gap.value <= _CONTINUITY_VOLUME_GAP_MESSAGE_THRESHOLD
+    return volume_gap.value <= _CONTINUITY_VOLUME_GAP_SPAN_THRESHOLD
+
+
+def _dormancy_score(volume_gap: _VolumeGap) -> float:
+    if volume_gap.value is None or volume_gap.unit is None:
+        return 0.0
+    scale = (
+        _DORMANCY_MESSAGE_SCALE
+        if volume_gap.unit == "message"
+        else _DORMANCY_SPAN_SCALE
+    )
+    if scale <= 1:
+        return 0.0
+    return round(
+        min(1.0, math.log1p(volume_gap.value) / math.log1p(scale)),
+        4,
+    )
+
+
+def _local_context_delta(
+    *,
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    excerpt_similarity: float,
+    topic_label_similarity: float,
+    context: _RecurrenceInstrumentationContext,
+) -> float | None:
+    previous_target = context.previous_target_by_key.get((target.conversation_id, target.span_id))
+    if previous_target is None:
+        return None
+    prior_excerpt_similarity = normalized_similarity(source.excerpt, previous_target.excerpt)
+    prior_topic_label_similarity = normalized_similarity(
+        source.topic_label or "",
+        previous_target.topic_label or "",
+    )
+    current_signal = max(excerpt_similarity, topic_label_similarity)
+    prior_signal = max(round(prior_excerpt_similarity, 4), round(prior_topic_label_similarity, 4))
+    return round(max(0.0, current_signal - prior_signal), 4)
+
+
 def _evidence_for_pair(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
+    *,
+    recurrence_context: _RecurrenceInstrumentationContext,
 ) -> _Evidence | None:
     excerpt_similarity = round(
         normalized_similarity(source.excerpt, target.excerpt),
@@ -216,6 +459,25 @@ def _evidence_for_pair(
     timestamp_delta_ms: int | None = None
     if source.first_seen is not None and target.first_seen is not None:
         timestamp_delta_ms = abs(source.first_seen - target.first_seen)
+    temporal_gap_seconds = (
+        int(timestamp_delta_ms // 1000)
+        if timestamp_delta_ms is not None
+        else None
+    )
+    volume_gap = _volume_gap(source, target, recurrence_context)
+    continuity_mask = _continuity_mask(volume_gap)
+    dormancy_score = _dormancy_score(volume_gap)
+    specificity_score = round(
+        (source.excerpt_specificity + target.excerpt_specificity) / 2.0,
+        4,
+    )
+    local_context_delta = _local_context_delta(
+        source=source,
+        target=target,
+        excerpt_similarity=excerpt_similarity,
+        topic_label_similarity=topic_label_similarity,
+        context=recurrence_context,
+    )
 
     score = 0.0
     reason_codes: list[str] = []
@@ -279,6 +541,12 @@ def _evidence_for_pair(
         normalized_label_match=normalized_label_match,
         raw_label_match=raw_label_match,
         timestamp_delta_ms=timestamp_delta_ms,
+        volume_gap=volume_gap.value,
+        temporal_gap_seconds=temporal_gap_seconds,
+        continuity_mask=continuity_mask,
+        dormancy_score=dormancy_score,
+        specificity_score=specificity_score,
+        local_context_delta=local_context_delta,
     )
 
 
@@ -311,6 +579,12 @@ def _candidate_row(
         "source_raw_label": source.raw_label,
         "target_raw_label": target.raw_label,
         "timestamp_delta_ms": evidence.timestamp_delta_ms,
+        "volume_gap": evidence.volume_gap,
+        "temporal_gap_seconds": evidence.temporal_gap_seconds,
+        "continuity_mask": evidence.continuity_mask,
+        "dormancy_score": evidence.dormancy_score,
+        "specificity_score": evidence.specificity_score,
+        "local_context_delta": evidence.local_context_delta,
         "score": evidence.score,
         "rank": rank,
         "evidence": {
@@ -321,6 +595,12 @@ def _candidate_row(
             "shared_keywords": list(evidence.shared_keywords),
             "normalized_label_match": evidence.normalized_label_match,
             "raw_label_match": evidence.raw_label_match,
+            "volume_gap": evidence.volume_gap,
+            "temporal_gap_seconds": evidence.temporal_gap_seconds,
+            "continuity_mask": evidence.continuity_mask,
+            "dormancy_score": evidence.dormancy_score,
+            "specificity_score": evidence.specificity_score,
+            "local_context_delta": evidence.local_context_delta,
         },
     }
     if embedding_similarity is not None:
@@ -485,6 +765,7 @@ def _build_cross_thread_candidate_rows_with_stats(
 
     topics_artifact = _load_topics_artifact(input_root)
     units = _representative_units(topics_artifact)
+    recurrence_context = _build_recurrence_instrumentation_context(input_root, units)
     filtered_low_value_pair_count = 0
     selected_by_source: list[
         tuple[_RepresentativeSpanUnit, list[tuple[_RepresentativeSpanUnit, _Evidence]]]
@@ -496,7 +777,11 @@ def _build_cross_thread_candidate_rows_with_stats(
                 continue
             if source.topic_id == target.topic_id and source.span_id == target.span_id:
                 continue
-            evidence = _evidence_for_pair(source, target)
+            evidence = _evidence_for_pair(
+                source,
+                target,
+                recurrence_context=recurrence_context,
+            )
             if evidence is None or evidence.score < round(min_score, 4):
                 continue
             if _should_filter_low_value_pair(source, target, evidence):

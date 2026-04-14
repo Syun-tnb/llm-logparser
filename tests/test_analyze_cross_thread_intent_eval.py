@@ -45,7 +45,7 @@ def _candidate_row(
 ) -> dict:
     row = {
         "record_type": "cross_thread_candidate",
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "provider_id": "openai",
         "source_conversation_id": source_conversation_id,
         "target_conversation_id": target_conversation_id,
@@ -64,6 +64,12 @@ def _candidate_row(
         "source_raw_label": None,
         "target_raw_label": None,
         "timestamp_delta_ms": None,
+        "volume_gap": None,
+        "temporal_gap_seconds": None,
+        "continuity_mask": False,
+        "dormancy_score": 0.0,
+        "specificity_score": 0.45,
+        "local_context_delta": None,
         "score": 0.5,
         "rank": rank,
         "evidence": {
@@ -77,6 +83,12 @@ def _candidate_row(
             "shared_keywords": [],
             "normalized_label_match": False,
             "raw_label_match": False,
+            "volume_gap": None,
+            "temporal_gap_seconds": None,
+            "continuity_mask": False,
+            "dormancy_score": 0.0,
+            "specificity_score": 0.45,
+            "local_context_delta": None,
         },
     }
     errors = list(load_cross_thread_candidate_validator().iter_errors(row))
@@ -232,6 +244,9 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
     assert first["recall_type"] == "continuity"
     assert first["confidence"] == "high"
     assert first["candidate_rank"] == 1
+    assert first["candidate_volume_gap"] is None
+    assert first["candidate_continuity_mask"] is False
+    assert first["candidate_specificity_score"] == 0.45
     second = rows[1]
     assert second["same_intent"] == "no"
     assert second["target_excerpt"] == "おはよう。レイナ。2025/12/29"

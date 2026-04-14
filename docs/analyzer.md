@@ -837,7 +837,12 @@ deterministic and model-derived capabilities.
   different conversations with a small deterministic evidence stack, and
   writes `l3/cross-thread-candidates/candidates.jsonl` plus `summary.json`.
   It emits reviewable candidate links only; it does not merge topics, rewrite
-  membership, or change `topic_id`.
+  membership, or change `topic_id`. Current candidate rows also expose
+  recurrence-oriented instrumentation signals such as `volume_gap`,
+  `temporal_gap_seconds`, `continuity_mask`, `dormancy_score`,
+  `specificity_score`, and `local_context_delta`. These fields are additive
+  inspection metadata only: they do not replace the existing scoring model or
+  silently change canonical/L1/L2 behavior.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

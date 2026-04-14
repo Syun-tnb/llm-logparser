@@ -622,9 +622,15 @@ def test_build_cross_thread_candidate_rows_embedding_tie_break_is_predictable(
         normalized_label_match=False,
         raw_label_match=False,
         timestamp_delta_ms=None,
+        volume_gap=None,
+        temporal_gap_seconds=None,
+        continuity_mask=False,
+        dormancy_score=0.0,
+        specificity_score=0.4,
+        local_context_delta=None,
     )
 
-    def fake_evidence(source, target):
+    def fake_evidence(source, target, *, recurrence_context):
         if source.topic_id != "topic-a":
             return None
         if target.topic_id in {"topic-b", "topic-c"}:
@@ -842,6 +848,282 @@ def test_build_cross_thread_candidate_rows_applies_medium_timestamp_bonus_only_w
     assert "timestamp_distance_medium" in row["evidence"]["reason_codes"]
     assert "timestamp_distance_high" not in row["evidence"]["reason_codes"]
     assert row["score"] > 0.55
+
+
+def test_build_cross_thread_candidate_rows_computes_message_volume_gap_and_temporal_gap_seconds(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Draft the migration checklist and add rollback gates.",
+            message_ids=["a-1"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=1000,
+            last_seen=1100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Draft the migration checklist and add rollback gates.",
+            message_ids=["b-1"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=4000,
+            last_seen=4100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-a", message_id="a-1", role="user", text="Draft the migration checklist.", ts=1000)],
+    )
+    _write_jsonl(
+        root / "thread-mid" / "parsed.jsonl",
+        [
+            _message_row(conversation_id="conv-mid", message_id="m-1", role="user", text="Intervening 1", ts=1500),
+            _message_row(conversation_id="conv-mid", message_id="m-2", role="assistant", text="Intervening 2", ts=2500),
+            _message_row(conversation_id="conv-mid", message_id="m-3", role="user", text="Intervening 3", ts=3500),
+        ],
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-b", message_id="b-1", role="user", text="Confirm rollback gates.", ts=4000)],
+    )
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["volume_gap"] == 3
+    assert row["temporal_gap_seconds"] == 3
+    assert row["evidence"]["volume_gap"] == 3
+
+
+def test_build_cross_thread_candidate_rows_marks_small_volume_gap_as_continuity_like(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Release note",
+            keywords=["release", "deploy"],
+            excerpt="Prepare the release note and final deploy summary.",
+            message_ids=["a-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=1000,
+            last_seen=1100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Release note",
+            keywords=["release", "deploy"],
+            excerpt="Prepare the release note and final deploy summary.",
+            message_ids=["b-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=3000,
+            last_seen=3100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-a", message_id="a-1", role="user", text="Prepare release note.", ts=1000)],
+    )
+    _write_jsonl(
+        root / "thread-mid" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-mid", message_id="m-1", role="assistant", text="Short local continuation", ts=2000)],
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-b", message_id="b-1", role="user", text="Final deploy summary.", ts=3000)],
+    )
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert row["volume_gap"] == 1
+    assert row["continuity_mask"] is True
+    assert row["evidence"]["continuity_mask"] is True
+
+
+def test_build_cross_thread_candidate_rows_dormancy_score_increases_with_larger_volume_gap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Migration checklist with rollback gates.",
+            message_ids=["a-1"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=1000,
+            last_seen=1100,
+        ),
+        _topic_record(
+            topic_id="topic-b-near",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Migration checklist with rollback gates.",
+            message_ids=["b-1"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=3000,
+            last_seen=3100,
+        ),
+        _topic_record(
+            topic_id="topic-c-far",
+            conversation_id="conv-c",
+            cluster_id="cluster-c",
+            window_id="window-c",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Migration checklist with rollback gates.",
+            message_ids=["c-1"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=9000,
+            last_seen=9100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-a", message_id="a-1", role="user", text="Source", ts=1000)],
+    )
+    _write_jsonl(
+        root / "thread-gap" / "parsed.jsonl",
+        [
+            _message_row(conversation_id="conv-gap", message_id="g-1", role="user", text="gap1", ts=2000),
+            _message_row(conversation_id="conv-gap", message_id="g-2", role="assistant", text="gap2", ts=2500),
+            _message_row(conversation_id="conv-gap", message_id="g-3", role="user", text="gap3", ts=4000),
+            _message_row(conversation_id="conv-gap", message_id="g-4", role="assistant", text="gap4", ts=5000),
+            _message_row(conversation_id="conv-gap", message_id="g-5", role="user", text="gap5", ts=6000),
+            _message_row(conversation_id="conv-gap", message_id="g-6", role="assistant", text="gap6", ts=7000),
+            _message_row(conversation_id="conv-gap", message_id="g-7", role="user", text="gap7", ts=8000),
+        ],
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-b", message_id="b-1", role="user", text="Near target", ts=3000)],
+    )
+    _write_jsonl(
+        root / "thread-conv-c" / "parsed.jsonl",
+        [_message_row(conversation_id="conv-c", message_id="c-1", role="user", text="Far target", ts=9000)],
+    )
+
+    rows = build_cross_thread_candidate_rows(root)
+    near_row = next(row for row in rows if row["target_topic_id"] == "topic-b-near")
+    far_row = next(row for row in rows if row["target_topic_id"] == "topic-c-far")
+    assert near_row["dormancy_score"] < far_row["dormancy_score"]
+
+
+def test_text_specificity_score_prefers_concrete_task_text_over_generic_short_text():
+    generic = cross_thread_module._text_specificity_score("Okay, sounds good.")
+    concrete = cross_thread_module._text_specificity_score(
+        "Update the migration checklist, verify rollback gates, and review deploy notes."
+    )
+    assert generic < concrete
+
+
+def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Finalize the migration checklist and confirm rollback gates before release.",
+            message_ids=["a-1"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=1000,
+            last_seen=1100,
+        ),
+        _topic_record(
+            topic_id="topic-target-prev",
+            conversation_id="conv-b",
+            cluster_id="cluster-b-prev",
+            window_id="window-b-prev",
+            label="Lunch planning",
+            keywords=["lunch"],
+            excerpt="Compare nearby cafes and decide on lunch seating.",
+            message_ids=["b-1"],
+            normalized_label="proposal",
+            raw_label="social_plan",
+            first_seen=2000,
+            last_seen=2100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt="Finalize the migration checklist and confirm rollback gates before release.",
+            message_ids=["b-2"],
+            normalized_label="request",
+            raw_label="implementation_request",
+            first_seen=4000,
+            last_seen=4100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-source"
+        and candidate["target_topic_id"] == "topic-target"
+    )
+    assert row["local_context_delta"] is not None
+    assert row["local_context_delta"] > 0.5
 
 
 def test_build_cross_thread_candidate_rows_applies_high_topic_excerpt_combination_bonus(

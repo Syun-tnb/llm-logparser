@@ -206,6 +206,9 @@ The current contract is:
 
 - L3 may use window-backed similarity and clustering to surface candidate spans
 - cross-thread candidate generation emits source-span to target-span pairs
+- candidate rows may also carry deterministic recurrence-oriented inspection
+  signals such as dormancy, specificity, continuity masking, and local-context
+  delta; these are additive instrumentation fields, not semantic identity
 - L4 evaluates whether those two spans express the same underlying intent,
   event, or task continuation
 

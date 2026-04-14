@@ -14,7 +14,7 @@ from .schema_validation import (
     load_cross_thread_intent_evaluation_validator,
 )
 
-CROSS_THREAD_INTENT_EVAL_SCHEMA_VERSION = "0.2"
+CROSS_THREAD_INTENT_EVAL_SCHEMA_VERSION = "0.3"
 CROSS_THREAD_INTENT_EVAL_RECORD_TYPE = "cross_thread_intent_evaluation"
 CROSS_THREAD_INTENT_EVAL_SUMMARY_ARTIFACT_TYPE = (
     "cross_thread_intent_evaluations_summary"
@@ -295,6 +295,13 @@ def _evaluation_row(
         "candidate_score": candidate_row["score"],
         "candidate_rank": candidate_row["rank"],
         "candidate_reason_codes": list(candidate_row["evidence"]["reason_codes"]),
+        "candidate_timestamp_delta_ms": candidate_row.get("timestamp_delta_ms"),
+        "candidate_volume_gap": candidate_row.get("volume_gap"),
+        "candidate_temporal_gap_seconds": candidate_row.get("temporal_gap_seconds"),
+        "candidate_continuity_mask": candidate_row.get("continuity_mask", False),
+        "candidate_dormancy_score": candidate_row.get("dormancy_score", 0.0),
+        "candidate_specificity_score": candidate_row.get("specificity_score", 0.0),
+        "candidate_local_context_delta": candidate_row.get("local_context_delta"),
         "same_intent": evaluation["same_intent"],
         "recall_type": evaluation["recall_type"],
         "confidence": evaluation["confidence"],

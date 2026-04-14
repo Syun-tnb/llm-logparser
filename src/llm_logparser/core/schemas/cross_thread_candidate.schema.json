@@ -16,13 +16,20 @@
     "target_message_ids",
     "source_excerpt",
     "target_excerpt",
+    "timestamp_delta_ms",
+    "volume_gap",
+    "temporal_gap_seconds",
+    "continuity_mask",
+    "dormancy_score",
+    "specificity_score",
+    "local_context_delta",
     "score",
     "rank",
     "evidence"
   ],
   "properties": {
     "record_type": { "type": "string", "const": "cross_thread_candidate" },
-    "schema_version": { "type": "string", "const": "0.2" },
+    "schema_version": { "type": "string", "const": "0.3" },
     "provider_id": { "type": "string", "minLength": 1 },
     "source_conversation_id": { "type": "string", "minLength": 1 },
     "target_conversation_id": { "type": "string", "minLength": 1 },
@@ -52,6 +59,30 @@
       "type": ["integer", "null"],
       "minimum": 0
     },
+    "volume_gap": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "temporal_gap_seconds": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "continuity_mask": { "type": "boolean" },
+    "dormancy_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "specificity_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "local_context_delta": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    },
     "embedding_similarity": {
       "type": "number",
       "minimum": -1,
@@ -75,7 +106,13 @@
         "keyword_overlap_count",
         "shared_keywords",
         "normalized_label_match",
-        "raw_label_match"
+        "raw_label_match",
+        "volume_gap",
+        "temporal_gap_seconds",
+        "continuity_mask",
+        "dormancy_score",
+        "specificity_score",
+        "local_context_delta"
       ],
       "properties": {
         "reason_codes": {
@@ -102,7 +139,31 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "normalized_label_match": { "type": "boolean" },
-        "raw_label_match": { "type": "boolean" }
+        "raw_label_match": { "type": "boolean" },
+        "volume_gap": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "temporal_gap_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "continuity_mask": { "type": "boolean" },
+        "dormancy_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "specificity_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "local_context_delta": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        }
       },
       "additionalProperties": false
     }

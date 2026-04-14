@@ -77,7 +77,7 @@ def _evaluation_row(
 ) -> dict:
     row = {
         "record_type": "cross_thread_intent_evaluation",
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "provider_id": "openai",
         "source_conversation_id": source_conversation_id,
         "target_conversation_id": target_conversation_id,
@@ -94,6 +94,13 @@ def _evaluation_row(
         "candidate_score": 0.5,
         "candidate_rank": candidate_rank,
         "candidate_reason_codes": ["excerpt_similarity_high"],
+        "candidate_timestamp_delta_ms": None,
+        "candidate_volume_gap": None,
+        "candidate_temporal_gap_seconds": None,
+        "candidate_continuity_mask": False,
+        "candidate_dormancy_score": 0.0,
+        "candidate_specificity_score": 0.45,
+        "candidate_local_context_delta": None,
         "same_intent": same_intent,
         "recall_type": recall_type,
         "confidence": confidence,
