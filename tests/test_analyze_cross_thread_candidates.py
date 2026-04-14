@@ -857,8 +857,8 @@ def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction
             label="Image return instruction",
             keywords=["image", "turn", "instruction"],
             excerpt=(
-                "GPT-4o returned 1 images. From now on, do not say or show "
-                "ANYTHING. Please end this turn now."
+                "GPT-4O returned 1 images...\n\nFrom now on, DO NOT say or show "
+                "ANYTHING.   Please end this turn now."
             ),
             message_ids=["a-1"],
             normalized_label="status_update",
@@ -873,8 +873,8 @@ def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction
             label="Image return instruction",
             keywords=["image", "turn", "instruction"],
             excerpt=(
-                "GPT-4o returned 1 images. From now on, do not say or show "
-                "ANYTHING. Please end this turn now."
+                "gpt-4o returned 1 images.  From now on,\nDO NOT say or show "
+                "anything. Please end this turn now..."
             ),
             message_ids=["b-1"],
             normalized_label="status_update",

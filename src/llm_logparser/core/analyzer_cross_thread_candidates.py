@@ -333,11 +333,15 @@ def _unit_key(unit: _RepresentativeSpanUnit) -> tuple[str, str]:
 
 
 def _is_low_value_artifact_instruction_text(text: str) -> bool:
-    normalized = normalize_analysis_text(text)
-    if len(normalized) < 48:
+    text_norm = " ".join(text.lower().split())
+    if len(text_norm) < 48:
         return False
-    has_wrapper = any(marker in normalized for marker in _ARTIFACT_WRAPPER_MARKERS)
-    has_turn_control = any(marker in normalized for marker in _TURN_CONTROL_MARKERS)
+    wrapper_markers = (" ".join(marker.lower().split()) for marker in _ARTIFACT_WRAPPER_MARKERS)
+    turn_control_markers = (
+        " ".join(marker.lower().split()) for marker in _TURN_CONTROL_MARKERS
+    )
+    has_wrapper = any(marker in text_norm for marker in wrapper_markers)
+    has_turn_control = any(marker in text_norm for marker in turn_control_markers)
     return has_wrapper and has_turn_control
 
 
