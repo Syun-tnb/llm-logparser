@@ -19,7 +19,7 @@ from .schema_validation import load_cross_thread_candidate_validator, load_topic
 CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.2"
 CROSS_THREAD_CANDIDATE_RECORD_TYPE = "cross_thread_candidate"
 CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE = "cross_thread_candidates_summary"
-DEFAULT_CROSS_THREAD_MIN_SCORE = 0.58
+DEFAULT_CROSS_THREAD_MIN_SCORE = 0.6
 DEFAULT_CROSS_THREAD_TOP_PER_SOURCE = 3
 _DAY_MS = 24 * 60 * 60 * 1000
 

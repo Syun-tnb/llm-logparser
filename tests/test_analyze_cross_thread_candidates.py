@@ -480,7 +480,7 @@ def test_build_cross_thread_candidate_rows_emits_clear_cross_thread_link(tmp_pat
     root = tmp_path / "artifacts" / "openai"
     _write_topics_fixture(root)
 
-    rows = build_cross_thread_candidate_rows(root)
+    rows = build_cross_thread_candidate_rows(root, min_score=0.58)
 
     row = next(
         candidate
@@ -550,7 +550,7 @@ def test_build_cross_thread_candidate_rows_excludes_same_thread_and_unrelated_pa
     root = tmp_path / "artifacts" / "openai"
     _write_topics_fixture(root)
 
-    rows = build_cross_thread_candidate_rows(root)
+    rows = build_cross_thread_candidate_rows(root, min_score=0.58)
 
     assert not any(
         row["source_conversation_id"] == "conv-a"
@@ -692,7 +692,7 @@ def test_build_cross_thread_candidate_rows_applies_timestamp_distance_bonus(
     ]
     _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
 
-    rows = build_cross_thread_candidate_rows(root)
+    rows = build_cross_thread_candidate_rows(root, min_score=0.58)
 
     assert len(rows) == 2
     row = next(
@@ -880,7 +880,7 @@ def test_build_cross_thread_candidate_rows_applies_high_topic_excerpt_combinatio
     ]
     _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
 
-    rows = build_cross_thread_candidate_rows(root)
+    rows = build_cross_thread_candidate_rows(root, min_score=0.58)
 
     assert len(rows) == 2
     row = next(

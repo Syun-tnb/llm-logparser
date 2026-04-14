@@ -552,7 +552,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-score",
         dest="min_score",
         type=float,
-        default=0.58,
+        default=0.6,
         help=_("cli.analyze.cross_thread_candidates.opt.min_score.help"),
     )
     analyze_cross_thread_candidates_cmd.add_argument(
