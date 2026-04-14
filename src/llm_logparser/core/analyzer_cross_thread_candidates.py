@@ -38,6 +38,18 @@ _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS = 2 * _DAY_MS
 _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS = 7 * _DAY_MS
 _TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.08
 _TIMESTAMP_DISTANCE_HIGH_SCORE = 0.15
+_ARTIFACT_WRAPPER_MARKERS = (
+    "gpt-4o returned",
+    "returned 1 image",
+    "returned 1 images",
+)
+_TURN_CONTROL_MARKERS = (
+    "please end this turn now",
+    "end this turn now",
+    "do not say or show anything",
+    "do not summarize",
+    "do not ask follow-up",
+)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -320,6 +332,27 @@ def _unit_key(unit: _RepresentativeSpanUnit) -> tuple[str, str]:
     return (unit.conversation_id, unit.span_id)
 
 
+def _is_low_value_artifact_instruction_text(text: str) -> bool:
+    normalized = normalize_analysis_text(text)
+    if len(normalized) < 48:
+        return False
+    has_wrapper = any(marker in normalized for marker in _ARTIFACT_WRAPPER_MARKERS)
+    has_turn_control = any(marker in normalized for marker in _TURN_CONTROL_MARKERS)
+    return has_wrapper and has_turn_control
+
+
+def _should_filter_low_value_pair(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    evidence: _Evidence,
+) -> bool:
+    return (
+        evidence.excerpt_similarity >= 0.78
+        and _is_low_value_artifact_instruction_text(source.excerpt)
+        and _is_low_value_artifact_instruction_text(target.excerpt)
+    )
+
+
 def _reconstructed_unit_text(
     unit: _RepresentativeSpanUnit,
     windows: dict[tuple[str, str], WindowPreviewRecord],
@@ -427,7 +460,7 @@ def _embedding_similarity_by_pair(
     return similarities
 
 
-def build_cross_thread_candidate_rows(
+def _build_cross_thread_candidate_rows_with_stats(
     input_root: Path,
     *,
     min_score: float = DEFAULT_CROSS_THREAD_MIN_SCORE,
@@ -435,7 +468,7 @@ def build_cross_thread_candidate_rows(
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int]:
     if top_per_source < 1:
         raise CrossThreadCandidateError("top_per_source must be at least 1")
     if min_score < 0 or min_score > 1:
@@ -443,6 +476,7 @@ def build_cross_thread_candidate_rows(
 
     topics_artifact = _load_topics_artifact(input_root)
     units = _representative_units(topics_artifact)
+    filtered_low_value_pair_count = 0
     selected_by_source: list[
         tuple[_RepresentativeSpanUnit, list[tuple[_RepresentativeSpanUnit, _Evidence]]]
     ] = []
@@ -455,6 +489,9 @@ def build_cross_thread_candidate_rows(
                 continue
             evidence = _evidence_for_pair(source, target)
             if evidence is None or evidence.score < round(min_score, 4):
+                continue
+            if _should_filter_low_value_pair(source, target, evidence):
+                filtered_low_value_pair_count += 1
                 continue
             ranked.append((target, evidence))
         ranked.sort(
@@ -517,6 +554,26 @@ def build_cross_thread_candidate_rows(
             row["target_span_id"],
         )
     )
+    return rows, filtered_low_value_pair_count
+
+
+def build_cross_thread_candidate_rows(
+    input_root: Path,
+    *,
+    min_score: float = DEFAULT_CROSS_THREAD_MIN_SCORE,
+    top_per_source: int = DEFAULT_CROSS_THREAD_TOP_PER_SOURCE,
+    embedding_model: str | None = None,
+    embedding_base_url: str = "http://localhost:11434",
+    embedding_timeout_seconds: float = 30.0,
+) -> list[dict[str, Any]]:
+    rows, _filtered_low_value_pair_count = _build_cross_thread_candidate_rows_with_stats(
+        input_root,
+        min_score=min_score,
+        top_per_source=top_per_source,
+        embedding_model=embedding_model,
+        embedding_base_url=embedding_base_url,
+        embedding_timeout_seconds=embedding_timeout_seconds,
+    )
     return rows
 
 
@@ -535,6 +592,7 @@ def _summary(
     input_root: Path,
     min_score: float,
     top_per_source: int,
+    filtered_low_value_pair_count: int = 0,
 ) -> dict[str, Any]:
     units = _representative_units(topics_artifact)
     reason_counts: Counter[str] = Counter()
@@ -556,7 +614,7 @@ def _summary(
         for reason_code in row["evidence"]["reason_codes"]:
             reason_counts[str(reason_code)] += 1
         score_bands[_score_band(float(row["score"]))] += 1
-    return {
+    summary = {
         "artifact_type": CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE,
         "schema_version": CROSS_THREAD_CANDIDATE_SCHEMA_VERSION,
         "provider_id": topics_artifact["provider_id"],
@@ -575,6 +633,9 @@ def _summary(
             for band in ("high", "medium", "low")
         },
     }
+    if filtered_low_value_pair_count:
+        summary["filtered_low_value_pair_count"] = filtered_low_value_pair_count
+    return summary
 
 
 def write_cross_thread_candidates_artifact(
@@ -591,7 +652,7 @@ def write_cross_thread_candidates_artifact(
         raise CrossThreadCandidateError(f"provider root not found: {provider_root}")
 
     topics_artifact = _load_topics_artifact(provider_root)
-    rows = build_cross_thread_candidate_rows(
+    rows, filtered_low_value_pair_count = _build_cross_thread_candidate_rows_with_stats(
         provider_root,
         min_score=min_score,
         top_per_source=top_per_source,
@@ -616,6 +677,7 @@ def write_cross_thread_candidates_artifact(
         input_root=provider_root,
         min_score=min_score,
         top_per_source=top_per_source,
+        filtered_low_value_pair_count=filtered_low_value_pair_count,
     )
     write_json_artifact(summary_path, summary)
 

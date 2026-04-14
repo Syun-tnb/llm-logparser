@@ -844,6 +844,105 @@ def test_build_cross_thread_candidate_rows_applies_medium_timestamp_bonus_only_w
     assert row["score"] > 0.55
 
 
+def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction_pairs(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Image return instruction",
+            keywords=["image", "turn", "instruction"],
+            excerpt=(
+                "GPT-4o returned 1 images. From now on, do not say or show "
+                "ANYTHING. Please end this turn now."
+            ),
+            message_ids=["a-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Image return instruction",
+            keywords=["image", "turn", "instruction"],
+            excerpt=(
+                "GPT-4o returned 1 images. From now on, do not say or show "
+                "ANYTHING. Please end this turn now."
+            ),
+            message_ids=["b-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100 + (10 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+    result = write_cross_thread_candidates_artifact(root)
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert rows == []
+    assert summary["candidate_link_count"] == 0
+    assert summary["filtered_low_value_pair_count"] == 2
+
+
+def test_build_cross_thread_candidate_rows_keeps_repeated_project_summary_pairs(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Project summary",
+            keywords=["llm-logparser", "summary", "project"],
+            excerpt=(
+                "現状サマリ: llm-logparser のCLI構成と責務分離を新規レイナ向けに整理した。"
+            ),
+            message_ids=["a-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Project summary",
+            keywords=["llm-logparser", "summary", "project"],
+            excerpt=(
+                "現状サマリ: llm-logparser のCLI構成と責務分離を新規メンバー向けに整理した。"
+            ),
+            message_ids=["b-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert len(rows) == 2
+    assert {
+        (row["source_topic_id"], row["target_topic_id"])
+        for row in rows
+    } == {
+        ("topic-a", "topic-b"),
+        ("topic-b", "topic-a"),
+    }
+
+
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     _write_topics_fixture(root)
