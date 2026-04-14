@@ -14,7 +14,7 @@ from .schema_validation import (
     load_cross_thread_intent_evaluation_validator,
 )
 
-CROSS_THREAD_INTENT_EVAL_SCHEMA_VERSION = "0.1"
+CROSS_THREAD_INTENT_EVAL_SCHEMA_VERSION = "0.2"
 CROSS_THREAD_INTENT_EVAL_RECORD_TYPE = "cross_thread_intent_evaluation"
 CROSS_THREAD_INTENT_EVAL_SUMMARY_ARTIFACT_TYPE = (
     "cross_thread_intent_evaluations_summary"
@@ -22,16 +22,21 @@ CROSS_THREAD_INTENT_EVAL_SUMMARY_ARTIFACT_TYPE = (
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_TIMEOUT_SECONDS = 120.0
 DEFAULT_OLLAMA_NUM_PREDICT = 280
-PROMPT_VARIANT = "same_intent_v0_1"
+PROMPT_VARIANT = "same_intent_v0_2"
 _LOGGER = logging.getLogger(__name__)
 
 _PROMPT_TEMPLATE = """You are evaluating whether one cross-thread candidate target span expresses the same underlying intent, event, or task continuation as one source span.
 
 Definitions:
 - "same intent" means the target refers to the same action, event, or state change as the source, or a clear continuation of the same task or project state.
-- Greeting-only text is almost always "no".
-- Near-duplicate summaries are usually "yes".
-- Rephrased completion or status messages are usually "yes".
+- "continuity" means the target is mainly a near-continuation of the same ongoing work, a near-duplicate summary, or a rephrased completion/status message.
+- "recurrence" means the target revisits the same meaningful work or topic from a clearly different session or time period in a way that feels like remembered prior work.
+- Greeting-only or boilerplate text is almost always "no".
+- Near-duplicate summaries are often "yes" but usually "continuity", not "recurrence".
+- Rephrased completion or status messages are often "yes" but usually "continuity", not "recurrence".
+- Repeated greetings, acknowledgements, or generic boilerplate should not be labeled "recurrence" just because they are similar or temporally separated.
+- Use "recurrence" only when the pair feels like a meaningful return to the same prior work or topic, not merely the same flow continuing.
+- If same_intent is "no", use recall_type "continuity" unless there is unusually strong evidence of meaningful return without enough support for "yes".
 - Be conservative: prefer "no" over weak "yes".
 - Do not rely on wording overlap alone; focus on meaning.
 - If unsure, answer "no" with "low" confidence.
@@ -45,11 +50,13 @@ Your entire response MUST start with "{{" and end with "}}".
 If you cannot comply exactly, return {{}}.
 The object must have exactly these keys:
 - same_intent
+- recall_type
 - confidence
 - reason
 
 Allowed values:
 - same_intent: "yes" or "no"
+- recall_type: "continuity" or "recurrence"
 - confidence: "high", "medium", or "low"
 
 Source:
@@ -183,12 +190,20 @@ def _parse_response(*, response_text: str) -> dict[str, Any]:
         _LOGGER.debug("applied tolerance: %s", note)
 
     same_intent = item.get("same_intent")
+    recall_type = item.get("recall_type")
     confidence = item.get("confidence")
     reason = item.get("reason")
 
     if not isinstance(same_intent, str) or same_intent not in {"yes", "no"}:
         raise CrossThreadIntentEvalError(
             'cross-thread intent evaluation same_intent must be "yes" or "no"'
+        )
+    if not isinstance(recall_type, str) or recall_type not in {
+        "continuity",
+        "recurrence",
+    }:
+        raise CrossThreadIntentEvalError(
+            'cross-thread intent evaluation recall_type must be "continuity" or "recurrence"'
         )
     if not isinstance(confidence, str) or confidence not in {
         "high",
@@ -205,6 +220,7 @@ def _parse_response(*, response_text: str) -> dict[str, Any]:
 
     return {
         "same_intent": same_intent,
+        "recall_type": recall_type,
         "confidence": confidence,
         "reason": " ".join(reason.split()),
     }
@@ -280,6 +296,7 @@ def _evaluation_row(
         "candidate_rank": candidate_row["rank"],
         "candidate_reason_codes": list(candidate_row["evidence"]["reason_codes"]),
         "same_intent": evaluation["same_intent"],
+        "recall_type": evaluation["recall_type"],
         "confidence": evaluation["confidence"],
         "reason": evaluation["reason"],
     }

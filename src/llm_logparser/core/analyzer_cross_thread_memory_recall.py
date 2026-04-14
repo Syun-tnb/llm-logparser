@@ -19,6 +19,10 @@ _CONFIDENCE_RANK = {
     "medium": 1,
     "high": 2,
 }
+_RECALL_TYPE_RANK = {
+    "continuity": 0,
+    "recurrence": 1,
+}
 _GREETING_PREFIXES = (
     "goodmorning",
     "goodafternoon",
@@ -372,14 +376,16 @@ def _pair_key(row: dict[str, Any]) -> tuple[tuple[str, str], tuple[str, str]]:
 
 def _row_priority(
     row: dict[str, Any],
-) -> tuple[int, float, int, tuple[str, str], tuple[str, str]]:
+) -> tuple[int, int, float, int, tuple[str, str], tuple[str, str]]:
     confidence = str(row.get("confidence", "low"))
+    recall_type = str(row.get("recall_type", "continuity"))
     candidate_score = row.get("candidate_score")
     score = float(candidate_score) if isinstance(candidate_score, (int, float)) else -1.0
     candidate_rank = row.get("candidate_rank")
     rank = int(candidate_rank) if isinstance(candidate_rank, int) else 9999
     return (
         _CONFIDENCE_RANK.get(confidence, -1),
+        _RECALL_TYPE_RANK.get(recall_type, -1),
         score,
         -rank,
         _endpoint_key(row, "source"),
@@ -596,6 +602,7 @@ def render_cross_thread_memory_recall(input_root: Path) -> str:
         matches.sort(
             key=lambda prepared: (
                 -1 if prepared.row["confidence"] == "high" else 0,
+                -1 if prepared.row.get("recall_type") == "recurrence" else 0,
                 prepared.row.get("candidate_rank", 9999),
                 prepared.row["target_conversation_id"],
                 prepared.row["target_span_id"],

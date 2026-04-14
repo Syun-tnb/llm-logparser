@@ -84,6 +84,23 @@ def _candidate_row(
     return row
 
 
+def _response(
+    *,
+    same_intent: str,
+    recall_type: str,
+    confidence: str,
+    reason: str,
+) -> str:
+    return json.dumps(
+        {
+            "same_intent": same_intent,
+            "recall_type": recall_type,
+            "confidence": confidence,
+            "reason": reason,
+        }
+    )
+
+
 def _write_candidate_fixture(root: Path) -> Path:
     rows = [
         _candidate_row(
@@ -181,26 +198,23 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
 
     calls: list[dict] = []
     responses = [
-        json.dumps(
-            {
-                "same_intent": "yes",
-                "confidence": "high",
-                "reason": "Same release completion event phrased slightly differently.",
-            }
+        _response(
+            same_intent="yes",
+            recall_type="continuity",
+            confidence="high",
+            reason="Same release completion event phrased slightly differently.",
         ),
-        json.dumps(
-            {
-                "same_intent": "no",
-                "confidence": "high",
-                "reason": "Greeting text does not continue the release completion event.",
-            }
+        _response(
+            same_intent="no",
+            recall_type="continuity",
+            confidence="high",
+            reason="Greeting text does not continue the release completion event.",
         ),
-        json.dumps(
-            {
-                "same_intent": "yes",
-                "confidence": "medium",
-                "reason": "Both snippets describe the same migration checklist status update.",
-            }
+        _response(
+            same_intent="yes",
+            recall_type="recurrence",
+            confidence="medium",
+            reason="Both snippets describe the same migration checklist status update.",
         ),
     ]
     monkeypatch.setattr(
@@ -215,6 +229,7 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
     assert len(calls) == 3
     first = rows[0]
     assert first["same_intent"] == "yes"
+    assert first["recall_type"] == "continuity"
     assert first["confidence"] == "high"
     assert first["candidate_rank"] == 1
     second = rows[1]
@@ -224,6 +239,7 @@ def test_build_cross_thread_intent_evaluation_rows_emits_one_row_per_candidate(
     assert calls[0]["response_format"] == "json"
     assert calls[0]["options"]["temperature"] == 0.0
     assert "Return exactly one JSON object." in calls[0]["prompt"]
+    assert "recall_type" in calls[0]["prompt"]
     assert "Target:" in calls[0]["prompt"]
     assert "Targets:" not in calls[0]["prompt"]
 
@@ -239,7 +255,7 @@ def test_build_cross_thread_intent_evaluation_rows_rejects_malformed_model_outpu
         intent_eval_module,
         "OllamaClient",
         lambda **_: _FakeOllamaClient(
-            ['[{"same_intent": "yes", "confidence": "high", "reason": "x"}, {"same_intent": "no", "confidence": "low", "reason": "y"}]'],
+            ['[{"same_intent": "yes", "recall_type": "continuity", "confidence": "high", "reason": "x"}, {"same_intent": "no", "recall_type": "continuity", "confidence": "low", "reason": "y"}]'],
             [],
         ),
     )
@@ -275,6 +291,7 @@ def test_build_cross_thread_intent_evaluation_rows_accepts_single_object_for_one
                 json.dumps(
                     {
                         "same_intent": "yes",
+                        "recall_type": "continuity",
                         "confidence": "high",
                         "reason": "Same release completion event phrased slightly differently.",
                     }
@@ -288,6 +305,7 @@ def test_build_cross_thread_intent_evaluation_rows_accepts_single_object_for_one
 
     assert len(rows) == 1
     assert rows[0]["same_intent"] == "yes"
+    assert rows[0]["recall_type"] == "continuity"
     assert rows[0]["candidate_rank"] == 1
 
 
@@ -307,6 +325,7 @@ def test_build_cross_thread_intent_evaluation_rows_normalizes_zero_based_indices
                     {
                         "target_index": 0,
                         "same_intent": "yes",
+                        "recall_type": "continuity",
                         "confidence": "high",
                         "reason": "Same release completion event phrased slightly differently.",
                     }
@@ -315,6 +334,7 @@ def test_build_cross_thread_intent_evaluation_rows_normalizes_zero_based_indices
                     {
                         "target_index": 0,
                         "same_intent": "no",
+                        "recall_type": "continuity",
                         "confidence": "high",
                         "reason": "Greeting text does not continue the release completion event.",
                     }
@@ -323,6 +343,7 @@ def test_build_cross_thread_intent_evaluation_rows_normalizes_zero_based_indices
                     {
                         "target_index": 0,
                         "same_intent": "yes",
+                        "recall_type": "recurrence",
                         "confidence": "medium",
                         "reason": "Both snippets describe the same migration checklist status update.",
                     }
@@ -337,6 +358,7 @@ def test_build_cross_thread_intent_evaluation_rows_normalizes_zero_based_indices
     assert len(rows) == 3
     assert [row["candidate_rank"] for row in rows] == [1, 2, 1]
     assert [row["same_intent"] for row in rows] == ["yes", "no", "yes"]
+    assert [row["recall_type"] for row in rows] == ["continuity", "continuity", "recurrence"]
 
 
 def test_build_cross_thread_intent_evaluation_rows_still_rejects_mixed_invalid_indices(
@@ -355,6 +377,7 @@ def test_build_cross_thread_intent_evaluation_rows_still_rejects_mixed_invalid_i
                     {
                         "target_index": 2,
                         "same_intent": "yes",
+                        "recall_type": "continuity",
                         "confidence": "high",
                         "reason": "Same release completion event phrased slightly differently.",
                     }
@@ -376,26 +399,23 @@ def test_cross_thread_intent_evaluation_rows_are_schema_valid(
     _write_candidate_fixture(root)
 
     responses = [
-        json.dumps(
-            {
-                "same_intent": "yes",
-                "confidence": "high",
-                "reason": "Same release completion event phrased slightly differently.",
-            }
+        _response(
+            same_intent="yes",
+            recall_type="continuity",
+            confidence="high",
+            reason="Same release completion event phrased slightly differently.",
         ),
-        json.dumps(
-            {
-                "same_intent": "no",
-                "confidence": "high",
-                "reason": "Greeting text does not continue the release completion event.",
-            }
+        _response(
+            same_intent="no",
+            recall_type="continuity",
+            confidence="high",
+            reason="Greeting text does not continue the release completion event.",
         ),
-        json.dumps(
-            {
-                "same_intent": "yes",
-                "confidence": "medium",
-                "reason": "Both snippets describe the same migration checklist status update.",
-            }
+        _response(
+            same_intent="yes",
+            recall_type="recurrence",
+            confidence="medium",
+            reason="Both snippets describe the same migration checklist status update.",
         ),
     ]
     monkeypatch.setattr(
@@ -420,6 +440,7 @@ def test_cross_thread_intent_evaluation_rows_are_schema_valid(
     summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
     assert summary["same_intent_counts"] == {"yes": 2, "no": 1}
     assert summary["confidence_counts"] == {"high": 2, "medium": 1, "low": 0}
+    assert summary["prompt_variant"] == "same_intent_v0_2"
 
 
 def test_cli_analyze_cross_thread_intent_eval_writes_artifact_without_modifying_l3(
@@ -431,26 +452,23 @@ def test_cli_analyze_cross_thread_intent_eval_writes_artifact_without_modifying_
     before = candidates_path.read_text(encoding="utf-8")
 
     responses = [
-        json.dumps(
-            {
-                "same_intent": "yes",
-                "confidence": "high",
-                "reason": "Same release completion event phrased slightly differently.",
-            }
+        _response(
+            same_intent="yes",
+            recall_type="continuity",
+            confidence="high",
+            reason="Same release completion event phrased slightly differently.",
         ),
-        json.dumps(
-            {
-                "same_intent": "no",
-                "confidence": "high",
-                "reason": "Greeting text does not continue the release completion event.",
-            }
+        _response(
+            same_intent="no",
+            recall_type="continuity",
+            confidence="high",
+            reason="Greeting text does not continue the release completion event.",
         ),
-        json.dumps(
-            {
-                "same_intent": "yes",
-                "confidence": "medium",
-                "reason": "Both snippets describe the same migration checklist status update.",
-            }
+        _response(
+            same_intent="yes",
+            recall_type="recurrence",
+            confidence="medium",
+            reason="Both snippets describe the same migration checklist status update.",
         ),
     ]
     monkeypatch.setattr(
@@ -473,3 +491,35 @@ def test_cli_analyze_cross_thread_intent_eval_writes_artifact_without_modifying_
     assert cross_thread_intent_evaluations_path(root).exists()
     assert (root / "l4" / "cross-thread-intent-eval" / "summary.json").exists()
     assert candidates_path.read_text(encoding="utf-8") == before
+
+
+def test_parse_response_accepts_recall_type():
+    parsed = intent_eval_module._parse_response(
+        response_text=_response(
+            same_intent="yes",
+            recall_type="recurrence",
+            confidence="high",
+            reason="Meaningful return to the same rollout work.",
+        )
+    )
+
+    assert parsed == {
+        "same_intent": "yes",
+        "recall_type": "recurrence",
+        "confidence": "high",
+        "reason": "Meaningful return to the same rollout work.",
+    }
+
+
+def test_parse_response_rejects_invalid_recall_type():
+    with pytest.raises(CrossThreadIntentEvalError):
+        intent_eval_module._parse_response(
+            response_text=json.dumps(
+                {
+                    "same_intent": "yes",
+                    "recall_type": "invalid",
+                    "confidence": "high",
+                    "reason": "x",
+                }
+            )
+        )

@@ -73,10 +73,11 @@ def _evaluation_row(
     confidence: str,
     reason: str,
     candidate_rank: int,
+    recall_type: str = "continuity",
 ) -> dict:
     row = {
         "record_type": "cross_thread_intent_evaluation",
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "provider_id": "openai",
         "source_conversation_id": source_conversation_id,
         "target_conversation_id": target_conversation_id,
@@ -94,6 +95,7 @@ def _evaluation_row(
         "candidate_rank": candidate_rank,
         "candidate_reason_codes": ["excerpt_similarity_high"],
         "same_intent": same_intent,
+        "recall_type": recall_type,
         "confidence": confidence,
         "reason": reason,
     }
@@ -687,6 +689,100 @@ def test_render_cross_thread_memory_recall_uses_deterministic_tiebreak_for_symme
 
     assert "Chosen by better candidate score." in rendered
     assert "Lower-priority duplicate." not in rendered
+
+
+def test_render_cross_thread_memory_recall_prefers_recurrence_before_continuity(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    set_locale("en-US")
+    _write_jsonl(
+        root / "thread-conv-a" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-a",
+            messages=[
+                _message_row(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    text="Release planning checklist updated.",
+                    ts=1769946959884,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-b" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-b",
+            messages=[
+                _message_row(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    text="Older release planning checklist note.",
+                    ts=1763876721639,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "thread-conv-c" / "parsed.jsonl",
+        _thread_rows(
+            conversation_id="conv-c",
+            messages=[
+                _message_row(
+                    conversation_id="conv-c",
+                    message_id="c-1",
+                    text="Same-session rollout status summary.",
+                    ts=1769850000000,
+                ),
+            ],
+        ),
+    )
+    _write_jsonl(
+        root / "l4" / "cross-thread-intent-eval" / "evaluations.jsonl",
+        [
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt="source preview",
+                target_conversation_id="conv-c",
+                target_topic_id="topic-c",
+                target_span_id="span-c",
+                target_message_ids=["c-1"],
+                target_excerpt="continuity preview",
+                same_intent="yes",
+                confidence="high",
+                reason="Near-continuation of the same rollout work.",
+                candidate_rank=1,
+                recall_type="continuity",
+            ),
+            _evaluation_row(
+                source_conversation_id="conv-a",
+                source_topic_id="topic-a",
+                source_span_id="span-a",
+                source_message_ids=["a-1"],
+                source_excerpt="source preview",
+                target_conversation_id="conv-b",
+                target_topic_id="topic-b",
+                target_span_id="span-b",
+                target_message_ids=["b-1"],
+                target_excerpt="recurrence preview",
+                same_intent="yes",
+                confidence="high",
+                reason="Meaningful return to the same release checklist work.",
+                candidate_rank=2,
+                recall_type="recurrence",
+            ),
+        ],
+    )
+
+    rendered = render_cross_thread_memory_recall(root)
+
+    assert rendered.index("Meaningful return to the same release checklist work.") < rendered.index(
+        "Near-continuation of the same rollout work."
+    )
 
 
 def test_render_cross_thread_memory_recall_preserves_reconstructed_excerpts_after_deduplication(

@@ -20,12 +20,13 @@
     "candidate_rank",
     "candidate_reason_codes",
     "same_intent",
+    "recall_type",
     "confidence",
     "reason"
   ],
   "properties": {
     "record_type": { "type": "string", "const": "cross_thread_intent_evaluation" },
-    "schema_version": { "type": "string", "const": "0.1" },
+    "schema_version": { "type": "string", "const": "0.2" },
     "provider_id": { "type": "string", "minLength": 1 },
     "source_conversation_id": { "type": "string", "minLength": 1 },
     "target_conversation_id": { "type": "string", "minLength": 1 },
@@ -69,6 +70,10 @@
     "same_intent": {
       "type": "string",
       "enum": ["yes", "no"]
+    },
+    "recall_type": {
+      "type": "string",
+      "enum": ["continuity", "recurrence"]
     },
     "confidence": {
       "type": "string",
