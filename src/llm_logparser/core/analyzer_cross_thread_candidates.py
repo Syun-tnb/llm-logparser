@@ -371,6 +371,9 @@ def _volume_gap(
     if earlier_end is None or later_start is None:
         return _VolumeGap(value=None, unit=None)
 
+    # This currently counts all intervening canonical messages under the input
+    # root, not only messages from the two conversations being compared. It is
+    # therefore a coarse dormancy proxy and may include unrelated conversations.
     if context.message_timestamps:
         start = bisect.bisect_right(context.message_timestamps, earlier_end)
         end = bisect.bisect_left(context.message_timestamps, later_start)
@@ -416,6 +419,9 @@ def _local_context_delta(
     topic_label_similarity: float,
     context: _RecurrenceInstrumentationContext,
 ) -> float | None:
+    # This is a lightweight proxy for local context re-entry. It only compares
+    # the current target against the immediately previous representative span in
+    # the target conversation; it does not yet model fuller local context windows.
     previous_target = context.previous_target_by_key.get((target.conversation_id, target.span_id))
     if previous_target is None:
         return None
@@ -427,6 +433,35 @@ def _local_context_delta(
     current_signal = max(excerpt_similarity, topic_label_similarity)
     prior_signal = max(round(prior_excerpt_similarity, 4), round(prior_topic_label_similarity, 4))
     return round(max(0.0, current_signal - prior_signal), 4)
+
+
+def _intervening_temporal_gap_seconds(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+) -> int | None:
+    if source.first_seen is None or target.first_seen is None:
+        return None
+
+    earlier, later = sorted(
+        (source, target),
+        key=lambda item: (
+            item.first_seen if item.first_seen is not None else -1,
+            item.last_seen if item.last_seen is not None else -1,
+            item.conversation_id,
+            item.span_id,
+        ),
+    )
+    earlier_end = earlier.last_seen if earlier.last_seen is not None else earlier.first_seen
+    later_start = later.first_seen
+    if earlier_end is None or later_start is None:
+        return None
+
+    # We align this with volume_gap semantics by measuring the intervening time
+    # window from the earlier span end to the later span start. When an explicit
+    # span end is unavailable, last_seen falls back to the best available
+    # approximation (effectively max source timestamp / min target timestamp).
+    gap_ms = max(0, later_start - earlier_end)
+    return int(math.ceil(gap_ms / 1000.0))
 
 
 def _evidence_for_pair(
@@ -459,11 +494,7 @@ def _evidence_for_pair(
     timestamp_delta_ms: int | None = None
     if source.first_seen is not None and target.first_seen is not None:
         timestamp_delta_ms = abs(source.first_seen - target.first_seen)
-    temporal_gap_seconds = (
-        int(timestamp_delta_ms // 1000)
-        if timestamp_delta_ms is not None
-        else None
-    )
+    temporal_gap_seconds = _intervening_temporal_gap_seconds(source, target)
     volume_gap = _volume_gap(source, target, recurrence_context)
     continuity_mask = _continuity_mask(volume_gap)
     dormancy_score = _dormancy_score(volume_gap)
