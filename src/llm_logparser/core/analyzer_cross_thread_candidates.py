@@ -105,6 +105,10 @@ _CONTINUITY_VOLUME_GAP_MESSAGE_THRESHOLD = 12
 _CONTINUITY_VOLUME_GAP_SPAN_THRESHOLD = 2
 _DORMANCY_MESSAGE_SCALE = 64
 _DORMANCY_SPAN_SCALE = 8
+_WEAK_RECURRENCE_TEMPORAL_GAP_SECONDS = 6 * 60 * 60
+_WEAK_RECURRENCE_SPECIFICITY_THRESHOLD = 0.45
+_WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD = 0.12
+_ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -127,6 +131,7 @@ class _RepresentativeSpanUnit:
     first_seen: int | None
     last_seen: int | None
     excerpt_specificity: float
+    anchor_tokens: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,29 @@ class _RecurrenceInstrumentationContext:
 class _VolumeGap:
     value: int | None
     unit: str | None
+
+
+@dataclass(frozen=True)
+class _PairSignals:
+    excerpt_similarity: float
+    topic_label_similarity: float
+    shared_keywords: tuple[str, ...]
+    normalized_label_match: bool
+    raw_label_match: bool
+    timestamp_delta_ms: int | None
+    temporal_gap_seconds: int | None
+    volume_gap: _VolumeGap
+    continuity_mask: bool
+    dormancy_score: float
+    specificity_score: float
+    local_context_delta: float | None
+    shared_anchor_tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _WeakRecurrenceCandidate:
+    evidence: _Evidence
+    shared_anchor_count: int
 
 
 def cross_thread_candidates_path(input_root: Path) -> Path:
@@ -233,6 +261,29 @@ def _text_specificity_score(text: str) -> float:
     )
 
 
+def _is_anchor_like_token(token: str) -> bool:
+    if token in _SPECIFICITY_GENERIC_TOKENS or len(token) < 4:
+        return False
+    if any(char.isdigit() for char in token):
+        return True
+    if any(char in _ANCHOR_TOKEN_SYMBOLS for char in token):
+        return True
+    has_cjk = bool(re.search(r"[一-龯ぁ-んァ-ヶー]", token))
+    if has_cjk:
+        return len(token) >= 4
+    return len(token) >= 7
+
+
+def _anchor_tokens_for_texts(values: tuple[str, ...]) -> tuple[str, ...]:
+    tokens: set[str] = set()
+    for value in values:
+        normalized = normalize_analysis_text(value)
+        for token in _SPECIFICITY_TOKEN_RE.findall(normalized):
+            if _is_anchor_like_token(token):
+                tokens.add(token)
+    return tuple(sorted(tokens))
+
+
 def _representative_units(topics_artifact: dict[str, Any]) -> list[_RepresentativeSpanUnit]:
     provider_id = str(topics_artifact["provider_id"])
     units: list[_RepresentativeSpanUnit] = []
@@ -287,6 +338,17 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                     first_seen=topic_first_seen,
                     last_seen=topic_last_seen,
                     excerpt_specificity=_text_specificity_score(str(span["excerpt"])),
+                    anchor_tokens=_anchor_tokens_for_texts(
+                        tuple(
+                            value
+                            for value in (
+                                normalized_topic_label or "",
+                                str(span["excerpt"]),
+                                *keywords,
+                            )
+                            if value
+                        )
+                    ),
                 )
             )
     units.sort(
@@ -464,12 +526,12 @@ def _intervening_temporal_gap_seconds(
     return int(math.ceil(gap_ms / 1000.0))
 
 
-def _evidence_for_pair(
+def _pair_signals(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
-) -> _Evidence | None:
+) -> _PairSignals:
     excerpt_similarity = round(
         normalized_similarity(source.excerpt, target.excerpt),
         4,
@@ -509,75 +571,218 @@ def _evidence_for_pair(
         topic_label_similarity=topic_label_similarity,
         context=recurrence_context,
     )
-
-    score = 0.0
-    reason_codes: list[str] = []
-    if normalized_label_match:
-        score += _LABEL_MATCH_SCORE
-        reason_codes.append("normalized_label_match")
-    if raw_label_match:
-        score += _RAW_LABEL_MATCH_SCORE
-        reason_codes.append("raw_label_match")
-
-    if len(shared_keywords) >= 2:
-        score += _KEYWORD_OVERLAP_HIGH_SCORE
-        reason_codes.append("shared_keywords_high")
-    elif len(shared_keywords) == 1:
-        score += _KEYWORD_OVERLAP_LOW_SCORE
-        reason_codes.append("shared_keywords_low")
-
-    if topic_label_similarity >= 0.88:
-        score += _TOPIC_LABEL_SIMILARITY_HIGH_SCORE
-        reason_codes.append("topic_label_similarity_high")
-    elif topic_label_similarity >= 0.72:
-        score += _TOPIC_LABEL_SIMILARITY_MEDIUM_SCORE
-        reason_codes.append("topic_label_similarity_medium")
-
-    if excerpt_similarity >= 0.78:
-        score += _EXCERPT_SIMILARITY_HIGH_SCORE
-        reason_codes.append("excerpt_similarity_high")
-    elif excerpt_similarity >= 0.64:
-        score += _EXCERPT_SIMILARITY_MEDIUM_SCORE
-        reason_codes.append("excerpt_similarity_medium")
-    elif excerpt_similarity >= 0.52:
-        score += _EXCERPT_SIMILARITY_LOW_SCORE
-        reason_codes.append("excerpt_similarity_low")
-
-    if topic_label_similarity >= 0.88 and excerpt_similarity >= 0.78:
-        score += _TOPIC_EXCERPT_COMBINATION_HIGH_SCORE
-        reason_codes.append("topic_excerpt_combination_high")
-
-    if timestamp_delta_ms is not None:
-        if timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
-            score += _TIMESTAMP_DISTANCE_HIGH_SCORE
-            reason_codes.append("timestamp_distance_high")
-        elif timestamp_delta_ms >= _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS:
-            score += _TIMESTAMP_DISTANCE_MEDIUM_SCORE
-            reason_codes.append("timestamp_distance_medium")
-
-    has_strong_signal = (
-        excerpt_similarity >= 0.52
-        or topic_label_similarity >= 0.72
-        or len(shared_keywords) >= 1
+    shared_anchor_tokens = tuple(
+        sorted(set(source.anchor_tokens) & set(target.anchor_tokens))
     )
-    if not has_strong_signal or not reason_codes:
-        return None
-
-    return _Evidence(
-        score=round(min(score, 1.0), 4),
-        reason_codes=tuple(reason_codes),
+    return _PairSignals(
         excerpt_similarity=excerpt_similarity,
         topic_label_similarity=topic_label_similarity,
         shared_keywords=shared_keywords,
         normalized_label_match=normalized_label_match,
         raw_label_match=raw_label_match,
         timestamp_delta_ms=timestamp_delta_ms,
-        volume_gap=volume_gap.value,
         temporal_gap_seconds=temporal_gap_seconds,
+        volume_gap=volume_gap,
         continuity_mask=continuity_mask,
         dormancy_score=dormancy_score,
         specificity_score=specificity_score,
         local_context_delta=local_context_delta,
+        shared_anchor_tokens=shared_anchor_tokens,
+    )
+
+
+def _evidence_from_signals(
+    *,
+    signals: _PairSignals,
+    score: float,
+    reason_codes: tuple[str, ...],
+) -> _Evidence:
+    return _Evidence(
+        score=round(min(score, 1.0), 4),
+        reason_codes=reason_codes,
+        excerpt_similarity=signals.excerpt_similarity,
+        topic_label_similarity=signals.topic_label_similarity,
+        shared_keywords=signals.shared_keywords,
+        normalized_label_match=signals.normalized_label_match,
+        raw_label_match=signals.raw_label_match,
+        timestamp_delta_ms=signals.timestamp_delta_ms,
+        volume_gap=signals.volume_gap.value,
+        temporal_gap_seconds=signals.temporal_gap_seconds,
+        continuity_mask=signals.continuity_mask,
+        dormancy_score=signals.dormancy_score,
+        specificity_score=signals.specificity_score,
+        local_context_delta=signals.local_context_delta,
+    )
+
+
+def _dedupe_reason_codes(values: list[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(values))
+
+
+def _similarity_score_and_reasons(
+    signals: _PairSignals,
+) -> tuple[float, tuple[str, ...], bool]:
+    score = 0.0
+    reason_codes: list[str] = []
+    if signals.normalized_label_match:
+        score += _LABEL_MATCH_SCORE
+        reason_codes.append("normalized_label_match")
+    if signals.raw_label_match:
+        score += _RAW_LABEL_MATCH_SCORE
+        reason_codes.append("raw_label_match")
+
+    if len(signals.shared_keywords) >= 2:
+        score += _KEYWORD_OVERLAP_HIGH_SCORE
+        reason_codes.append("shared_keywords_high")
+    elif len(signals.shared_keywords) == 1:
+        score += _KEYWORD_OVERLAP_LOW_SCORE
+        reason_codes.append("shared_keywords_low")
+
+    if signals.topic_label_similarity >= 0.88:
+        score += _TOPIC_LABEL_SIMILARITY_HIGH_SCORE
+        reason_codes.append("topic_label_similarity_high")
+    elif signals.topic_label_similarity >= 0.72:
+        score += _TOPIC_LABEL_SIMILARITY_MEDIUM_SCORE
+        reason_codes.append("topic_label_similarity_medium")
+
+    if signals.excerpt_similarity >= 0.78:
+        score += _EXCERPT_SIMILARITY_HIGH_SCORE
+        reason_codes.append("excerpt_similarity_high")
+    elif signals.excerpt_similarity >= 0.64:
+        score += _EXCERPT_SIMILARITY_MEDIUM_SCORE
+        reason_codes.append("excerpt_similarity_medium")
+    elif signals.excerpt_similarity >= 0.52:
+        score += _EXCERPT_SIMILARITY_LOW_SCORE
+        reason_codes.append("excerpt_similarity_low")
+
+    if (
+        signals.topic_label_similarity >= 0.88
+        and signals.excerpt_similarity >= 0.78
+    ):
+        score += _TOPIC_EXCERPT_COMBINATION_HIGH_SCORE
+        reason_codes.append("topic_excerpt_combination_high")
+
+    if signals.timestamp_delta_ms is not None:
+        if signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
+            score += _TIMESTAMP_DISTANCE_HIGH_SCORE
+            reason_codes.append("timestamp_distance_high")
+        elif signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS:
+            score += _TIMESTAMP_DISTANCE_MEDIUM_SCORE
+            reason_codes.append("timestamp_distance_medium")
+
+    has_strong_signal = (
+        signals.excerpt_similarity >= 0.52
+        or signals.topic_label_similarity >= 0.72
+        or len(signals.shared_keywords) >= 1
+    )
+    return score, _dedupe_reason_codes(reason_codes), has_strong_signal
+
+
+def _weak_recurrence_evidence_for_pair(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
+    recurrence_context: _RecurrenceInstrumentationContext,
+    base_evidence: _Evidence | None = None,
+) -> _WeakRecurrenceCandidate | None:
+    signals = _pair_signals(
+        source,
+        target,
+        recurrence_context=recurrence_context,
+    )
+    if not signals.shared_anchor_tokens:
+        return None
+
+    has_meaningful_separation = (
+        signals.volume_gap.value is not None
+        and signals.volume_gap.unit is not None
+        and not signals.continuity_mask
+    ) or (
+        signals.temporal_gap_seconds is not None
+        and signals.temporal_gap_seconds >= _WEAK_RECURRENCE_TEMPORAL_GAP_SECONDS
+    )
+    if not has_meaningful_separation:
+        return None
+
+    has_taskish_signal = (
+        signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD
+        or (
+            signals.local_context_delta is not None
+            and signals.local_context_delta >= _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD
+        )
+    )
+    if not has_taskish_signal:
+        return None
+
+    score, base_reason_codes, _has_strong_signal = _similarity_score_and_reasons(signals)
+    weak_reason_codes = [
+        (
+            "weak_recurrence_anchor_overlap_high"
+            if len(signals.shared_anchor_tokens) >= 2
+            else "weak_recurrence_anchor_overlap"
+        ),
+        "weak_recurrence_dormant",
+    ]
+    if signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD:
+        weak_reason_codes.append("weak_recurrence_specificity")
+    if (
+        signals.local_context_delta is not None
+        and signals.local_context_delta >= _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD
+    ):
+        weak_reason_codes.append("weak_recurrence_context_jump")
+
+    if base_evidence is not None:
+        evidence = _Evidence(
+            score=base_evidence.score,
+            reason_codes=_dedupe_reason_codes(
+                list(base_evidence.reason_codes) + weak_reason_codes
+            ),
+            excerpt_similarity=base_evidence.excerpt_similarity,
+            topic_label_similarity=base_evidence.topic_label_similarity,
+            shared_keywords=base_evidence.shared_keywords,
+            normalized_label_match=base_evidence.normalized_label_match,
+            raw_label_match=base_evidence.raw_label_match,
+            timestamp_delta_ms=base_evidence.timestamp_delta_ms,
+            volume_gap=base_evidence.volume_gap,
+            temporal_gap_seconds=base_evidence.temporal_gap_seconds,
+            continuity_mask=base_evidence.continuity_mask,
+            dormancy_score=base_evidence.dormancy_score,
+            specificity_score=base_evidence.specificity_score,
+            local_context_delta=base_evidence.local_context_delta,
+        )
+    else:
+        evidence = _evidence_from_signals(
+            signals=signals,
+            score=score,
+            reason_codes=_dedupe_reason_codes(
+                list(base_reason_codes) + weak_reason_codes
+            ),
+        )
+
+    return _WeakRecurrenceCandidate(
+        evidence=evidence,
+        shared_anchor_count=len(signals.shared_anchor_tokens),
+    )
+
+
+def _evidence_for_pair(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
+    recurrence_context: _RecurrenceInstrumentationContext,
+) -> _Evidence | None:
+    signals = _pair_signals(
+        source,
+        target,
+        recurrence_context=recurrence_context,
+    )
+    score, reason_codes, has_strong_signal = _similarity_score_and_reasons(signals)
+    if not has_strong_signal or not reason_codes:
+        return None
+    return _evidence_from_signals(
+        signals=signals,
+        score=score,
+        reason_codes=reason_codes,
     )
 
 
@@ -801,8 +1006,10 @@ def _build_cross_thread_candidate_rows_with_stats(
     selected_by_source: list[
         tuple[_RepresentativeSpanUnit, list[tuple[_RepresentativeSpanUnit, _Evidence]]]
     ] = []
+    min_score_rounded = round(min_score, 4)
     for source in units:
-        ranked: list[tuple[_RepresentativeSpanUnit, _Evidence]] = []
+        ranked_similarity: list[tuple[_RepresentativeSpanUnit, _Evidence]] = []
+        ranked_weak: list[tuple[_RepresentativeSpanUnit, _Evidence, int]] = []
         for target in units:
             if source.conversation_id == target.conversation_id:
                 continue
@@ -813,13 +1020,31 @@ def _build_cross_thread_candidate_rows_with_stats(
                 target,
                 recurrence_context=recurrence_context,
             )
-            if evidence is None or evidence.score < round(min_score, 4):
+            weak_candidate = _weak_recurrence_evidence_for_pair(
+                source,
+                target,
+                recurrence_context=recurrence_context,
+                base_evidence=evidence,
+            )
+            similarity_evidence = weak_candidate.evidence if weak_candidate is not None else evidence
+            if similarity_evidence is None and weak_candidate is None:
                 continue
-            if _should_filter_low_value_pair(source, target, evidence):
+            candidate_for_filter = similarity_evidence or weak_candidate.evidence
+            assert candidate_for_filter is not None
+            if _should_filter_low_value_pair(source, target, candidate_for_filter):
                 filtered_low_value_pair_count += 1
                 continue
-            ranked.append((target, evidence))
-        ranked.sort(
+            if similarity_evidence is not None and similarity_evidence.score >= min_score_rounded:
+                ranked_similarity.append((target, similarity_evidence))
+            elif weak_candidate is not None:
+                ranked_weak.append(
+                    (
+                        target,
+                        weak_candidate.evidence,
+                        weak_candidate.shared_anchor_count,
+                    )
+                )
+        ranked_similarity.sort(
             key=lambda item: (
                 -item[1].score,
                 -item[1].excerpt_similarity,
@@ -828,7 +1053,26 @@ def _build_cross_thread_candidate_rows_with_stats(
                 item[0].span_id,
             )
         )
-        selected = ranked[:top_per_source]
+        ranked_weak.sort(
+            key=lambda item: (
+                -item[2],
+                -item[1].dormancy_score,
+                -(item[1].local_context_delta if item[1].local_context_delta is not None else -1.0),
+                -item[1].specificity_score,
+                -item[1].score,
+                item[0].conversation_id,
+                item[0].topic_id,
+                item[0].span_id,
+            )
+        )
+        selected = ranked_similarity[:top_per_source]
+        selected_target_keys = {_unit_key(target) for target, _evidence in selected}
+        weak_selected = [
+            (target, evidence)
+            for target, evidence, _shared_anchor_count in ranked_weak
+            if _unit_key(target) not in selected_target_keys
+        ][:top_per_source]
+        selected.extend(weak_selected)
         if selected:
             selected_by_source.append((source, selected))
 
@@ -854,7 +1098,7 @@ def _build_cross_thread_candidate_rows_with_stats(
                 item[0].span_id,
             )
         )
-        for rank, (target, evidence) in enumerate(ranked[:top_per_source], start=1):
+        for rank, (target, evidence) in enumerate(ranked, start=1):
             embedding_similarity = embedding_similarities.get(
                 (_unit_key(source), _unit_key(target))
             )

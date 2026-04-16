@@ -1230,6 +1230,161 @@ def test_build_cross_thread_candidate_rows_does_not_apply_high_topic_excerpt_com
     assert row["score"] < 0.58
 
 
+def test_build_cross_thread_candidate_rows_emits_weak_recurrence_candidate_below_similarity_threshold(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="deployment planning",
+            keywords=[],
+            excerpt=(
+                "Reopen the release notes for migration_checklist.yml and validate the rollback-plan"
+                " before tonight's deploy."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release retry",
+            keywords=[],
+            excerpt=(
+                "After last week's failure, retry the rollout and update rollback-plan plus"
+                " migration_checklist.yml for the next attempt."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert len(rows) == 2
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-source"
+        and candidate["target_topic_id"] == "topic-target"
+    )
+    assert row["score"] < 0.6
+    assert "weak_recurrence_dormant" in row["evidence"]["reason_codes"]
+    assert any(
+        code.startswith("weak_recurrence_anchor_overlap")
+        for code in row["evidence"]["reason_codes"]
+    )
+    assert row["temporal_gap_seconds"] >= 3 * 24 * 60 * 60
+
+
+def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candidate_without_gap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="deployment planning",
+            keywords=[],
+            excerpt=(
+                "Reopen the release notes for migration_checklist.yml and validate the rollback-plan"
+                " before tonight's deploy."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release retry",
+            keywords=[],
+            excerpt=(
+                "After the last failure, retry the rollout and update rollback-plan plus"
+                " migration_checklist.yml for the next attempt."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + 1000,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert rows == []
+
+
+def test_build_cross_thread_candidate_rows_unions_similarity_and_weak_recurrence_routes(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt=(
+                "Finalize migration_checklist.yml and verify rollback-plan before the production rollout."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-strong",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="migration checklist",
+            keywords=["migration", "rollback"],
+            excerpt=(
+                "Finalize migration_checklist.yml and confirm rollback-plan before production rollout."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + 1000,
+        ),
+        _topic_record(
+            topic_id="topic-weak",
+            conversation_id="conv-c",
+            cluster_id="cluster-c",
+            window_id="window-c",
+            label="release retry",
+            keywords=[],
+            excerpt=(
+                "Retry the rollout after the failed deploy and revise migration_checklist.yml"
+                " together with rollback-plan."
+            ),
+            message_ids=["c-1"],
+            first_seen=100 + (5 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root, top_per_source=1)
+    source_rows = [
+        row
+        for row in rows
+        if row["source_topic_id"] == "topic-source"
+    ]
+
+    assert {row["target_topic_id"] for row in source_rows} == {"topic-strong", "topic-weak"}
+    weak_row = next(row for row in source_rows if row["target_topic_id"] == "topic-weak")
+    assert "weak_recurrence_dormant" in weak_row["evidence"]["reason_codes"]
+
+
 def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction_pairs(
     tmp_path: Path,
 ):

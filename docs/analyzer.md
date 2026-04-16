@@ -836,7 +836,12 @@ deterministic and model-derived capabilities.
   `l3/semantic-topics/topics.json`, compares representative spans across
   different conversations with a small deterministic evidence stack, and
   writes `l3/cross-thread-candidates/candidates.jsonl` plus `summary.json`.
-  It emits reviewable candidate links only; it does not merge topics, rewrite
+  In addition to the original similarity-driven route, it now also admits a
+  narrow weak-recurrence route for structurally anchored pairs that are
+  separated by a meaningful gap, so low-similarity revisits can still reach
+  L4 for classification. `top_per_source` is applied per admission route, so a
+  source may emit more than that many links when both routes contribute. It
+  emits reviewable candidate links only; it does not merge topics, rewrite
   membership, or change `topic_id`. Current candidate rows also expose
   recurrence-oriented instrumentation signals such as `volume_gap`,
   `temporal_gap_seconds`, `continuity_mask`, `dormancy_score`,
