@@ -35,9 +35,54 @@ _DEFAULT_SOFT_STOPWORDS = frozenset(
         "and",
         "for",
         "with",
+        "or",
+        "to",
+        "in",
+        "not",
+        "this",
+        "that",
+        "you",
+        "are",
+        "your",
+        "but",
+        "from",
+        "have",
+        "will",
+        "just",
+        "about",
+        "really",
+        "some",
+        "more",
+        "please",
+        "thanks",
+        "thank",
+        "okay",
+        "feel",
+        "feels",
+        "think",
+        "thought",
+        "what",
+        "when",
+        "where",
+        "which",
+        "there",
+        "their",
+        "they",
+        "them",
+        "into",
         "それ",
         "これ",
         "こと",
+        "でも",
+        "って",
+        "つまり",
+        "だから",
+        "うん",
+        "この",
+        "いや",
+        "やで",
+        "これは",
+        "じゃなくて",
     }
 )
 _TOP_COOCCURRENCE_LIMIT = 8
@@ -45,6 +90,54 @@ _MAX_COOCCURRENCE_TOKENS_PER_MESSAGE = 16
 _PUNCTUATION_ONLY_RE = re.compile(r"^[^\w一-龯ぁ-んァ-ヶー]+$", re.IGNORECASE)
 _NUMBERED_MARKER_RE = re.compile(r"^\d+[.)]$")
 _ENTITY_RESIDUE_TOKENS = frozenset({"quot", "nbsp", "amp", "lt", "gt"})
+_DOMAINISH_PLAIN_TOKENS = frozenset(
+    {
+        "ai",
+        "api",
+        "json",
+        "yaml",
+        "yml",
+        "csv",
+        "sql",
+        "cli",
+        "sdk",
+        "html",
+        "http",
+        "https",
+        "note",
+        "notes",
+        "openai",
+        "chatgpt",
+        "markdown",
+    }
+)
+_OVERDISTRIBUTED_LOW_VALUE_TOKENS = frozenset(
+    {
+        "also",
+        "actually",
+        "maybe",
+        "then",
+        "well",
+        "over",
+        "under",
+        "very",
+        "much",
+        "many",
+        "because",
+        "should",
+        "would",
+        "could",
+        "うん",
+        "でも",
+        "って",
+        "つまり",
+        "だから",
+        "いや",
+        "この",
+        "それ",
+        "これ",
+    }
+)
 
 
 class TokenDictionaryError(RuntimeError):
@@ -137,6 +230,65 @@ def _accept_token(
     return True
 
 
+def _is_soft_stopword(
+    token: str,
+    *,
+    soft_stopwords: frozenset[str] | None = None,
+) -> bool:
+    effective_stopwords = soft_stopwords if soft_stopwords is not None else _DEFAULT_SOFT_STOPWORDS
+    return token.strip().casefold() in effective_stopwords
+
+
+def _is_domainish_token(token: str) -> bool:
+    normalized = token.strip().casefold()
+    if not normalized:
+        return False
+    if normalized in _DOMAINISH_PLAIN_TOKENS:
+        return True
+    if any(char in "/._:-" for char in normalized):
+        return True
+    has_alpha = any(char.isalpha() for char in normalized)
+    has_digit = any(char.isdigit() for char in normalized)
+    if has_alpha and has_digit:
+        return True
+    return len(normalized) >= 6
+
+
+def _is_overdistributed_token(
+    token: str,
+    *,
+    conversation_count: int,
+    topic_count: int,
+    total_conversation_count: int,
+    total_topic_count: int,
+) -> bool:
+    normalized = token.strip().casefold()
+    if not normalized or _is_domainish_token(normalized):
+        return False
+    conversation_ratio = (
+        conversation_count / total_conversation_count
+        if total_conversation_count > 0
+        else 0.0
+    )
+    topic_ratio = (
+        topic_count / total_topic_count
+        if total_topic_count > 0
+        else 0.0
+    )
+    if normalized in _OVERDISTRIBUTED_LOW_VALUE_TOKENS:
+        return (
+            (total_conversation_count >= 3 and conversation_ratio >= 0.67)
+            or (total_topic_count >= 3 and topic_ratio >= 0.67)
+        )
+    return (
+        len(normalized) <= 4
+        and (
+            (total_conversation_count >= 4 and conversation_ratio >= 0.8)
+            or (total_topic_count >= 4 and topic_ratio >= 0.8)
+        )
+    )
+
+
 def _lexical_tokens(text: str) -> list[str]:
     normalized = normalize_analysis_text(text)
     return [
@@ -146,10 +298,15 @@ def _lexical_tokens(text: str) -> list[str]:
     ]
 
 
-def _bundle_eligible_tokens(tokens: list[str]) -> list[str]:
+def _bundle_eligible_tokens(
+    tokens: list[str],
+    *,
+    excluded_tokens: frozenset[str] | None = None,
+) -> list[str]:
     eligible = [
         token
         for token in sorted(set(tokens))
+        if excluded_tokens is None or token not in excluded_tokens
         if (
             len(token) >= 5
             or any(char.isdigit() for char in token)
@@ -227,6 +384,8 @@ def _build_dictionary_artifact(
     parsed_files = discover_parsed_jsonl(input_root)
     topic_index = _load_topics_message_index(input_root)
     aggregates: dict[str, _TokenAggregate] = {}
+    all_conversations: set[str] = set()
+    all_topics: set[str] = set()
 
     for parsed_path in parsed_files:
         conversation_id: str | None = None
@@ -241,6 +400,7 @@ def _build_dictionary_artifact(
             row_conversation_id = string_or_none(row.get("conversation_id")) or conversation_id or "unknown"
             message_id = string_or_none(row.get("message_id")) or ""
             role = string_or_none(row.get("role")) or "unknown"
+            all_conversations.add(row_conversation_id)
             text, _source = resolve_message_text(row)
             if not text:
                 continue
@@ -249,6 +409,7 @@ def _build_dictionary_artifact(
                 continue
             timestamp = row.get("ts") if isinstance(row.get("ts"), int) else None
             message_topics = topic_index.get((row_conversation_id, message_id), set())
+            all_topics.update(message_topics)
 
             for token in tokens:
                 aggregate = aggregates.setdefault(token, _TokenAggregate(token=token))
@@ -268,22 +429,51 @@ def _build_dictionary_artifact(
                         else max(aggregate.last_seen, timestamp)
                     )
 
-            eligible_tokens = _bundle_eligible_tokens(tokens)
+    total_conversation_count = len(all_conversations)
+    total_topic_count = len(all_topics)
+    overdistributed_tokens = frozenset(
+        token
+        for token, aggregate in aggregates.items()
+        if _is_overdistributed_token(
+            token,
+            conversation_count=len(aggregate.conversations),
+            topic_count=len(aggregate.topics),
+            total_conversation_count=total_conversation_count,
+            total_topic_count=total_topic_count,
+        )
+    )
+
+    for parsed_path in parsed_files:
+        for row in iter_parsed_records(parsed_path):
+            if row.get("record_type") != "message":
+                continue
+            text, _source = resolve_message_text(row)
+            if not text:
+                continue
+            tokens = _lexical_tokens(text)
+            if not tokens:
+                continue
+            eligible_tokens = _bundle_eligible_tokens(
+                tokens,
+                excluded_tokens=overdistributed_tokens,
+            )
             for index, token in enumerate(eligible_tokens):
-                aggregate = aggregates.setdefault(token, _TokenAggregate(token=token))
+                aggregate = aggregates[token]
                 for other in eligible_tokens[index + 1 :]:
                     aggregate.cooccurrence[other] += 1
-                    other_aggregate = aggregates.setdefault(other, _TokenAggregate(token=other))
-                    other_aggregate.cooccurrence[token] += 1
+                    aggregates[other].cooccurrence[token] += 1
 
     token_rows: list[dict[str, Any]] = []
     for token, aggregate in sorted(
         aggregates.items(),
         key=lambda item: (-item[1].count, item[0]),
     ):
+        if token in overdistributed_tokens:
+            continue
         top_cooccurrence = [
             other
             for other, _count in aggregate.cooccurrence.most_common(_TOP_COOCCURRENCE_LIMIT)
+            if other not in overdistributed_tokens
         ]
         token_rows.append(
             {

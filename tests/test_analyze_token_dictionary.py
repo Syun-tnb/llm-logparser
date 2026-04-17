@@ -271,8 +271,29 @@ def test_token_dictionary_accept_token_keeps_meaningful_tokens():
 def test_token_dictionary_accept_token_uses_minimal_soft_stopwords():
     assert not analyzer_token_dictionary._accept_token("the")
     assert not analyzer_token_dictionary._accept_token("and")
+    assert not analyzer_token_dictionary._accept_token("でも")
+    assert not analyzer_token_dictionary._accept_token("って")
+    assert not analyzer_token_dictionary._accept_token("to")
+    assert not analyzer_token_dictionary._accept_token("or")
     assert analyzer_token_dictionary._accept_token("chatgpt")
     assert analyzer_token_dictionary._accept_token("note")
+
+
+def test_token_dictionary_overdistributed_filter_suppresses_generic_spread_tokens():
+    assert analyzer_token_dictionary._is_overdistributed_token(
+        "also",
+        conversation_count=4,
+        topic_count=4,
+        total_conversation_count=5,
+        total_topic_count=5,
+    )
+    assert not analyzer_token_dictionary._is_overdistributed_token(
+        "openai",
+        conversation_count=5,
+        topic_count=5,
+        total_conversation_count=5,
+        total_topic_count=5,
+    )
 
 
 def test_write_token_dictionary_artifacts_filters_noise_before_aggregation(tmp_path: Path):
@@ -302,6 +323,38 @@ def test_write_token_dictionary_artifacts_filters_noise_before_aggregation(tmp_p
     assert "config.yaml" in tokens
     assert "openai" in tokens
     assert "note" in tokens
+
+
+def test_write_token_dictionary_artifacts_suppresses_overdistributed_generic_tokens_and_cleans_bundles(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_provider_fixture(root)
+    for index in range(1, 6):
+        conversation_id = f"conv-generic-{index}"
+        _write_jsonl(
+            root / f"thread-{conversation_id}" / "parsed.jsonl",
+            [
+                _thread_row(conversation_id),
+                _message_row(
+                    conversation_id=conversation_id,
+                    message_id=f"{conversation_id}-1",
+                    role="user",
+                    text=f"also openai note config.yaml rollout retry {index}",
+                    ts=10000 + index,
+                ),
+            ],
+        )
+
+    write_token_dictionary_artifacts(root)
+    dictionary = json.loads(token_dictionary_path(root).read_text(encoding="utf-8"))
+    bundles = json.loads(token_bundles_path(root).read_text(encoding="utf-8"))
+
+    tokens = {row["token"] for row in dictionary["tokens"]}
+    assert "also" not in tokens
+    assert "openai" in tokens
+    assert "config.yaml" in tokens
+    assert all("also" not in bundle["tokens"] for bundle in bundles["bundles"])
 
 
 def test_write_token_dictionary_artifacts_skip_existing_preserves_existing_outputs(tmp_path: Path):
