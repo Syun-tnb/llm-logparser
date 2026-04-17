@@ -1064,6 +1064,19 @@ def test_text_specificity_score_prefers_concrete_task_text_over_generic_short_te
     assert generic < concrete
 
 
+def test_task_fragment_view_prefers_task_bearing_content_over_explainer_filler():
+    view = cross_thread_module._task_fragment_view(
+        "Let's compare Dia and Fellou and explain why each one feels useful. "
+        "Retry migration_checklist.yml, validate rollback-plan, and rerun the failed rollout before release."
+    )
+
+    normalized_view = " ".join(view.lower().split())
+    assert "migration_checklist.yml" in normalized_view
+    assert "rollback-plan" in normalized_view
+    assert "compare dia and fellou" not in normalized_view
+    assert "feels useful" not in normalized_view
+
+
 def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(
     tmp_path: Path,
 ):
@@ -1413,6 +1426,47 @@ def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candida
         "dormant_gap" not in row["evidence"]["reason_codes"]
         for row in rows
     )
+
+
+def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candidate_for_broad_explainer_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="browser agent comparison",
+            keywords=[],
+            excerpt=(
+                "Let's compare Dia and Fellou and explain the difference in browsing style. "
+                "migration_checklist.yml and rollback-plan are only examples of structured prompts in that explanation."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="browser agent explainer",
+            keywords=[],
+            excerpt=(
+                "This is another organized explanation of Dia versus GenSpark and why each approach feels useful. "
+                "rollback-plan together with migration_checklist.yml is just an example scaffold for the comparison."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (4 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert rows == []
 
 
 def test_build_cross_thread_candidate_rows_unions_similarity_and_weak_recurrence_routes(

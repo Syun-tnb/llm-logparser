@@ -144,6 +144,117 @@ _WEAK_RECURRENCE_REFLECTIVE_TOKENS = frozenset(
         "自然",
     }
 )
+_TASK_FRAGMENT_ACTION_TOKENS = frozenset(
+    {
+        "add",
+        "adjust",
+        "apply",
+        "build",
+        "change",
+        "check",
+        "configure",
+        "debug",
+        "deploy",
+        "edit",
+        "enable",
+        "disable",
+        "fail",
+        "failure",
+        "fix",
+        "investigate",
+        "rerun",
+        "resume",
+        "retry",
+        "restore",
+        "review",
+        "run",
+        "update",
+        "validate",
+        "verify",
+        "修正",
+        "更新",
+        "確認",
+        "検証",
+        "再実行",
+        "再開",
+        "再試行",
+        "再確認",
+        "失敗",
+        "対応",
+        "調査",
+        "修復",
+        "確認する",
+        "見直す",
+        "直す",
+        "試す",
+    }
+)
+_TASK_FRAGMENT_STATE_TOKENS = frozenset(
+    {
+        "after",
+        "before",
+        "blocked",
+        "constraint",
+        "error",
+        "issue",
+        "problem",
+        "retry",
+        "rollback",
+        "timeout",
+        "warning",
+        "while",
+        "条件",
+        "制約",
+        "問題",
+        "原因",
+        "対処",
+        "復旧",
+        "失敗",
+        "エラー",
+        "警告",
+        "再開",
+        "再試行",
+    }
+)
+_TASK_FRAGMENT_EXPLANATORY_TOKENS = frozenset(
+    {
+        "because",
+        "benefit",
+        "benefits",
+        "compare",
+        "comparison",
+        "difference",
+        "differences",
+        "explain",
+        "explanation",
+        "explains",
+        "explainer",
+        "example",
+        "examples",
+        "meaning",
+        "overview",
+        "style",
+        "useful",
+        "versus",
+        "why",
+        "とは",
+        "なぜ",
+        "違い",
+        "比較",
+        "整理",
+        "説明",
+        "解説",
+        "意味",
+        "便利",
+        "使い所",
+        "向いてる",
+    }
+)
+_TASK_FRAGMENT_NOISE_MARKERS = (
+    "the output of this plugin was redacted",
+    "according to the search results",
+    "based on the search results",
+)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -159,6 +270,7 @@ class _RepresentativeSpanUnit:
     message_ids: tuple[str, ...]
     source_window_ids: tuple[str, ...]
     excerpt: str
+    task_fragment_view: str
     topic_label: str | None
     keywords: tuple[str, ...]
     normalized_label: str | None
@@ -399,6 +511,99 @@ def _reflective_text_score(text: str) -> float:
     )
 
 
+def _task_fragment_view(text: str) -> str:
+    normalized_text = " ".join(text.split())
+    if not normalized_text:
+        return ""
+
+    fragments = [
+        fragment.strip(" \t-:;,.!?/|")
+        for fragment in re.split(r"[\n\r]+|(?<=[。！？.!?;；])\s+", normalized_text)
+        if fragment.strip()
+    ]
+    if not fragments:
+        return normalized_text
+
+    retained: list[tuple[int, str]] = []
+    for index, fragment in enumerate(fragments):
+        normalized_fragment = normalize_analysis_text(fragment)
+        if not normalized_fragment:
+            continue
+        if any(marker in normalized_fragment for marker in _TASK_FRAGMENT_NOISE_MARKERS):
+            continue
+        tokens = _token_list(fragment)
+        if not tokens:
+            continue
+        anchor_tokens = _anchor_tokens_for_texts((fragment,))
+        strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,))
+        action_hits = sum(
+            1 for token in tokens
+            if token in _TASK_FRAGMENT_ACTION_TOKENS
+        )
+        state_hits = sum(
+            1 for token in tokens
+            if token in _TASK_FRAGMENT_STATE_TOKENS
+        )
+        explanatory_hits = sum(
+            1 for token in tokens
+            if token in _TASK_FRAGMENT_EXPLANATORY_TOKENS
+        )
+        reflective_score = _reflective_text_score(fragment)
+        if (
+            explanatory_hits > 0
+            and strong_anchor_tokens
+            and action_hits == 0
+            and state_hits == 0
+        ):
+            continue
+        score = 0.0
+        if strong_anchor_tokens:
+            score += 0.45
+        elif anchor_tokens:
+            score += 0.22
+        score += min(0.36, 0.18 * action_hits)
+        score += min(0.24, 0.12 * state_hits)
+        score += min(0.18, 0.22 * _text_specificity_score(fragment))
+        score -= min(0.32, 0.16 * explanatory_hits)
+        score -= min(0.3, 0.75 * reflective_score)
+        if score >= 0.34:
+            retained.append((index, fragment))
+
+    if retained:
+        return " | ".join(fragment for _index, fragment in retained)
+
+    anchor_tokens = _anchor_tokens_for_texts((normalized_text,))
+    strong_anchor_tokens = _strong_anchor_tokens_for_texts((normalized_text,))
+    if strong_anchor_tokens:
+        overall_tokens = _token_list(normalized_text)
+        overall_action_hits = sum(
+            1 for token in overall_tokens
+            if token in _TASK_FRAGMENT_ACTION_TOKENS
+        )
+        overall_state_hits = sum(
+            1 for token in overall_tokens
+            if token in _TASK_FRAGMENT_STATE_TOKENS
+        )
+        overall_explanatory_hits = sum(
+            1 for token in overall_tokens
+            if token in _TASK_FRAGMENT_EXPLANATORY_TOKENS
+        )
+        if (
+            overall_explanatory_hits > 0
+            and overall_action_hits == 0
+            and overall_state_hits == 0
+        ):
+            return ""
+        overall_task_like_score = _task_like_text_score(
+            normalized_text,
+            anchor_tokens,
+            strong_anchor_tokens,
+        )
+        if overall_task_like_score >= 0.62:
+            return normalized_text
+    return ""
+
+
 def _representative_units(topics_artifact: dict[str, Any]) -> list[_RepresentativeSpanUnit]:
     provider_id = str(topics_artifact["provider_id"])
     units: list[_RepresentativeSpanUnit] = []
@@ -441,13 +646,14 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                 value
                 for value in (
                     normalized_topic_label or "",
-                    str(span["excerpt"]),
+                    _task_fragment_view(str(span["excerpt"])),
                     *keywords,
                 )
                 if value
             )
             anchor_tokens = _anchor_tokens_for_texts(anchor_source_values)
             strong_anchor_tokens = _strong_anchor_tokens_for_texts(anchor_source_values)
+            task_fragment_view = _task_fragment_view(str(span["excerpt"]))
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -457,18 +663,19 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                     message_ids=tuple(str(message_id) for message_id in span["message_ids"]),
                     source_window_ids=source_window_ids,
                     excerpt=str(span["excerpt"]),
+                    task_fragment_view=task_fragment_view,
                     topic_label=normalized_topic_label,
                     keywords=keywords,
                     normalized_label=normalized_label,
                     raw_label=raw_label,
                     first_seen=topic_first_seen,
                     last_seen=topic_last_seen,
-                    excerpt_specificity=_text_specificity_score(str(span["excerpt"])),
-                    reflective_score=_reflective_text_score(str(span["excerpt"])),
+                    excerpt_specificity=_text_specificity_score(task_fragment_view),
+                    reflective_score=_reflective_text_score(task_fragment_view),
                     anchor_tokens=anchor_tokens,
                     strong_anchor_tokens=strong_anchor_tokens,
                     task_like_score=_task_like_text_score(
-                        str(span["excerpt"]),
+                        task_fragment_view,
                         anchor_tokens,
                         strong_anchor_tokens,
                     ),
