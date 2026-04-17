@@ -111,6 +111,12 @@ _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD = 0.18
 _WEAK_RECURRENCE_TASK_LIKE_THRESHOLD = 0.52
 _WEAK_RECURRENCE_SINGLE_ANCHOR_TASK_LIKE_THRESHOLD = 0.68
 _WEAK_RECURRENCE_REFLECTIVE_THRESHOLD = 0.14
+_WEAK_ROUTE_ANCHOR_OVERLAP_SCORE = 0.05
+_WEAK_ROUTE_ANCHOR_OVERLAP_STRONG_SCORE = 0.08
+_WEAK_ROUTE_DORMANT_GAP_SCORE = 0.04
+_WEAK_ROUTE_SPECIFICITY_SCORE = 0.03
+_WEAK_ROUTE_TASK_LIKE_SCORE = 0.03
+_WEAK_ROUTE_CONTEXT_SHIFT_SCORE = 0.02
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 _WEAK_RECURRENCE_REFLECTIVE_TOKENS = frozenset(
     {
@@ -807,6 +813,33 @@ def _similarity_score_and_reasons(
     return score, _dedupe_reason_codes(reason_codes), has_strong_signal
 
 
+def _structural_signal_score_and_reasons(
+    signals: _PairSignals,
+) -> tuple[float, tuple[str, ...]]:
+    score = 0.0
+    reason_codes: list[str] = []
+    if len(signals.shared_strong_anchor_tokens) >= 2:
+        score += _WEAK_ROUTE_ANCHOR_OVERLAP_STRONG_SCORE
+        reason_codes.append("anchor_overlap_strong")
+    else:
+        score += _WEAK_ROUTE_ANCHOR_OVERLAP_SCORE
+        reason_codes.append("anchor_overlap")
+    score += _WEAK_ROUTE_DORMANT_GAP_SCORE
+    reason_codes.append("dormant_gap")
+    if signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD:
+        score += _WEAK_ROUTE_SPECIFICITY_SCORE
+        reason_codes.append("specificity_signal")
+    score += _WEAK_ROUTE_TASK_LIKE_SCORE
+    reason_codes.append("task_like_signal")
+    if (
+        signals.local_context_delta is not None
+        and signals.local_context_delta >= _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD
+    ):
+        score += _WEAK_ROUTE_CONTEXT_SHIFT_SCORE
+        reason_codes.append("context_shift_signal")
+    return round(score, 4), _dedupe_reason_codes(reason_codes)
+
+
 def _weak_recurrence_evidence_for_pair(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
@@ -862,28 +895,13 @@ def _weak_recurrence_evidence_for_pair(
         return None
 
     score, base_reason_codes, _has_strong_signal = _similarity_score_and_reasons(signals)
-    weak_reason_codes = [
-        (
-            "weak_recurrence_anchor_overlap_high"
-            if len(signals.shared_strong_anchor_tokens) >= 2
-            else "weak_recurrence_anchor_overlap"
-        ),
-        "weak_recurrence_dormant",
-    ]
-    if signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD:
-        weak_reason_codes.append("weak_recurrence_specificity")
-    weak_reason_codes.append("weak_recurrence_task_like")
-    if (
-        signals.local_context_delta is not None
-        and signals.local_context_delta >= _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD
-    ):
-        weak_reason_codes.append("weak_recurrence_context_jump")
+    structural_score, structural_reason_codes = _structural_signal_score_and_reasons(signals)
 
     if base_evidence is not None:
         evidence = _Evidence(
             score=base_evidence.score,
             reason_codes=_dedupe_reason_codes(
-                list(base_evidence.reason_codes) + weak_reason_codes
+                list(base_evidence.reason_codes) + list(structural_reason_codes)
             ),
             excerpt_similarity=base_evidence.excerpt_similarity,
             topic_label_similarity=base_evidence.topic_label_similarity,
@@ -901,9 +919,9 @@ def _weak_recurrence_evidence_for_pair(
     else:
         evidence = _evidence_from_signals(
             signals=signals,
-            score=score,
+            score=max(score, structural_score),
             reason_codes=_dedupe_reason_codes(
-                list(base_reason_codes) + weak_reason_codes
+                list(base_reason_codes) + list(structural_reason_codes)
             ),
         )
 

@@ -843,7 +843,9 @@ deterministic and model-derived capabilities.
   source may emit more than that many links when both routes contribute. It
   prefers structured anchor overlap plus task-like span signals; generic or
   reflective distant overlaps are intentionally filtered more aggressively.
-  It
+  Weak-route evidence is recorded as neutral structural signals such as
+  anchor overlap, dormant gap, task-like signal, and context shift rather than
+  as an L3 recurrence label. It
   emits reviewable candidate links only; it does not merge topics, rewrite
   membership, or change `topic_id`. Current candidate rows also expose
   recurrence-oriented instrumentation signals such as `volume_gap`,

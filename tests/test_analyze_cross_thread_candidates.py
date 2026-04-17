@@ -1275,10 +1275,15 @@ def test_build_cross_thread_candidate_rows_emits_weak_recurrence_candidate_below
         if candidate["source_topic_id"] == "topic-source"
         and candidate["target_topic_id"] == "topic-target"
     )
-    assert row["score"] < 0.6
-    assert "weak_recurrence_dormant" in row["evidence"]["reason_codes"]
+    assert 0.1 <= row["score"] < 0.6
+    assert "dormant_gap" in row["evidence"]["reason_codes"]
     assert any(
-        code.startswith("weak_recurrence_anchor_overlap")
+        code in {"anchor_overlap", "anchor_overlap_strong"}
+        for code in row["evidence"]["reason_codes"]
+    )
+    assert "task_like_signal" in row["evidence"]["reason_codes"]
+    assert not any(
+        code.startswith("weak_recurrence_")
         for code in row["evidence"]["reason_codes"]
     )
     assert row["temporal_gap_seconds"] >= 3 * 24 * 60 * 60
@@ -1405,7 +1410,7 @@ def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candida
 
     assert len(rows) == 2
     assert all(
-        "weak_recurrence_dormant" not in row["evidence"]["reason_codes"]
+        "dormant_gap" not in row["evidence"]["reason_codes"]
         for row in rows
     )
 
@@ -1467,7 +1472,11 @@ def test_build_cross_thread_candidate_rows_unions_similarity_and_weak_recurrence
 
     assert {row["target_topic_id"] for row in source_rows} == {"topic-strong", "topic-weak"}
     weak_row = next(row for row in source_rows if row["target_topic_id"] == "topic-weak")
-    assert "weak_recurrence_dormant" in weak_row["evidence"]["reason_codes"]
+    assert "dormant_gap" in weak_row["evidence"]["reason_codes"]
+    assert any(
+        code in {"anchor_overlap", "anchor_overlap_strong"}
+        for code in weak_row["evidence"]["reason_codes"]
+    )
 
 
 def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction_pairs(
