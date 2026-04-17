@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from llm_logparser.cli.cli import main
+from llm_logparser.core import analyzer_token_dictionary
 from llm_logparser.core.analyzer_token_dictionary import (
     token_bundles_path,
     token_dictionary_path,
@@ -252,6 +253,55 @@ def test_write_token_dictionary_artifacts_writes_schema_valid_outputs(tmp_path: 
     assert "deploy" in config_token["cooccurrence"]
     assert dictionary["source_inputs"] == ["parsed.jsonl", "token_stats.json", "topics.json"]
     assert any("config.yaml" in bundle["tokens"] for bundle in bundles["bundles"])
+def test_token_dictionary_accept_token_filters_universal_noise():
+    assert not analyzer_token_dictionary._accept_token("---")
+    assert not analyzer_token_dictionary._accept_token("...")
+    assert not analyzer_token_dictionary._accept_token("1.")
+    assert not analyzer_token_dictionary._accept_token("quot")
+    assert not analyzer_token_dictionary._accept_token("!")
+
+
+def test_token_dictionary_accept_token_keeps_meaningful_tokens():
+    assert analyzer_token_dictionary._accept_token("ai")
+    assert analyzer_token_dictionary._accept_token("note")
+    assert analyzer_token_dictionary._accept_token("openai")
+    assert analyzer_token_dictionary._accept_token("config.yaml")
+
+
+def test_token_dictionary_accept_token_uses_minimal_soft_stopwords():
+    assert not analyzer_token_dictionary._accept_token("the")
+    assert not analyzer_token_dictionary._accept_token("and")
+    assert analyzer_token_dictionary._accept_token("chatgpt")
+    assert analyzer_token_dictionary._accept_token("note")
+
+
+def test_write_token_dictionary_artifacts_filters_noise_before_aggregation(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_provider_fixture(root)
+    _write_jsonl(
+        root / "thread-noise" / "parsed.jsonl",
+        [
+            _thread_row("conv-noise"),
+            _message_row(
+                conversation_id="conv-noise",
+                message_id="n-1",
+                role="user",
+                text="The and quot config.yaml openai note",
+                ts=9000,
+            ),
+        ],
+    )
+
+    write_token_dictionary_artifacts(root)
+    dictionary = json.loads(token_dictionary_path(root).read_text(encoding="utf-8"))
+    tokens = {row["token"] for row in dictionary["tokens"]}
+
+    assert "the" not in tokens
+    assert "and" not in tokens
+    assert "quot" not in tokens
+    assert "config.yaml" in tokens
+    assert "openai" in tokens
+    assert "note" in tokens
 
 
 def test_write_token_dictionary_artifacts_skip_existing_preserves_existing_outputs(tmp_path: Path):

@@ -29,62 +29,22 @@ TOKEN_BUNDLES_ARTIFACT_TYPE = "token_bundles"
 TOKEN_DICTIONARY_PROVENANCE_ARTIFACT_TYPE = "token_dictionary_provenance"
 TOKEN_DICTIONARY_DIRNAME = "token-dictionary"
 _TOKEN_RE = re.compile(r"[a-z0-9_./:-]{2,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
-_GENERIC_TOKENS = frozenset(
+_DEFAULT_SOFT_STOPWORDS = frozenset(
     {
         "the",
         "and",
         "for",
         "with",
-        "that",
-        "this",
-        "from",
-        "into",
-        "your",
-        "have",
-        "will",
-        "just",
-        "about",
-        "really",
-        "some",
-        "more",
-        "please",
-        "thanks",
-        "thank",
-        "okay",
-        "feel",
-        "feels",
-        "think",
-        "thought",
-        "what",
-        "when",
-        "where",
-        "which",
-        "there",
-        "their",
-        "they",
-        "them",
-        "explain",
-        "comparison",
-        "differences",
-        "compare",
-        "useful",
-        "おはよう",
-        "こんにちは",
-        "こんばんは",
-        "ありがとう",
-        "了解",
-        "なるほど",
         "それ",
         "これ",
-        "あれ",
         "こと",
-        "感じ",
-        "説明",
-        "比較",
     }
 )
 _TOP_COOCCURRENCE_LIMIT = 8
 _MAX_COOCCURRENCE_TOKENS_PER_MESSAGE = 16
+_PUNCTUATION_ONLY_RE = re.compile(r"^[^\w一-龯ぁ-んァ-ヶー]+$", re.IGNORECASE)
+_NUMBERED_MARKER_RE = re.compile(r"^\d+[.)]$")
+_ENTITY_RESIDUE_TOKENS = frozenset({"quot", "nbsp", "amp", "lt", "gt"})
 
 
 class TokenDictionaryError(RuntimeError):
@@ -123,17 +83,74 @@ def _created_at_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _is_separator_token(token: str) -> bool:
+    normalized = token.strip()
+    if len(normalized) < 3:
+        return False
+    if len(set(normalized)) == 1 and normalized[0] in "-_=~.*•":
+        return True
+    return normalized in {"...", "---", "----", "___", "***"}
+
+
+def _is_punctuation_only(token: str) -> bool:
+    return bool(_PUNCTUATION_ONLY_RE.match(token.strip()))
+
+
+def _is_numbered_marker(token: str) -> bool:
+    return bool(_NUMBERED_MARKER_RE.match(token.strip()))
+
+
+def _is_entity_residue(token: str) -> bool:
+    return token.strip().casefold() in _ENTITY_RESIDUE_TOKENS
+
+
+def _is_extremely_short_non_informative_token(token: str) -> bool:
+    normalized = token.strip()
+    if len(normalized) > 1:
+        return False
+    return not any(char.isalnum() for char in normalized)
+
+
+def _accept_token(
+    token: str,
+    *,
+    soft_stopwords: frozenset[str] | None = None,
+) -> bool:
+    normalized = token.strip().casefold()
+    if not normalized:
+        return False
+
+    if _is_separator_token(normalized):
+        return False
+    if _is_punctuation_only(normalized):
+        return False
+    if _is_numbered_marker(normalized):
+        return False
+    if _is_entity_residue(normalized):
+        return False
+    if _is_extremely_short_non_informative_token(normalized):
+        return False
+
+    effective_stopwords = soft_stopwords if soft_stopwords is not None else _DEFAULT_SOFT_STOPWORDS
+    if normalized in effective_stopwords:
+        return False
+    return True
+
+
 def _lexical_tokens(text: str) -> list[str]:
     normalized = normalize_analysis_text(text)
-    return [token for token in _TOKEN_RE.findall(normalized) if token]
+    return [
+        token
+        for token in _TOKEN_RE.findall(normalized)
+        if token and _accept_token(token)
+    ]
 
 
 def _bundle_eligible_tokens(tokens: list[str]) -> list[str]:
     eligible = [
         token
         for token in sorted(set(tokens))
-        if token not in _GENERIC_TOKENS
-        and (
+        if (
             len(token) >= 5
             or any(char.isdigit() for char in token)
             or any(char in "/._:-" for char in token)
