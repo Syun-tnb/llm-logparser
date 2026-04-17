@@ -841,6 +841,9 @@ deterministic and model-derived capabilities.
   separated by a meaningful gap, so low-similarity revisits can still reach
   L4 for classification. `top_per_source` is applied per admission route, so a
   source may emit more than that many links when both routes contribute. It
+  prefers structured anchor overlap plus task-like span signals; generic or
+  reflective distant overlaps are intentionally filtered more aggressively.
+  It
   emits reviewable candidate links only; it does not merge topics, rewrite
   membership, or change `topic_id`. Current candidate rows also expose
   recurrence-oriented instrumentation signals such as `volume_gap`,

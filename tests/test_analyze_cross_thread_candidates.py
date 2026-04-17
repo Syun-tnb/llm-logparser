@@ -1325,6 +1325,91 @@ def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candida
     assert rows == []
 
 
+def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candidate_for_single_anchor_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="deployment planning",
+            keywords=[],
+            excerpt=(
+                "Retry notes mention migration_checklist.yml, but the real task is still undecided."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="retrospective",
+            keywords=[],
+            excerpt=(
+                "We vaguely referenced migration_checklist.yml while reflecting on what felt unclear"
+                " after the meeting."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert rows == []
+
+
+def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candidate_for_reflective_span(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="meta discussion",
+            keywords=[],
+            excerpt=(
+                "I remember rollback-plan and migration_checklist.yml, but this is mostly about how the"
+                " conversation felt and what vibe we had."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="reflection",
+            keywords=[],
+            excerpt=(
+                "Thinking again about rollback-plan and migration_checklist.yml, I mostly want to reflect"
+                " on the feeling, memory, and relationship around that exchange."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (4 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+
+    assert len(rows) == 2
+    assert all(
+        "weak_recurrence_dormant" not in row["evidence"]["reason_codes"]
+        for row in rows
+    )
+
+
 def test_build_cross_thread_candidate_rows_unions_similarity_and_weak_recurrence_routes(
     tmp_path: Path,
 ):
@@ -1365,7 +1450,7 @@ def test_build_cross_thread_candidate_rows_unions_similarity_and_weak_recurrence
             keywords=[],
             excerpt=(
                 "Retry the rollout after the failed deploy and revise migration_checklist.yml"
-                " together with rollback-plan."
+                " together with rollback-plan before the next attempt."
             ),
             message_ids=["c-1"],
             first_seen=100 + (5 * 24 * 60 * 60 * 1000),

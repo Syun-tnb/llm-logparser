@@ -106,9 +106,38 @@ _CONTINUITY_VOLUME_GAP_SPAN_THRESHOLD = 2
 _DORMANCY_MESSAGE_SCALE = 64
 _DORMANCY_SPAN_SCALE = 8
 _WEAK_RECURRENCE_TEMPORAL_GAP_SECONDS = 6 * 60 * 60
-_WEAK_RECURRENCE_SPECIFICITY_THRESHOLD = 0.45
-_WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD = 0.12
+_WEAK_RECURRENCE_SPECIFICITY_THRESHOLD = 0.58
+_WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD = 0.18
+_WEAK_RECURRENCE_TASK_LIKE_THRESHOLD = 0.52
+_WEAK_RECURRENCE_SINGLE_ANCHOR_TASK_LIKE_THRESHOLD = 0.68
+_WEAK_RECURRENCE_REFLECTIVE_THRESHOLD = 0.14
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
+_WEAK_RECURRENCE_REFLECTIVE_TOKENS = frozenset(
+    {
+        "feel",
+        "feels",
+        "felt",
+        "think",
+        "thought",
+        "maybe",
+        "probably",
+        "honestly",
+        "emotion",
+        "vibe",
+        "relationship",
+        "memory",
+        "remember",
+        "reflection",
+        "気持ち",
+        "感覚",
+        "記憶",
+        "思い出",
+        "雰囲気",
+        "ノリ",
+        "心地",
+        "自然",
+    }
+)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -131,7 +160,10 @@ class _RepresentativeSpanUnit:
     first_seen: int | None
     last_seen: int | None
     excerpt_specificity: float
+    reflective_score: float
     anchor_tokens: tuple[str, ...]
+    strong_anchor_tokens: tuple[str, ...]
+    task_like_score: float
 
 
 @dataclass(frozen=True)
@@ -180,6 +212,9 @@ class _PairSignals:
     specificity_score: float
     local_context_delta: float | None
     shared_anchor_tokens: tuple[str, ...]
+    shared_strong_anchor_tokens: tuple[str, ...]
+    task_like_score: float
+    reflective_score: float
 
 
 @dataclass(frozen=True)
@@ -261,17 +296,41 @@ def _text_specificity_score(text: str) -> float:
     )
 
 
-def _is_anchor_like_token(token: str) -> bool:
+def _token_list(text: str) -> list[str]:
+    normalized = normalize_analysis_text(text)
+    return [token for token in _SPECIFICITY_TOKEN_RE.findall(normalized) if token]
+
+
+def _normalize_anchor_token(token: str) -> str:
+    return token.strip(".,;!?()[]{}\"'")
+
+
+def _is_strong_anchor_like_token(token: str) -> bool:
+    token = _normalize_anchor_token(token)
     if token in _SPECIFICITY_GENERIC_TOKENS or len(token) < 4:
         return False
-    if any(char.isdigit() for char in token):
+    has_symbol = any(char in _ANCHOR_TOKEN_SYMBOLS for char in token)
+    has_digit = any(char.isdigit() for char in token)
+    has_alpha = any(char.isalpha() for char in token)
+    if has_symbol and (has_alpha or has_digit):
         return True
-    if any(char in _ANCHOR_TOKEN_SYMBOLS for char in token):
+    if has_digit and len(token) >= 5 and has_alpha:
         return True
+    if has_digit and len(token) >= 8:
+        return True
+    return False
+
+
+def _is_anchor_like_token(token: str) -> bool:
+    token = _normalize_anchor_token(token)
+    if _is_strong_anchor_like_token(token):
+        return True
+    if token in _SPECIFICITY_GENERIC_TOKENS or len(token) < 4:
+        return False
     has_cjk = bool(re.search(r"[一-龯ぁ-んァ-ヶー]", token))
     if has_cjk:
-        return len(token) >= 4
-    return len(token) >= 7
+        return len(token) >= 6
+    return len(token) >= 12
 
 
 def _anchor_tokens_for_texts(values: tuple[str, ...]) -> tuple[str, ...]:
@@ -279,9 +338,59 @@ def _anchor_tokens_for_texts(values: tuple[str, ...]) -> tuple[str, ...]:
     for value in values:
         normalized = normalize_analysis_text(value)
         for token in _SPECIFICITY_TOKEN_RE.findall(normalized):
-            if _is_anchor_like_token(token):
-                tokens.add(token)
+            normalized_token = _normalize_anchor_token(token)
+            if _is_anchor_like_token(normalized_token):
+                tokens.add(normalized_token)
     return tuple(sorted(tokens))
+
+
+def _strong_anchor_tokens_for_texts(values: tuple[str, ...]) -> tuple[str, ...]:
+    tokens: set[str] = set()
+    for value in values:
+        normalized = normalize_analysis_text(value)
+        for token in _SPECIFICITY_TOKEN_RE.findall(normalized):
+            normalized_token = _normalize_anchor_token(token)
+            if _is_strong_anchor_like_token(normalized_token):
+                tokens.add(normalized_token)
+    return tuple(sorted(tokens))
+
+
+def _task_like_text_score(text: str, anchor_tokens: tuple[str, ...], strong_anchor_tokens: tuple[str, ...]) -> float:
+    tokens = _token_list(text)
+    if not tokens:
+        return 0.0
+    reflective_count = sum(1 for token in tokens if token in _WEAK_RECURRENCE_REFLECTIVE_TOKENS)
+    reflective_ratio = reflective_count / len(tokens)
+    strong_anchor_bonus = min(0.35, 0.18 * len(strong_anchor_tokens))
+    anchor_bonus = min(0.18, 0.06 * max(0, len(anchor_tokens) - len(strong_anchor_tokens)))
+    text_specificity = _text_specificity_score(text)
+    reflective_penalty = min(0.3, 0.8 * reflective_ratio)
+    if reflective_count >= 2 and len(strong_anchor_tokens) <= 2:
+        reflective_penalty = min(0.45, reflective_penalty + 0.18)
+    return round(
+        max(
+            0.0,
+            min(
+                1.0,
+                0.72 * text_specificity
+                + strong_anchor_bonus
+                + anchor_bonus
+                - reflective_penalty,
+            ),
+        ),
+        4,
+    )
+
+
+def _reflective_text_score(text: str) -> float:
+    tokens = _token_list(text)
+    if not tokens:
+        return 0.0
+    return round(
+        sum(1 for token in tokens if token in _WEAK_RECURRENCE_REFLECTIVE_TOKENS)
+        / len(tokens),
+        4,
+    )
 
 
 def _representative_units(topics_artifact: dict[str, Any]) -> list[_RepresentativeSpanUnit]:
@@ -322,6 +431,17 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                 window_id = span.get("window_id")
                 if isinstance(window_id, str) and window_id:
                     source_window_ids = (window_id,)
+            anchor_source_values = tuple(
+                value
+                for value in (
+                    normalized_topic_label or "",
+                    str(span["excerpt"]),
+                    *keywords,
+                )
+                if value
+            )
+            anchor_tokens = _anchor_tokens_for_texts(anchor_source_values)
+            strong_anchor_tokens = _strong_anchor_tokens_for_texts(anchor_source_values)
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -338,16 +458,13 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                     first_seen=topic_first_seen,
                     last_seen=topic_last_seen,
                     excerpt_specificity=_text_specificity_score(str(span["excerpt"])),
-                    anchor_tokens=_anchor_tokens_for_texts(
-                        tuple(
-                            value
-                            for value in (
-                                normalized_topic_label or "",
-                                str(span["excerpt"]),
-                                *keywords,
-                            )
-                            if value
-                        )
+                    reflective_score=_reflective_text_score(str(span["excerpt"])),
+                    anchor_tokens=anchor_tokens,
+                    strong_anchor_tokens=strong_anchor_tokens,
+                    task_like_score=_task_like_text_score(
+                        str(span["excerpt"]),
+                        anchor_tokens,
+                        strong_anchor_tokens,
                     ),
                 )
             )
@@ -574,6 +691,9 @@ def _pair_signals(
     shared_anchor_tokens = tuple(
         sorted(set(source.anchor_tokens) & set(target.anchor_tokens))
     )
+    shared_strong_anchor_tokens = tuple(
+        sorted(set(source.strong_anchor_tokens) & set(target.strong_anchor_tokens))
+    )
     return _PairSignals(
         excerpt_similarity=excerpt_similarity,
         topic_label_similarity=topic_label_similarity,
@@ -588,6 +708,15 @@ def _pair_signals(
         specificity_score=specificity_score,
         local_context_delta=local_context_delta,
         shared_anchor_tokens=shared_anchor_tokens,
+        shared_strong_anchor_tokens=shared_strong_anchor_tokens,
+        task_like_score=round(
+            (source.task_like_score + target.task_like_score) / 2.0,
+            4,
+        ),
+        reflective_score=round(
+            (source.reflective_score + target.reflective_score) / 2.0,
+            4,
+        ),
     )
 
 
@@ -704,27 +833,46 @@ def _weak_recurrence_evidence_for_pair(
     if not has_meaningful_separation:
         return None
 
-    has_taskish_signal = (
-        signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD
+    has_anchor_support = (
+        len(signals.shared_strong_anchor_tokens) >= 2
         or (
+            len(signals.shared_strong_anchor_tokens) == 1
+            and len(signals.shared_anchor_tokens) >= 2
+        )
+    )
+    has_single_anchor_exception = (
+        len(signals.shared_strong_anchor_tokens) == 1
+        and signals.task_like_score >= _WEAK_RECURRENCE_SINGLE_ANCHOR_TASK_LIKE_THRESHOLD
+        and signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD
+        and (
             signals.local_context_delta is not None
             and signals.local_context_delta >= _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD
         )
     )
+    if not (has_anchor_support or has_single_anchor_exception):
+        return None
+
+    has_taskish_signal = (
+        signals.task_like_score >= _WEAK_RECURRENCE_TASK_LIKE_THRESHOLD
+        and signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD
+    )
     if not has_taskish_signal:
+        return None
+    if signals.reflective_score >= _WEAK_RECURRENCE_REFLECTIVE_THRESHOLD:
         return None
 
     score, base_reason_codes, _has_strong_signal = _similarity_score_and_reasons(signals)
     weak_reason_codes = [
         (
             "weak_recurrence_anchor_overlap_high"
-            if len(signals.shared_anchor_tokens) >= 2
+            if len(signals.shared_strong_anchor_tokens) >= 2
             else "weak_recurrence_anchor_overlap"
         ),
         "weak_recurrence_dormant",
     ]
     if signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD:
         weak_reason_codes.append("weak_recurrence_specificity")
+    weak_reason_codes.append("weak_recurrence_task_like")
     if (
         signals.local_context_delta is not None
         and signals.local_context_delta >= _WEAK_RECURRENCE_LOCAL_CONTEXT_DELTA_THRESHOLD
@@ -761,7 +909,7 @@ def _weak_recurrence_evidence_for_pair(
 
     return _WeakRecurrenceCandidate(
         evidence=evidence,
-        shared_anchor_count=len(signals.shared_anchor_tokens),
+        shared_anchor_count=len(signals.shared_strong_anchor_tokens),
     )
 
 
