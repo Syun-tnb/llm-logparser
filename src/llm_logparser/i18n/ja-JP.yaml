@@ -53,6 +53,9 @@ messages:
   cli.analyze.tokens.opt.model.help: トークナイザ解決用の任意モデル名 (主に OpenAI 向け)
   cli.analyze.tokens.opt.encoding.help: provider/model 解決より優先される明示的な tiktoken エンコーディング名
   cli.analyze.metrics.help: parsed.jsonl と token_stats.json から決定的な metrics.json を生成する。先に `analyze tokens` を実行する。既存サイドカーは既定で再生成して上書きする。
+  cli.analyze.token_dictionary.help: canonical parsed.jsonl と任意の token_stats.json / topics.json を入力に、加算的な L3 token-dictionary sidecar を構築する。
+  cli.analyze.token_dictionary.opt.input.help: "入力: ディレクトリのみ。parsed.jsonl thread と任意の l3/semantic-topics/topics.json を含む provider 成果物ルート"
+  cli.analyze.token_dictionary.opt.overwrite.help: dictionary.json / bundles.json / provenance.json を再構築して上書きする（既定でも再構築されます）
   cli.analyze.sqlite_build.help: 正規化済みスレッド成果物から任意の SQLite アクセラレータを構築する
   cli.analyze.sqlite_build.opt.input.help: "入力: ディレクトリのみ。provider ごとの成果物ディレクトリを含むルート"
   cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"
@@ -193,6 +196,9 @@ messages:
   runtime.analyze.metrics.missing_token_stats: |-
     parsed.jsonl の隣に token_stats.json が見つかりません: {path}
     `analyze metrics` を実行する前に `analyze tokens` を実行してください。
+  runtime.analyze.token_dictionary_written: "token dictionary 成果物を書き込みました: {tokens} token / {bundles} bundle -> {path}"
+  runtime.analyze.token_dictionary_skipped: "token dictionary 成果物は既に存在するためスキップしました -> {path}"
+  runtime.analyze.token_dictionary_dry_run: "[dry-run] token dictionary プレビュー: {threads} スレッド, {token_count} token, {bundle_count} bundle"
   runtime.analyze.dry_run.preview: "[dry-run] {artifact_name} 生成をプレビューしています"
   runtime.analyze.dry_run.detected_threads: "検出したスレッド数: {count}"
   runtime.analyze.dry_run.existing_sidecars: "既存サイドカー数: {count}"

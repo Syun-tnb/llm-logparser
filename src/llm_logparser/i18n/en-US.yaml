@@ -49,6 +49,9 @@ messages:
   cli.analyze.tokens.opt.model.help: Optional model name for tokenizer resolution (primarily for OpenAI)
   cli.analyze.tokens.opt.encoding.help: Explicit tiktoken encoding name that overrides provider/model resolution
   cli.analyze.metrics.help: Build deterministic metrics.json sidecars from parsed.jsonl plus token_stats.json. Run `analyze tokens` first. Existing sidecars are rebuilt by default.
+  cli.analyze.token_dictionary.help: Build an additive L3 token-dictionary sidecar from canonical parsed.jsonl plus optional token_stats.json and topics.json inputs.
+  cli.analyze.token_dictionary.opt.input.help: "Input: directory only; provider artifact root containing parsed.jsonl threads and optional l3/semantic-topics/topics.json"
+  cli.analyze.token_dictionary.opt.overwrite.help: Rebuild dictionary.json, bundles.json, and provenance.json even when they already exist (default behavior already rebuilds).
   cli.analyze.sqlite_build.help: Build an optional SQLite accelerator from canonical thread artifacts
   cli.analyze.sqlite_build.opt.input.help: "Input: directory only; root containing per-provider artifact directories"
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
@@ -264,6 +267,9 @@ messages:
     token_stats.json not found next to parsed.jsonl: {path}
     Please run `analyze tokens` before running `analyze metrics`.
   runtime.analyze.tokens_written: "token_stats.json written for {threads} thread(s)"
+  runtime.analyze.token_dictionary_written: "token dictionary artifacts written: {tokens} token(s), {bundles} bundle(s) -> {path}"
+  runtime.analyze.token_dictionary_skipped: "token dictionary artifacts already exist; skipped -> {path}"
+  runtime.analyze.token_dictionary_dry_run: "[dry-run] token dictionary preview: {threads} thread(s), {token_count} token(s), {bundle_count} bundle(s)"
   runtime.analyze.dry_run.preview: "[dry-run] Previewing {artifact_name} generation"
   runtime.analyze.dry_run.detected_threads: "Detected threads: {count}"
   runtime.analyze.dry_run.existing_sidecars: "Existing sidecars: {count}"

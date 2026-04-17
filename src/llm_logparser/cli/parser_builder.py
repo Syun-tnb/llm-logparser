@@ -331,6 +331,36 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.opt.dry_run.help"),
     )
 
+    analyze_token_dictionary_cmd = analyze_subparsers.add_parser(
+        "token-dictionary",
+        help=_("cli.analyze.token_dictionary.help"),
+        description=_("cli.analyze.token_dictionary.help"),
+    )
+    analyze_token_dictionary_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.token_dictionary.opt.input.help"),
+    )
+    analyze_token_dictionary_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.token_dictionary.opt.overwrite.help"),
+    )
+    analyze_token_dictionary_cmd.add_argument(
+        "--skip-existing",
+        dest="skip_existing",
+        action="store_true",
+        help=_("cli.analyze.opt.skip_existing.help"),
+    )
+    analyze_token_dictionary_cmd.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help=_("cli.analyze.opt.dry_run.help"),
+    )
+
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
         help=_("cli.analyze.sqlite_build.help"),

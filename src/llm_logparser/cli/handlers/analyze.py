@@ -77,6 +77,54 @@ def run_analyze_tokens(args, logger: logging.Logger) -> None:
     logger.info(_("runtime.analyze.tokens_written", threads=result["threads"]))
 
 
+def run_analyze_token_dictionary(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_token_dictionary import (
+        TokenDictionaryError,
+        write_token_dictionary_artifacts,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_token_dictionary_artifacts(
+            input_root,
+            overwrite=args.overwrite,
+            skip_existing=args.skip_existing,
+            dry_run=args.dry_run,
+        )
+    except TokenDictionaryError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    if args.dry_run:
+        logger.info(
+            _(
+                "runtime.analyze.token_dictionary_dry_run",
+                threads=result["threads"],
+                token_count=result["token_count"] if result["token_count"] is not None else 0,
+                bundle_count=result["bundle_count"] if result["bundle_count"] is not None else 0,
+            )
+        )
+        return
+
+    if result["skipped"]:
+        logger.info(
+            _(
+                "runtime.analyze.token_dictionary_skipped",
+                path=format_display_path(result["dictionary_path"]),
+            )
+        )
+        return
+
+    logger.info(
+        _(
+            "runtime.analyze.token_dictionary_written",
+            tokens=result["token_count"],
+            bundles=result["bundle_count"],
+            path=format_display_path(result["dictionary_path"]),
+        )
+    )
+
+
 def run_analyze_stats(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_stats import (
         analyze_stats,

@@ -74,6 +74,22 @@ def test_analyze_tokens_help_mentions_skip_existing_policy(capsys):
     assert "rebuilt and overwritten" in help_text
 
 
+def test_analyze_token_dictionary_help_mentions_l3_sidecar_inputs(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "token-dictionary", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "L3 token-dictionary sidecar" in help_text
+    assert "topics.json" in help_text
+    assert "--overwrite" in help_text
+    assert "--skip-existing" in help_text
+    assert "--dry-run" in help_text
+
+
 def test_analyze_semantic_prototype_help_mentions_backend_options(capsys):
     set_locale("en-US")
     parser = build_parser()

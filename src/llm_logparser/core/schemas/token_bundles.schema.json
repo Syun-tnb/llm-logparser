@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/token_bundles.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "producer_layer",
+    "provider_id",
+    "created_at",
+    "source_inputs",
+    "reproducibility_note",
+    "bundle_count",
+    "bundles"
+  ],
+  "properties": {
+    "artifact_type": { "const": "token_bundles" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "producer_layer": { "type": "string", "const": "L3" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "source_inputs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "reproducibility_note": { "type": "string", "minLength": 1 },
+    "bundle_count": { "type": "integer", "minimum": 0 },
+    "bundles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["bundle_id", "tokens", "weight"],
+        "properties": {
+          "bundle_id": { "type": "string", "minLength": 1 },
+          "tokens": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 2
+          },
+          "weight": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -107,6 +107,7 @@ Current Layer 1 implementations include:
 - `analyze timeline`
 - `analyze tokens`
 - `analyze metrics`
+- `analyze token-dictionary`
 - human-readable stats/timeline views and machine-readable sidecars
 
 `analyze tokens` writes deterministic `token_stats.json` sidecars from canonical
@@ -119,6 +120,12 @@ Current Layer 1 implementations include:
 - heuristic `safety.refusal`
 - heuristic `interaction.revision`
 - additive `user_effort` metrics derived from assistant → user timing and text length
+
+`analyze token-dictionary` writes additive L3 auxiliary artifacts under
+`l3/token-dictionary/` from canonical `parsed.jsonl` plus optional
+`token_stats.json` and `l3/semantic-topics/topics.json`. These token/bundle
+artifacts are rebuildable higher-layer signals only; they do not replace
+canonical or L1 outputs.
 
 ## Analyze Pipeline
 
@@ -522,6 +529,7 @@ Possible modes:
 | semantic-preview | L3 prototype viewer (experimental) |
 | semantic-span-proposals | L3 experimental span-derivation sidecar |
 | cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
+| token-dictionary | L3 auxiliary token/bundle signal sidecar |
 | cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
 | cross-thread-memory-recall | L4 read-only memory recall presentation layer |
 | semantic-normalization | L3 sidecar batch job runner |

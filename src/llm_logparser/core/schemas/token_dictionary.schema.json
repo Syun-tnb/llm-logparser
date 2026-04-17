@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/token_dictionary.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "producer_layer",
+    "provider_id",
+    "created_at",
+    "source_inputs",
+    "reproducibility_note",
+    "token_count",
+    "tokens"
+  ],
+  "properties": {
+    "artifact_type": { "const": "token_dictionary" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "producer_layer": { "type": "string", "const": "L3" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "source_inputs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "reproducibility_note": { "type": "string", "minLength": 1 },
+    "token_count": { "type": "integer", "minimum": 0 },
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "token",
+          "normalized",
+          "count",
+          "first_seen",
+          "last_seen",
+          "conversations",
+          "topics",
+          "role_hints",
+          "cooccurrence",
+          "conversation_count",
+          "topic_count"
+        ],
+        "properties": {
+          "token": { "type": "string", "minLength": 1 },
+          "normalized": { "type": "string", "minLength": 1 },
+          "count": { "type": "integer", "minimum": 0 },
+          "first_seen": { "type": ["integer", "null"] },
+          "last_seen": { "type": ["integer", "null"] },
+          "conversations": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "topics": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "role_hints": {
+            "type": "object",
+            "additionalProperties": { "type": "integer", "minimum": 0 }
+          },
+          "cooccurrence": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "conversation_count": { "type": "integer", "minimum": 0 },
+          "topic_count": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

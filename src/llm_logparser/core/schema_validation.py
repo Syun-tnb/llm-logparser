@@ -68,6 +68,9 @@ SCHEMAS_ROOT: Path = _default_schemas_root()
 MESSAGE_SCHEMA_NAME = "message.schema.json"
 MANIFEST_SCHEMA_NAME = "manifest.schema.json"
 TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
+TOKEN_DICTIONARY_SCHEMA_NAME = "token_dictionary.schema.json"
+TOKEN_BUNDLES_SCHEMA_NAME = "token_bundles.schema.json"
+TOKEN_DICTIONARY_PROVENANCE_SCHEMA_NAME = "token_dictionary_provenance.schema.json"
 METRICS_SCHEMA_NAME = "metrics.schema.json"
 THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
 MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
@@ -98,6 +101,9 @@ SCHEMA_FILE_NAMES = frozenset(
         MESSAGE_SCHEMA_NAME,
         MANIFEST_SCHEMA_NAME,
         TOKEN_STATS_SCHEMA_NAME,
+        TOKEN_DICTIONARY_SCHEMA_NAME,
+        TOKEN_BUNDLES_SCHEMA_NAME,
+        TOKEN_DICTIONARY_PROVENANCE_SCHEMA_NAME,
         METRICS_SCHEMA_NAME,
         THREAD_STATS_SCHEMA_NAME,
         MESSAGE_WINDOWS_SCHEMA_NAME,
@@ -241,6 +247,33 @@ def load_token_stats_validator(
     Returns a validator for token_stats.schema.json.
     """
     return load_validator(TOKEN_STATS_SCHEMA_NAME, schema_path)
+
+
+def load_token_dictionary_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for token_dictionary.schema.json.
+    """
+    return load_validator(TOKEN_DICTIONARY_SCHEMA_NAME, schema_path)
+
+
+def load_token_bundles_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for token_bundles.schema.json.
+    """
+    return load_validator(TOKEN_BUNDLES_SCHEMA_NAME, schema_path)
+
+
+def load_token_dictionary_provenance_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for token_dictionary_provenance.schema.json.
+    """
+    return load_validator(TOKEN_DICTIONARY_PROVENANCE_SCHEMA_NAME, schema_path)
 
 
 def load_metrics_validator(

@@ -778,6 +778,16 @@ Experimental prototype note:
 - the current default `--min-score` is `0.62`; that default was selected from
   repeated real-data subset validation because it reduced broad noisy
   cross-thread clusters more effectively than the old permissive default
+
+Auxiliary L3 note:
+
+- `analyze token-dictionary` writes rebuildable auxiliary artifacts under
+  `<provider-root>/l3/token-dictionary/`
+- it currently emits `dictionary.json`, `bundles.json`, and `provenance.json`
+- these artifacts are derived from canonical `parsed.jsonl` plus optional
+  `token_stats.json` and `topics.json`
+- they are signal sources for later L3/L4 analysis only; they do not redefine
+  canonical text, L1 sidecars, or SQLite state
   without the extra fragmentation seen at stricter nearby thresholds
 - when `--sqlite-db` is provided, candidate retrieval uses L2 `analysis.db`
   filters before similarity scoring instead of a global dense comparison
