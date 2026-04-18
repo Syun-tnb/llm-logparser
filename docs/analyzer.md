@@ -874,6 +874,10 @@ deterministic and model-derived capabilities.
   file-search/tool-routing directives, and similar control text are suppressed
   as well, so dense repeated wrapper text does not appear as strong recurrence
   evidence.
+  Cross-thread lexical behavior is now locale-aware: the analyzer loads
+  deterministic lexical resources from `src/llm_logparser/resources/cross_thread/`
+  with fallback `exact locale -> language default -> en-US`, so new locales can
+  extend residue/task markers without changing the core scoring code.
   Weak-route evidence is recorded as neutral structural signals such as
   anchor overlap, dormant gap, task-like signal, and context shift rather than
   as an L3 recurrence label. It

@@ -1,0 +1,136 @@
+residue:
+  prompt_exact_markers:
+    - gpt-4o returned
+    - returned 1 image
+    - returned 1 images
+    - from now on
+    - please end this turn now
+    - end this turn now
+    - do not say or show anything
+    - do not summarize the image
+    - do not summarize
+    - do not ask followup question
+    - do not ask follow-up question
+    - do not ask follow up question
+    - do not ask followup
+    - just end the turn
+    - do not do anything else
+  system_tool_exact_markers:
+    - the output of this plugin was redacted
+    - file contents provided above are truncated
+    - the file contents provided above are truncated
+    - complete content is accessible via
+    - you must use the file_search tool
+    - must use the file_search tool
+    - if the user asks
+    - tool output
+    - plugin output
+    - redacted
+    - file_search tool
+    - the complete content is accessible via
+    - provided above are truncated
+    - use the file_search tool
+  composite:
+    infrastructure_terms:
+      - plugin
+      - tool
+      - file_search
+      - output
+      - redacted
+      - truncated
+      - accessible via
+      - file contents
+    control_terms:
+      - do not
+      - please end
+      - end this turn
+      - from now on
+      - just end
+      - must use
+      - if the user asks
+task:
+  verbs:
+    - add
+    - adjust
+    - apply
+    - build
+    - change
+    - check
+    - configure
+    - debug
+    - deploy
+    - edit
+    - enable
+    - disable
+    - fail
+    - failure
+    - fix
+    - implement
+    - investigate
+    - remove
+    - rerun
+    - resume
+    - retry
+    - restore
+    - review
+    - run
+    - update
+    - validate
+    - verify
+  nouns:
+    - config
+    - config.yaml
+    - deploy
+    - deployment
+    - error
+    - file
+    - function
+    - issue
+    - migration
+    - rollback
+    - schema
+    - timeout
+  phrases: []
+reflective:
+  markers:
+    - feel
+    - feels
+    - felt
+    - think
+    - thought
+    - maybe
+    - probably
+    - honestly
+    - emotion
+    - vibe
+    - relationship
+    - memory
+    - remember
+    - reflection
+broad_overlap:
+  markers:
+    - include
+    - output
+    - return
+    - format
+    - field
+    - fields
+    - schema
+    - prompt
+    - json
+    - yaml
+    - markdown
+    - object
+    - response
+    - template
+    - message_idx
+    - schema_version
+    - make sure to include
+    - output should contain
+    - return a json object
+    - json object
+    - schema_version
+    - message_idx
+    - code fence
+    - markdown
+    - yaml

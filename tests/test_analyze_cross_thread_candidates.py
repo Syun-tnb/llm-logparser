@@ -22,6 +22,10 @@ from llm_logparser.core.schema_validation import (
     load_cross_thread_candidate_validator,
     load_topics_validator,
 )
+from llm_logparser.resources.cross_thread_lexical import (
+    DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    load_cross_thread_lexical_rules,
+)
 
 
 def _write_json(path: Path, obj: dict) -> None:
@@ -534,6 +538,22 @@ def test_build_cross_thread_candidate_rows_emits_clear_cross_thread_link(tmp_pat
     assert row["timestamp_delta_ms"] == 0
     assert "normalized_label_match" in row["evidence"]["reason_codes"]
     assert "shared_keywords_high" in row["evidence"]["reason_codes"]
+
+
+def test_build_cross_thread_candidate_rows_unknown_locale_falls_back_without_behavior_change(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+
+    default_rows = build_cross_thread_candidate_rows(root, min_score=0.58)
+    fallback_rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.58,
+        locale="fr-FR",
+    )
+
+    assert fallback_rows == default_rows
 
 
 def test_build_cross_thread_candidate_rows_adds_embedding_similarity_when_enabled(
@@ -1240,6 +1260,43 @@ def test_concrete_task_fragment_outranks_meta_structural_fragment():
 
     assert task_score > meta_score
     assert task_score >= cross_thread_module._SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE
+
+
+def test_cross_thread_lexical_rules_fall_back_to_en_us_for_unknown_locale():
+    fallback = load_cross_thread_lexical_rules("fr-FR")
+    default = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+
+    assert fallback.locale == "en-US"
+    assert fallback.residue.prompt_exact_markers == default.residue.prompt_exact_markers
+    assert fallback.broad_overlap.markers == default.broad_overlap.markers
+
+
+def test_cross_thread_lexical_rules_merge_ja_kansai_with_ja_jp_and_en_us():
+    rules = load_cross_thread_lexical_rules("ja-Kansai")
+
+    assert rules.locale == "ja-Kansai"
+    assert "詰める" in rules.task.verbs
+    assert "直す" in rules.task.verbs
+    assert "gpt-4o returned" in rules.residue.prompt_exact_markers
+
+
+def test_japanese_task_text_is_not_treated_as_residue():
+    lexical_rules = cross_thread_module.default_token_dictionary_lexical_rules()
+    cross_thread_rules = load_cross_thread_lexical_rules("ja-JP")
+    fragment = "残タスクを整理する。差し替え内容を見直して、設定ファイルの修正を進める。"
+
+    score = cross_thread_module._score_fragment(
+        fragment,
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=None,
+        cross_thread_rules=cross_thread_rules,
+    )
+
+    assert not cross_thread_module._is_residue_fragment(
+        fragment,
+        cross_thread_rules=cross_thread_rules,
+    )
+    assert score > 0
 
 
 def test_build_cross_thread_candidate_rows_loads_external_lexical_rules(tmp_path: Path):

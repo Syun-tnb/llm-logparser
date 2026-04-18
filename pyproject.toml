@@ -36,6 +36,7 @@ where = ["src"]
 llm_logparser = [
   "i18n/*.yaml",
   "core/schemas/*.json",
+  "resources/cross_thread/*.yaml",
   "resources/semantic_state/*.yaml",
   "resources/semantic_normalization_prompts/*.txt",
 ]

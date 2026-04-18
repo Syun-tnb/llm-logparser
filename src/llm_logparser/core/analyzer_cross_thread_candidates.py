@@ -24,6 +24,11 @@ from .analyzer_token_dictionary import (
 from .l1_derivation import iter_input_message_records
 from .analyzer_semantic_preview import WindowPreviewRecord, load_window_preview_index
 from .embedding_backend import create_embedding_backend
+from llm_logparser.resources.cross_thread_lexical import (
+    CrossThreadLexicalRules,
+    DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    load_cross_thread_lexical_rules,
+)
 from .schema_validation import load_cross_thread_candidate_validator, load_topics_validator
 
 CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.3"
@@ -49,18 +54,6 @@ _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS = 2 * _DAY_MS
 _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS = 7 * _DAY_MS
 _TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.08
 _TIMESTAMP_DISTANCE_HIGH_SCORE = 0.15
-_ARTIFACT_WRAPPER_MARKERS = (
-    "gpt-4o returned",
-    "returned 1 image",
-    "returned 1 images",
-)
-_TURN_CONTROL_MARKERS = (
-    "please end this turn now",
-    "end this turn now",
-    "do not say or show anything",
-    "do not summarize",
-    "do not ask follow-up",
-)
 _SPECIFICITY_TOKEN_RE = re.compile(r"[a-z0-9_./:-]{3,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
 # Continuity masking is instrumentation only. With fewer than ~12 intervening
 # messages or fewer than ~2 intervening representative spans, the pair is
@@ -90,70 +83,6 @@ _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
 _SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
 _SELECTIVE_CONTEXT_MAX_CHARS = 240
-_META_STRUCTURAL_TOKENS = frozenset(
-    {
-        "include",
-        "output",
-        "return",
-        "format",
-        "field",
-        "fields",
-        "schema",
-        "prompt",
-        "json",
-        "yaml",
-        "markdown",
-        "object",
-        "response",
-        "template",
-        "message_idx",
-        "schema_version",
-    }
-)
-_META_STRUCTURAL_MARKERS = (
-    "make sure to include",
-    "output should contain",
-    "return a json object",
-    "json object",
-    "schema_version",
-    "message_idx",
-    "code fence",
-    "markdown",
-    "yaml",
-)
-_PROMPT_RESIDUE_MARKERS = (
-    "gpt-4o returned",
-    "returned 1 image",
-    "returned 1 images",
-    "from now on",
-    "please end this turn now",
-    "end this turn now",
-    "do not say or show anything",
-    "do not summarize the image",
-    "do not summarize",
-    "do not ask followup question",
-    "do not ask follow-up question",
-    "do not ask follow up question",
-    "do not ask followup",
-    "just end the turn",
-    "do not do anything else",
-)
-_SYSTEM_TOOL_RESIDUE_MARKERS = (
-    "the output of this plugin was redacted",
-    "file contents provided above are truncated",
-    "the file contents provided above are truncated",
-    "complete content is accessible via",
-    "you must use the file_search tool",
-    "must use the file_search tool",
-    "if the user asks",
-    "tool output",
-    "plugin output",
-    "redacted",
-    "file_search tool",
-    "the complete content is accessible via",
-    "provided above are truncated",
-    "use the file_search tool",
-)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -345,6 +274,27 @@ def _token_list(text: str) -> list[str]:
     return [token for token in _SPECIFICITY_TOKEN_RE.findall(normalized) if token]
 
 
+def _action_token_set(
+    lexical_rules: TokenDictionaryLexicalRules,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> frozenset[str]:
+    return lexical_rules.task_fragment_action_tokens | cross_thread_rules.task.verbs
+
+
+def _state_token_set(
+    lexical_rules: TokenDictionaryLexicalRules,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> frozenset[str]:
+    return lexical_rules.task_fragment_state_tokens | cross_thread_rules.task.nouns
+
+
+def _reflective_token_set(
+    lexical_rules: TokenDictionaryLexicalRules,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> frozenset[str]:
+    return lexical_rules.reflective_tokens | cross_thread_rules.reflective.markers
+
+
 def _normalize_anchor_token(token: str) -> str:
     return token.strip(".,;!?()[]{}\"'")
 
@@ -420,12 +370,17 @@ def _task_like_text_score(
     anchor_tokens: tuple[str, ...],
     strong_anchor_tokens: tuple[str, ...],
     lexical_rules: TokenDictionaryLexicalRules | None = None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> float:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     tokens = _token_list(text)
     if not tokens:
         return 0.0
-    reflective_count = sum(1 for token in tokens if token in lexical_rules.reflective_tokens)
+    reflective_tokens = _reflective_token_set(lexical_rules, cross_thread_rules)
+    reflective_count = sum(1 for token in tokens if token in reflective_tokens)
     reflective_ratio = reflective_count / len(tokens)
     strong_anchor_bonus = min(0.35, 0.18 * len(strong_anchor_tokens))
     anchor_bonus = min(0.18, 0.06 * max(0, len(anchor_tokens) - len(strong_anchor_tokens)))
@@ -451,13 +406,18 @@ def _task_like_text_score(
 def _reflective_text_score(
     text: str,
     lexical_rules: TokenDictionaryLexicalRules | None = None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> float:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     tokens = _token_list(text)
     if not tokens:
         return 0.0
+    reflective_tokens = _reflective_token_set(lexical_rules, cross_thread_rules)
     return round(
-        sum(1 for token in tokens if token in lexical_rules.reflective_tokens)
+        sum(1 for token in tokens if token in reflective_tokens)
         / len(tokens),
         4,
     )
@@ -574,46 +534,64 @@ def _is_meta_structural_fragment(
     fragment: str,
     *,
     lexical_rules: TokenDictionaryLexicalRules,
+    cross_thread_rules: CrossThreadLexicalRules,
 ) -> bool:
     normalized = normalize_analysis_text(fragment)
     if not normalized:
         return False
-    if any(marker in normalized for marker in _META_STRUCTURAL_MARKERS):
+    broad_overlap_markers = cross_thread_rules.broad_overlap.markers
+    broad_overlap_phrase_markers = tuple(
+        marker
+        for marker in broad_overlap_markers
+        if " " in marker or "_" in marker
+    )
+    broad_overlap_token_markers = frozenset(broad_overlap_markers) - set(broad_overlap_phrase_markers)
+    if any(marker in normalized for marker in broad_overlap_phrase_markers):
         return True
     tokens = _token_list(fragment)
     if not tokens:
         return False
-    meta_hits = sum(1 for token in tokens if token in _META_STRUCTURAL_TOKENS)
+    meta_hits = sum(1 for token in tokens if token in broad_overlap_token_markers)
+    action_tokens = _action_token_set(lexical_rules, cross_thread_rules)
+    state_tokens = _state_token_set(lexical_rules, cross_thread_rules)
     action_hits = sum(
-        1 for token in tokens if token in lexical_rules.task_fragment_action_tokens
+        1 for token in tokens if token in action_tokens
     )
     state_hits = sum(
-        1 for token in tokens if token in lexical_rules.task_fragment_state_tokens
+        1 for token in tokens if token in state_tokens
     )
     strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
     return meta_hits >= 2 and action_hits == 0 and state_hits == 0 and not strong_anchor_tokens
 
 
-def _is_prompt_residue_fragment(fragment: str) -> bool:
+def _is_prompt_residue_fragment(
+    fragment: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
+) -> bool:
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     normalized = normalize_analysis_text(fragment)
     if not normalized:
         return False
-    marker_hits = sum(1 for marker in _PROMPT_RESIDUE_MARKERS if marker in normalized)
+    prompt_markers = cross_thread_rules.residue.prompt_exact_markers
+    marker_hits = sum(1 for marker in prompt_markers if marker in normalized)
     if marker_hits >= 2:
         return True
-    has_wrapper = any(marker in normalized for marker in _ARTIFACT_WRAPPER_MARKERS)
-    has_turn_control = any(marker in normalized for marker in _TURN_CONTROL_MARKERS)
+    infrastructure_terms = cross_thread_rules.residue.composite.infrastructure_terms
+    control_terms = cross_thread_rules.residue.composite.control_terms
+    has_wrapper = any(
+        term in normalized
+        for term in infrastructure_terms
+        if "plugin" not in term and "tool" not in term and "file_search" not in term
+    )
+    has_turn_control = any(term in normalized for term in control_terms)
     if has_wrapper and has_turn_control:
         return True
     imperative_hits = sum(
         1
-        for marker in (
-            "do not",
-            "please end",
-            "end this turn",
-            "from now on",
-            "just end",
-        )
+        for marker in control_terms
         if marker in normalized
     )
     return imperative_hits >= 2 and (
@@ -624,27 +602,46 @@ def _is_prompt_residue_fragment(fragment: str) -> bool:
     )
 
 
-def _is_system_tool_residue_fragment(fragment: str) -> bool:
+def _is_system_tool_residue_fragment(
+    fragment: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
+) -> bool:
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     normalized = normalize_analysis_text(fragment)
     if not normalized:
         return False
-    marker_hits = sum(1 for marker in _SYSTEM_TOOL_RESIDUE_MARKERS if marker in normalized)
+    system_tool_markers = cross_thread_rules.residue.system_tool_exact_markers
+    marker_hits = sum(1 for marker in system_tool_markers if marker in normalized)
     if marker_hits >= 2:
         return True
+    infrastructure_terms = cross_thread_rules.residue.composite.infrastructure_terms
+    control_terms = cross_thread_rules.residue.composite.control_terms
     return (
-        ("plugin" in normalized or "tool" in normalized or "file_search" in normalized)
+        any(term in normalized for term in infrastructure_terms)
         and (
             "redacted" in normalized
             or "truncated" in normalized
             or "accessible via" in normalized
-            or "must use" in normalized
-            or "if the user asks" in normalized
+            or any(term in normalized for term in control_terms)
         )
     )
 
 
-def _is_residue_fragment(fragment: str) -> bool:
-    return _is_prompt_residue_fragment(fragment) or _is_system_tool_residue_fragment(fragment)
+def _is_residue_fragment(
+    fragment: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
+) -> bool:
+    return _is_prompt_residue_fragment(
+        fragment,
+        cross_thread_rules=cross_thread_rules,
+    ) or _is_system_tool_residue_fragment(
+        fragment,
+        cross_thread_rules=cross_thread_rules,
+    )
 
 
 def _has_action_object_pattern(
@@ -710,15 +707,23 @@ def _score_fragment(
     *,
     lexical_rules: TokenDictionaryLexicalRules,
     token_dictionary_signals: TokenDictionarySignals | None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> float:
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     normalized_fragment = normalize_analysis_text(fragment)
     if not normalized_fragment:
         return 0.0
     if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
         return -1.0
-    if _is_residue_fragment(fragment):
+    if _is_residue_fragment(fragment, cross_thread_rules=cross_thread_rules):
         return -1.25
-    if _is_meta_structural_fragment(fragment, lexical_rules=lexical_rules):
+    if _is_meta_structural_fragment(
+        fragment,
+        lexical_rules=lexical_rules,
+        cross_thread_rules=cross_thread_rules,
+    ):
         return -0.35
 
     tokens = _token_list(fragment)
@@ -727,19 +732,28 @@ def _score_fragment(
     anchor_tokens = _anchor_tokens_for_texts((fragment,), lexical_rules)
     strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
     dictionary_support = _fragment_dictionary_support(fragment, token_dictionary_signals)
+    action_tokens = _action_token_set(lexical_rules, cross_thread_rules)
+    state_tokens = _state_token_set(lexical_rules, cross_thread_rules)
     action_hits = sum(
         1 for token in tokens
-        if token in lexical_rules.task_fragment_action_tokens
+        if token in action_tokens
     )
     state_hits = sum(
         1 for token in tokens
-        if token in lexical_rules.task_fragment_state_tokens
+        if token in state_tokens
+    )
+    action_hits += sum(
+        1 for phrase in cross_thread_rules.task.phrases if phrase in normalized_fragment
     )
     explanatory_hits = sum(
         1 for token in tokens
         if token in lexical_rules.task_fragment_explanatory_tokens
     )
-    reflective_score = _reflective_text_score(fragment, lexical_rules)
+    reflective_score = _reflective_text_score(
+        fragment,
+        lexical_rules,
+        cross_thread_rules,
+    )
     if (
         explanatory_hits > 0
         and strong_anchor_tokens
@@ -768,7 +782,14 @@ def _score_fragment(
         score += min(0.18, 0.24 * dictionary_support)
     else:
         score += min(0.04, 0.08 * dictionary_support)
-    meta_hits = sum(1 for token in tokens if token in _META_STRUCTURAL_TOKENS)
+    broad_overlap_markers = cross_thread_rules.broad_overlap.markers
+    broad_overlap_phrase_markers = {
+        marker
+        for marker in broad_overlap_markers
+        if " " in marker or "_" in marker
+    }
+    broad_overlap_token_markers = set(broad_overlap_markers) - broad_overlap_phrase_markers
+    meta_hits = sum(1 for token in tokens if token in broad_overlap_token_markers)
     if meta_hits > 0 and not has_concrete_task_shape:
         score -= min(0.28, 0.1 * meta_hits)
     score -= min(0.32, 0.16 * explanatory_hits)
@@ -781,6 +802,7 @@ def _select_fragments(
     *,
     lexical_rules: TokenDictionaryLexicalRules,
     token_dictionary_signals: TokenDictionarySignals | None,
+    cross_thread_rules: CrossThreadLexicalRules,
 ) -> list[_ScoredFragment]:
     scored = [
         _ScoredFragment(
@@ -790,6 +812,7 @@ def _select_fragments(
                 fragment,
                 lexical_rules=lexical_rules,
                 token_dictionary_signals=token_dictionary_signals,
+                cross_thread_rules=cross_thread_rules,
             ),
         )
         for index, fragment in enumerate(fragments)
@@ -810,7 +833,11 @@ def _build_task_nucleus(
     *,
     lexical_rules: TokenDictionaryLexicalRules,
     token_dictionary_signals: TokenDictionarySignals | None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> str:
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     normalized_text = " ".join(text.split())
     if not normalized_text:
         return ""
@@ -823,6 +850,7 @@ def _build_task_nucleus(
         fragments,
         lexical_rules=lexical_rules,
         token_dictionary_signals=token_dictionary_signals,
+        cross_thread_rules=cross_thread_rules,
     )
     if retained:
         merged: list[str] = []
@@ -847,13 +875,18 @@ def _task_nucleus_text(
     *,
     lexical_rules: TokenDictionaryLexicalRules,
     token_dictionary_signals: TokenDictionarySignals | None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> str:
-    if _is_residue_fragment(text):
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
+    if _is_residue_fragment(text, cross_thread_rules=cross_thread_rules):
         return ""
     nucleus = _build_task_nucleus(
         text,
         lexical_rules=lexical_rules,
         token_dictionary_signals=token_dictionary_signals,
+        cross_thread_rules=cross_thread_rules,
     )
     return nucleus or " ".join(text.split())
 
@@ -862,12 +895,17 @@ def _task_fragment_view(
     text: str,
     lexical_rules: TokenDictionaryLexicalRules | None = None,
     token_dictionary_signals: TokenDictionarySignals | None = None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> str:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     return _build_task_nucleus(
         text,
         lexical_rules=lexical_rules,
         token_dictionary_signals=token_dictionary_signals,
+        cross_thread_rules=cross_thread_rules,
     )
 
 
@@ -876,8 +914,12 @@ def _representative_units(
     *,
     lexical_rules: TokenDictionaryLexicalRules | None = None,
     token_dictionary_signals: TokenDictionarySignals | None = None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
 ) -> list[_RepresentativeSpanUnit]:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
     provider_id = str(topics_artifact["provider_id"])
     units: list[_RepresentativeSpanUnit] = []
     for topic in topics_artifact["topics"]:
@@ -923,6 +965,7 @@ def _representative_units(
                         str(span["excerpt"]),
                         lexical_rules,
                         token_dictionary_signals,
+                        cross_thread_rules,
                     ),
                     *keywords,
                 )
@@ -934,11 +977,13 @@ def _representative_units(
                 str(span["excerpt"]),
                 lexical_rules,
                 token_dictionary_signals,
+                cross_thread_rules,
             )
             task_nucleus_text = _task_nucleus_text(
                 str(span["excerpt"]),
                 lexical_rules=lexical_rules,
                 token_dictionary_signals=token_dictionary_signals,
+                cross_thread_rules=cross_thread_rules,
             )
             dictionary_source_text = task_nucleus_text or str(span["excerpt"])
             dictionary_tokens = _dictionary_tokens_for_text(
@@ -960,7 +1005,10 @@ def _representative_units(
                 dictionary_source_text,
                 token_dictionary_signals,
             )
-            residue_like = _is_residue_fragment(str(span["excerpt"]))
+            residue_like = _is_residue_fragment(
+                str(span["excerpt"]),
+                cross_thread_rules=cross_thread_rules,
+            )
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -979,7 +1027,11 @@ def _representative_units(
                     first_seen=topic_first_seen,
                     last_seen=topic_last_seen,
                     excerpt_specificity=_text_specificity_score(task_fragment_view, lexical_rules),
-                    reflective_score=_reflective_text_score(task_fragment_view, lexical_rules),
+                    reflective_score=_reflective_text_score(
+                        task_fragment_view,
+                        lexical_rules,
+                        cross_thread_rules,
+                    ),
                     anchor_tokens=anchor_tokens,
                     strong_anchor_tokens=strong_anchor_tokens,
                     task_like_score=_task_like_text_score(
@@ -987,6 +1039,7 @@ def _representative_units(
                         anchor_tokens,
                         strong_anchor_tokens,
                         lexical_rules,
+                        cross_thread_rules,
                     ),
                     dictionary_tokens=dictionary_tokens,
                     bundle_ids=bundle_ids,
@@ -1642,16 +1695,23 @@ def _unit_key(unit: _RepresentativeSpanUnit) -> tuple[str, str]:
     return (unit.conversation_id, unit.span_id)
 
 
-def _is_low_value_artifact_instruction_text(text: str) -> bool:
+def _is_low_value_artifact_instruction_text(
+    text: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
     text_norm = " ".join(text.lower().split())
     if len(text_norm) < 48:
         return False
-    wrapper_markers = (" ".join(marker.lower().split()) for marker in _ARTIFACT_WRAPPER_MARKERS)
-    turn_control_markers = (
-        " ".join(marker.lower().split()) for marker in _TURN_CONTROL_MARKERS
+    prompt_markers = cross_thread_rules.residue.prompt_exact_markers
+    has_wrapper = any(
+        marker in text_norm for marker in prompt_markers if "returned" in marker
     )
-    has_wrapper = any(marker in text_norm for marker in wrapper_markers)
-    has_turn_control = any(marker in text_norm for marker in turn_control_markers)
+    has_turn_control = any(
+        marker in text_norm
+        for marker in prompt_markers
+        if "end this turn" in marker or marker.startswith("do not ") or "from now on" in marker
+    )
     return has_wrapper and has_turn_control
 
 
@@ -1659,11 +1719,19 @@ def _should_filter_low_value_pair(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
     evidence: _Evidence,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
 ) -> bool:
     return (
         evidence.excerpt_similarity >= 0.78
-        and _is_low_value_artifact_instruction_text(source.excerpt)
-        and _is_low_value_artifact_instruction_text(target.excerpt)
+        and _is_low_value_artifact_instruction_text(
+            source.excerpt,
+            cross_thread_rules=cross_thread_rules,
+        )
+        and _is_low_value_artifact_instruction_text(
+            target.excerpt,
+            cross_thread_rules=cross_thread_rules,
+        )
     )
 
 
@@ -1782,6 +1850,7 @@ def _build_cross_thread_candidate_rows_with_stats(
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
+    locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> tuple[list[dict[str, Any]], int]:
     if top_per_source < 1:
         raise CrossThreadCandidateError("top_per_source must be at least 1")
@@ -1791,10 +1860,12 @@ def _build_cross_thread_candidate_rows_with_stats(
     topics_artifact = _load_topics_artifact(input_root)
     lexical_rules = load_token_dictionary_lexical_rules(input_root)
     token_dictionary_signals = load_token_dictionary_signals(input_root)
+    cross_thread_rules = load_cross_thread_lexical_rules(locale)
     units = _representative_units(
         topics_artifact,
         lexical_rules=lexical_rules,
         token_dictionary_signals=token_dictionary_signals,
+        cross_thread_rules=cross_thread_rules,
     )
     recurrence_context = _build_recurrence_instrumentation_context(input_root, units)
     filtered_low_value_pair_count = 0
@@ -1828,7 +1899,12 @@ def _build_cross_thread_candidate_rows_with_stats(
                 continue
             candidate_for_filter = similarity_evidence or weak_candidate.evidence
             assert candidate_for_filter is not None
-            if _should_filter_low_value_pair(source, target, candidate_for_filter):
+            if _should_filter_low_value_pair(
+                source,
+                target,
+                candidate_for_filter,
+                cross_thread_rules=cross_thread_rules,
+            ):
                 filtered_low_value_pair_count += 1
                 continue
             if similarity_evidence is not None and similarity_evidence.score >= min_score_rounded:
@@ -1931,6 +2007,7 @@ def build_cross_thread_candidate_rows(
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
+    locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> list[dict[str, Any]]:
     rows, _filtered_low_value_pair_count = _build_cross_thread_candidate_rows_with_stats(
         input_root,
@@ -1939,6 +2016,7 @@ def build_cross_thread_candidate_rows(
         embedding_model=embedding_model,
         embedding_base_url=embedding_base_url,
         embedding_timeout_seconds=embedding_timeout_seconds,
+        locale=locale,
     )
     return rows
 
@@ -1959,13 +2037,16 @@ def _summary(
     min_score: float,
     top_per_source: int,
     filtered_low_value_pair_count: int = 0,
+    locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> dict[str, Any]:
     lexical_rules = load_token_dictionary_lexical_rules(input_root)
     token_dictionary_signals = load_token_dictionary_signals(input_root)
+    cross_thread_rules = load_cross_thread_lexical_rules(locale)
     units = _representative_units(
         topics_artifact,
         lexical_rules=lexical_rules,
         token_dictionary_signals=token_dictionary_signals,
+        cross_thread_rules=cross_thread_rules,
     )
     reason_counts: Counter[str] = Counter()
     score_bands: Counter[str] = Counter()
@@ -2018,6 +2099,7 @@ def write_cross_thread_candidates_artifact(
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
+    locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> dict[str, Any]:
     provider_root = input_root.expanduser()
     if not provider_root.exists() or not provider_root.is_dir():
@@ -2031,6 +2113,7 @@ def write_cross_thread_candidates_artifact(
         embedding_model=embedding_model,
         embedding_base_url=embedding_base_url,
         embedding_timeout_seconds=embedding_timeout_seconds,
+        locale=locale,
     )
     output_dir = provider_root / "l3" / "cross-thread-candidates"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2050,6 +2133,7 @@ def write_cross_thread_candidates_artifact(
         min_score=min_score,
         top_per_source=top_per_source,
         filtered_low_value_pair_count=filtered_low_value_pair_count,
+        locale=locale,
     )
     write_json_artifact(summary_path, summary)
 

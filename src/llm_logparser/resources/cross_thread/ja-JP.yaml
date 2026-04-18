@@ -1,0 +1,24 @@
+task:
+  verbs:
+    - 直す
+    - 修正する
+    - 見直す
+    - 整理する
+  nouns:
+    - 残タスク
+    - 引き継ぎ
+    - 差し替え
+  phrases:
+    - やり直す
+    - 差し替える
+reflective:
+  markers:
+    - 気持ち
+    - 感覚
+    - 雰囲気
+broad_overlap:
+  markers:
+    - 形式
+    - 出力
+    - 返す
+    - フィールド
