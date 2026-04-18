@@ -18,6 +18,7 @@ from .l1_derivation import discover_parsed_jsonl, iter_parsed_records, resolve_m
 from .schema_validation import (
     load_token_bundles_validator,
     load_token_dictionary_provenance_validator,
+    load_token_dictionary_lexical_rules_validator,
     load_token_dictionary_validator,
     load_token_stats_validator,
     load_topics_validator,
@@ -27,6 +28,7 @@ TOKEN_DICTIONARY_SCHEMA_VERSION = "0.1"
 TOKEN_DICTIONARY_ARTIFACT_TYPE = "token_dictionary"
 TOKEN_BUNDLES_ARTIFACT_TYPE = "token_bundles"
 TOKEN_DICTIONARY_PROVENANCE_ARTIFACT_TYPE = "token_dictionary_provenance"
+TOKEN_DICTIONARY_LEXICAL_RULES_ARTIFACT_TYPE = "token_dictionary_lexical_rules"
 TOKEN_DICTIONARY_DIRNAME = "token-dictionary"
 _TOKEN_RE = re.compile(r"[a-z0-9_./:-]{2,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
 _DEFAULT_SOFT_STOPWORDS = frozenset(
@@ -138,10 +140,192 @@ _OVERDISTRIBUTED_LOW_VALUE_TOKENS = frozenset(
         "これ",
     }
 )
+_DEFAULT_SEEDED_LEXICAL_RULES = {
+    "specificity_generic_tokens": [
+        "this",
+        "that",
+        "with",
+        "from",
+        "about",
+        "there",
+        "their",
+        "your",
+        "please",
+        "thank",
+        "thanks",
+        "think",
+        "really",
+        "maybe",
+        "would",
+        "could",
+        "should",
+        "hello",
+        "today",
+        "thing",
+        "stuff",
+        "okay",
+        "おはよう",
+        "こんにちは",
+        "こんばんは",
+        "ありがとう",
+        "了解",
+        "はい",
+        "うん",
+        "それ",
+        "これ",
+        "あれ",
+        "ここ",
+        "そこ",
+        "やね",
+        "やで",
+        "ほんま",
+        "なるほど",
+        "感じ"
+    ],
+    "reflective_tokens": [
+        "feel",
+        "feels",
+        "felt",
+        "think",
+        "thought",
+        "maybe",
+        "probably",
+        "honestly",
+        "emotion",
+        "vibe",
+        "relationship",
+        "memory",
+        "remember",
+        "reflection",
+        "気持ち",
+        "感覚",
+        "記憶",
+        "思い出",
+        "雰囲気",
+        "ノリ",
+        "心地",
+        "自然"
+    ],
+    "task_fragment_action_tokens": [
+        "add",
+        "adjust",
+        "apply",
+        "build",
+        "change",
+        "check",
+        "configure",
+        "debug",
+        "deploy",
+        "edit",
+        "enable",
+        "disable",
+        "fail",
+        "failure",
+        "fix",
+        "investigate",
+        "rerun",
+        "resume",
+        "retry",
+        "restore",
+        "review",
+        "run",
+        "update",
+        "validate",
+        "verify",
+        "修正",
+        "更新",
+        "確認",
+        "検証",
+        "再実行",
+        "再開",
+        "再試行",
+        "再確認",
+        "失敗",
+        "対応",
+        "調査",
+        "修復",
+        "確認する",
+        "見直す",
+        "直す",
+        "試す"
+    ],
+    "task_fragment_state_tokens": [
+        "after",
+        "before",
+        "blocked",
+        "constraint",
+        "error",
+        "issue",
+        "problem",
+        "retry",
+        "rollback",
+        "timeout",
+        "warning",
+        "while",
+        "条件",
+        "制約",
+        "問題",
+        "原因",
+        "対処",
+        "復旧",
+        "失敗",
+        "エラー",
+        "警告",
+        "再開",
+        "再試行"
+    ],
+    "task_fragment_explanatory_tokens": [
+        "because",
+        "benefit",
+        "benefits",
+        "compare",
+        "comparison",
+        "difference",
+        "differences",
+        "explain",
+        "explanation",
+        "explains",
+        "explainer",
+        "example",
+        "examples",
+        "meaning",
+        "overview",
+        "style",
+        "useful",
+        "versus",
+        "why",
+        "とは",
+        "なぜ",
+        "違い",
+        "比較",
+        "整理",
+        "説明",
+        "解説",
+        "意味",
+        "便利",
+        "使い所",
+        "向いてる"
+    ],
+    "task_fragment_noise_markers": [
+        "the output of this plugin was redacted",
+        "according to the search results",
+        "based on the search results"
+    ]
+}
 
 
 class TokenDictionaryError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class TokenDictionaryLexicalRules:
+    specificity_generic_tokens: frozenset[str]
+    reflective_tokens: frozenset[str]
+    task_fragment_action_tokens: frozenset[str]
+    task_fragment_state_tokens: frozenset[str]
+    task_fragment_explanatory_tokens: frozenset[str]
+    task_fragment_noise_markers: tuple[str, ...]
 
 
 @dataclass
@@ -172,8 +356,86 @@ def token_dictionary_provenance_path(input_root: Path) -> Path:
     return token_dictionary_dir(input_root) / "provenance.json"
 
 
+def token_dictionary_lexical_rules_path(input_root: Path) -> Path:
+    return token_dictionary_dir(input_root) / "lexical_rules.json"
+
+
 def _created_at_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _coerce_seeded_lexical_rules(raw_rules: dict[str, Any]) -> TokenDictionaryLexicalRules:
+    def _token_set(key: str) -> frozenset[str]:
+        values = raw_rules.get(key, [])
+        if not isinstance(values, list):
+            return frozenset()
+        return frozenset(
+            normalize_analysis_text(str(value))
+            for value in values
+            if isinstance(value, str) and value.strip()
+        )
+
+    noise_values = raw_rules.get("task_fragment_noise_markers", [])
+    if not isinstance(noise_values, list):
+        noise_values = []
+    return TokenDictionaryLexicalRules(
+        specificity_generic_tokens=_token_set("specificity_generic_tokens"),
+        reflective_tokens=_token_set("reflective_tokens"),
+        task_fragment_action_tokens=_token_set("task_fragment_action_tokens"),
+        task_fragment_state_tokens=_token_set("task_fragment_state_tokens"),
+        task_fragment_explanatory_tokens=_token_set("task_fragment_explanatory_tokens"),
+        task_fragment_noise_markers=tuple(
+            normalize_analysis_text(str(value))
+            for value in noise_values
+            if isinstance(value, str) and value.strip()
+        ),
+    )
+
+
+def default_token_dictionary_lexical_rules() -> TokenDictionaryLexicalRules:
+    return _coerce_seeded_lexical_rules(_DEFAULT_SEEDED_LEXICAL_RULES)
+
+
+def build_token_dictionary_lexical_rules_artifact(
+    *,
+    provider_id: str,
+    created_at: str,
+) -> dict[str, Any]:
+    return {
+        "artifact_type": TOKEN_DICTIONARY_LEXICAL_RULES_ARTIFACT_TYPE,
+        "schema_version": TOKEN_DICTIONARY_SCHEMA_VERSION,
+        "producer_layer": "L3",
+        "provider_id": provider_id,
+        "created_at": created_at,
+        "source_inputs": ["seeded_lexical_rules"],
+        "reproducibility_note": "Rebuildable from seeded lexical resources bundled with this build",
+        "seeded_rules": _DEFAULT_SEEDED_LEXICAL_RULES,
+    }
+
+
+def load_token_dictionary_lexical_rules(input_root: Path | None) -> TokenDictionaryLexicalRules:
+    if input_root is None:
+        return default_token_dictionary_lexical_rules()
+    lexical_rules_path = token_dictionary_lexical_rules_path(input_root)
+    if not lexical_rules_path.exists():
+        return default_token_dictionary_lexical_rules()
+    try:
+        payload = json.loads(lexical_rules_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise TokenDictionaryError(
+            f"invalid JSON in {lexical_rules_path}: {exc.msg}"
+        ) from exc
+    errors = list(load_token_dictionary_lexical_rules_validator().iter_errors(payload))
+    if errors:
+        raise TokenDictionaryError(
+            f"token dictionary lexical-rules schema validation failed for {lexical_rules_path}: {errors[0].message}"
+        )
+    seeded_rules = payload.get("seeded_rules")
+    if not isinstance(seeded_rules, dict):
+        raise TokenDictionaryError(
+            f"invalid lexical rules artifact in {lexical_rules_path}: seeded_rules must be an object"
+        )
+    return _coerce_seeded_lexical_rules(seeded_rules)
 
 
 def _is_separator_token(token: str) -> bool:
@@ -594,7 +856,8 @@ def write_token_dictionary_artifacts(
     dictionary_path = token_dictionary_path(provider_root)
     bundles_path = token_bundles_path(provider_root)
     provenance_path = token_dictionary_provenance_path(provider_root)
-    artifact_paths = [dictionary_path, bundles_path, provenance_path]
+    lexical_rules_path = token_dictionary_lexical_rules_path(provider_root)
+    artifact_paths = [dictionary_path, bundles_path, provenance_path, lexical_rules_path]
     existing_artifacts = [path for path in artifact_paths if path.exists()]
     complete_existing = len(existing_artifacts) == len(artifact_paths)
 
@@ -608,6 +871,7 @@ def write_token_dictionary_artifacts(
             "dictionary_path": dictionary_path,
             "bundles_path": bundles_path,
             "provenance_path": provenance_path,
+            "lexical_rules_path": lexical_rules_path,
             "token_count": None,
             "bundle_count": None,
             "source_inputs": source_inputs,
@@ -619,6 +883,10 @@ def write_token_dictionary_artifacts(
         input_root=provider_root,
         provider_id=provider_id,
         source_inputs=source_inputs,
+        created_at=created_at,
+    )
+    lexical_rules_artifact = build_token_dictionary_lexical_rules_artifact(
+        provider_id=provider_id,
         created_at=created_at,
     )
 
@@ -637,12 +905,18 @@ def write_token_dictionary_artifacts(
         raise TokenDictionaryError(
             f"token dictionary provenance schema validation failed: {prov_errors[0].message}"
         )
+    lexical_errors = list(load_token_dictionary_lexical_rules_validator().iter_errors(lexical_rules_artifact))
+    if lexical_errors:
+        raise TokenDictionaryError(
+            f"token dictionary lexical-rules schema validation failed: {lexical_errors[0].message}"
+        )
 
     if not dry_run:
         output_dir.mkdir(parents=True, exist_ok=True)
         write_json_artifact(dictionary_path, dictionary_artifact)
         write_json_artifact(bundles_path, bundles_artifact)
         write_json_artifact(provenance_path, provenance_artifact)
+        write_json_artifact(lexical_rules_path, lexical_rules_artifact)
 
     return {
         "provider_root": provider_root,
@@ -653,6 +927,7 @@ def write_token_dictionary_artifacts(
         "dictionary_path": dictionary_path,
         "bundles_path": bundles_path,
         "provenance_path": provenance_path,
+        "lexical_rules_path": lexical_rules_path,
         "token_count": dictionary_artifact["token_count"],
         "bundle_count": bundles_artifact["bundle_count"],
         "source_inputs": source_inputs,

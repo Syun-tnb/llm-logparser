@@ -6,13 +6,16 @@ from pathlib import Path
 from llm_logparser.cli.cli import main
 from llm_logparser.core import analyzer_token_dictionary
 from llm_logparser.core.analyzer_token_dictionary import (
+    load_token_dictionary_lexical_rules,
     token_bundles_path,
     token_dictionary_path,
+    token_dictionary_lexical_rules_path,
     token_dictionary_provenance_path,
     write_token_dictionary_artifacts,
 )
 from llm_logparser.core.schema_validation import (
     load_token_bundles_validator,
+    load_token_dictionary_lexical_rules_validator,
     load_token_dictionary_provenance_validator,
     load_token_dictionary_validator,
 )
@@ -238,14 +241,17 @@ def test_write_token_dictionary_artifacts_writes_schema_valid_outputs(tmp_path: 
     assert token_dictionary_path(root).exists()
     assert token_bundles_path(root).exists()
     assert token_dictionary_provenance_path(root).exists()
+    assert token_dictionary_lexical_rules_path(root).exists()
 
     dictionary = json.loads(token_dictionary_path(root).read_text(encoding="utf-8"))
     bundles = json.loads(token_bundles_path(root).read_text(encoding="utf-8"))
     provenance = json.loads(token_dictionary_provenance_path(root).read_text(encoding="utf-8"))
+    lexical_rules = json.loads(token_dictionary_lexical_rules_path(root).read_text(encoding="utf-8"))
 
     assert list(load_token_dictionary_validator().iter_errors(dictionary)) == []
     assert list(load_token_bundles_validator().iter_errors(bundles)) == []
     assert list(load_token_dictionary_provenance_validator().iter_errors(provenance)) == []
+    assert list(load_token_dictionary_lexical_rules_validator().iter_errors(lexical_rules)) == []
 
     config_token = next(row for row in dictionary["tokens"] if row["token"] == "config.yaml")
     assert config_token["count"] >= 4
@@ -253,6 +259,9 @@ def test_write_token_dictionary_artifacts_writes_schema_valid_outputs(tmp_path: 
     assert "deploy" in config_token["cooccurrence"]
     assert dictionary["source_inputs"] == ["parsed.jsonl", "token_stats.json", "topics.json"]
     assert any("config.yaml" in bundle["tokens"] for bundle in bundles["bundles"])
+    assert "reflective_tokens" in lexical_rules["seeded_rules"]
+    loaded_rules = load_token_dictionary_lexical_rules(root)
+    assert "memory" in loaded_rules.reflective_tokens
 def test_token_dictionary_accept_token_filters_universal_noise():
     assert not analyzer_token_dictionary._accept_token("---")
     assert not analyzer_token_dictionary._accept_token("...")
@@ -379,3 +388,4 @@ def test_cli_analyze_token_dictionary_writes_artifacts(tmp_path: Path):
     assert token_dictionary_path(root).exists()
     assert token_bundles_path(root).exists()
     assert token_dictionary_provenance_path(root).exists()
+    assert token_dictionary_lexical_rules_path(root).exists()

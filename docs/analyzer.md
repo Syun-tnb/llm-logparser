@@ -125,7 +125,10 @@ Current Layer 1 implementations include:
 `l3/token-dictionary/` from canonical `parsed.jsonl` plus optional
 `token_stats.json` and `l3/semantic-topics/topics.json`. These token/bundle
 artifacts are rebuildable higher-layer signals only; they do not replace
-canonical or L1 outputs.
+canonical or L1 outputs. The same token-dictionary family now also owns seeded
+lexical resources via `lexical_rules.json`, so analyzer code can load task /
+reflective / specificity token groups from artifacts instead of embedding large
+vocabulary sets directly in Python.
 
 ## Analyze Pipeline
 

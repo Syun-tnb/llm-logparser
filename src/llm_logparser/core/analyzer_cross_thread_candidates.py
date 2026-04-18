@@ -14,6 +14,11 @@ from .analyzer_common import (
     normalized_similarity,
     write_json_artifact,
 )
+from .analyzer_token_dictionary import (
+    TokenDictionaryLexicalRules,
+    default_token_dictionary_lexical_rules,
+    load_token_dictionary_lexical_rules,
+)
 from .l1_derivation import iter_input_message_records
 from .analyzer_semantic_preview import WindowPreviewRecord, load_window_preview_index
 from .embedding_backend import create_embedding_backend
@@ -55,49 +60,6 @@ _TURN_CONTROL_MARKERS = (
     "do not ask follow-up",
 )
 _SPECIFICITY_TOKEN_RE = re.compile(r"[a-z0-9_./:-]{3,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
-_SPECIFICITY_GENERIC_TOKENS = frozenset(
-    {
-        "this",
-        "that",
-        "with",
-        "from",
-        "about",
-        "there",
-        "their",
-        "your",
-        "please",
-        "thank",
-        "thanks",
-        "think",
-        "really",
-        "maybe",
-        "would",
-        "could",
-        "should",
-        "hello",
-        "today",
-        "thing",
-        "stuff",
-        "okay",
-        "おはよう",
-        "こんにちは",
-        "こんばんは",
-        "ありがとう",
-        "了解",
-        "はい",
-        "うん",
-        "それ",
-        "これ",
-        "あれ",
-        "ここ",
-        "そこ",
-        "やね",
-        "やで",
-        "ほんま",
-        "なるほど",
-        "感じ",
-    }
-)
 # Continuity masking is instrumentation only. With fewer than ~12 intervening
 # messages or fewer than ~2 intervening representative spans, the pair is
 # likely ongoing local continuity rather than reactivated recall.
@@ -118,143 +80,6 @@ _WEAK_ROUTE_SPECIFICITY_SCORE = 0.03
 _WEAK_ROUTE_TASK_LIKE_SCORE = 0.03
 _WEAK_ROUTE_CONTEXT_SHIFT_SCORE = 0.02
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
-_WEAK_RECURRENCE_REFLECTIVE_TOKENS = frozenset(
-    {
-        "feel",
-        "feels",
-        "felt",
-        "think",
-        "thought",
-        "maybe",
-        "probably",
-        "honestly",
-        "emotion",
-        "vibe",
-        "relationship",
-        "memory",
-        "remember",
-        "reflection",
-        "気持ち",
-        "感覚",
-        "記憶",
-        "思い出",
-        "雰囲気",
-        "ノリ",
-        "心地",
-        "自然",
-    }
-)
-_TASK_FRAGMENT_ACTION_TOKENS = frozenset(
-    {
-        "add",
-        "adjust",
-        "apply",
-        "build",
-        "change",
-        "check",
-        "configure",
-        "debug",
-        "deploy",
-        "edit",
-        "enable",
-        "disable",
-        "fail",
-        "failure",
-        "fix",
-        "investigate",
-        "rerun",
-        "resume",
-        "retry",
-        "restore",
-        "review",
-        "run",
-        "update",
-        "validate",
-        "verify",
-        "修正",
-        "更新",
-        "確認",
-        "検証",
-        "再実行",
-        "再開",
-        "再試行",
-        "再確認",
-        "失敗",
-        "対応",
-        "調査",
-        "修復",
-        "確認する",
-        "見直す",
-        "直す",
-        "試す",
-    }
-)
-_TASK_FRAGMENT_STATE_TOKENS = frozenset(
-    {
-        "after",
-        "before",
-        "blocked",
-        "constraint",
-        "error",
-        "issue",
-        "problem",
-        "retry",
-        "rollback",
-        "timeout",
-        "warning",
-        "while",
-        "条件",
-        "制約",
-        "問題",
-        "原因",
-        "対処",
-        "復旧",
-        "失敗",
-        "エラー",
-        "警告",
-        "再開",
-        "再試行",
-    }
-)
-_TASK_FRAGMENT_EXPLANATORY_TOKENS = frozenset(
-    {
-        "because",
-        "benefit",
-        "benefits",
-        "compare",
-        "comparison",
-        "difference",
-        "differences",
-        "explain",
-        "explanation",
-        "explains",
-        "explainer",
-        "example",
-        "examples",
-        "meaning",
-        "overview",
-        "style",
-        "useful",
-        "versus",
-        "why",
-        "とは",
-        "なぜ",
-        "違い",
-        "比較",
-        "整理",
-        "説明",
-        "解説",
-        "意味",
-        "便利",
-        "使い所",
-        "向いてる",
-    }
-)
-_TASK_FRAGMENT_NOISE_MARKERS = (
-    "the output of this plugin was redacted",
-    "according to the search results",
-    "based on the search results",
-)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -378,7 +203,11 @@ def _normalized_keywords(values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(value for value in normalized if value)
 
 
-def _text_specificity_score(text: str) -> float:
+def _text_specificity_score(
+    text: str,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> float:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     normalized = normalize_analysis_text(text)
     tokens = [token for token in _SPECIFICITY_TOKEN_RE.findall(normalized) if token]
     if not tokens:
@@ -387,7 +216,7 @@ def _text_specificity_score(text: str) -> float:
     content_tokens = [
         token
         for token in tokens
-        if token not in _SPECIFICITY_GENERIC_TOKENS
+        if token not in lexical_rules.specificity_generic_tokens
     ]
     content_ratio = len(content_tokens) / len(tokens)
     long_content_ratio = (
@@ -423,9 +252,13 @@ def _normalize_anchor_token(token: str) -> str:
     return token.strip(".,;!?()[]{}\"'")
 
 
-def _is_strong_anchor_like_token(token: str) -> bool:
+def _is_strong_anchor_like_token(
+    token: str,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> bool:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     token = _normalize_anchor_token(token)
-    if token in _SPECIFICITY_GENERIC_TOKENS or len(token) < 4:
+    if token in lexical_rules.specificity_generic_tokens or len(token) < 4:
         return False
     has_symbol = any(char in _ANCHOR_TOKEN_SYMBOLS for char in token)
     has_digit = any(char.isdigit() for char in token)
@@ -439,11 +272,15 @@ def _is_strong_anchor_like_token(token: str) -> bool:
     return False
 
 
-def _is_anchor_like_token(token: str) -> bool:
+def _is_anchor_like_token(
+    token: str,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> bool:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     token = _normalize_anchor_token(token)
-    if _is_strong_anchor_like_token(token):
+    if _is_strong_anchor_like_token(token, lexical_rules):
         return True
-    if token in _SPECIFICITY_GENERIC_TOKENS or len(token) < 4:
+    if token in lexical_rules.specificity_generic_tokens or len(token) < 4:
         return False
     has_cjk = bool(re.search(r"[一-龯ぁ-んァ-ヶー]", token))
     if has_cjk:
@@ -451,37 +288,51 @@ def _is_anchor_like_token(token: str) -> bool:
     return len(token) >= 12
 
 
-def _anchor_tokens_for_texts(values: tuple[str, ...]) -> tuple[str, ...]:
+def _anchor_tokens_for_texts(
+    values: tuple[str, ...],
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> tuple[str, ...]:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     tokens: set[str] = set()
     for value in values:
         normalized = normalize_analysis_text(value)
         for token in _SPECIFICITY_TOKEN_RE.findall(normalized):
             normalized_token = _normalize_anchor_token(token)
-            if _is_anchor_like_token(normalized_token):
+            if _is_anchor_like_token(normalized_token, lexical_rules):
                 tokens.add(normalized_token)
     return tuple(sorted(tokens))
 
 
-def _strong_anchor_tokens_for_texts(values: tuple[str, ...]) -> tuple[str, ...]:
+def _strong_anchor_tokens_for_texts(
+    values: tuple[str, ...],
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> tuple[str, ...]:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     tokens: set[str] = set()
     for value in values:
         normalized = normalize_analysis_text(value)
         for token in _SPECIFICITY_TOKEN_RE.findall(normalized):
             normalized_token = _normalize_anchor_token(token)
-            if _is_strong_anchor_like_token(normalized_token):
+            if _is_strong_anchor_like_token(normalized_token, lexical_rules):
                 tokens.add(normalized_token)
     return tuple(sorted(tokens))
 
 
-def _task_like_text_score(text: str, anchor_tokens: tuple[str, ...], strong_anchor_tokens: tuple[str, ...]) -> float:
+def _task_like_text_score(
+    text: str,
+    anchor_tokens: tuple[str, ...],
+    strong_anchor_tokens: tuple[str, ...],
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> float:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     tokens = _token_list(text)
     if not tokens:
         return 0.0
-    reflective_count = sum(1 for token in tokens if token in _WEAK_RECURRENCE_REFLECTIVE_TOKENS)
+    reflective_count = sum(1 for token in tokens if token in lexical_rules.reflective_tokens)
     reflective_ratio = reflective_count / len(tokens)
     strong_anchor_bonus = min(0.35, 0.18 * len(strong_anchor_tokens))
     anchor_bonus = min(0.18, 0.06 * max(0, len(anchor_tokens) - len(strong_anchor_tokens)))
-    text_specificity = _text_specificity_score(text)
+    text_specificity = _text_specificity_score(text, lexical_rules)
     reflective_penalty = min(0.3, 0.8 * reflective_ratio)
     if reflective_count >= 2 and len(strong_anchor_tokens) <= 2:
         reflective_penalty = min(0.45, reflective_penalty + 0.18)
@@ -500,18 +351,26 @@ def _task_like_text_score(text: str, anchor_tokens: tuple[str, ...], strong_anch
     )
 
 
-def _reflective_text_score(text: str) -> float:
+def _reflective_text_score(
+    text: str,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> float:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     tokens = _token_list(text)
     if not tokens:
         return 0.0
     return round(
-        sum(1 for token in tokens if token in _WEAK_RECURRENCE_REFLECTIVE_TOKENS)
+        sum(1 for token in tokens if token in lexical_rules.reflective_tokens)
         / len(tokens),
         4,
     )
 
 
-def _task_fragment_view(text: str) -> str:
+def _task_fragment_view(
+    text: str,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> str:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     normalized_text = " ".join(text.split())
     if not normalized_text:
         return ""
@@ -529,26 +388,26 @@ def _task_fragment_view(text: str) -> str:
         normalized_fragment = normalize_analysis_text(fragment)
         if not normalized_fragment:
             continue
-        if any(marker in normalized_fragment for marker in _TASK_FRAGMENT_NOISE_MARKERS):
+        if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
             continue
         tokens = _token_list(fragment)
         if not tokens:
             continue
-        anchor_tokens = _anchor_tokens_for_texts((fragment,))
-        strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,))
+        anchor_tokens = _anchor_tokens_for_texts((fragment,), lexical_rules)
+        strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
         action_hits = sum(
             1 for token in tokens
-            if token in _TASK_FRAGMENT_ACTION_TOKENS
+            if token in lexical_rules.task_fragment_action_tokens
         )
         state_hits = sum(
             1 for token in tokens
-            if token in _TASK_FRAGMENT_STATE_TOKENS
+            if token in lexical_rules.task_fragment_state_tokens
         )
         explanatory_hits = sum(
             1 for token in tokens
-            if token in _TASK_FRAGMENT_EXPLANATORY_TOKENS
+            if token in lexical_rules.task_fragment_explanatory_tokens
         )
-        reflective_score = _reflective_text_score(fragment)
+        reflective_score = _reflective_text_score(fragment, lexical_rules)
         if (
             explanatory_hits > 0
             and strong_anchor_tokens
@@ -563,7 +422,7 @@ def _task_fragment_view(text: str) -> str:
             score += 0.22
         score += min(0.36, 0.18 * action_hits)
         score += min(0.24, 0.12 * state_hits)
-        score += min(0.18, 0.22 * _text_specificity_score(fragment))
+        score += min(0.18, 0.22 * _text_specificity_score(fragment, lexical_rules))
         score -= min(0.32, 0.16 * explanatory_hits)
         score -= min(0.3, 0.75 * reflective_score)
         if score >= 0.34:
@@ -572,21 +431,21 @@ def _task_fragment_view(text: str) -> str:
     if retained:
         return " | ".join(fragment for _index, fragment in retained)
 
-    anchor_tokens = _anchor_tokens_for_texts((normalized_text,))
-    strong_anchor_tokens = _strong_anchor_tokens_for_texts((normalized_text,))
+    anchor_tokens = _anchor_tokens_for_texts((normalized_text,), lexical_rules)
+    strong_anchor_tokens = _strong_anchor_tokens_for_texts((normalized_text,), lexical_rules)
     if strong_anchor_tokens:
         overall_tokens = _token_list(normalized_text)
         overall_action_hits = sum(
             1 for token in overall_tokens
-            if token in _TASK_FRAGMENT_ACTION_TOKENS
+            if token in lexical_rules.task_fragment_action_tokens
         )
         overall_state_hits = sum(
             1 for token in overall_tokens
-            if token in _TASK_FRAGMENT_STATE_TOKENS
+            if token in lexical_rules.task_fragment_state_tokens
         )
         overall_explanatory_hits = sum(
             1 for token in overall_tokens
-            if token in _TASK_FRAGMENT_EXPLANATORY_TOKENS
+            if token in lexical_rules.task_fragment_explanatory_tokens
         )
         if (
             overall_explanatory_hits > 0
@@ -598,13 +457,19 @@ def _task_fragment_view(text: str) -> str:
             normalized_text,
             anchor_tokens,
             strong_anchor_tokens,
+            lexical_rules,
         )
         if overall_task_like_score >= 0.62:
             return normalized_text
     return ""
 
 
-def _representative_units(topics_artifact: dict[str, Any]) -> list[_RepresentativeSpanUnit]:
+def _representative_units(
+    topics_artifact: dict[str, Any],
+    *,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+) -> list[_RepresentativeSpanUnit]:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     provider_id = str(topics_artifact["provider_id"])
     units: list[_RepresentativeSpanUnit] = []
     for topic in topics_artifact["topics"]:
@@ -646,14 +511,14 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                 value
                 for value in (
                     normalized_topic_label or "",
-                    _task_fragment_view(str(span["excerpt"])),
+                    _task_fragment_view(str(span["excerpt"]), lexical_rules),
                     *keywords,
                 )
                 if value
             )
-            anchor_tokens = _anchor_tokens_for_texts(anchor_source_values)
-            strong_anchor_tokens = _strong_anchor_tokens_for_texts(anchor_source_values)
-            task_fragment_view = _task_fragment_view(str(span["excerpt"]))
+            anchor_tokens = _anchor_tokens_for_texts(anchor_source_values, lexical_rules)
+            strong_anchor_tokens = _strong_anchor_tokens_for_texts(anchor_source_values, lexical_rules)
+            task_fragment_view = _task_fragment_view(str(span["excerpt"]), lexical_rules)
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -670,14 +535,15 @@ def _representative_units(topics_artifact: dict[str, Any]) -> list[_Representati
                     raw_label=raw_label,
                     first_seen=topic_first_seen,
                     last_seen=topic_last_seen,
-                    excerpt_specificity=_text_specificity_score(task_fragment_view),
-                    reflective_score=_reflective_text_score(task_fragment_view),
+                    excerpt_specificity=_text_specificity_score(task_fragment_view, lexical_rules),
+                    reflective_score=_reflective_text_score(task_fragment_view, lexical_rules),
                     anchor_tokens=anchor_tokens,
                     strong_anchor_tokens=strong_anchor_tokens,
                     task_like_score=_task_like_text_score(
                         task_fragment_view,
                         anchor_tokens,
                         strong_anchor_tokens,
+                        lexical_rules,
                     ),
                 )
             )
@@ -1373,7 +1239,8 @@ def _build_cross_thread_candidate_rows_with_stats(
         raise CrossThreadCandidateError("min_score must be between 0 and 1")
 
     topics_artifact = _load_topics_artifact(input_root)
-    units = _representative_units(topics_artifact)
+    lexical_rules = load_token_dictionary_lexical_rules(input_root)
+    units = _representative_units(topics_artifact, lexical_rules=lexical_rules)
     recurrence_context = _build_recurrence_instrumentation_context(input_root, units)
     filtered_low_value_pair_count = 0
     selected_by_source: list[
@@ -1536,7 +1403,8 @@ def _summary(
     top_per_source: int,
     filtered_low_value_pair_count: int = 0,
 ) -> dict[str, Any]:
-    units = _representative_units(topics_artifact)
+    lexical_rules = load_token_dictionary_lexical_rules(input_root)
+    units = _representative_units(topics_artifact, lexical_rules=lexical_rules)
     reason_counts: Counter[str] = Counter()
     score_bands: Counter[str] = Counter()
     source_keys = {

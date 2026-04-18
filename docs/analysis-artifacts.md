@@ -783,7 +783,8 @@ Auxiliary L3 note:
 
 - `analyze token-dictionary` writes rebuildable auxiliary artifacts under
   `<provider-root>/l3/token-dictionary/`
-- it currently emits `dictionary.json`, `bundles.json`, and `provenance.json`
+- it currently emits `dictionary.json`, `bundles.json`, `provenance.json`, and
+  `lexical_rules.json`
 - these artifacts are derived from canonical `parsed.jsonl` plus optional
   `token_stats.json` and `topics.json`
 - they are signal sources for later L3/L4 analysis only; they do not redefine

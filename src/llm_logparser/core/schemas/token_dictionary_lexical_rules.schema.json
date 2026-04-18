@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/token_dictionary_lexical_rules.schema.json",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "schema_version",
+    "producer_layer",
+    "provider_id",
+    "created_at",
+    "source_inputs",
+    "reproducibility_note",
+    "seeded_rules"
+  ],
+  "properties": {
+    "artifact_type": { "const": "token_dictionary_lexical_rules" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "producer_layer": { "type": "string", "const": "L3" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "source_inputs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "reproducibility_note": { "type": "string", "minLength": 1 },
+    "seeded_rules": {
+      "type": "object",
+      "required": [
+        "specificity_generic_tokens",
+        "reflective_tokens",
+        "task_fragment_action_tokens",
+        "task_fragment_state_tokens",
+        "task_fragment_explanatory_tokens",
+        "task_fragment_noise_markers"
+      ],
+      "properties": {
+        "specificity_generic_tokens": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reflective_tokens": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "task_fragment_action_tokens": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "task_fragment_state_tokens": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "task_fragment_explanatory_tokens": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "task_fragment_noise_markers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

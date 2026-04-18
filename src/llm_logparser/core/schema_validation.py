@@ -71,6 +71,7 @@ TOKEN_STATS_SCHEMA_NAME = "token_stats.schema.json"
 TOKEN_DICTIONARY_SCHEMA_NAME = "token_dictionary.schema.json"
 TOKEN_BUNDLES_SCHEMA_NAME = "token_bundles.schema.json"
 TOKEN_DICTIONARY_PROVENANCE_SCHEMA_NAME = "token_dictionary_provenance.schema.json"
+TOKEN_DICTIONARY_LEXICAL_RULES_SCHEMA_NAME = "token_dictionary_lexical_rules.schema.json"
 METRICS_SCHEMA_NAME = "metrics.schema.json"
 THREAD_STATS_SCHEMA_NAME = "thread_stats.schema.json"
 MESSAGE_WINDOWS_SCHEMA_NAME = "message_windows.schema.json"
@@ -104,6 +105,7 @@ SCHEMA_FILE_NAMES = frozenset(
         TOKEN_DICTIONARY_SCHEMA_NAME,
         TOKEN_BUNDLES_SCHEMA_NAME,
         TOKEN_DICTIONARY_PROVENANCE_SCHEMA_NAME,
+        TOKEN_DICTIONARY_LEXICAL_RULES_SCHEMA_NAME,
         METRICS_SCHEMA_NAME,
         THREAD_STATS_SCHEMA_NAME,
         MESSAGE_WINDOWS_SCHEMA_NAME,
@@ -274,6 +276,15 @@ def load_token_dictionary_provenance_validator(
     Returns a validator for token_dictionary_provenance.schema.json.
     """
     return load_validator(TOKEN_DICTIONARY_PROVENANCE_SCHEMA_NAME, schema_path)
+
+
+def load_token_dictionary_lexical_rules_validator(
+    schema_path: Optional[Path] = None,
+):
+    """
+    Returns a validator for token_dictionary_lexical_rules.schema.json.
+    """
+    return load_validator(TOKEN_DICTIONARY_LEXICAL_RULES_SCHEMA_NAME, schema_path)
 
 
 def load_metrics_validator(

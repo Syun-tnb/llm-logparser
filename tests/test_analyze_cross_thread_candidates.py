@@ -6,6 +6,7 @@ from typing import Any
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core import analyzer_cross_thread_candidates as cross_thread_module
+from llm_logparser.core.analyzer_token_dictionary import token_dictionary_lexical_rules_path
 from llm_logparser.core.analyzer_cross_thread_candidates import (
     build_cross_thread_candidate_rows,
     cross_thread_candidates_path,
@@ -1064,6 +1065,17 @@ def test_text_specificity_score_prefers_concrete_task_text_over_generic_short_te
     assert generic < concrete
 
 
+def test_cross_thread_candidates_source_no_longer_embeds_large_lexical_rule_sets():
+    source = Path(cross_thread_module.__file__).read_text(encoding="utf-8")
+
+    assert "_SPECIFICITY_GENERIC_TOKENS = frozenset(" not in source
+    assert "_WEAK_RECURRENCE_REFLECTIVE_TOKENS = frozenset(" not in source
+    assert "_TASK_FRAGMENT_ACTION_TOKENS = frozenset(" not in source
+    assert "_TASK_FRAGMENT_STATE_TOKENS = frozenset(" not in source
+    assert "_TASK_FRAGMENT_EXPLANATORY_TOKENS = frozenset(" not in source
+    assert "_TASK_FRAGMENT_NOISE_MARKERS = (" not in source
+
+
 def test_task_fragment_view_prefers_task_bearing_content_over_explainer_filler():
     view = cross_thread_module._task_fragment_view(
         "Let's compare Dia and Fellou and explain why each one feels useful. "
@@ -1075,6 +1087,74 @@ def test_task_fragment_view_prefers_task_bearing_content_over_explainer_filler()
     assert "rollback-plan" in normalized_view
     assert "compare dia and fellou" not in normalized_view
     assert "feels useful" not in normalized_view
+
+
+def test_build_cross_thread_candidate_rows_loads_external_lexical_rules(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="deployment planning",
+            keywords=[],
+            excerpt=(
+                "Reopen the release notes for migration_checklist.yml and validate the rollback-plan"
+                " before tonight's deploy."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release retry",
+            keywords=[],
+            excerpt=(
+                "After last week's failure, retry the rollout and update rollback-plan plus"
+                " migration_checklist.yml for the next attempt."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    lexical_rules = {
+        "artifact_type": "token_dictionary_lexical_rules",
+        "schema_version": "0.1",
+        "producer_layer": "L3",
+        "provider_id": "openai",
+        "created_at": "2026-04-18T00:00:00Z",
+        "source_inputs": ["seeded_lexical_rules"],
+        "reproducibility_note": "Rebuildable from seeded lexical resources bundled with this build",
+        "seeded_rules": {
+                "specificity_generic_tokens": [
+                    "migration_checklist.yml",
+                    "rollback-plan",
+                    "deploy",
+                    "failure",
+                    "release",
+                    "notes",
+                    "retry",
+                    "rollout",
+                    "update",
+                    "validate"
+                ],
+                "reflective_tokens": [],
+                "task_fragment_action_tokens": [],
+                "task_fragment_state_tokens": [],
+                "task_fragment_explanatory_tokens": [],
+                "task_fragment_noise_markers": []
+            },
+    }
+    _write_json(token_dictionary_lexical_rules_path(root), lexical_rules)
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert rows == []
 
 
 def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(
