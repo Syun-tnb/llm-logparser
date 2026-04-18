@@ -138,6 +138,22 @@ _PROMPT_RESIDUE_MARKERS = (
     "just end the turn",
     "do not do anything else",
 )
+_SYSTEM_TOOL_RESIDUE_MARKERS = (
+    "the output of this plugin was redacted",
+    "file contents provided above are truncated",
+    "the file contents provided above are truncated",
+    "complete content is accessible via",
+    "you must use the file_search tool",
+    "must use the file_search tool",
+    "if the user asks",
+    "tool output",
+    "plugin output",
+    "redacted",
+    "file_search tool",
+    "the complete content is accessible via",
+    "provided above are truncated",
+    "use the file_search tool",
+)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -172,7 +188,7 @@ class _RepresentativeSpanUnit:
     nucleus_token_count: int
     dictionary_token_mass: float
     dictionary_density: float
-    prompt_residue_like: bool
+    residue_like: bool
 
 
 @dataclass(frozen=True)
@@ -231,7 +247,7 @@ class _PairSignals:
     task_like_score: float
     reflective_score: float
     fragment_dictionary_support: float
-    prompt_residue_pair: bool
+    residue_pair: bool
 
 
 @dataclass(frozen=True)
@@ -608,6 +624,29 @@ def _is_prompt_residue_fragment(fragment: str) -> bool:
     )
 
 
+def _is_system_tool_residue_fragment(fragment: str) -> bool:
+    normalized = normalize_analysis_text(fragment)
+    if not normalized:
+        return False
+    marker_hits = sum(1 for marker in _SYSTEM_TOOL_RESIDUE_MARKERS if marker in normalized)
+    if marker_hits >= 2:
+        return True
+    return (
+        ("plugin" in normalized or "tool" in normalized or "file_search" in normalized)
+        and (
+            "redacted" in normalized
+            or "truncated" in normalized
+            or "accessible via" in normalized
+            or "must use" in normalized
+            or "if the user asks" in normalized
+        )
+    )
+
+
+def _is_residue_fragment(fragment: str) -> bool:
+    return _is_prompt_residue_fragment(fragment) or _is_system_tool_residue_fragment(fragment)
+
+
 def _has_action_object_pattern(
     *,
     action_hits: int,
@@ -677,7 +716,7 @@ def _score_fragment(
         return 0.0
     if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
         return -1.0
-    if _is_prompt_residue_fragment(fragment):
+    if _is_residue_fragment(fragment):
         return -1.25
     if _is_meta_structural_fragment(fragment, lexical_rules=lexical_rules):
         return -0.35
@@ -809,7 +848,7 @@ def _task_nucleus_text(
     lexical_rules: TokenDictionaryLexicalRules,
     token_dictionary_signals: TokenDictionarySignals | None,
 ) -> str:
-    if _is_prompt_residue_fragment(text):
+    if _is_residue_fragment(text):
         return ""
     nucleus = _build_task_nucleus(
         text,
@@ -921,7 +960,7 @@ def _representative_units(
                 dictionary_source_text,
                 token_dictionary_signals,
             )
-            prompt_residue_like = _is_prompt_residue_fragment(str(span["excerpt"]))
+            residue_like = _is_residue_fragment(str(span["excerpt"]))
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -955,7 +994,7 @@ def _representative_units(
                     nucleus_token_count=nucleus_token_count,
                     dictionary_token_mass=dictionary_token_mass,
                     dictionary_density=dictionary_density,
-                    prompt_residue_like=prompt_residue_like,
+                    residue_like=residue_like,
                 )
             )
     units.sort(
@@ -1252,7 +1291,7 @@ def _pair_signals(
             (source.fragment_dictionary_support + target.fragment_dictionary_support) / 2.0,
             4,
         ),
-        prompt_residue_pair=source.prompt_residue_like and target.prompt_residue_like,
+        residue_pair=source.residue_like and target.residue_like,
     )
 
 
@@ -1430,7 +1469,7 @@ def _weak_recurrence_evidence_for_pair(
         recurrence_context=recurrence_context,
         token_dictionary_signals=token_dictionary_signals,
     )
-    if signals.prompt_residue_pair:
+    if signals.residue_pair:
         return None
     if not signals.shared_anchor_tokens:
         return None
@@ -1524,7 +1563,7 @@ def _evidence_for_pair(
         recurrence_context=recurrence_context,
         token_dictionary_signals=token_dictionary_signals,
     )
-    if signals.prompt_residue_pair:
+    if signals.residue_pair:
         return None
     score, reason_codes, has_strong_signal = _similarity_score_and_reasons(signals)
     if not has_strong_signal or not reason_codes:

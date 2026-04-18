@@ -1183,6 +1183,18 @@ def test_prompt_residue_fragment_is_strongly_penalized():
     assert score <= -1.0
 
 
+def test_system_tool_residue_fragment_is_strongly_penalized():
+    lexical_rules = cross_thread_module.default_token_dictionary_lexical_rules()
+
+    score = cross_thread_module._score_fragment(
+        "The output of this plugin was redacted. You MUST use the file_search tool. The complete content is accessible via the tool.",
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=None,
+    )
+
+    assert score <= -1.0
+
+
 def test_pure_formatting_schema_guidance_does_not_become_task_nucleus():
     view = cross_thread_module._task_fragment_view(
         "Return a JSON object with schema_version and message_idx fields. "
@@ -1195,6 +1207,16 @@ def test_pure_formatting_schema_guidance_does_not_become_task_nucleus():
 def test_prompt_residue_does_not_become_task_nucleus():
     nucleus = cross_thread_module._task_nucleus_text(
         "GPT-4o returned 1 images. From now on, do not say or show anything. Please end this turn now.",
+        lexical_rules=cross_thread_module.default_token_dictionary_lexical_rules(),
+        token_dictionary_signals=None,
+    )
+
+    assert nucleus == ""
+
+
+def test_system_tool_residue_does_not_become_task_nucleus():
+    nucleus = cross_thread_module._task_nucleus_text(
+        "The file contents provided above are truncated. You MUST use the file_search tool. The output of this plugin was redacted.",
         lexical_rules=cross_thread_module.default_token_dictionary_lexical_rules(),
         token_dictionary_signals=None,
     )
@@ -1860,6 +1882,96 @@ def test_prompt_residue_pair_does_not_emit_dense_overlap_reasons(tmp_path: Path)
     assert rows == []
 
 
+def test_system_tool_residue_pair_does_not_emit_candidate_rows(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="tool wrapper",
+            keywords=[],
+            excerpt=(
+                "The output of this plugin was redacted. You MUST use the file_search tool. "
+                "The complete content is accessible via the tool."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="tool wrapper",
+            keywords=[],
+            excerpt=(
+                "The file contents provided above are truncated. If the user asks, use the file_search tool. "
+                "The output of this plugin was redacted."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (2 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "file_search",
+                "normalized": "file_search",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["plugin", "redacted"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "plugin",
+                "normalized": "plugin",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["file_search", "redacted"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "redacted",
+                "normalized": "redacted",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["file_search", "plugin"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["file_search", "plugin", "redacted"],
+                "weight": 0.9,
+            }
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+
+    assert rows == []
+
+
 def test_build_task_nucleus_falls_back_to_original_text_when_no_strong_fragments():
     text = "This is a broad explanation of tradeoffs and background context."
 
@@ -2038,6 +2150,168 @@ def test_real_task_pair_outranks_prompt_residue_pair(tmp_path: Path):
     assert "dictionary_token_overlap_dense" in task_row["evidence"]["reason_codes"]
     assert "bundle_overlap_concentrated" in task_row["evidence"]["reason_codes"]
     assert "nucleus_overlap_specific" in task_row["evidence"]["reason_codes"]
+    assert not any(
+        row["source_topic_id"] == "topic-source-residue"
+        and row["target_topic_id"] == "topic-target-residue"
+        for row in rows
+    )
+
+
+def test_real_task_pair_outranks_system_tool_residue_pair(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source-task",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="search fix",
+            keywords=[],
+            excerpt="Update search_index.json and fix the failed lookup handler before release.",
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target-task",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="search fix",
+            keywords=[],
+            excerpt="Repair search_index.json and retry the failed lookup handler before release.",
+            message_ids=["b-1"],
+            first_seen=100 + (2 * 24 * 60 * 60 * 1000),
+        ),
+        _topic_record(
+            topic_id="topic-source-residue",
+            conversation_id="conv-c",
+            cluster_id="cluster-c",
+            window_id="window-c",
+            label="tool wrapper",
+            keywords=[],
+            excerpt="The output of this plugin was redacted. You MUST use the file_search tool.",
+            message_ids=["c-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target-residue",
+            conversation_id="conv-d",
+            cluster_id="cluster-d",
+            window_id="window-d",
+            label="tool wrapper",
+            keywords=[],
+            excerpt="The file contents provided above are truncated. If the user asks, use the file_search tool.",
+            message_ids=["d-1"],
+            first_seen=100 + (2 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "search_index.json",
+                "normalized": "search_index.json",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source-task", "topic-target-task"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["lookup", "release"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "lookup",
+                "normalized": "lookup",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source-task", "topic-target-task"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["search_index.json", "release"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "release",
+                "normalized": "release",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source-task", "topic-target-task"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["search_index.json", "lookup"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "file_search",
+                "normalized": "file_search",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-c", "conv-d"],
+                "topics": ["topic-source-residue", "topic-target-residue"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["plugin", "truncated"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "plugin",
+                "normalized": "plugin",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-c", "conv-d"],
+                "topics": ["topic-source-residue", "topic-target-residue"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["file_search", "truncated"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "truncated",
+                "normalized": "truncated",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-c", "conv-d"],
+                "topics": ["topic-source-residue", "topic-target-residue"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["file_search", "plugin"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["search_index.json", "lookup", "release"],
+                "weight": 0.86,
+            },
+            {
+                "bundle_id": "bundle_002",
+                "tokens": ["file_search", "plugin", "truncated"],
+                "weight": 0.9,
+            },
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+
+    task_row = next(
+        row
+        for row in rows
+        if row["source_topic_id"] == "topic-source-task"
+        and row["target_topic_id"] == "topic-target-task"
+    )
+    assert "dictionary_token_overlap_dense" in task_row["evidence"]["reason_codes"]
+    assert "bundle_overlap_concentrated" in task_row["evidence"]["reason_codes"]
     assert not any(
         row["source_topic_id"] == "topic-source-residue"
         and row["target_topic_id"] == "topic-target-residue"
