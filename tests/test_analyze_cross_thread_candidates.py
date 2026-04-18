@@ -6,7 +6,12 @@ from typing import Any
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core import analyzer_cross_thread_candidates as cross_thread_module
-from llm_logparser.core.analyzer_token_dictionary import token_dictionary_lexical_rules_path
+from llm_logparser.core.analyzer_token_dictionary import (
+    load_token_dictionary_signals,
+    token_bundles_path,
+    token_dictionary_lexical_rules_path,
+    token_dictionary_path,
+)
 from llm_logparser.core.analyzer_cross_thread_candidates import (
     build_cross_thread_candidate_rows,
     cross_thread_candidates_path,
@@ -253,6 +258,42 @@ def _write_topics_fixture(root: Path) -> Path:
     topics_path = root / "l3" / "semantic-topics" / "topics.json"
     _write_json(topics_path, _topics_artifact(topics))
     return topics_path
+
+
+def _write_token_dictionary_signals_fixture(
+    root: Path,
+    *,
+    tokens: list[dict[str, Any]],
+    bundles: list[dict[str, Any]],
+) -> None:
+    _write_json(
+        token_dictionary_path(root),
+        {
+            "artifact_type": "token_dictionary",
+            "schema_version": "0.1",
+            "producer_layer": "L3",
+            "provider_id": "openai",
+            "created_at": "2026-04-18T00:00:00Z",
+            "source_inputs": ["parsed.jsonl"],
+            "reproducibility_note": "Rebuildable from canonical inputs",
+            "token_count": len(tokens),
+            "tokens": tokens,
+        },
+    )
+    _write_json(
+        token_bundles_path(root),
+        {
+            "artifact_type": "token_bundles",
+            "schema_version": "0.1",
+            "producer_layer": "L3",
+            "provider_id": "openai",
+            "created_at": "2026-04-18T00:00:00Z",
+            "source_inputs": ["parsed.jsonl"],
+            "reproducibility_note": "Rebuildable from canonical inputs",
+            "bundle_count": len(bundles),
+            "bundles": bundles,
+        },
+    )
 
 
 def _message_row(
@@ -1155,6 +1196,262 @@ def test_build_cross_thread_candidate_rows_loads_external_lexical_rules(tmp_path
     rows = build_cross_thread_candidate_rows(root)
 
     assert rows == []
+
+
+def test_build_cross_thread_candidate_rows_keeps_existing_behavior_without_token_dictionary_artifacts(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    assert rows
+    assert all(
+        not any(
+            code.startswith("dictionary_token_overlap")
+            or code.startswith("bundle_overlap")
+            or code == "fragment_dictionary_support"
+            for code in row["evidence"]["reason_codes"]
+        )
+        for row in rows
+    )
+
+
+def test_build_cross_thread_candidate_rows_adds_dictionary_token_overlap_and_bundle_evidence(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="release planning",
+            keywords=[],
+            excerpt=(
+                "Retry migration_checklist.yml and validate rollback-plan before the next deploy."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release planning",
+            keywords=[],
+            excerpt=(
+                "Update rollback-plan and rerun migration_checklist.yml checks before deploy."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "migration_checklist.yml",
+                "normalized": "migration_checklist.yml",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"user": 4},
+                "cooccurrence": ["rollback-plan"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "rollback-plan",
+                "normalized": "rollback-plan",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"user": 4},
+                "cooccurrence": ["migration_checklist.yml"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["migration_checklist.yml", "rollback-plan"],
+                "weight": 0.84,
+            }
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert "dictionary_token_overlap_high" in row["evidence"]["reason_codes"]
+    assert "bundle_overlap_low" in row["evidence"]["reason_codes"]
+    assert "fragment_dictionary_support" in row["evidence"]["reason_codes"]
+
+
+def test_build_cross_thread_candidate_rows_adds_bundle_overlap_without_exact_dictionary_token_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="release planning",
+            keywords=[],
+            excerpt="Validate migration_checklist.yml before tonight's deploy.",
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release planning",
+            keywords=[],
+            excerpt="Confirm rollback-plan for the deploy handoff.",
+            message_ids=["b-1"],
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "migration_checklist.yml",
+                "normalized": "migration_checklist.yml",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 100,
+                "conversations": ["conv-a"],
+                "topics": ["topic-a"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["rollback-plan"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+            {
+                "token": "rollback-plan",
+                "normalized": "rollback-plan",
+                "count": 2,
+                "first_seen": 200,
+                "last_seen": 200,
+                "conversations": ["conv-b"],
+                "topics": ["topic-b"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["migration_checklist.yml"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["migration_checklist.yml", "rollback-plan"],
+                "weight": 0.79,
+            }
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+
+    row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-a"
+        and candidate["target_topic_id"] == "topic-b"
+    )
+    assert "dictionary_token_overlap_low" not in row["evidence"]["reason_codes"]
+    assert "dictionary_token_overlap_high" not in row["evidence"]["reason_codes"]
+    assert "bundle_overlap_low" in row["evidence"]["reason_codes"]
+
+
+def test_task_fragment_view_can_use_token_dictionary_support_when_present(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "falcon",
+                "normalized": "falcon",
+                "count": 3,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a"],
+                "role_hints": {"user": 3},
+                "cooccurrence": ["handoff", "relay"],
+                "conversation_count": 2,
+                "topic_count": 1,
+            },
+            {
+                "token": "handoff",
+                "normalized": "handoff",
+                "count": 3,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a"],
+                "role_hints": {"user": 3},
+                "cooccurrence": ["falcon", "relay"],
+                "conversation_count": 2,
+                "topic_count": 1,
+            },
+            {
+                "token": "relay",
+                "normalized": "relay",
+                "count": 3,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a"],
+                "role_hints": {"user": 3},
+                "cooccurrence": ["falcon", "handoff"],
+                "conversation_count": 2,
+                "topic_count": 1,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["falcon", "handoff", "relay"],
+                "weight": 0.82,
+            }
+        ],
+    )
+    signals = load_token_dictionary_signals(root)
+
+    text = (
+        "This is mostly an explanation of tradeoffs and background context. "
+        "After falcon handoff relay."
+    )
+
+    without_dictionary = cross_thread_module._task_fragment_view(text)
+    with_dictionary = cross_thread_module._task_fragment_view(
+        text,
+        token_dictionary_signals=signals,
+    )
+
+    assert without_dictionary == ""
+    assert "after falcon handoff relay" in with_dictionary.lower()
 
 
 def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(

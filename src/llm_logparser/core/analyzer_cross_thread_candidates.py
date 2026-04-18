@@ -16,8 +16,10 @@ from .analyzer_common import (
 )
 from .analyzer_token_dictionary import (
     TokenDictionaryLexicalRules,
+    TokenDictionarySignals,
     default_token_dictionary_lexical_rules,
     load_token_dictionary_lexical_rules,
+    load_token_dictionary_signals,
 )
 from .l1_derivation import iter_input_message_records
 from .analyzer_semantic_preview import WindowPreviewRecord, load_window_preview_index
@@ -79,6 +81,11 @@ _WEAK_ROUTE_DORMANT_GAP_SCORE = 0.04
 _WEAK_ROUTE_SPECIFICITY_SCORE = 0.03
 _WEAK_ROUTE_TASK_LIKE_SCORE = 0.03
 _WEAK_ROUTE_CONTEXT_SHIFT_SCORE = 0.02
+_DICTIONARY_TOKEN_OVERLAP_LOW_SCORE = 0.03
+_DICTIONARY_TOKEN_OVERLAP_HIGH_SCORE = 0.06
+_BUNDLE_OVERLAP_LOW_SCORE = 0.02
+_BUNDLE_OVERLAP_HIGH_SCORE = 0.04
+_FRAGMENT_DICTIONARY_SUPPORT_SCORE = 0.02
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 
 
@@ -107,6 +114,9 @@ class _RepresentativeSpanUnit:
     anchor_tokens: tuple[str, ...]
     strong_anchor_tokens: tuple[str, ...]
     task_like_score: float
+    dictionary_tokens: tuple[str, ...]
+    bundle_ids: tuple[str, ...]
+    fragment_dictionary_support: float
 
 
 @dataclass(frozen=True)
@@ -156,8 +166,11 @@ class _PairSignals:
     local_context_delta: float | None
     shared_anchor_tokens: tuple[str, ...]
     shared_strong_anchor_tokens: tuple[str, ...]
+    shared_dictionary_tokens: tuple[str, ...]
+    shared_bundle_ids: tuple[str, ...]
     task_like_score: float
     reflective_score: float
+    fragment_dictionary_support: float
 
 
 @dataclass(frozen=True)
@@ -366,9 +379,62 @@ def _reflective_text_score(
     )
 
 
+def _dictionary_tokens_for_text(
+    text: str,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> tuple[str, ...]:
+    if token_dictionary_signals is None:
+        return ()
+    return tuple(
+        sorted(
+            {
+                token
+                for token in _token_list(text)
+                if token in token_dictionary_signals.token_rows
+            }
+        )
+    )
+
+
+def _bundle_ids_for_tokens(
+    tokens: tuple[str, ...],
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> tuple[str, ...]:
+    if token_dictionary_signals is None or not tokens:
+        return ()
+    bundle_ids: set[str] = set()
+    for token in tokens:
+        bundle_ids.update(token_dictionary_signals.token_to_bundles.get(token, ()))
+    return tuple(sorted(bundle_ids))
+
+
+def _fragment_dictionary_support(
+    text: str,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> float:
+    if token_dictionary_signals is None:
+        return 0.0
+    dictionary_tokens = _dictionary_tokens_for_text(text, token_dictionary_signals)
+    if not dictionary_tokens:
+        return 0.0
+    bundle_hits = 0
+    for bundle_id in _bundle_ids_for_tokens(dictionary_tokens, token_dictionary_signals):
+        bundle_tokens = token_dictionary_signals.bundle_tokens.get(bundle_id, frozenset())
+        if len(bundle_tokens & set(dictionary_tokens)) >= 2:
+            bundle_hits += 1
+    return round(
+        min(
+            1.0,
+            0.18 * min(4, len(dictionary_tokens)) + 0.24 * min(2, bundle_hits),
+        ),
+        4,
+    )
+
+
 def _task_fragment_view(
     text: str,
     lexical_rules: TokenDictionaryLexicalRules | None = None,
+    token_dictionary_signals: TokenDictionarySignals | None = None,
 ) -> str:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     normalized_text = " ".join(text.split())
@@ -423,6 +489,10 @@ def _task_fragment_view(
         score += min(0.36, 0.18 * action_hits)
         score += min(0.24, 0.12 * state_hits)
         score += min(0.18, 0.22 * _text_specificity_score(fragment, lexical_rules))
+        score += min(
+            0.18,
+            0.24 * _fragment_dictionary_support(fragment, token_dictionary_signals),
+        )
         score -= min(0.32, 0.16 * explanatory_hits)
         score -= min(0.3, 0.75 * reflective_score)
         if score >= 0.34:
@@ -459,6 +529,10 @@ def _task_fragment_view(
             strong_anchor_tokens,
             lexical_rules,
         )
+        overall_task_like_score += min(
+            0.12,
+            0.18 * _fragment_dictionary_support(normalized_text, token_dictionary_signals),
+        )
         if overall_task_like_score >= 0.62:
             return normalized_text
     return ""
@@ -468,6 +542,7 @@ def _representative_units(
     topics_artifact: dict[str, Any],
     *,
     lexical_rules: TokenDictionaryLexicalRules | None = None,
+    token_dictionary_signals: TokenDictionarySignals | None = None,
 ) -> list[_RepresentativeSpanUnit]:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
     provider_id = str(topics_artifact["provider_id"])
@@ -511,14 +586,32 @@ def _representative_units(
                 value
                 for value in (
                     normalized_topic_label or "",
-                    _task_fragment_view(str(span["excerpt"]), lexical_rules),
+                    _task_fragment_view(
+                        str(span["excerpt"]),
+                        lexical_rules,
+                        token_dictionary_signals,
+                    ),
                     *keywords,
                 )
                 if value
             )
             anchor_tokens = _anchor_tokens_for_texts(anchor_source_values, lexical_rules)
             strong_anchor_tokens = _strong_anchor_tokens_for_texts(anchor_source_values, lexical_rules)
-            task_fragment_view = _task_fragment_view(str(span["excerpt"]), lexical_rules)
+            task_fragment_view = _task_fragment_view(
+                str(span["excerpt"]),
+                lexical_rules,
+                token_dictionary_signals,
+            )
+            dictionary_source_text = task_fragment_view or str(span["excerpt"])
+            dictionary_tokens = _dictionary_tokens_for_text(
+                dictionary_source_text,
+                token_dictionary_signals,
+            )
+            bundle_ids = _bundle_ids_for_tokens(dictionary_tokens, token_dictionary_signals)
+            fragment_dictionary_support = _fragment_dictionary_support(
+                dictionary_source_text,
+                token_dictionary_signals,
+            )
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -545,6 +638,9 @@ def _representative_units(
                         strong_anchor_tokens,
                         lexical_rules,
                     ),
+                    dictionary_tokens=dictionary_tokens,
+                    bundle_ids=bundle_ids,
+                    fragment_dictionary_support=fragment_dictionary_support,
                 )
             )
     units.sort(
@@ -773,6 +869,12 @@ def _pair_signals(
     shared_strong_anchor_tokens = tuple(
         sorted(set(source.strong_anchor_tokens) & set(target.strong_anchor_tokens))
     )
+    shared_dictionary_tokens = tuple(
+        sorted(set(source.dictionary_tokens) & set(target.dictionary_tokens))
+    )
+    shared_bundle_ids = tuple(
+        sorted(set(source.bundle_ids) & set(target.bundle_ids))
+    )
     return _PairSignals(
         excerpt_similarity=excerpt_similarity,
         topic_label_similarity=topic_label_similarity,
@@ -788,12 +890,18 @@ def _pair_signals(
         local_context_delta=local_context_delta,
         shared_anchor_tokens=shared_anchor_tokens,
         shared_strong_anchor_tokens=shared_strong_anchor_tokens,
+        shared_dictionary_tokens=shared_dictionary_tokens,
+        shared_bundle_ids=shared_bundle_ids,
         task_like_score=round(
             (source.task_like_score + target.task_like_score) / 2.0,
             4,
         ),
         reflective_score=round(
             (source.reflective_score + target.reflective_score) / 2.0,
+            4,
+        ),
+        fragment_dictionary_support=round(
+            (source.fragment_dictionary_support + target.fragment_dictionary_support) / 2.0,
             4,
         ),
     )
@@ -870,6 +978,24 @@ def _similarity_score_and_reasons(
         score += _TOPIC_EXCERPT_COMBINATION_HIGH_SCORE
         reason_codes.append("topic_excerpt_combination_high")
 
+    if len(signals.shared_dictionary_tokens) >= 2:
+        score += _DICTIONARY_TOKEN_OVERLAP_HIGH_SCORE
+        reason_codes.append("dictionary_token_overlap_high")
+    elif len(signals.shared_dictionary_tokens) == 1:
+        score += _DICTIONARY_TOKEN_OVERLAP_LOW_SCORE
+        reason_codes.append("dictionary_token_overlap_low")
+
+    if len(signals.shared_bundle_ids) >= 2:
+        score += _BUNDLE_OVERLAP_HIGH_SCORE
+        reason_codes.append("bundle_overlap_high")
+    elif len(signals.shared_bundle_ids) == 1:
+        score += _BUNDLE_OVERLAP_LOW_SCORE
+        reason_codes.append("bundle_overlap_low")
+
+    if signals.fragment_dictionary_support >= 0.35:
+        score += _FRAGMENT_DICTIONARY_SUPPORT_SCORE
+        reason_codes.append("fragment_dictionary_support")
+
     if signals.timestamp_delta_ms is not None:
         if signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
             score += _TIMESTAMP_DISTANCE_HIGH_SCORE
@@ -882,6 +1008,8 @@ def _similarity_score_and_reasons(
         signals.excerpt_similarity >= 0.52
         or signals.topic_label_similarity >= 0.72
         or len(signals.shared_keywords) >= 1
+        or len(signals.shared_dictionary_tokens) >= 1
+        or len(signals.shared_bundle_ids) >= 1
     )
     return score, _dedupe_reason_codes(reason_codes), has_strong_signal
 
@@ -1240,7 +1368,12 @@ def _build_cross_thread_candidate_rows_with_stats(
 
     topics_artifact = _load_topics_artifact(input_root)
     lexical_rules = load_token_dictionary_lexical_rules(input_root)
-    units = _representative_units(topics_artifact, lexical_rules=lexical_rules)
+    token_dictionary_signals = load_token_dictionary_signals(input_root)
+    units = _representative_units(
+        topics_artifact,
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=token_dictionary_signals,
+    )
     recurrence_context = _build_recurrence_instrumentation_context(input_root, units)
     filtered_low_value_pair_count = 0
     selected_by_source: list[
@@ -1404,7 +1537,12 @@ def _summary(
     filtered_low_value_pair_count: int = 0,
 ) -> dict[str, Any]:
     lexical_rules = load_token_dictionary_lexical_rules(input_root)
-    units = _representative_units(topics_artifact, lexical_rules=lexical_rules)
+    token_dictionary_signals = load_token_dictionary_signals(input_root)
+    units = _representative_units(
+        topics_artifact,
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=token_dictionary_signals,
+    )
     reason_counts: Counter[str] = Counter()
     score_bands: Counter[str] = Counter()
     source_keys = {

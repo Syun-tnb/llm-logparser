@@ -180,6 +180,11 @@ SQLite correspondence for downstream consumers:
 derived only from canonical message rows. It is intentionally a thin
 message-membership substrate rather than a rendered semantic window.
 
+Optional L3 token-dictionary artifacts under `l3/token-dictionary/` may also
+be consumed by later L3 cross-thread analysis as additive evidence. These
+signals remain rebuildable and optional; they do not become canonical or L1/L2
+requirements.
+
 Contract:
 
 - schema: `src/llm_logparser/core/schemas/message_windows.schema.json`

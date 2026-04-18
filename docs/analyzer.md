@@ -128,7 +128,10 @@ artifacts are rebuildable higher-layer signals only; they do not replace
 canonical or L1 outputs. The same token-dictionary family now also owns seeded
 lexical resources via `lexical_rules.json`, so analyzer code can load task /
 reflective / specificity token groups from artifacts instead of embedding large
-vocabulary sets directly in Python.
+vocabulary sets directly in Python. L3 cross-thread candidate selection may
+also consume `dictionary.json` and `bundles.json` when present as additive
+evidence only; missing token-dictionary artifacts fall back to the pre-existing
+candidate path.
 
 ## Analyze Pipeline
 

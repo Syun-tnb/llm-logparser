@@ -328,6 +328,13 @@ class TokenDictionaryLexicalRules:
     task_fragment_noise_markers: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class TokenDictionarySignals:
+    token_rows: dict[str, dict[str, Any]]
+    token_to_bundles: dict[str, tuple[str, ...]]
+    bundle_tokens: dict[str, frozenset[str]]
+
+
 @dataclass
 class _TokenAggregate:
     token: str
@@ -436,6 +443,82 @@ def load_token_dictionary_lexical_rules(input_root: Path | None) -> TokenDiction
             f"invalid lexical rules artifact in {lexical_rules_path}: seeded_rules must be an object"
         )
     return _coerce_seeded_lexical_rules(seeded_rules)
+
+
+def load_token_dictionary_signals(input_root: Path | None) -> TokenDictionarySignals | None:
+    if input_root is None:
+        return None
+
+    dictionary_payload: dict[str, Any] | None = None
+    bundles_payload: dict[str, Any] | None = None
+
+    dictionary_path = token_dictionary_path(input_root)
+    if dictionary_path.exists():
+        try:
+            dictionary_payload = json.loads(dictionary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise TokenDictionaryError(
+                f"invalid JSON in {dictionary_path}: {exc.msg}"
+            ) from exc
+        errors = list(load_token_dictionary_validator().iter_errors(dictionary_payload))
+        if errors:
+            raise TokenDictionaryError(
+                f"token dictionary schema validation failed for {dictionary_path}: {errors[0].message}"
+            )
+
+    bundles_path = token_bundles_path(input_root)
+    if bundles_path.exists():
+        try:
+            bundles_payload = json.loads(bundles_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise TokenDictionaryError(
+                f"invalid JSON in {bundles_path}: {exc.msg}"
+            ) from exc
+        errors = list(load_token_bundles_validator().iter_errors(bundles_payload))
+        if errors:
+            raise TokenDictionaryError(
+                f"token bundles schema validation failed for {bundles_path}: {errors[0].message}"
+            )
+
+    if dictionary_payload is None and bundles_payload is None:
+        return None
+
+    token_rows: dict[str, dict[str, Any]] = {}
+    if dictionary_payload is not None:
+        for row in dictionary_payload.get("tokens", []):
+            token = row.get("normalized")
+            if isinstance(token, str) and token:
+                token_rows[token] = row
+
+    token_to_bundles: dict[str, set[str]] = defaultdict(set)
+    bundle_tokens: dict[str, frozenset[str]] = {}
+    if bundles_payload is not None:
+        for row in bundles_payload.get("bundles", []):
+            bundle_id = row.get("bundle_id")
+            tokens = row.get("tokens")
+            if not isinstance(bundle_id, str) or not bundle_id:
+                continue
+            if not isinstance(tokens, list):
+                continue
+            normalized_tokens = frozenset(
+                normalize_analysis_text(str(token))
+                for token in tokens
+                if isinstance(token, str) and token.strip()
+            )
+            if len(normalized_tokens) < 2:
+                continue
+            bundle_tokens[bundle_id] = normalized_tokens
+            for token in normalized_tokens:
+                token_to_bundles[token].add(bundle_id)
+
+    return TokenDictionarySignals(
+        token_rows=token_rows,
+        token_to_bundles={
+            token: tuple(sorted(bundle_ids))
+            for token, bundle_ids in token_to_bundles.items()
+        },
+        bundle_tokens=bundle_tokens,
+    )
 
 
 def _is_separator_token(token: str) -> bool:
