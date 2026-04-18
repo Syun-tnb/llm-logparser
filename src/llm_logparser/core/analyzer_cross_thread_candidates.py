@@ -87,6 +87,9 @@ _BUNDLE_OVERLAP_LOW_SCORE = 0.02
 _BUNDLE_OVERLAP_HIGH_SCORE = 0.04
 _FRAGMENT_DICTIONARY_SUPPORT_SCORE = 0.02
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
+_SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
+_SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
+_SELECTIVE_CONTEXT_MAX_CHARS = 240
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -102,6 +105,7 @@ class _RepresentativeSpanUnit:
     message_ids: tuple[str, ...]
     source_window_ids: tuple[str, ...]
     excerpt: str
+    task_nucleus_text: str
     task_fragment_view: str
     topic_label: str | None
     keywords: tuple[str, ...]
@@ -177,6 +181,13 @@ class _PairSignals:
 class _WeakRecurrenceCandidate:
     evidence: _Evidence
     shared_anchor_count: int
+
+
+@dataclass(frozen=True)
+class _ScoredFragment:
+    index: int
+    text: str
+    score: float
 
 
 def cross_thread_candidates_path(input_root: Path) -> Path:
@@ -431,111 +442,163 @@ def _fragment_dictionary_support(
     )
 
 
+def _split_span_into_fragments(text: str) -> list[str]:
+    normalized_text = " ".join(text.split())
+    if not normalized_text:
+        return []
+    return [
+        fragment.strip(" \t-:;,.!?/|")
+        for fragment in re.split(r"[\n\r]+|(?<=[。！？.!?;；])\s+", normalized_text)
+        if fragment.strip()
+    ]
+
+
+def _score_fragment(
+    fragment: str,
+    *,
+    lexical_rules: TokenDictionaryLexicalRules,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> float:
+    normalized_fragment = normalize_analysis_text(fragment)
+    if not normalized_fragment:
+        return 0.0
+    if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
+        return -1.0
+
+    tokens = _token_list(fragment)
+    if not tokens:
+        return 0.0
+    anchor_tokens = _anchor_tokens_for_texts((fragment,), lexical_rules)
+    strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
+    action_hits = sum(
+        1 for token in tokens
+        if token in lexical_rules.task_fragment_action_tokens
+    )
+    state_hits = sum(
+        1 for token in tokens
+        if token in lexical_rules.task_fragment_state_tokens
+    )
+    explanatory_hits = sum(
+        1 for token in tokens
+        if token in lexical_rules.task_fragment_explanatory_tokens
+    )
+    reflective_score = _reflective_text_score(fragment, lexical_rules)
+    if (
+        explanatory_hits > 0
+        and strong_anchor_tokens
+        and action_hits == 0
+        and state_hits == 0
+    ):
+        return -0.5
+
+    score = 0.0
+    if strong_anchor_tokens:
+        score += 0.45
+    elif anchor_tokens:
+        score += 0.22
+    score += min(0.36, 0.18 * action_hits)
+    score += min(0.24, 0.12 * state_hits)
+    score += min(0.18, 0.22 * _text_specificity_score(fragment, lexical_rules))
+    score += min(
+        0.18,
+        0.24 * _fragment_dictionary_support(fragment, token_dictionary_signals),
+    )
+    score -= min(0.32, 0.16 * explanatory_hits)
+    score -= min(0.3, 0.75 * reflective_score)
+    return round(score, 4)
+
+
+def _select_fragments(
+    fragments: list[str],
+    *,
+    lexical_rules: TokenDictionaryLexicalRules,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> list[_ScoredFragment]:
+    scored = [
+        _ScoredFragment(
+            index=index,
+            text=fragment,
+            score=_score_fragment(
+                fragment,
+                lexical_rules=lexical_rules,
+                token_dictionary_signals=token_dictionary_signals,
+            ),
+        )
+        for index, fragment in enumerate(fragments)
+    ]
+    selected = [
+        fragment
+        for fragment in sorted(
+            scored,
+            key=lambda item: (-item.score, item.index),
+        )[:_SELECTIVE_CONTEXT_TOP_FRAGMENTS]
+        if fragment.score >= _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE
+    ]
+    return sorted(selected, key=lambda item: item.index)
+
+
+def _build_task_nucleus(
+    text: str,
+    *,
+    lexical_rules: TokenDictionaryLexicalRules,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> str:
+    normalized_text = " ".join(text.split())
+    if not normalized_text:
+        return ""
+
+    fragments = _split_span_into_fragments(normalized_text)
+    if not fragments:
+        return ""
+
+    retained = _select_fragments(
+        fragments,
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=token_dictionary_signals,
+    )
+    if retained:
+        merged: list[str] = []
+        current_block = retained[0].text
+        previous_index = retained[0].index
+        for fragment in retained[1:]:
+            if fragment.index == previous_index + 1:
+                current_block = f"{current_block} {fragment.text}"
+            else:
+                merged.append(current_block)
+                current_block = fragment.text
+            previous_index = fragment.index
+        merged.append(current_block)
+        nucleus = " | ".join(merged)
+        return nucleus[:_SELECTIVE_CONTEXT_MAX_CHARS].rstrip()
+
+    return ""
+
+
+def _task_nucleus_text(
+    text: str,
+    *,
+    lexical_rules: TokenDictionaryLexicalRules,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> str:
+    nucleus = _build_task_nucleus(
+        text,
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=token_dictionary_signals,
+    )
+    return nucleus or " ".join(text.split())
+
+
 def _task_fragment_view(
     text: str,
     lexical_rules: TokenDictionaryLexicalRules | None = None,
     token_dictionary_signals: TokenDictionarySignals | None = None,
 ) -> str:
     lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
-    normalized_text = " ".join(text.split())
-    if not normalized_text:
-        return ""
-
-    fragments = [
-        fragment.strip(" \t-:;,.!?/|")
-        for fragment in re.split(r"[\n\r]+|(?<=[。！？.!?;；])\s+", normalized_text)
-        if fragment.strip()
-    ]
-    if not fragments:
-        return normalized_text
-
-    retained: list[tuple[int, str]] = []
-    for index, fragment in enumerate(fragments):
-        normalized_fragment = normalize_analysis_text(fragment)
-        if not normalized_fragment:
-            continue
-        if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
-            continue
-        tokens = _token_list(fragment)
-        if not tokens:
-            continue
-        anchor_tokens = _anchor_tokens_for_texts((fragment,), lexical_rules)
-        strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
-        action_hits = sum(
-            1 for token in tokens
-            if token in lexical_rules.task_fragment_action_tokens
-        )
-        state_hits = sum(
-            1 for token in tokens
-            if token in lexical_rules.task_fragment_state_tokens
-        )
-        explanatory_hits = sum(
-            1 for token in tokens
-            if token in lexical_rules.task_fragment_explanatory_tokens
-        )
-        reflective_score = _reflective_text_score(fragment, lexical_rules)
-        if (
-            explanatory_hits > 0
-            and strong_anchor_tokens
-            and action_hits == 0
-            and state_hits == 0
-        ):
-            continue
-        score = 0.0
-        if strong_anchor_tokens:
-            score += 0.45
-        elif anchor_tokens:
-            score += 0.22
-        score += min(0.36, 0.18 * action_hits)
-        score += min(0.24, 0.12 * state_hits)
-        score += min(0.18, 0.22 * _text_specificity_score(fragment, lexical_rules))
-        score += min(
-            0.18,
-            0.24 * _fragment_dictionary_support(fragment, token_dictionary_signals),
-        )
-        score -= min(0.32, 0.16 * explanatory_hits)
-        score -= min(0.3, 0.75 * reflective_score)
-        if score >= 0.34:
-            retained.append((index, fragment))
-
-    if retained:
-        return " | ".join(fragment for _index, fragment in retained)
-
-    anchor_tokens = _anchor_tokens_for_texts((normalized_text,), lexical_rules)
-    strong_anchor_tokens = _strong_anchor_tokens_for_texts((normalized_text,), lexical_rules)
-    if strong_anchor_tokens:
-        overall_tokens = _token_list(normalized_text)
-        overall_action_hits = sum(
-            1 for token in overall_tokens
-            if token in lexical_rules.task_fragment_action_tokens
-        )
-        overall_state_hits = sum(
-            1 for token in overall_tokens
-            if token in lexical_rules.task_fragment_state_tokens
-        )
-        overall_explanatory_hits = sum(
-            1 for token in overall_tokens
-            if token in lexical_rules.task_fragment_explanatory_tokens
-        )
-        if (
-            overall_explanatory_hits > 0
-            and overall_action_hits == 0
-            and overall_state_hits == 0
-        ):
-            return ""
-        overall_task_like_score = _task_like_text_score(
-            normalized_text,
-            anchor_tokens,
-            strong_anchor_tokens,
-            lexical_rules,
-        )
-        overall_task_like_score += min(
-            0.12,
-            0.18 * _fragment_dictionary_support(normalized_text, token_dictionary_signals),
-        )
-        if overall_task_like_score >= 0.62:
-            return normalized_text
-    return ""
+    return _build_task_nucleus(
+        text,
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=token_dictionary_signals,
+    )
 
 
 def _representative_units(
@@ -602,7 +665,12 @@ def _representative_units(
                 lexical_rules,
                 token_dictionary_signals,
             )
-            dictionary_source_text = task_fragment_view or str(span["excerpt"])
+            task_nucleus_text = _task_nucleus_text(
+                str(span["excerpt"]),
+                lexical_rules=lexical_rules,
+                token_dictionary_signals=token_dictionary_signals,
+            )
+            dictionary_source_text = task_nucleus_text or str(span["excerpt"])
             dictionary_tokens = _dictionary_tokens_for_text(
                 dictionary_source_text,
                 token_dictionary_signals,
@@ -621,6 +689,7 @@ def _representative_units(
                     message_ids=tuple(str(message_id) for message_id in span["message_ids"]),
                     source_window_ids=source_window_ids,
                     excerpt=str(span["excerpt"]),
+                    task_nucleus_text=task_nucleus_text,
                     task_fragment_view=task_fragment_view,
                     topic_label=normalized_topic_label,
                     keywords=keywords,
@@ -779,7 +848,10 @@ def _local_context_delta(
     previous_target = context.previous_target_by_key.get((target.conversation_id, target.span_id))
     if previous_target is None:
         return None
-    prior_excerpt_similarity = normalized_similarity(source.excerpt, previous_target.excerpt)
+    prior_excerpt_similarity = normalized_similarity(
+        source.task_nucleus_text or source.excerpt,
+        previous_target.task_nucleus_text or previous_target.excerpt,
+    )
     prior_topic_label_similarity = normalized_similarity(
         source.topic_label or "",
         previous_target.topic_label or "",
@@ -825,7 +897,10 @@ def _pair_signals(
     recurrence_context: _RecurrenceInstrumentationContext,
 ) -> _PairSignals:
     excerpt_similarity = round(
-        normalized_similarity(source.excerpt, target.excerpt),
+        normalized_similarity(
+            source.task_nucleus_text or source.excerpt,
+            target.task_nucleus_text or target.excerpt,
+        ),
         4,
     )
     topic_label_similarity = round(

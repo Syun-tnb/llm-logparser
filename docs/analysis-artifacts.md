@@ -794,6 +794,10 @@ Auxiliary L3 note:
   `token_stats.json` and `topics.json`
 - they are signal sources for later L3/L4 analysis only; they do not redefine
   canonical text, L1 sidecars, or SQLite state
+- current L3 cross-thread candidate generation can optionally use those token
+  and bundle signals while building a selective-context `task_nucleus_text`
+  from representative spans; this remains additive and rebuildable rather than
+  canonical
   without the extra fragmentation seen at stricter nearby thresholds
 - when `--sqlite-db` is provided, candidate retrieval uses L2 `analysis.db`
   filters before similarity scoring instead of a global dense comparison

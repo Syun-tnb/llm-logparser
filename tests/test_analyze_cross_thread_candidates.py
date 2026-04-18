@@ -1117,6 +1117,35 @@ def test_cross_thread_candidates_source_no_longer_embeds_large_lexical_rule_sets
     assert "_TASK_FRAGMENT_NOISE_MARKERS = (" not in source
 
 
+def test_split_span_into_fragments_is_deterministic():
+    text = "First sentence. Second sentence!\nThird block."
+
+    left = cross_thread_module._split_span_into_fragments(text)
+    right = cross_thread_module._split_span_into_fragments(text)
+
+    assert left == ["First sentence", "Second sentence", "Third block"]
+    assert left == right
+
+
+def test_build_task_nucleus_is_shorter_and_more_focused_than_original():
+    text = (
+        "Let's compare Dia and Fellou and explain why each one feels useful. "
+        "Retry migration_checklist.yml, validate rollback-plan, and rerun the failed rollout before release. "
+        "This should make the organized explanation easier to follow."
+    )
+
+    nucleus = cross_thread_module._build_task_nucleus(
+        text,
+        lexical_rules=cross_thread_module.default_token_dictionary_lexical_rules(),
+        token_dictionary_signals=None,
+    )
+
+    assert len(nucleus) < len(" ".join(text.split()))
+    assert "migration_checklist.yml" in nucleus.lower()
+    assert "rollback-plan" in nucleus.lower()
+    assert "compare dia and fellou" not in nucleus.lower()
+
+
 def test_task_fragment_view_prefers_task_bearing_content_over_explainer_filler():
     view = cross_thread_module._task_fragment_view(
         "Let's compare Dia and Fellou and explain why each one feels useful. "
@@ -1452,6 +1481,18 @@ def test_task_fragment_view_can_use_token_dictionary_support_when_present(tmp_pa
 
     assert without_dictionary == ""
     assert "after falcon handoff relay" in with_dictionary.lower()
+
+
+def test_build_task_nucleus_falls_back_to_original_text_when_no_strong_fragments():
+    text = "This is a broad explanation of tradeoffs and background context."
+
+    nucleus = cross_thread_module._task_nucleus_text(
+        text,
+        lexical_rules=cross_thread_module.default_token_dictionary_lexical_rules(),
+        token_dictionary_signals=None,
+    )
+
+    assert nucleus == text
 
 
 def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(
