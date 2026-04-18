@@ -863,8 +863,9 @@ deterministic and model-derived capabilities.
   task clauses. That nucleus becomes the primary comparison input for
   cross-thread matching, while the original excerpt remains available as the
   fallback/raw traceability view. Broad explanation/comparison framing is
-  downweighted while concrete action/object/constraint fragments remain
-  available for matching.
+  downweighted, meta-structural prompt/schema/formatting fragments are
+  penalized, and concrete action/object/constraint fragments remain available
+  for matching.
   Weak-route evidence is recorded as neutral structural signals such as
   anchor overlap, dormant gap, task-like signal, and context shift rather than
   as an L3 recurrence label. It

@@ -90,6 +90,37 @@ _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
 _SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
 _SELECTIVE_CONTEXT_MAX_CHARS = 240
+_META_STRUCTURAL_TOKENS = frozenset(
+    {
+        "include",
+        "output",
+        "return",
+        "format",
+        "field",
+        "fields",
+        "schema",
+        "prompt",
+        "json",
+        "yaml",
+        "markdown",
+        "object",
+        "response",
+        "template",
+        "message_idx",
+        "schema_version",
+    }
+)
+_META_STRUCTURAL_MARKERS = (
+    "make sure to include",
+    "output should contain",
+    "return a json object",
+    "json object",
+    "schema_version",
+    "message_idx",
+    "code fence",
+    "markdown",
+    "yaml",
+)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -442,6 +473,77 @@ def _fragment_dictionary_support(
     )
 
 
+def _is_meta_structural_fragment(
+    fragment: str,
+    *,
+    lexical_rules: TokenDictionaryLexicalRules,
+) -> bool:
+    normalized = normalize_analysis_text(fragment)
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _META_STRUCTURAL_MARKERS):
+        return True
+    tokens = _token_list(fragment)
+    if not tokens:
+        return False
+    meta_hits = sum(1 for token in tokens if token in _META_STRUCTURAL_TOKENS)
+    action_hits = sum(
+        1 for token in tokens if token in lexical_rules.task_fragment_action_tokens
+    )
+    state_hits = sum(
+        1 for token in tokens if token in lexical_rules.task_fragment_state_tokens
+    )
+    strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
+    return meta_hits >= 2 and action_hits == 0 and state_hits == 0 and not strong_anchor_tokens
+
+
+def _has_action_object_pattern(
+    *,
+    action_hits: int,
+    strong_anchor_tokens: tuple[str, ...],
+    dictionary_support: float,
+) -> bool:
+    return action_hits > 0 and (
+        bool(strong_anchor_tokens) or dictionary_support >= 0.3
+    )
+
+
+def _has_state_target_pattern(
+    *,
+    state_hits: int,
+    anchor_tokens: tuple[str, ...],
+    dictionary_support: float,
+) -> bool:
+    return state_hits > 0 and (bool(anchor_tokens) or dictionary_support >= 0.3)
+
+
+def _has_concrete_task_shape(
+    *,
+    action_hits: int,
+    state_hits: int,
+    anchor_tokens: tuple[str, ...],
+    strong_anchor_tokens: tuple[str, ...],
+    dictionary_support: float,
+) -> bool:
+    if _has_action_object_pattern(
+        action_hits=action_hits,
+        strong_anchor_tokens=strong_anchor_tokens,
+        dictionary_support=dictionary_support,
+    ):
+        return True
+    if _has_state_target_pattern(
+        state_hits=state_hits,
+        anchor_tokens=anchor_tokens,
+        dictionary_support=dictionary_support,
+    ):
+        return True
+    return (
+        action_hits > 0
+        and state_hits > 0
+        and (bool(anchor_tokens) or dictionary_support >= 0.22)
+    )
+
+
 def _split_span_into_fragments(text: str) -> list[str]:
     normalized_text = " ".join(text.split())
     if not normalized_text:
@@ -464,12 +566,15 @@ def _score_fragment(
         return 0.0
     if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
         return -1.0
+    if _is_meta_structural_fragment(fragment, lexical_rules=lexical_rules):
+        return -0.35
 
     tokens = _token_list(fragment)
     if not tokens:
         return 0.0
     anchor_tokens = _anchor_tokens_for_texts((fragment,), lexical_rules)
     strong_anchor_tokens = _strong_anchor_tokens_for_texts((fragment,), lexical_rules)
+    dictionary_support = _fragment_dictionary_support(fragment, token_dictionary_signals)
     action_hits = sum(
         1 for token in tokens
         if token in lexical_rules.task_fragment_action_tokens
@@ -488,10 +593,17 @@ def _score_fragment(
         and strong_anchor_tokens
         and action_hits == 0
         and state_hits == 0
-    ):
+        ):
         return -0.5
 
     score = 0.0
+    has_concrete_task_shape = _has_concrete_task_shape(
+        action_hits=action_hits,
+        state_hits=state_hits,
+        anchor_tokens=anchor_tokens,
+        strong_anchor_tokens=strong_anchor_tokens,
+        dictionary_support=dictionary_support,
+    )
     if strong_anchor_tokens:
         score += 0.45
     elif anchor_tokens:
@@ -499,10 +611,14 @@ def _score_fragment(
     score += min(0.36, 0.18 * action_hits)
     score += min(0.24, 0.12 * state_hits)
     score += min(0.18, 0.22 * _text_specificity_score(fragment, lexical_rules))
-    score += min(
-        0.18,
-        0.24 * _fragment_dictionary_support(fragment, token_dictionary_signals),
-    )
+    if has_concrete_task_shape:
+        score += 0.16
+        score += min(0.18, 0.24 * dictionary_support)
+    else:
+        score += min(0.04, 0.08 * dictionary_support)
+    meta_hits = sum(1 for token in tokens if token in _META_STRUCTURAL_TOKENS)
+    if meta_hits > 0 and not has_concrete_task_shape:
+        score -= min(0.28, 0.1 * meta_hits)
     score -= min(0.32, 0.16 * explanatory_hits)
     score -= min(0.3, 0.75 * reflective_score)
     return round(score, 4)

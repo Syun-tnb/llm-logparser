@@ -1159,6 +1159,45 @@ def test_task_fragment_view_prefers_task_bearing_content_over_explainer_filler()
     assert "feels useful" not in normalized_view
 
 
+def test_meta_structural_prompt_fragment_is_penalized():
+    lexical_rules = cross_thread_module.default_token_dictionary_lexical_rules()
+
+    score = cross_thread_module._score_fragment(
+        "Make sure to include schema_version and return a JSON object with the output fields.",
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=None,
+    )
+
+    assert score < 0
+
+
+def test_pure_formatting_schema_guidance_does_not_become_task_nucleus():
+    view = cross_thread_module._task_fragment_view(
+        "Return a JSON object with schema_version and message_idx fields. "
+        "Use markdown code fences for the output format."
+    )
+
+    assert view == ""
+
+
+def test_concrete_task_fragment_outranks_meta_structural_fragment():
+    lexical_rules = cross_thread_module.default_token_dictionary_lexical_rules()
+
+    meta_score = cross_thread_module._score_fragment(
+        "The output should contain schema_version and markdown fields.",
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=None,
+    )
+    task_score = cross_thread_module._score_fragment(
+        "Fix relay_config.json and retry the failed rollout before deploy.",
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=None,
+    )
+
+    assert task_score > meta_score
+    assert task_score >= cross_thread_module._SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE
+
+
 def test_build_cross_thread_candidate_rows_loads_external_lexical_rules(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     topics = [
@@ -1483,6 +1522,56 @@ def test_task_fragment_view_can_use_token_dictionary_support_when_present(tmp_pa
     assert "after falcon handoff relay" in with_dictionary.lower()
 
 
+def test_dictionary_support_alone_does_not_rescue_meta_fragment(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "schema_version",
+                "normalized": "schema_version",
+                "count": 5,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a"],
+                "topics": ["topic-a"],
+                "role_hints": {"user": 5},
+                "cooccurrence": ["message_idx"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+            {
+                "token": "message_idx",
+                "normalized": "message_idx",
+                "count": 5,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a"],
+                "topics": ["topic-a"],
+                "role_hints": {"user": 5},
+                "cooccurrence": ["schema_version"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["schema_version", "message_idx"],
+                "weight": 0.9,
+            }
+        ],
+    )
+    signals = load_token_dictionary_signals(root)
+
+    view = cross_thread_module._task_fragment_view(
+        "Return a JSON object with schema_version and message_idx fields.",
+        token_dictionary_signals=signals,
+    )
+
+    assert view == ""
+
+
 def test_build_task_nucleus_falls_back_to_original_text_when_no_strong_fragments():
     text = "This is a broad explanation of tradeoffs and background context."
 
@@ -1493,6 +1582,16 @@ def test_build_task_nucleus_falls_back_to_original_text_when_no_strong_fragments
     )
 
     assert nucleus == text
+
+
+def test_real_task_bearing_technical_fragment_still_survives():
+    view = cross_thread_module._task_fragment_view(
+        "Update relay_config.json, remove the stale field, and retry the failed deploy."
+    )
+
+    normalized_view = view.lower()
+    assert "relay_config.json" in normalized_view
+    assert "retry the failed deploy" in normalized_view
 
 
 def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(
