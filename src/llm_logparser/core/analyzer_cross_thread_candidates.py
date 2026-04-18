@@ -81,11 +81,11 @@ _WEAK_ROUTE_DORMANT_GAP_SCORE = 0.04
 _WEAK_ROUTE_SPECIFICITY_SCORE = 0.03
 _WEAK_ROUTE_TASK_LIKE_SCORE = 0.03
 _WEAK_ROUTE_CONTEXT_SHIFT_SCORE = 0.02
-_DICTIONARY_TOKEN_OVERLAP_LOW_SCORE = 0.03
-_DICTIONARY_TOKEN_OVERLAP_HIGH_SCORE = 0.06
-_BUNDLE_OVERLAP_LOW_SCORE = 0.02
-_BUNDLE_OVERLAP_HIGH_SCORE = 0.04
-_FRAGMENT_DICTIONARY_SUPPORT_SCORE = 0.02
+_DICTIONARY_TOKEN_OVERLAP_WEAK_SCORE = 0.02
+_DICTIONARY_TOKEN_OVERLAP_DENSE_SCORE = 0.08
+_BUNDLE_OVERLAP_BROAD_SCORE = 0.01
+_BUNDLE_OVERLAP_CONCENTRATED_SCORE = 0.05
+_NUCLEUS_OVERLAP_SPECIFIC_SCORE = 0.03
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
 _SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
@@ -152,6 +152,9 @@ class _RepresentativeSpanUnit:
     dictionary_tokens: tuple[str, ...]
     bundle_ids: tuple[str, ...]
     fragment_dictionary_support: float
+    nucleus_token_count: int
+    dictionary_token_mass: float
+    dictionary_density: float
 
 
 @dataclass(frozen=True)
@@ -203,6 +206,10 @@ class _PairSignals:
     shared_strong_anchor_tokens: tuple[str, ...]
     shared_dictionary_tokens: tuple[str, ...]
     shared_bundle_ids: tuple[str, ...]
+    shared_dictionary_token_mass: float
+    dictionary_overlap_ratio: float
+    bundle_concentration: float
+    min_dictionary_density: float
     task_like_score: float
     reflective_score: float
     fragment_dictionary_support: float
@@ -435,6 +442,61 @@ def _dictionary_tokens_for_text(
                 if token in token_dictionary_signals.token_rows
             }
         )
+    )
+
+
+def _dictionary_token_weight(
+    token: str,
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> float:
+    if token_dictionary_signals is None:
+        return 1.0
+    row = token_dictionary_signals.token_rows.get(token)
+    if not isinstance(row, dict):
+        return 1.0
+    conversation_count = row.get("conversation_count")
+    topic_count = row.get("topic_count")
+    try:
+        conversation_count = int(conversation_count)
+    except (TypeError, ValueError):
+        conversation_count = 0
+    try:
+        topic_count = int(topic_count)
+    except (TypeError, ValueError):
+        topic_count = 0
+    spread = max(conversation_count, topic_count)
+    if spread >= 5:
+        return 0.35
+    if spread >= 3:
+        return 0.6
+    return 1.0
+
+
+def _dictionary_token_mass(
+    tokens: tuple[str, ...],
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> float:
+    return round(
+        sum(
+            _dictionary_token_weight(token, token_dictionary_signals)
+            for token in tokens
+        ),
+        4,
+    )
+
+
+def _nucleus_dictionary_density(
+    nucleus_text: str,
+    dictionary_tokens: tuple[str, ...],
+    token_dictionary_signals: TokenDictionarySignals | None,
+) -> float:
+    nucleus_token_count = len(set(_token_list(nucleus_text)))
+    if nucleus_token_count <= 0:
+        return 0.0
+    return round(
+        _dictionary_token_mass(dictionary_tokens, token_dictionary_signals)
+        / nucleus_token_count,
+        4,
     )
 
 
@@ -792,6 +854,16 @@ def _representative_units(
                 token_dictionary_signals,
             )
             bundle_ids = _bundle_ids_for_tokens(dictionary_tokens, token_dictionary_signals)
+            nucleus_token_count = len(set(_token_list(task_nucleus_text)))
+            dictionary_token_mass = _dictionary_token_mass(
+                dictionary_tokens,
+                token_dictionary_signals,
+            )
+            dictionary_density = _nucleus_dictionary_density(
+                task_nucleus_text,
+                dictionary_tokens,
+                token_dictionary_signals,
+            )
             fragment_dictionary_support = _fragment_dictionary_support(
                 dictionary_source_text,
                 token_dictionary_signals,
@@ -826,6 +898,9 @@ def _representative_units(
                     dictionary_tokens=dictionary_tokens,
                     bundle_ids=bundle_ids,
                     fragment_dictionary_support=fragment_dictionary_support,
+                    nucleus_token_count=nucleus_token_count,
+                    dictionary_token_mass=dictionary_token_mass,
+                    dictionary_density=dictionary_density,
                 )
             )
     units.sort(
@@ -1011,6 +1086,7 @@ def _pair_signals(
     target: _RepresentativeSpanUnit,
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
+    token_dictionary_signals: TokenDictionarySignals | None = None,
 ) -> _PairSignals:
     excerpt_similarity = round(
         normalized_similarity(
@@ -1066,6 +1142,28 @@ def _pair_signals(
     shared_bundle_ids = tuple(
         sorted(set(source.bundle_ids) & set(target.bundle_ids))
     )
+    shared_dictionary_token_mass = _dictionary_token_mass(
+        shared_dictionary_tokens,
+        token_dictionary_signals,
+    )
+    overlap_denominator = min(source.dictionary_token_mass, target.dictionary_token_mass)
+    dictionary_overlap_ratio = round(
+        (shared_dictionary_token_mass / overlap_denominator)
+        if overlap_denominator > 0
+        else 0.0,
+        4,
+    )
+    bundle_denominator = min(len(source.bundle_ids), len(target.bundle_ids))
+    bundle_concentration = round(
+        (len(shared_bundle_ids) / bundle_denominator)
+        if bundle_denominator > 0
+        else 0.0,
+        4,
+    )
+    min_dictionary_density = round(
+        min(source.dictionary_density, target.dictionary_density),
+        4,
+    )
     return _PairSignals(
         excerpt_similarity=excerpt_similarity,
         topic_label_similarity=topic_label_similarity,
@@ -1083,6 +1181,10 @@ def _pair_signals(
         shared_strong_anchor_tokens=shared_strong_anchor_tokens,
         shared_dictionary_tokens=shared_dictionary_tokens,
         shared_bundle_ids=shared_bundle_ids,
+        shared_dictionary_token_mass=shared_dictionary_token_mass,
+        dictionary_overlap_ratio=dictionary_overlap_ratio,
+        bundle_concentration=bundle_concentration,
+        min_dictionary_density=min_dictionary_density,
         task_like_score=round(
             (source.task_like_score + target.task_like_score) / 2.0,
             4,
@@ -1169,23 +1271,46 @@ def _similarity_score_and_reasons(
         score += _TOPIC_EXCERPT_COMBINATION_HIGH_SCORE
         reason_codes.append("topic_excerpt_combination_high")
 
-    if len(signals.shared_dictionary_tokens) >= 2:
-        score += _DICTIONARY_TOKEN_OVERLAP_HIGH_SCORE
-        reason_codes.append("dictionary_token_overlap_high")
-    elif len(signals.shared_dictionary_tokens) == 1:
-        score += _DICTIONARY_TOKEN_OVERLAP_LOW_SCORE
-        reason_codes.append("dictionary_token_overlap_low")
+    if (
+        signals.shared_dictionary_token_mass >= 1.5
+        and signals.dictionary_overlap_ratio >= 0.55
+        and signals.min_dictionary_density >= 0.18
+    ):
+        score += _DICTIONARY_TOKEN_OVERLAP_DENSE_SCORE
+        reason_codes.append("dictionary_token_overlap_dense")
+    elif (
+        signals.shared_dictionary_token_mass >= 0.9
+        and signals.dictionary_overlap_ratio >= 0.25
+        and signals.min_dictionary_density >= 0.08
+    ):
+        score += _DICTIONARY_TOKEN_OVERLAP_WEAK_SCORE
+        reason_codes.append("dictionary_token_overlap_weak")
 
-    if len(signals.shared_bundle_ids) >= 2:
-        score += _BUNDLE_OVERLAP_HIGH_SCORE
-        reason_codes.append("bundle_overlap_high")
-    elif len(signals.shared_bundle_ids) == 1:
-        score += _BUNDLE_OVERLAP_LOW_SCORE
-        reason_codes.append("bundle_overlap_low")
+    if (
+        signals.shared_bundle_ids
+        and signals.bundle_concentration >= 0.6
+        and signals.shared_dictionary_token_mass >= 1.2
+    ):
+        score += _BUNDLE_OVERLAP_CONCENTRATED_SCORE
+        reason_codes.append("bundle_overlap_concentrated")
+    elif (
+        signals.shared_bundle_ids
+        and signals.bundle_concentration >= 0.25
+        and signals.shared_dictionary_token_mass >= 0.9
+    ):
+        score += _BUNDLE_OVERLAP_BROAD_SCORE
+        reason_codes.append("bundle_overlap_broad")
 
-    if signals.fragment_dictionary_support >= 0.35:
-        score += _FRAGMENT_DICTIONARY_SUPPORT_SCORE
-        reason_codes.append("fragment_dictionary_support")
+    if (
+        signals.dictionary_overlap_ratio >= 0.55
+        and signals.min_dictionary_density >= 0.18
+        and (
+            signals.bundle_concentration >= 0.5
+            or signals.shared_dictionary_token_mass >= 2.0
+        )
+    ):
+        score += _NUCLEUS_OVERLAP_SPECIFIC_SCORE
+        reason_codes.append("nucleus_overlap_specific")
 
     if signals.timestamp_delta_ms is not None:
         if signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
@@ -1199,8 +1324,11 @@ def _similarity_score_and_reasons(
         signals.excerpt_similarity >= 0.52
         or signals.topic_label_similarity >= 0.72
         or len(signals.shared_keywords) >= 1
-        or len(signals.shared_dictionary_tokens) >= 1
-        or len(signals.shared_bundle_ids) >= 1
+        or signals.shared_dictionary_token_mass >= 0.9
+        or (
+            bool(signals.shared_bundle_ids)
+            and signals.bundle_concentration >= 0.25
+        )
     )
     return score, _dedupe_reason_codes(reason_codes), has_strong_signal
 
@@ -1237,12 +1365,14 @@ def _weak_recurrence_evidence_for_pair(
     target: _RepresentativeSpanUnit,
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
+    token_dictionary_signals: TokenDictionarySignals | None = None,
     base_evidence: _Evidence | None = None,
 ) -> _WeakRecurrenceCandidate | None:
     signals = _pair_signals(
         source,
         target,
         recurrence_context=recurrence_context,
+        token_dictionary_signals=token_dictionary_signals,
     )
     if not signals.shared_anchor_tokens:
         return None
@@ -1328,11 +1458,13 @@ def _evidence_for_pair(
     target: _RepresentativeSpanUnit,
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
+    token_dictionary_signals: TokenDictionarySignals | None = None,
 ) -> _Evidence | None:
     signals = _pair_signals(
         source,
         target,
         recurrence_context=recurrence_context,
+        token_dictionary_signals=token_dictionary_signals,
     )
     score, reason_codes, has_strong_signal = _similarity_score_and_reasons(signals)
     if not has_strong_signal or not reason_codes:
@@ -1583,11 +1715,13 @@ def _build_cross_thread_candidate_rows_with_stats(
                 source,
                 target,
                 recurrence_context=recurrence_context,
+                token_dictionary_signals=token_dictionary_signals,
             )
             weak_candidate = _weak_recurrence_evidence_for_pair(
                 source,
                 target,
                 recurrence_context=recurrence_context,
+                token_dictionary_signals=token_dictionary_signals,
                 base_evidence=evidence,
             )
             similarity_evidence = weak_candidate.evidence if weak_candidate is not None else evidence

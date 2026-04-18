@@ -865,7 +865,10 @@ deterministic and model-derived capabilities.
   fallback/raw traceability view. Broad explanation/comparison framing is
   downweighted, meta-structural prompt/schema/formatting fragments are
   penalized, and concrete action/object/constraint fragments remain available
-  for matching.
+  for matching. On top of that selective-context layer, dictionary/bundle
+  evidence is now evaluated with density-aware nucleus overlap rather than
+  mostly boolean support, so concentrated shared task nuclei are preferred
+  over broad technical overlap.
   Weak-route evidence is recorded as neutral structural signals such as
   anchor overlap, dormant gap, task-like signal, and context shift rather than
   as an L3 recurrence label. It

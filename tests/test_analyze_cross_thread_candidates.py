@@ -672,7 +672,7 @@ def test_build_cross_thread_candidate_rows_embedding_tie_break_is_predictable(
         local_context_delta=None,
     )
 
-    def fake_evidence(source, target, *, recurrence_context):
+    def fake_evidence(source, target, *, recurrence_context, token_dictionary_signals=None):
         if source.topic_id != "topic-a":
             return None
         if target.topic_id in {"topic-b", "topic-c"}:
@@ -1279,7 +1279,7 @@ def test_build_cross_thread_candidate_rows_keeps_existing_behavior_without_token
         not any(
             code.startswith("dictionary_token_overlap")
             or code.startswith("bundle_overlap")
-            or code == "fragment_dictionary_support"
+            or code == "nucleus_overlap_specific"
             for code in row["evidence"]["reason_codes"]
         )
         for row in rows
@@ -1366,9 +1366,9 @@ def test_build_cross_thread_candidate_rows_adds_dictionary_token_overlap_and_bun
         if candidate["source_topic_id"] == "topic-a"
         and candidate["target_topic_id"] == "topic-b"
     )
-    assert "dictionary_token_overlap_high" in row["evidence"]["reason_codes"]
-    assert "bundle_overlap_low" in row["evidence"]["reason_codes"]
-    assert "fragment_dictionary_support" in row["evidence"]["reason_codes"]
+    assert "dictionary_token_overlap_dense" in row["evidence"]["reason_codes"]
+    assert "bundle_overlap_concentrated" in row["evidence"]["reason_codes"]
+    assert "nucleus_overlap_specific" in row["evidence"]["reason_codes"]
 
 
 def test_build_cross_thread_candidate_rows_adds_bundle_overlap_without_exact_dictionary_token_overlap(
@@ -1447,9 +1447,185 @@ def test_build_cross_thread_candidate_rows_adds_bundle_overlap_without_exact_dic
         if candidate["source_topic_id"] == "topic-a"
         and candidate["target_topic_id"] == "topic-b"
     )
-    assert "dictionary_token_overlap_low" not in row["evidence"]["reason_codes"]
-    assert "dictionary_token_overlap_high" not in row["evidence"]["reason_codes"]
-    assert "bundle_overlap_low" in row["evidence"]["reason_codes"]
+    assert "dictionary_token_overlap_weak" not in row["evidence"]["reason_codes"]
+    assert "dictionary_token_overlap_dense" not in row["evidence"]["reason_codes"]
+    assert "bundle_overlap_broad" not in row["evidence"]["reason_codes"]
+
+
+def test_dense_nucleus_overlap_scores_higher_than_broad_technical_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="release planning",
+            keywords=[],
+            excerpt=(
+                "Retry migration_checklist.yml and validate rollback-plan before release deploy."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-dense",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release planning",
+            keywords=[],
+            excerpt=(
+                "Update rollback-plan and rerun migration_checklist.yml before release deploy."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (3 * 24 * 60 * 60 * 1000),
+        ),
+        _topic_record(
+            topic_id="topic-broad",
+            conversation_id="conv-c",
+            cluster_id="cluster-c",
+            window_id="window-c",
+            label="technical guidance",
+            keywords=[],
+            excerpt=(
+                "Explain json markdown output schema and release deploy handoff formatting for operators."
+            ),
+            message_ids=["c-1"],
+            first_seen=100 + (4 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "migration_checklist.yml",
+                "normalized": "migration_checklist.yml",
+                "count": 3,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source", "topic-dense"],
+                "role_hints": {"user": 3},
+                "cooccurrence": ["rollback-plan", "deploy"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "rollback-plan",
+                "normalized": "rollback-plan",
+                "count": 3,
+                "first_seen": 100,
+                "last_seen": 300,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source", "topic-dense"],
+                "role_hints": {"user": 3},
+                "cooccurrence": ["migration_checklist.yml", "deploy"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "deploy",
+                "normalized": "deploy",
+                "count": 6,
+                "first_seen": 100,
+                "last_seen": 400,
+                "conversations": ["conv-a", "conv-b", "conv-c"],
+                "topics": ["topic-source", "topic-dense", "topic-broad"],
+                "role_hints": {"user": 6},
+                "cooccurrence": ["migration_checklist.yml", "rollback-plan", "json"],
+                "conversation_count": 3,
+                "topic_count": 3,
+            },
+            {
+                "token": "release",
+                "normalized": "release",
+                "count": 6,
+                "first_seen": 100,
+                "last_seen": 400,
+                "conversations": ["conv-a", "conv-b", "conv-c"],
+                "topics": ["topic-source", "topic-dense", "topic-broad"],
+                "role_hints": {"user": 6},
+                "cooccurrence": ["deploy", "migration_checklist.yml", "rollback-plan"],
+                "conversation_count": 3,
+                "topic_count": 3,
+            },
+            {
+                "token": "json",
+                "normalized": "json",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 400,
+                "conversations": ["conv-c"],
+                "topics": ["topic-broad"],
+                "role_hints": {"user": 4},
+                "cooccurrence": ["markdown", "schema"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+            {
+                "token": "markdown",
+                "normalized": "markdown",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 400,
+                "conversations": ["conv-c"],
+                "topics": ["topic-broad"],
+                "role_hints": {"user": 4},
+                "cooccurrence": ["json", "schema"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+            {
+                "token": "schema",
+                "normalized": "schema",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 400,
+                "conversations": ["conv-c"],
+                "topics": ["topic-broad"],
+                "role_hints": {"user": 4},
+                "cooccurrence": ["json", "markdown"],
+                "conversation_count": 1,
+                "topic_count": 1,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["migration_checklist.yml", "rollback-plan", "deploy", "release"],
+                "weight": 0.88,
+            },
+            {
+                "bundle_id": "bundle_002",
+                "tokens": ["json", "markdown", "schema"],
+                "weight": 0.81,
+            },
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+    dense_row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-source"
+        and candidate["target_topic_id"] == "topic-dense"
+    )
+    broad_row = next(
+        candidate
+        for candidate in rows
+        if candidate["source_topic_id"] == "topic-source"
+        and candidate["target_topic_id"] == "topic-broad"
+    )
+
+    assert dense_row["score"] > broad_row["score"]
+    assert "dictionary_token_overlap_dense" in dense_row["evidence"]["reason_codes"]
+    assert "bundle_overlap_concentrated" in dense_row["evidence"]["reason_codes"]
+    assert "nucleus_overlap_specific" in dense_row["evidence"]["reason_codes"]
+    assert "dictionary_token_overlap_dense" not in broad_row["evidence"]["reason_codes"]
 
 
 def test_task_fragment_view_can_use_token_dictionary_support_when_present(tmp_path: Path):
