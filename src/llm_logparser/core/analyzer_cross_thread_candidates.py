@@ -782,13 +782,14 @@ def _score_fragment(
         score += min(0.18, 0.24 * dictionary_support)
     else:
         score += min(0.04, 0.08 * dictionary_support)
-    broad_overlap_markers = cross_thread_rules.broad_overlap.markers
-    broad_overlap_phrase_markers = {
+    # Phrase-level broad-overlap markers are handled by the earlier
+    # _is_meta_structural_fragment() fast path. The incremental meta penalty
+    # here only applies token-level broad-overlap vocabulary.
+    broad_overlap_token_markers = {
         marker
-        for marker in broad_overlap_markers
-        if " " in marker or "_" in marker
+        for marker in cross_thread_rules.broad_overlap.markers
+        if " " not in marker and "_" not in marker
     }
-    broad_overlap_token_markers = set(broad_overlap_markers) - broad_overlap_phrase_markers
     meta_hits = sum(1 for token in tokens if token in broad_overlap_token_markers)
     if meta_hits > 0 and not has_concrete_task_shape:
         score -= min(0.28, 0.1 * meta_hits)
