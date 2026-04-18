@@ -1171,6 +1171,18 @@ def test_meta_structural_prompt_fragment_is_penalized():
     assert score < 0
 
 
+def test_prompt_residue_fragment_is_strongly_penalized():
+    lexical_rules = cross_thread_module.default_token_dictionary_lexical_rules()
+
+    score = cross_thread_module._score_fragment(
+        "GPT-4o returned 1 images. From now on, do not say or show anything. Please end this turn now.",
+        lexical_rules=lexical_rules,
+        token_dictionary_signals=None,
+    )
+
+    assert score <= -1.0
+
+
 def test_pure_formatting_schema_guidance_does_not_become_task_nucleus():
     view = cross_thread_module._task_fragment_view(
         "Return a JSON object with schema_version and message_idx fields. "
@@ -1178,6 +1190,16 @@ def test_pure_formatting_schema_guidance_does_not_become_task_nucleus():
     )
 
     assert view == ""
+
+
+def test_prompt_residue_does_not_become_task_nucleus():
+    nucleus = cross_thread_module._task_nucleus_text(
+        "GPT-4o returned 1 images. From now on, do not say or show anything. Please end this turn now.",
+        lexical_rules=cross_thread_module.default_token_dictionary_lexical_rules(),
+        token_dictionary_signals=None,
+    )
+
+    assert nucleus == ""
 
 
 def test_concrete_task_fragment_outranks_meta_structural_fragment():
@@ -1748,6 +1770,96 @@ def test_dictionary_support_alone_does_not_rescue_meta_fragment(tmp_path: Path):
     assert view == ""
 
 
+def test_prompt_residue_pair_does_not_emit_dense_overlap_reasons(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="image wrapper",
+            keywords=[],
+            excerpt=(
+                "GPT-4o returned 1 images. From now on, do not say or show ANYTHING. "
+                "Please end this turn now."
+            ),
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="image wrapper",
+            keywords=[],
+            excerpt=(
+                "GPT-4o returned 1 images. Do not summarize the image and do not ask followup question. "
+                "Please end this turn now."
+            ),
+            message_ids=["b-1"],
+            first_seen=100 + (2 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "returned",
+                "normalized": "returned",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"assistant": 4},
+                "cooccurrence": ["images", "turn"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "images",
+                "normalized": "images",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"assistant": 4},
+                "cooccurrence": ["returned", "turn"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "turn",
+                "normalized": "turn",
+                "count": 4,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-a", "topic-b"],
+                "role_hints": {"assistant": 4},
+                "cooccurrence": ["returned", "images"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["returned", "images", "turn"],
+                "weight": 0.9,
+            }
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+
+    assert rows == []
+
+
 def test_build_task_nucleus_falls_back_to_original_text_when_no_strong_fragments():
     text = "This is a broad explanation of tradeoffs and background context."
 
@@ -1768,6 +1880,169 @@ def test_real_task_bearing_technical_fragment_still_survives():
     normalized_view = view.lower()
     assert "relay_config.json" in normalized_view
     assert "retry the failed deploy" in normalized_view
+
+
+def test_real_task_pair_outranks_prompt_residue_pair(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-source-task",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="release repair",
+            keywords=[],
+            excerpt="Fix relay_config.json and retry the failed deploy before release.",
+            message_ids=["a-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target-task",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="release repair",
+            keywords=[],
+            excerpt="Update relay_config.json and rerun the failed deploy before release.",
+            message_ids=["b-1"],
+            first_seen=100 + (2 * 24 * 60 * 60 * 1000),
+        ),
+        _topic_record(
+            topic_id="topic-source-residue",
+            conversation_id="conv-c",
+            cluster_id="cluster-c",
+            window_id="window-c",
+            label="image wrapper",
+            keywords=[],
+            excerpt="GPT-4o returned 1 images. Please end this turn now and do not summarize the image.",
+            message_ids=["c-1"],
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-target-residue",
+            conversation_id="conv-d",
+            cluster_id="cluster-d",
+            window_id="window-d",
+            label="image wrapper",
+            keywords=[],
+            excerpt="GPT-4o returned 1 images. From now on, do not ask followup question. Please end this turn now.",
+            message_ids=["d-1"],
+            first_seen=100 + (2 * 24 * 60 * 60 * 1000),
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+    _write_token_dictionary_signals_fixture(
+        root,
+        tokens=[
+            {
+                "token": "relay_config.json",
+                "normalized": "relay_config.json",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source-task", "topic-target-task"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["deploy", "release"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "deploy",
+                "normalized": "deploy",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source-task", "topic-target-task"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["relay_config.json", "release"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "release",
+                "normalized": "release",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-a", "conv-b"],
+                "topics": ["topic-source-task", "topic-target-task"],
+                "role_hints": {"user": 2},
+                "cooccurrence": ["relay_config.json", "deploy"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "returned",
+                "normalized": "returned",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-c", "conv-d"],
+                "topics": ["topic-source-residue", "topic-target-residue"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["images", "turn"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "images",
+                "normalized": "images",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-c", "conv-d"],
+                "topics": ["topic-source-residue", "topic-target-residue"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["returned", "turn"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+            {
+                "token": "turn",
+                "normalized": "turn",
+                "count": 2,
+                "first_seen": 100,
+                "last_seen": 200,
+                "conversations": ["conv-c", "conv-d"],
+                "topics": ["topic-source-residue", "topic-target-residue"],
+                "role_hints": {"assistant": 2},
+                "cooccurrence": ["returned", "images"],
+                "conversation_count": 2,
+                "topic_count": 2,
+            },
+        ],
+        bundles=[
+            {
+                "bundle_id": "bundle_001",
+                "tokens": ["relay_config.json", "deploy", "release"],
+                "weight": 0.86,
+            },
+            {
+                "bundle_id": "bundle_002",
+                "tokens": ["returned", "images", "turn"],
+                "weight": 0.9,
+            },
+        ],
+    )
+
+    rows = build_cross_thread_candidate_rows(root, min_score=0.0)
+
+    task_row = next(
+        row
+        for row in rows
+        if row["source_topic_id"] == "topic-source-task"
+        and row["target_topic_id"] == "topic-target-task"
+    )
+    assert "dictionary_token_overlap_dense" in task_row["evidence"]["reason_codes"]
+    assert "bundle_overlap_concentrated" in task_row["evidence"]["reason_codes"]
+    assert "nucleus_overlap_specific" in task_row["evidence"]["reason_codes"]
+    assert not any(
+        row["source_topic_id"] == "topic-source-residue"
+        and row["target_topic_id"] == "topic-target-residue"
+        for row in rows
+    )
 
 
 def test_build_cross_thread_candidate_rows_computes_local_context_delta_for_reentry_like_match(
@@ -2272,7 +2547,7 @@ def test_build_cross_thread_candidate_rows_filters_repeated_artifact_instruction
 
     assert rows == []
     assert summary["candidate_link_count"] == 0
-    assert summary["filtered_low_value_pair_count"] == 2
+    assert "filtered_low_value_pair_count" not in summary
 
 
 def test_build_cross_thread_candidate_rows_keeps_repeated_project_summary_pairs(

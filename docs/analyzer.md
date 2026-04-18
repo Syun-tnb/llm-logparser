@@ -868,7 +868,9 @@ deterministic and model-derived capabilities.
   for matching. On top of that selective-context layer, dictionary/bundle
   evidence is now evaluated with density-aware nucleus overlap rather than
   mostly boolean support, so concentrated shared task nuclei are preferred
-  over broad technical overlap.
+  over broad technical overlap. Repeated prompt residue and generation-wrapper
+  boilerplate such as image-return control strings are explicitly suppressed so
+  dense repeated wrapper text does not appear as strong recurrence evidence.
   Weak-route evidence is recorded as neutral structural signals such as
   anchor overlap, dormant gap, task-like signal, and context shift rather than
   as an L3 recurrence label. It

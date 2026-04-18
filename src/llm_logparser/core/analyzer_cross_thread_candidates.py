@@ -121,6 +121,23 @@ _META_STRUCTURAL_MARKERS = (
     "markdown",
     "yaml",
 )
+_PROMPT_RESIDUE_MARKERS = (
+    "gpt-4o returned",
+    "returned 1 image",
+    "returned 1 images",
+    "from now on",
+    "please end this turn now",
+    "end this turn now",
+    "do not say or show anything",
+    "do not summarize the image",
+    "do not summarize",
+    "do not ask followup question",
+    "do not ask follow-up question",
+    "do not ask follow up question",
+    "do not ask followup",
+    "just end the turn",
+    "do not do anything else",
+)
 
 
 class CrossThreadCandidateError(RuntimeError):
@@ -155,6 +172,7 @@ class _RepresentativeSpanUnit:
     nucleus_token_count: int
     dictionary_token_mass: float
     dictionary_density: float
+    prompt_residue_like: bool
 
 
 @dataclass(frozen=True)
@@ -213,6 +231,7 @@ class _PairSignals:
     task_like_score: float
     reflective_score: float
     fragment_dictionary_support: float
+    prompt_residue_pair: bool
 
 
 @dataclass(frozen=True)
@@ -559,6 +578,36 @@ def _is_meta_structural_fragment(
     return meta_hits >= 2 and action_hits == 0 and state_hits == 0 and not strong_anchor_tokens
 
 
+def _is_prompt_residue_fragment(fragment: str) -> bool:
+    normalized = normalize_analysis_text(fragment)
+    if not normalized:
+        return False
+    marker_hits = sum(1 for marker in _PROMPT_RESIDUE_MARKERS if marker in normalized)
+    if marker_hits >= 2:
+        return True
+    has_wrapper = any(marker in normalized for marker in _ARTIFACT_WRAPPER_MARKERS)
+    has_turn_control = any(marker in normalized for marker in _TURN_CONTROL_MARKERS)
+    if has_wrapper and has_turn_control:
+        return True
+    imperative_hits = sum(
+        1
+        for marker in (
+            "do not",
+            "please end",
+            "end this turn",
+            "from now on",
+            "just end",
+        )
+        if marker in normalized
+    )
+    return imperative_hits >= 2 and (
+        "image" in normalized
+        or "turn" in normalized
+        or "returned" in normalized
+        or "followup" in normalized
+    )
+
+
 def _has_action_object_pattern(
     *,
     action_hits: int,
@@ -628,6 +677,8 @@ def _score_fragment(
         return 0.0
     if any(marker in normalized_fragment for marker in lexical_rules.task_fragment_noise_markers):
         return -1.0
+    if _is_prompt_residue_fragment(fragment):
+        return -1.25
     if _is_meta_structural_fragment(fragment, lexical_rules=lexical_rules):
         return -0.35
 
@@ -758,6 +809,8 @@ def _task_nucleus_text(
     lexical_rules: TokenDictionaryLexicalRules,
     token_dictionary_signals: TokenDictionarySignals | None,
 ) -> str:
+    if _is_prompt_residue_fragment(text):
+        return ""
     nucleus = _build_task_nucleus(
         text,
         lexical_rules=lexical_rules,
@@ -868,6 +921,7 @@ def _representative_units(
                 dictionary_source_text,
                 token_dictionary_signals,
             )
+            prompt_residue_like = _is_prompt_residue_fragment(str(span["excerpt"]))
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=provider_id,
@@ -901,6 +955,7 @@ def _representative_units(
                     nucleus_token_count=nucleus_token_count,
                     dictionary_token_mass=dictionary_token_mass,
                     dictionary_density=dictionary_density,
+                    prompt_residue_like=prompt_residue_like,
                 )
             )
     units.sort(
@@ -1197,6 +1252,7 @@ def _pair_signals(
             (source.fragment_dictionary_support + target.fragment_dictionary_support) / 2.0,
             4,
         ),
+        prompt_residue_pair=source.prompt_residue_like and target.prompt_residue_like,
     )
 
 
@@ -1374,6 +1430,8 @@ def _weak_recurrence_evidence_for_pair(
         recurrence_context=recurrence_context,
         token_dictionary_signals=token_dictionary_signals,
     )
+    if signals.prompt_residue_pair:
+        return None
     if not signals.shared_anchor_tokens:
         return None
 
@@ -1466,6 +1524,8 @@ def _evidence_for_pair(
         recurrence_context=recurrence_context,
         token_dictionary_signals=token_dictionary_signals,
     )
+    if signals.prompt_residue_pair:
+        return None
     score, reason_codes, has_strong_signal = _similarity_score_and_reasons(signals)
     if not has_strong_signal or not reason_codes:
         return None
