@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_intra_thread_topics import (
+    AdjacentWindowBoundary,
     analyze_intra_thread_topics,
     build_contiguous_segments,
     build_sliding_windows,
@@ -24,6 +25,26 @@ class StaticEmbeddingBackend:
     def embed(self, texts: list[str]) -> list[list[float]]:
         assert len(texts) == len(self._vectors)
         return self._vectors
+
+
+def _boundary(
+    *,
+    conversation_id: str,
+    split_before_message_index: int,
+    boundary: bool = True,
+) -> AdjacentWindowBoundary:
+    return AdjacentWindowBoundary(
+        provider_id="openai",
+        conversation_id=conversation_id,
+        previous_window_index=0,
+        next_window_index=1,
+        previous_window_message_ids=(),
+        next_window_message_ids=(),
+        similarity=0.0,
+        boundary=boundary,
+        split_after_message_index=split_before_message_index - 1,
+        split_before_message_index=split_before_message_index,
+    )
 
 
 def _message_row(
@@ -333,6 +354,136 @@ def test_adjacent_boundary_detection_blocks_low_content_pairs_deterministically(
 
     assert [window.content_char_count for window in windows] == [6, 6]
     assert [boundary.boundary for boundary in boundaries] == [False]
+
+
+def test_empty_standalone_segment_is_absorbed_into_previous_neighbor(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="alpha topic",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="beta topic",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="gamma topic",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="user",
+                ts=105,
+                text="delta topic",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m6",
+                role="assistant",
+                ts=106,
+                text="epsilon topic",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=4),
+        ],
+    )
+
+    assert [segment.message_ids for segment in segments] == [
+        ("m1", "m2", "m3", "m4"),
+        ("m5", "m6"),
+    ]
+    assert all(
+        segment.text_sha1 != "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+        for segment in segments
+    )
+
+
+def test_leading_empty_segment_is_absorbed_into_next_neighbor(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="alpha topic",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="beta topic",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    segments = build_contiguous_segments(
+        messages,
+        [_boundary(conversation_id="conv-a", split_before_message_index=2)],
+    )
+
+    assert [segment.message_ids for segment in segments] == [
+        ("m1", "m2", "m3", "m4"),
+    ]
 
 
 def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):

@@ -276,34 +276,18 @@ def build_contiguous_segments(
             if boundary.boundary
         }
     )
-    segments: list[ContiguousSegment] = []
+    segment_ranges: list[tuple[int, int]] = []
     segment_start = 0
     for boundary_start in [*boundary_starts, len(messages)]:
         if boundary_start <= segment_start:
             continue
-        segment_messages = messages[segment_start:boundary_start]
-        message_ids = tuple(message.message_id for message in segment_messages)
-        segment_text = "\n\n".join(
-            message.text for message in segment_messages if message.text
-        )
-        segments.append(
-            ContiguousSegment(
-                provider_id=segment_messages[0].provider_id,
-                conversation_id=segment_messages[0].conversation_id,
-                segment_id=_segment_id(
-                    segment_messages[0].provider_id,
-                    segment_messages[0].conversation_id,
-                    message_ids,
-                ),
-                start_index=segment_start,
-                end_index=boundary_start - 1,
-                message_ids=message_ids,
-                message_count=len(message_ids),
-                text_sha1=hashlib.sha1(segment_text.encode("utf-8")).hexdigest(),
-            )
-        )
+        segment_ranges.append((segment_start, boundary_start))
         segment_start = boundary_start
-    return segments
+    cleaned_ranges = _absorb_empty_segment_ranges(messages, segment_ranges)
+    return [
+        _build_contiguous_segment(messages, start_index, end_index)
+        for start_index, end_index in cleaned_ranges
+    ]
 
 
 def _boundary_row(boundary: AdjacentWindowBoundary) -> dict[str, Any]:
@@ -346,6 +330,66 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     tmp.replace(path)
     return path
+
+
+def _build_contiguous_segment(
+    messages: list[ReconstructedThreadMessage],
+    start_index: int,
+    end_index: int,
+) -> ContiguousSegment:
+    segment_messages = messages[start_index:end_index]
+    message_ids = tuple(message.message_id for message in segment_messages)
+    segment_text = "\n\n".join(
+        message.text for message in segment_messages if message.text
+    )
+    return ContiguousSegment(
+        provider_id=segment_messages[0].provider_id,
+        conversation_id=segment_messages[0].conversation_id,
+        segment_id=_segment_id(
+            segment_messages[0].provider_id,
+            segment_messages[0].conversation_id,
+            message_ids,
+        ),
+        start_index=start_index,
+        end_index=end_index - 1,
+        message_ids=message_ids,
+        message_count=len(message_ids),
+        text_sha1=hashlib.sha1(segment_text.encode("utf-8")).hexdigest(),
+    )
+
+
+def _absorb_empty_segment_ranges(
+    messages: list[ReconstructedThreadMessage],
+    segment_ranges: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    if len(segment_ranges) <= 1:
+        return segment_ranges
+
+    cleaned = [[start_index, end_index] for start_index, end_index in segment_ranges]
+    index = 0
+    while index < len(cleaned):
+        start_index, end_index = cleaned[index]
+        if not _segment_is_effectively_empty(messages[start_index:end_index]):
+            index += 1
+            continue
+        if len(cleaned) == 1:
+            break
+        if index > 0:
+            cleaned[index - 1][1] = end_index
+            del cleaned[index]
+            continue
+        cleaned[1][0] = start_index
+        del cleaned[0]
+    return [(start_index, end_index) for start_index, end_index in cleaned]
+
+
+def _segment_is_effectively_empty(
+    segment_messages: list[ReconstructedThreadMessage],
+) -> bool:
+    segment_text = "\n\n".join(
+        message.text for message in segment_messages if message.text
+    )
+    return _non_whitespace_char_count(segment_text) == 0
 
 
 def analyze_intra_thread_topics(
