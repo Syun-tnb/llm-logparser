@@ -25,6 +25,22 @@ class OllamaClientTests(unittest.TestCase):
             {"model": "nomic-embed-text", "prompt": "hello"},
         )
 
+    def test_embeddings_normalizes_empty_prompt_for_compatibility(self) -> None:
+        client = OllamaClient()
+
+        with patch.object(
+            client,
+            "_post",
+            return_value={"embedding": [0.1, 0.2, 0.3]},
+        ) as post_mock:
+            result = client.embeddings("nomic-embed-text-v2-moe", "")
+
+        self.assertEqual(result, [0.1, 0.2, 0.3])
+        post_mock.assert_called_once_with(
+            "/api/embeddings",
+            {"model": "nomic-embed-text-v2-moe", "prompt": " "},
+        )
+
     def test_generate_text_returns_response_and_passes_options(self) -> None:
         client = OllamaClient()
 

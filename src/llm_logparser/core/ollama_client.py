@@ -55,11 +55,15 @@ class OllamaClient:
 
     def embeddings(self, model: str, prompt: str) -> list[float]:
         """Return a single embedding vector from Ollama's embeddings API."""
+        # Some Ollama embedding models return an empty vector for the empty
+        # string. Use a stable whitespace sentinel so callers with empty
+        # canonical text still receive a comparable embedding.
+        normalized_prompt = prompt if prompt else " "
         payload = self._post(
             "/api/embeddings",
             {
                 "model": model,
-                "prompt": prompt,
+                "prompt": normalized_prompt,
             },
         )
         embedding = payload.get("embedding")

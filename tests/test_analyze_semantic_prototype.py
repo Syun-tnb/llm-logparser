@@ -2874,6 +2874,21 @@ def test_ollama_embedding_backend_rejects_malformed_response(monkeypatch):
             backend.embed(["alpha"])
 
 
+def test_ollama_embedding_backend_embeds_empty_text_with_compatibility_prompt():
+    with patch(
+        "llm_logparser.core.embedding_backend.OllamaClient._post",
+        return_value={"embedding": [0.1, 0.2]},
+    ) as post_mock:
+        backend = OllamaEmbeddingBackend("nomic-embed-text-v2-moe")
+        vectors = backend.embed([""])
+
+    assert vectors == [[0.1, 0.2]]
+    post_mock.assert_called_once_with(
+        "/api/embeddings",
+        {"model": "nomic-embed-text-v2-moe", "prompt": " "},
+    )
+
+
 def test_analyze_semantic_prototype_cli_with_ollama_backend(tmp_path, monkeypatch):
     root = tmp_path / "artifacts" / "openai"
     thread_a = root / "thread-conv-a" / "message_windows.jsonl"
