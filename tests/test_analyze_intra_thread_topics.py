@@ -8,11 +8,14 @@ from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_intra_thread_topics import (
     AdjacentWindowBoundary,
     analyze_intra_thread_topics,
+    boundary_lexical_similarity,
     build_contiguous_segments,
     build_sliding_windows,
     detect_adjacent_boundaries,
     intra_thread_boundaries_artifact_path,
     intra_thread_segments_artifact_path,
+    lexical_jaccard_similarity,
+    lexical_token_set,
     reconstruct_thread_messages,
 )
 
@@ -41,6 +44,8 @@ def _boundary(
         previous_window_message_ids=(),
         next_window_message_ids=(),
         similarity=0.0,
+        lexical_similarity=0.0,
+        continuity_score=0.0,
         boundary=boundary,
         split_after_message_index=split_before_message_index - 1,
         split_before_message_index=split_before_message_index,
@@ -179,6 +184,21 @@ def test_build_sliding_windows_uses_overlapping_defaults(tmp_path):
     assert [window.content_char_count for window in windows] == [15, 15, 15]
 
 
+def test_lexical_token_set_prefers_word_tokens_and_falls_back_to_ngrams():
+    assert lexical_token_set("Fix cache key mismatch") == frozenset(
+        {"fix", "cache", "key", "mismatch"}
+    )
+    assert lexical_token_set("設定更新") == frozenset({"設定更", "定更新"})
+
+
+def test_lexical_jaccard_similarity_is_deterministic():
+    assert lexical_jaccard_similarity(
+        frozenset({"cache", "key", "fix"}),
+        frozenset({"cache", "fix", "plan"}),
+    ) == 0.5
+    assert lexical_jaccard_similarity(frozenset(), frozenset({"cache"})) == 0.0
+
+
 def test_adjacent_boundary_detection_suppresses_empty_window_noise(tmp_path):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -232,6 +252,7 @@ def test_adjacent_boundary_detection_suppresses_empty_window_noise(tmp_path):
     messages = reconstruct_thread_messages(parsed_path)
     windows = build_sliding_windows(messages)
     boundaries = detect_adjacent_boundaries(
+        messages,
         windows,
         StaticEmbeddingBackend(
             [
@@ -249,6 +270,54 @@ def test_adjacent_boundary_detection_suppresses_empty_window_noise(tmp_path):
     assert [segment.message_ids for segment in segments] == [
         ("m1", "m2", "m3", "m4", "m5"),
     ]
+
+
+def test_boundary_lexical_similarity_uses_non_overlapping_boundary_text(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="draft api migration notes",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="shared implementation details",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="shared implementation details",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="api migration next steps",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+
+    assert boundary_lexical_similarity(messages, windows[0], windows[1]) == 0.3333333333333333
 
 
 def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
@@ -273,6 +342,7 @@ def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
     messages = reconstruct_thread_messages(parsed_path)
     windows = build_sliding_windows(messages)
     boundaries = detect_adjacent_boundaries(
+        messages,
         windows,
         StaticEmbeddingBackend(
             [
@@ -295,6 +365,65 @@ def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
         (0, 2),
         (3, 4),
     ]
+
+
+def test_lexical_continuity_suppresses_overeager_embedding_boundary(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="draft api migration notes",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="shared implementation details",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="shared implementation details",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="api migration next steps",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend([[1.0, 0.0], [0.7, 0.714142842854285]]).embed(
+            [window.text for window in windows]
+        ),
+        threshold=0.75,
+    )
+
+    assert boundaries[0].similarity == 0.7
+    assert boundaries[0].lexical_similarity == 0.3333
+    assert boundaries[0].continuity_score == 0.7667
+    assert boundaries[0].boundary is False
 
 
 def test_adjacent_boundary_detection_blocks_low_content_pairs_deterministically(tmp_path):
@@ -342,6 +471,7 @@ def test_adjacent_boundary_detection_blocks_low_content_pairs_deterministically(
     messages = reconstruct_thread_messages(parsed_path)
     windows = build_sliding_windows(messages)
     boundaries = detect_adjacent_boundaries(
+        messages,
         windows,
         StaticEmbeddingBackend(
             [
@@ -529,6 +659,8 @@ def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):
     assert result["embedding_model"] == "local/test-static"
     assert boundary_rows[0]["record_type"] == "intra_thread_boundary"
     assert boundary_rows[0]["boundary"] is True
+    assert "lexical_similarity" in boundary_rows[0]
+    assert "continuity_score" in boundary_rows[0]
     assert boundary_rows[0]["split_before_message_index"] == 3
     assert [row["message_ids"] for row in segment_rows] == [
         ["m1", "m2", "m3"],

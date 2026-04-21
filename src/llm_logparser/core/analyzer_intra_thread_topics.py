@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,8 +27,10 @@ DEFAULT_INTRA_THREAD_WINDOW_SIZE = 3
 DEFAULT_INTRA_THREAD_WINDOW_STRIDE = 1
 DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD = 0.75
 DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS = 8
-BOUNDARY_SCHEMA_VERSION = "0.1"
+DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT = 0.2
+BOUNDARY_SCHEMA_VERSION = "0.2"
 SEGMENT_SCHEMA_VERSION = "0.1"
+LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
 
 
 class IntraThreadTopicsError(RuntimeError):
@@ -66,6 +70,8 @@ class AdjacentWindowBoundary:
     previous_window_message_ids: tuple[str, ...]
     next_window_message_ids: tuple[str, ...]
     similarity: float
+    lexical_similarity: float
+    continuity_score: float
     boundary: bool
     split_after_message_index: int
     split_before_message_index: int
@@ -209,11 +215,13 @@ def build_window_embedding_records(
 
 
 def detect_adjacent_boundaries(
+    messages: list[ReconstructedThreadMessage],
     windows: list[SlidingMessageWindow],
     embeddings: list[list[float]],
     *,
     threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
     min_window_content_chars: int = DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS,
+    lexical_continuity_weight: float = DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT,
 ) -> list[AdjacentWindowBoundary]:
     if len(windows) != len(embeddings):
         raise ValueError("windows and embeddings must have the same length")
@@ -221,12 +229,22 @@ def detect_adjacent_boundaries(
         raise ValueError("threshold must be between 0.0 and 1.0")
     if min_window_content_chars < 0:
         raise ValueError("min_window_content_chars must be >= 0")
+    if lexical_continuity_weight < 0.0:
+        raise ValueError("lexical_continuity_weight must be >= 0.0")
 
     boundaries: list[AdjacentWindowBoundary] = []
     for index in range(len(windows) - 1):
         previous_window = windows[index]
         next_window = windows[index + 1]
         similarity = cosine_similarity(embeddings[index], embeddings[index + 1])
+        lexical_similarity = boundary_lexical_similarity(
+            messages,
+            previous_window,
+            next_window,
+        )
+        continuity_score = similarity + (
+            lexical_continuity_weight * lexical_similarity
+        )
         boundary_allowed = (
             previous_window.content_char_count >= min_window_content_chars
             and next_window.content_char_count >= min_window_content_chars
@@ -241,7 +259,9 @@ def detect_adjacent_boundaries(
                 previous_window_message_ids=previous_window.message_ids,
                 next_window_message_ids=next_window.message_ids,
                 similarity=round(similarity, 4),
-                boundary=boundary_allowed and similarity < threshold,
+                lexical_similarity=round(lexical_similarity, 4),
+                continuity_score=round(continuity_score, 4),
+                boundary=boundary_allowed and continuity_score < threshold,
                 split_after_message_index=split_before_message_index - 1,
                 split_before_message_index=split_before_message_index,
             )
@@ -301,6 +321,8 @@ def _boundary_row(boundary: AdjacentWindowBoundary) -> dict[str, Any]:
         "previous_window_message_ids": list(boundary.previous_window_message_ids),
         "next_window_message_ids": list(boundary.next_window_message_ids),
         "similarity": boundary.similarity,
+        "lexical_similarity": boundary.lexical_similarity,
+        "continuity_score": boundary.continuity_score,
         "boundary": boundary.boundary,
         "split_after_message_index": boundary.split_after_message_index,
         "split_before_message_index": boundary.split_before_message_index,
@@ -449,6 +471,7 @@ def analyze_intra_thread_topics(
         )
         embeddings = build_window_embedding_records(windows, backend=backend)
         boundaries = detect_adjacent_boundaries(
+            messages,
             windows,
             embeddings,
             threshold=boundary_threshold,
@@ -479,3 +502,77 @@ def analyze_intra_thread_topics(
 
 def _non_whitespace_char_count(text: str) -> int:
     return sum(1 for char in text if not char.isspace())
+
+
+def lexical_token_set(text: str) -> frozenset[str]:
+    normalized = unicodedata.normalize("NFKC", text).casefold().strip()
+    if not normalized:
+        return frozenset()
+
+    word_tokens = tuple(
+        token
+        for token in LEXICAL_WORD_TOKEN_RE.findall(normalized)
+        if token and not token.isspace()
+    )
+    if len(word_tokens) >= 2:
+        return frozenset(word_tokens)
+
+    compact = "".join(char for char in normalized if not char.isspace())
+    if not compact:
+        return frozenset()
+    if len(compact) < 3:
+        return frozenset({compact})
+    return frozenset(compact[index : index + 3] for index in range(len(compact) - 2))
+
+
+def lexical_jaccard_similarity(
+    left_tokens: frozenset[str],
+    right_tokens: frozenset[str],
+) -> float:
+    if not left_tokens or not right_tokens:
+        return 0.0
+    union = left_tokens | right_tokens
+    if not union:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(union)
+
+
+def boundary_lexical_similarity(
+    messages: list[ReconstructedThreadMessage],
+    previous_window: SlidingMessageWindow,
+    next_window: SlidingMessageWindow,
+) -> float:
+    # Adjacent sliding windows already share messages by construction. Use only
+    # the non-overlapping boundary-side text so lexical continuity is not
+    # trivially inflated by the shared overlap.
+    previous_text, next_text = _boundary_exclusive_texts(
+        messages,
+        previous_window,
+        next_window,
+    )
+    return lexical_jaccard_similarity(
+        lexical_token_set(previous_text),
+        lexical_token_set(next_text),
+    )
+
+
+def _boundary_exclusive_texts(
+    messages: list[ReconstructedThreadMessage],
+    previous_window: SlidingMessageWindow,
+    next_window: SlidingMessageWindow,
+) -> tuple[str, str]:
+    previous_exclusive_end = min(previous_window.end_index, next_window.start_index - 1)
+    next_exclusive_start = max(next_window.start_index, previous_window.end_index + 1)
+    previous_text = _joined_non_empty_message_text(
+        messages[previous_window.start_index : previous_exclusive_end + 1]
+    )
+    next_text = _joined_non_empty_message_text(
+        messages[next_exclusive_start : next_window.end_index + 1]
+    )
+    return previous_text, next_text
+
+
+def _joined_non_empty_message_text(
+    rows: list[ReconstructedThreadMessage],
+) -> str:
+    return "\n\n".join(row.text for row in rows if row.text)
