@@ -42,6 +42,11 @@
   * reads stored `window_neighbors.jsonl` plus `message_windows.jsonl`
   * renders one target window and its nearest neighbors as human-readable text
   * does not recompute embeddings or write new sidecar artifacts
+* Added experimental `analyze intra-thread-topics`:
+  * builds Phase 1 contiguous intra-thread segmentation from canonical `parsed.jsonl`
+  * writes `l3/intra-thread-topics/boundaries.jsonl` and `l3/intra-thread-topics/segments.jsonl`
+  * uses fixed-threshold adjacent-window cosine similarity for boundary detection
+  * emits contiguous segments only; no non-contiguous merge or higher-layer topic modeling yet
 * Upgraded `analyze semantic-topics` forward artifacts:
   * BREAKING: `topics.json` now emits `schema_version: "2.1"`
   * BREAKING: `topic_membership.jsonl` now emits `schema_version: "1.0"`

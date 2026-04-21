@@ -71,6 +71,17 @@ messages:
   cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help: Minimum assistant_messages / message_count ratio for candidate source threads in SQLite mode
   cli.analyze.semantic_prototype.opt.candidate_same_thread.help: Same-thread candidate policy in SQLite mode (allow, prefer, only, exclude)
   cli.analyze.semantic_prototype.opt.overwrite.help: Overwrite existing window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts
+  cli.analyze.intra_thread_topics.help: Build experimental contiguous intra-thread segments from canonical parsed.jsonl
+  cli.analyze.intra_thread_topics.opt.input.help: "Input: parsed.jsonl file or directory containing parsed.jsonl files"
+  cli.analyze.intra_thread_topics.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"
+  cli.analyze.intra_thread_topics.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
+  cli.analyze.intra_thread_topics.opt.window_size.help: Sliding window size in messages
+  cli.analyze.intra_thread_topics.opt.window_stride.help: Sliding window stride in messages
+  cli.analyze.intra_thread_topics.opt.boundary_threshold.help: Fixed adjacent-window cosine threshold below which a boundary is emitted
+  cli.analyze.intra_thread_topics.opt.max_input_bytes.help: Safe UTF-8 byte budget for one embedding request before deterministic chunking is applied
+  cli.analyze.intra_thread_topics.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks
+  cli.analyze.intra_thread_topics.opt.aggregate.help: Aggregation method for chunk embeddings
+  cli.analyze.intra_thread_topics.opt.overwrite.help: Overwrite existing l3/intra-thread-topics boundary and segment artifacts
   cli.analyze.semantic_preview.help: Browse semantic clusters, conversations, or individual windows from stored L3 prototype artifacts
   cli.analyze.semantic_preview.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files"
   cli.analyze.semantic_preview.opt.cluster_id.help: Show one cluster in detail

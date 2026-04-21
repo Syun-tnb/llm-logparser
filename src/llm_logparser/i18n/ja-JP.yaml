@@ -75,6 +75,17 @@ messages:
   cli.analyze.semantic_prototype.opt.candidate_min_assistant_ratio.help: SQLite モードで candidate 元スレッドに要求する assistant_messages / message_count の最小比率
   cli.analyze.semantic_prototype.opt.candidate_same_thread.help: SQLite モードでの same-thread candidate ポリシー (allow, prefer, only, exclude)
   cli.analyze.semantic_prototype.opt.overwrite.help: 既存の window_embeddings.jsonl、window_neighbors.jsonl、window_clusters.jsonl を上書きする
+  cli.analyze.intra_thread_topics.help: canonical な parsed.jsonl から実験的な contiguous intra-thread segment を構築する
+  cli.analyze.intra_thread_topics.opt.input.help: "入力: parsed.jsonl ファイル、または parsed.jsonl を含むディレクトリ"
+  cli.analyze.intra_thread_topics.opt.backend.help: "使用する埋め込みバックエンド (`deterministic-hash` または `ollama`)"
+  cli.analyze.intra_thread_topics.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須です。"
+  cli.analyze.intra_thread_topics.opt.window_size.help: メッセージ単位の sliding window size
+  cli.analyze.intra_thread_topics.opt.window_stride.help: メッセージ単位の sliding window stride
+  cli.analyze.intra_thread_topics.opt.boundary_threshold.help: boundary を出力する固定の隣接 window cosine threshold
+  cli.analyze.intra_thread_topics.opt.max_input_bytes.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な UTF-8 バイト予算
+  cli.analyze.intra_thread_topics.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算
+  cli.analyze.intra_thread_topics.opt.aggregate.help: chunk 埋め込みの集約方式
+  cli.analyze.intra_thread_topics.opt.overwrite.help: 既存の l3/intra-thread-topics 境界 / segment 成果物を上書きする
   cli.analyze.semantic_preview.help: 保存済み L3 semantic prototype 成果物から cluster、conversation、window を閲覧する
   cli.analyze.semantic_preview.opt.input.help: "入力: ディレクトリのみ。message_windows.jsonl、window_clusters.jsonl、任意の window_neighbors.jsonl を含む provider 成果物ルート"
   cli.analyze.semantic_preview.opt.cluster_id.help: 1 つの cluster を詳細表示する
