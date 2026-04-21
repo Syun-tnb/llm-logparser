@@ -24,6 +24,7 @@ from .message_window_reconstruction import parsed_path_for_message_windows
 DEFAULT_INTRA_THREAD_WINDOW_SIZE = 3
 DEFAULT_INTRA_THREAD_WINDOW_STRIDE = 1
 DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD = 0.75
+DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS = 8
 BOUNDARY_SCHEMA_VERSION = "0.1"
 SEGMENT_SCHEMA_VERSION = "0.1"
 
@@ -53,6 +54,7 @@ class SlidingMessageWindow:
     end_index: int
     text: str
     text_sha1: str
+    content_char_count: int
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,7 @@ def build_sliding_windows(
         text = "\n\n".join(
             message.text for message in window_messages if message.text
         )
+        content_char_count = _non_whitespace_char_count(text)
         windows.append(
             SlidingMessageWindow(
                 provider_id=window_messages[0].provider_id,
@@ -189,6 +192,7 @@ def build_sliding_windows(
                 end_index=end_index,
                 text=text,
                 text_sha1=hashlib.sha1(text.encode("utf-8")).hexdigest(),
+                content_char_count=content_char_count,
             )
         )
     return windows
@@ -209,17 +213,24 @@ def detect_adjacent_boundaries(
     embeddings: list[list[float]],
     *,
     threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
+    min_window_content_chars: int = DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS,
 ) -> list[AdjacentWindowBoundary]:
     if len(windows) != len(embeddings):
         raise ValueError("windows and embeddings must have the same length")
     if not 0.0 <= threshold <= 1.0:
         raise ValueError("threshold must be between 0.0 and 1.0")
+    if min_window_content_chars < 0:
+        raise ValueError("min_window_content_chars must be >= 0")
 
     boundaries: list[AdjacentWindowBoundary] = []
     for index in range(len(windows) - 1):
         previous_window = windows[index]
         next_window = windows[index + 1]
         similarity = cosine_similarity(embeddings[index], embeddings[index + 1])
+        boundary_allowed = (
+            previous_window.content_char_count >= min_window_content_chars
+            and next_window.content_char_count >= min_window_content_chars
+        )
         split_before_message_index = previous_window.end_index + 1
         boundaries.append(
             AdjacentWindowBoundary(
@@ -230,7 +241,7 @@ def detect_adjacent_boundaries(
                 previous_window_message_ids=previous_window.message_ids,
                 next_window_message_ids=next_window.message_ids,
                 similarity=round(similarity, 4),
-                boundary=similarity < threshold,
+                boundary=boundary_allowed and similarity < threshold,
                 split_after_message_index=split_before_message_index - 1,
                 split_before_message_index=split_before_message_index,
             )
@@ -420,3 +431,7 @@ def analyze_intra_thread_topics(
         "boundaries_artifacts": written_boundaries,
         "segments_artifacts": written_segments,
     }
+
+
+def _non_whitespace_char_count(text: str) -> int:
+    return sum(1 for char in text if not char.isspace())

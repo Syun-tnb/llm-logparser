@@ -155,6 +155,79 @@ def test_build_sliding_windows_uses_overlapping_defaults(tmp_path):
         (1, 3),
         (2, 4),
     ]
+    assert [window.content_char_count for window in windows] == [15, 15, 15]
+
+
+def test_adjacent_boundary_detection_suppresses_empty_window_noise(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="This is a substantial opening message.",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="user",
+                ts=105,
+                text="This is another substantial message later on.",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+    boundaries = detect_adjacent_boundaries(
+        windows,
+        StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ).embed([window.text for window in windows]),
+        threshold=0.75,
+    )
+    segments = build_contiguous_segments(messages, boundaries)
+
+    assert [window.content_char_count for window in windows] == [33, 0, 39]
+    assert [boundary.boundary for boundary in boundaries] == [False, False]
+    assert [segment.message_ids for segment in segments] == [
+        ("m1", "m2", "m3", "m4", "m5"),
+    ]
 
 
 def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
@@ -201,6 +274,65 @@ def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
         (0, 2),
         (3, 4),
     ]
+
+
+def test_adjacent_boundary_detection_blocks_low_content_pairs_deterministically(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=100,
+                text="ok",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=101,
+                text="go",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=102,
+                text="hi",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=103,
+                text="yo",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+    boundaries = detect_adjacent_boundaries(
+        windows,
+        StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+            ]
+        ).embed([window.text for window in windows]),
+        threshold=0.75,
+    )
+
+    assert [window.content_char_count for window in windows] == [6, 6]
+    assert [boundary.boundary for boundary in boundaries] == [False]
 
 
 def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):
