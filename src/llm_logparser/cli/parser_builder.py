@@ -476,6 +476,72 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.semantic_prototype.opt.overwrite.help"),
     )
 
+    analyze_intra_thread_topics_cmd = analyze_subparsers.add_parser(
+        "intra-thread-topics",
+        help="Build experimental intra-thread contiguous segments from canonical parsed.jsonl.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help="Path to parsed.jsonl or a directory containing parsed.jsonl files.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--backend",
+        choices=list(SUPPORTED_EMBEDDING_BACKENDS),
+        default="deterministic-hash",
+        help="Embedding backend to use for sliding-window similarity.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--model",
+        required=False,
+        help="Embedding model when --backend ollama is selected.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--window-size",
+        dest="window_size",
+        type=int,
+        default=3,
+        help="Sliding window size in messages.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--window-stride",
+        dest="window_stride",
+        type=int,
+        default=1,
+        help="Sliding window stride in messages.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--boundary-threshold",
+        dest="boundary_threshold",
+        type=float,
+        default=0.75,
+        help="Adjacent-window cosine threshold below which a boundary fires.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--max-input-bytes",
+        dest="max_input_bytes",
+        type=int,
+        help="Optional embedding input byte cap for ollama backends.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--chunk-overlap-bytes",
+        dest="chunk_overlap_bytes",
+        type=int,
+        help="Optional chunk overlap in bytes for ollama backends.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--aggregate",
+        choices=["mean"],
+        help="Embedding chunk aggregation strategy.",
+    )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help="Overwrite existing intra-thread topic artifacts.",
+    )
+
     analyze_semantic_preview_cmd = analyze_subparsers.add_parser(
         "semantic-preview",
         help=_("cli.analyze.semantic_preview.help"),

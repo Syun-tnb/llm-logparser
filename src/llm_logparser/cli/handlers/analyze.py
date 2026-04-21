@@ -256,6 +256,39 @@ def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_intra_thread_topics(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_intra_thread_topics import (
+        IntraThreadTopicsError,
+        analyze_intra_thread_topics,
+    )
+
+    input_path = validate_path(args.input)
+    try:
+        result = analyze_intra_thread_topics(
+            input_path,
+            backend_name=args.backend,
+            model=args.model,
+            window_size=args.window_size,
+            window_stride=args.window_stride,
+            boundary_threshold=args.boundary_threshold,
+            overwrite=args.overwrite,
+            max_input_bytes=args.max_input_bytes,
+            chunk_overlap_bytes=args.chunk_overlap_bytes,
+            aggregate=args.aggregate,
+            backend_options=getattr(args, "backend_options", None),
+        )
+    except IntraThreadTopicsError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "intra-thread topics artifacts written: "
+        f"{result['threads']} thread(s), {result['segments']} segment(s), "
+        f"{result['boundaries']} boundary/boundaries -> "
+        f"{result['embedding_model']}"
+    )
+
+
 def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_preview import (
         SemanticPreviewError,

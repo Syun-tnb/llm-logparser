@@ -377,6 +377,7 @@ llm-logparser analyze sqlite-build \
 | `analyze timeline` | See when you were most active |
 | `analyze sqlite-build` | Query large datasets with SQL (optional) |
 | `analyze semantic-prototype` | Build experimental window embeddings, thresholded semantic neighbors, and minimal semantic clusters |
+| `analyze intra-thread-topics` | Build experimental contiguous intra-thread segments from sliding-window similarity |
 | `analyze semantic-preview` | Inspect stored semantic clusters, conversations, and windows in terminal |
 | `analyze semantic-topics` | Build formal topic artifacts and explicit reverse-lookup membership rows from semantic clusters |
 | `analyze semantic-topic-explore` | Browse topic lists, topic timelines, reverse message lookup, and conversation/topic coverage |
@@ -766,6 +767,34 @@ topic-labeling settings and the upstream L3 clustering basis so the artifact
 stays additive, rebuildable, and non-canonical. In structural-only runs,
 `provenance.labeling_model`, `provenance.prompt_variant`, and
 `provenance.prompt_hash` remain `null` because no labeling prompt was executed.
+
+### Analyze Intra-Thread Topics
+
+Build an experimental intra-thread segmentation artifact set from canonical
+`parsed.jsonl`:
+
+```bash
+uv run llm-logparser analyze intra-thread-topics \
+  --input <parsed.jsonl-or-directory> \
+  [--backend deterministic-hash|ollama] \
+  [--model <ollama-embedding-model>] \
+  [--window-size 3] \
+  [--window-stride 1] \
+  [--boundary-threshold 0.75] \
+  [--overwrite]
+```
+
+For each parsed thread, the command writes:
+
+- `l3/intra-thread-topics/boundaries.jsonl`
+- `l3/intra-thread-topics/segments.jsonl`
+
+This Phase 1 path is intentionally minimal. It reconstructs canonical message
+order from `parsed.jsonl`, builds overlapping sliding windows, embeds those
+windows, compares adjacent-window cosine similarity only, and splits the thread
+into contiguous segments when the fixed threshold fires. It does not label
+topics, merge non-contiguous segments, or integrate with cross-thread topic
+artifacts.
 
 ### Analyze Semantic Topic Explore
 

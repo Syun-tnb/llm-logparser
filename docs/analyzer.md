@@ -532,6 +532,7 @@ Possible modes:
 | metrics | L1 |
 | sqlite-build | L2 |
 | semantic-prototype | L3 prototype (experimental) |
+| intra-thread-topics | L3 intra-thread segmentation prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
 | semantic-span-proposals | L3 experimental span-derivation sidecar |
 | cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
@@ -645,6 +646,16 @@ deterministic and model-derived capabilities.
   conversation-plus-window neighbor preview remains available when
   `--conversation-id` and `--window` are supplied together. `--json` switches
   any of those modes to machine-readable output for downstream tooling.
+
+- `intra-thread-topics` is an experimental thread-local L3 builder for Phase 1
+  segmentation. It reads canonical `parsed.jsonl`, reconstructs deterministic
+  message order, builds overlapping sliding windows, embeds those windows with
+  the existing embedding backend stack, compares adjacent-window cosine
+  similarity, and emits contiguous segment sidecars under
+  `l3/intra-thread-topics/`:
+  `boundaries.jsonl` and `segments.jsonl`. The current implementation is
+  intentionally narrow: fixed threshold only, contiguous splits only, and no
+  topic labels, summaries, lexical signals, or cross-thread merge logic.
 
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus
