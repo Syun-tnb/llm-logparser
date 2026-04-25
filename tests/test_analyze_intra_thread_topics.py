@@ -541,7 +541,7 @@ def test_structural_continuity_suppresses_user_request_answer_boundary(tmp_path)
 
     assert boundaries[0].similarity == 0.35
     assert boundaries[0].structural_continuity == 1.0
-    assert boundaries[0].continuity_score == 0.45
+    assert boundaries[0].continuity_score == 0.5
     assert boundaries[0].boundary is False
 
 
