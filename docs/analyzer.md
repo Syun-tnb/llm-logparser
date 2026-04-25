@@ -647,15 +647,20 @@ deterministic and model-derived capabilities.
   `--conversation-id` and `--window` are supplied together. `--json` switches
   any of those modes to machine-readable output for downstream tooling.
 
-- `intra-thread-topics` is an experimental thread-local L3 builder for Phase 1
+- `intra-thread-topics` is an experimental thread-local L3 builder for Phase 3
   segmentation. It reads canonical `parsed.jsonl`, reconstructs deterministic
   message order, builds overlapping sliding windows, embeds those windows with
-  the existing embedding backend stack, compares adjacent-window cosine
-  similarity, and emits contiguous segment sidecars under
+  the existing embedding backend stack, scores adjacent-window continuity from
+  embedding cosine similarity plus small deterministic lexical and structural
+  continuity signals, and emits contiguous segment sidecars under
   `l3/intra-thread-topics/`:
-  `boundaries.jsonl` and `segments.jsonl`. The current implementation is
-  intentionally narrow: fixed threshold only, contiguous splits only, and no
-  topic labels, summaries, lexical signals, or cross-thread merge logic.
+  `boundaries.jsonl` and `segments.jsonl`. Boundary rows include
+  `lexical_similarity`, `structural_continuity`, and `continuity_score`; the
+  structural signal is limited to local role/text handoff patterns such as
+  user request to assistant answer and empty assistant/tool handoffs. The
+  current implementation remains intentionally narrow: fixed threshold only,
+  contiguous splits only, and no topic labels, summaries, topic-unit merge
+  logic, or cross-thread merge logic.
 
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus

@@ -81,7 +81,7 @@ messages:
   cli.analyze.intra_thread_topics.opt.model.help: "埋め込みモデル識別子。`--backend ollama` の場合は必須です。"
   cli.analyze.intra_thread_topics.opt.window_size.help: メッセージ単位の sliding window size
   cli.analyze.intra_thread_topics.opt.window_stride.help: メッセージ単位の sliding window stride
-  cli.analyze.intra_thread_topics.opt.boundary_threshold.help: boundary を出力する固定の隣接 window cosine threshold
+  cli.analyze.intra_thread_topics.opt.boundary_threshold.help: boundary を出力する固定の隣接 window continuity threshold
   cli.analyze.intra_thread_topics.opt.max_input_bytes.help: 決定的 chunking を適用する前の 1 回の埋め込み要求に対する安全な UTF-8 バイト予算
   cli.analyze.intra_thread_topics.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算
   cli.analyze.intra_thread_topics.opt.aggregate.help: chunk 埋め込みの集約方式

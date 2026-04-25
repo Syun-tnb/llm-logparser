@@ -28,9 +28,12 @@ DEFAULT_INTRA_THREAD_WINDOW_STRIDE = 1
 DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD = 0.75
 DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS = 8
 DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT = 0.2
-BOUNDARY_SCHEMA_VERSION = "0.2"
+DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT = 0.1
+BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
 LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
+HANDOFF_ROLES = frozenset({"assistant", "tool"})
+HANDOFF_CONTENT_CHAR_LIMIT = 16
 
 
 class IntraThreadTopicsError(RuntimeError):
@@ -71,6 +74,7 @@ class AdjacentWindowBoundary:
     next_window_message_ids: tuple[str, ...]
     similarity: float
     lexical_similarity: float
+    structural_continuity: float
     continuity_score: float
     boundary: bool
     split_after_message_index: int
@@ -222,6 +226,9 @@ def detect_adjacent_boundaries(
     threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
     min_window_content_chars: int = DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS,
     lexical_continuity_weight: float = DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT,
+    structural_continuity_weight: float = (
+        DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT
+    ),
 ) -> list[AdjacentWindowBoundary]:
     if len(windows) != len(embeddings):
         raise ValueError("windows and embeddings must have the same length")
@@ -231,6 +238,8 @@ def detect_adjacent_boundaries(
         raise ValueError("min_window_content_chars must be >= 0")
     if lexical_continuity_weight < 0.0:
         raise ValueError("lexical_continuity_weight must be >= 0.0")
+    if structural_continuity_weight < 0.0:
+        raise ValueError("structural_continuity_weight must be >= 0.0")
 
     boundaries: list[AdjacentWindowBoundary] = []
     for index in range(len(windows) - 1):
@@ -242,8 +251,15 @@ def detect_adjacent_boundaries(
             previous_window,
             next_window,
         )
+        structural_continuity = boundary_structural_continuity(
+            messages,
+            previous_window,
+            next_window,
+        )
         continuity_score = similarity + (
             lexical_continuity_weight * lexical_similarity
+        ) + (
+            structural_continuity_weight * structural_continuity
         )
         boundary_allowed = (
             previous_window.content_char_count >= min_window_content_chars
@@ -260,6 +276,7 @@ def detect_adjacent_boundaries(
                 next_window_message_ids=next_window.message_ids,
                 similarity=round(similarity, 4),
                 lexical_similarity=round(lexical_similarity, 4),
+                structural_continuity=round(structural_continuity, 4),
                 continuity_score=round(continuity_score, 4),
                 boundary=boundary_allowed and continuity_score < threshold,
                 split_after_message_index=split_before_message_index - 1,
@@ -322,6 +339,7 @@ def _boundary_row(boundary: AdjacentWindowBoundary) -> dict[str, Any]:
         "next_window_message_ids": list(boundary.next_window_message_ids),
         "similarity": boundary.similarity,
         "lexical_similarity": boundary.lexical_similarity,
+        "structural_continuity": boundary.structural_continuity,
         "continuity_score": boundary.continuity_score,
         "boundary": boundary.boundary,
         "split_after_message_index": boundary.split_after_message_index,
@@ -554,6 +572,78 @@ def boundary_lexical_similarity(
         lexical_token_set(previous_text),
         lexical_token_set(next_text),
     )
+
+
+def boundary_structural_continuity(
+    messages: list[ReconstructedThreadMessage],
+    previous_window: SlidingMessageWindow,
+    next_window: SlidingMessageWindow,
+) -> float:
+    split_before_message_index = previous_window.end_index + 1
+    if (
+        split_before_message_index <= 0
+        or split_before_message_index >= len(messages)
+    ):
+        return 0.0
+
+    left = messages[split_before_message_index - 1]
+    right = messages[split_before_message_index]
+
+    # A direct user request followed by an assistant answer is usually one
+    # semantic unit. Boundaries belong before the request or after the answer.
+    if left.role == "user" and right.role == "assistant":
+        return 1.0
+
+    if left.role == "user" and _is_handoff_message(right):
+        return 0.85
+    if _is_handoff_message(left) and right.role == "assistant":
+        return 0.7
+    if left.role == "tool" and right.role == "user":
+        return 0.6
+
+    if _is_handoff_message(left) or _is_handoff_message(right):
+        previous_substantive = _nearest_substantive_message(
+            messages,
+            split_before_message_index - 1,
+            -1,
+        )
+        next_substantive = _nearest_substantive_message(
+            messages,
+            split_before_message_index,
+            1,
+        )
+        if previous_substantive is None or next_substantive is None:
+            return 0.0
+        if (
+            previous_substantive.role == "user"
+            and next_substantive.role == "assistant"
+        ):
+            return 0.7
+        if previous_substantive.role == "user" and next_substantive.role == "user":
+            return 0.4
+
+    return 0.0
+
+
+def _is_handoff_message(message: ReconstructedThreadMessage) -> bool:
+    return (
+        message.role in HANDOFF_ROLES
+        and _non_whitespace_char_count(message.text) <= HANDOFF_CONTENT_CHAR_LIMIT
+    )
+
+
+def _nearest_substantive_message(
+    messages: list[ReconstructedThreadMessage],
+    start_index: int,
+    step: int,
+) -> ReconstructedThreadMessage | None:
+    index = start_index
+    while 0 <= index < len(messages):
+        message = messages[index]
+        if not _is_handoff_message(message):
+            return message
+        index += step
+    return None
 
 
 def _boundary_exclusive_texts(

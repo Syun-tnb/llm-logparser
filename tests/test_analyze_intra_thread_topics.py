@@ -9,6 +9,7 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     AdjacentWindowBoundary,
     analyze_intra_thread_topics,
     boundary_lexical_similarity,
+    boundary_structural_continuity,
     build_contiguous_segments,
     build_sliding_windows,
     detect_adjacent_boundaries,
@@ -45,6 +46,7 @@ def _boundary(
         next_window_message_ids=(),
         similarity=0.0,
         lexical_similarity=0.0,
+        structural_continuity=0.0,
         continuity_score=0.0,
         boundary=boundary,
         split_after_message_index=split_before_message_index - 1,
@@ -320,6 +322,63 @@ def test_boundary_lexical_similarity_uses_non_overlapping_boundary_text(tmp_path
     assert boundary_lexical_similarity(messages, windows[0], windows[1]) == 0.3333333333333333
 
 
+def test_boundary_structural_continuity_scores_request_answer_and_handoff(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="assistant",
+                ts=101,
+                text="prior substantial answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="user",
+                ts=102,
+                text="prior follow up",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="please generate an image",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="tool",
+                ts=104,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="assistant",
+                ts=105,
+                text="generated image result",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+
+    assert boundary_structural_continuity(messages, windows[0], windows[1]) == 0.85
+    assert boundary_structural_continuity(messages, windows[1], windows[2]) == 0.7
+
+
 def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -418,12 +477,216 @@ def test_lexical_continuity_suppresses_overeager_embedding_boundary(tmp_path):
             [window.text for window in windows]
         ),
         threshold=0.75,
+        structural_continuity_weight=0.0,
     )
 
     assert boundaries[0].similarity == 0.7
     assert boundaries[0].lexical_similarity == 0.3333
     assert boundaries[0].continuity_score == 0.7667
     assert boundaries[0].boundary is False
+
+
+def test_structural_continuity_suppresses_user_request_answer_boundary(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="assistant",
+                ts=101,
+                text="prior substantial answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="more prior context",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="please explain cache invalidation",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="cache invalidation needs clear ownership",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend([[1.0, 0.0], [0.35, 0.9367496997597597]]).embed(
+            [window.text for window in windows]
+        ),
+        threshold=0.43,
+    )
+
+    assert boundaries[0].similarity == 0.35
+    assert boundaries[0].structural_continuity == 1.0
+    assert boundaries[0].continuity_score == 0.45
+    assert boundaries[0].boundary is False
+
+
+def test_structural_continuity_prevents_singleton_user_request_segment(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="alpha topic opening",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="alpha topic answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="please explain cache invalidation",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="cache invalidation needs clear ownership",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="user",
+                ts=105,
+                text="thanks, continue with examples",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages, window_size=2)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.35, 0.9367496997597597],
+                [-0.755, 0.6557247906021538],
+                [-0.755, 0.6557247906021538],
+            ]
+        ).embed([window.text for window in windows]),
+        threshold=0.43,
+    )
+    segments = build_contiguous_segments(messages, boundaries)
+
+    assert [boundary.boundary for boundary in boundaries] == [True, False, False]
+    assert boundaries[1].structural_continuity == 1.0
+    assert [segment.message_ids for segment in segments] == [
+        ("m1", "m2"),
+        ("m3", "m4", "m5"),
+    ]
+
+
+def test_structural_continuity_suppresses_empty_tool_handoff_boundary(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="assistant",
+                ts=101,
+                text="prior substantial answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="more prior context",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="please generate an image",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="tool",
+                ts=104,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="assistant",
+                ts=105,
+                text="generated image result",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.35, 0.9367496997597597],
+                [0.1225, 0.9924666241912424],
+            ]
+        ).embed([window.text for window in windows]),
+        threshold=0.43,
+    )
+
+    assert [boundary.structural_continuity for boundary in boundaries] == [0.85, 0.7]
+    assert [boundary.boundary for boundary in boundaries] == [False, False]
 
 
 def test_adjacent_boundary_detection_blocks_low_content_pairs_deterministically(tmp_path):
@@ -658,8 +921,10 @@ def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):
     assert result["segments"] == 2
     assert result["embedding_model"] == "local/test-static"
     assert boundary_rows[0]["record_type"] == "intra_thread_boundary"
+    assert boundary_rows[0]["schema_version"] == "0.3"
     assert boundary_rows[0]["boundary"] is True
     assert "lexical_similarity" in boundary_rows[0]
+    assert "structural_continuity" in boundary_rows[0]
     assert "continuity_score" in boundary_rows[0]
     assert boundary_rows[0]["split_before_message_index"] == 3
     assert [row["message_ids"] for row in segment_rows] == [

@@ -77,7 +77,7 @@ messages:
   cli.analyze.intra_thread_topics.opt.model.help: "Embedding model identifier. Required for `--backend ollama`."
   cli.analyze.intra_thread_topics.opt.window_size.help: Sliding window size in messages
   cli.analyze.intra_thread_topics.opt.window_stride.help: Sliding window stride in messages
-  cli.analyze.intra_thread_topics.opt.boundary_threshold.help: Fixed adjacent-window cosine threshold below which a boundary is emitted
+  cli.analyze.intra_thread_topics.opt.boundary_threshold.help: Fixed adjacent-window continuity threshold below which a boundary is emitted
   cli.analyze.intra_thread_topics.opt.max_input_bytes.help: Safe UTF-8 byte budget for one embedding request before deterministic chunking is applied
   cli.analyze.intra_thread_topics.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks
   cli.analyze.intra_thread_topics.opt.aggregate.help: Aggregation method for chunk embeddings
