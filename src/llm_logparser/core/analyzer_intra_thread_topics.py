@@ -36,6 +36,11 @@ REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
 REPORT_PREVIEW_TEXT_CHARS = 120
 REPORT_SUPPRESSED_SCORE_MARGIN = 0.15
 REPORT_NEAR_THRESHOLD_DISTANCE = 0.05
+REPORT_LONG_SEGMENT_MESSAGE_COUNT = 80
+REPORT_DRIFT_WEAKEST_CANDIDATES = 5
+REPORT_DRIFT_NEAR_THRESHOLD_DISTANCE = 0.08
+REPORT_DRIFT_LOW_SCORE_CEILING = 0.55
+REPORT_DRIFT_LOW_SCORE_RUN_LENGTH = 3
 STRUCTURAL_GAP_CONTINUITY = 0.2
 STRUCTURAL_MAX_SKIPPED_NON_SUBSTANTIVE = 2
 
@@ -644,6 +649,15 @@ def render_intra_thread_topic_report(
         lines.append("_No near-threshold candidates._")
         lines.append("")
 
+    lines.extend(
+        _render_drift_diagnostics(
+            messages,
+            boundaries,
+            segments,
+            boundary_threshold=boundary_threshold,
+        )
+    )
+
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -697,6 +711,180 @@ def _render_boundary_preview(
         "",
     ]
     return lines
+
+
+def _render_drift_diagnostics(
+    messages: list[ReconstructedThreadMessage],
+    boundaries: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    *,
+    boundary_threshold: float,
+) -> list[str]:
+    lines = [
+        "## Drift Diagnostics",
+        "",
+        f"- Long segment threshold: {REPORT_LONG_SEGMENT_MESSAGE_COUNT} messages",
+        f"- Weakest candidates shown per segment: {REPORT_DRIFT_WEAKEST_CANDIDATES}",
+        f"- Drift near-threshold distance: {REPORT_DRIFT_NEAR_THRESHOLD_DISTANCE:.2f}",
+        f"- Low-score run ceiling: {REPORT_DRIFT_LOW_SCORE_CEILING:.2f}",
+        f"- Low-score run minimum length: {REPORT_DRIFT_LOW_SCORE_RUN_LENGTH}",
+        "",
+    ]
+    long_segment_seen = False
+    for index, segment in enumerate(segments):
+        message_count = _int_field(segment, "message_count")
+        if message_count < REPORT_LONG_SEGMENT_MESSAGE_COUNT:
+            continue
+        long_segment_seen = True
+        lines.extend(
+            _render_segment_drift_diagnostics(
+                index,
+                segment,
+                boundaries,
+                messages,
+                boundary_threshold=boundary_threshold,
+            )
+        )
+
+    if not long_segment_seen:
+        lines.append("_No long segments above drift diagnostic threshold._")
+        lines.append("")
+    return lines
+
+
+def _render_segment_drift_diagnostics(
+    index: int,
+    segment: dict[str, Any],
+    boundaries: list[dict[str, Any]],
+    messages: list[ReconstructedThreadMessage],
+    *,
+    boundary_threshold: float,
+) -> list[str]:
+    start_index = _int_field(segment, "start_index")
+    end_index = _int_field(segment, "end_index")
+    message_count = _int_field(segment, "message_count")
+    internal_candidates = _internal_boundary_candidates(segment, boundaries)
+    scores = [_float_field(row, "continuity_score") for row in internal_candidates]
+    lines = [
+        f"### Segment {index} Drift",
+        "",
+        f"- Range: `{start_index}-{end_index}`",
+        f"- Message count: {message_count}",
+        f"- Internal candidates: {len(internal_candidates)}",
+    ]
+    if not scores:
+        lines.append("- Score summary: _No internal candidates._")
+        lines.append("")
+        return lines
+
+    lines.extend(
+        [
+            f"- Min continuity_score: {min(scores):.4f}",
+            f"- Median continuity_score: {_median(scores):.4f}",
+            f"- P10 continuity_score: {_percentile(scores, 0.10):.4f}",
+            "",
+            "#### Weakest Internal Candidates",
+            "",
+        ]
+    )
+    weakest = sorted(
+        internal_candidates,
+        key=lambda row: (
+            _float_field(row, "continuity_score"),
+            _int_field(row, "split_before_message_index"),
+        ),
+    )[:REPORT_DRIFT_WEAKEST_CANDIDATES]
+    if weakest:
+        for boundary in weakest:
+            lines.extend(_render_boundary_preview(boundary, messages))
+    else:
+        lines.append("_No internal candidates._")
+        lines.append("")
+
+    lines.extend(["#### Near-Threshold Internal Candidates", ""])
+    near_threshold = [
+        row
+        for row in internal_candidates
+        if abs(_float_field(row, "continuity_score") - boundary_threshold)
+        <= REPORT_DRIFT_NEAR_THRESHOLD_DISTANCE
+    ]
+    if near_threshold:
+        for boundary in near_threshold:
+            lines.extend(_render_boundary_preview(boundary, messages))
+    else:
+        lines.append("_No near-threshold internal candidates._")
+        lines.append("")
+
+    lines.extend(["#### Low-Score Runs", ""])
+    low_score_runs = _low_score_runs(internal_candidates)
+    if low_score_runs:
+        for run in low_score_runs:
+            lines.extend(_render_low_score_run(run, messages))
+    else:
+        lines.append("_No low-score runs detected._")
+        lines.append("")
+    return lines
+
+
+def _internal_boundary_candidates(
+    segment: dict[str, Any],
+    boundaries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    start_index = _int_field(segment, "start_index")
+    end_index = _int_field(segment, "end_index")
+    return [
+        row
+        for row in boundaries
+        if start_index < _int_field(row, "split_before_message_index") <= end_index
+    ]
+
+
+def _low_score_runs(
+    internal_candidates: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    runs: list[list[dict[str, Any]]] = []
+    current_run: list[dict[str, Any]] = []
+    for boundary in sorted(
+        internal_candidates,
+        key=lambda row: _int_field(row, "split_before_message_index"),
+    ):
+        if _float_field(boundary, "continuity_score") < REPORT_DRIFT_LOW_SCORE_CEILING:
+            current_run.append(boundary)
+            continue
+        if len(current_run) >= REPORT_DRIFT_LOW_SCORE_RUN_LENGTH:
+            runs.append(current_run)
+        current_run = []
+    if len(current_run) >= REPORT_DRIFT_LOW_SCORE_RUN_LENGTH:
+        runs.append(current_run)
+    return runs
+
+
+def _render_low_score_run(
+    run: list[dict[str, Any]],
+    messages: list[ReconstructedThreadMessage],
+) -> list[str]:
+    weakest = min(
+        run,
+        key=lambda row: (
+            _float_field(row, "continuity_score"),
+            _int_field(row, "split_before_message_index"),
+        ),
+    )
+    start_split = _int_field(run[0], "split_before_message_index")
+    end_split = _int_field(run[-1], "split_before_message_index")
+    weakest_split = _int_field(weakest, "split_before_message_index")
+    return [
+        f"##### Low-score run {start_split}-{end_split}",
+        "",
+        f"- Start split_before_message_index: {start_split}",
+        f"- End split_before_message_index: {end_split}",
+        f"- Run length: {len(run)}",
+        f"- Min continuity_score: {_float_field(weakest, 'continuity_score'):.4f}",
+        f"- Weakest split_before_message_index: {weakest_split}",
+        f"- left: {_message_preview_inline(_message_at(messages, weakest_split - 1))}",
+        f"- right: {_message_preview_inline(_message_at(messages, weakest_split))}",
+        "",
+    ]
 
 
 def _is_suppressed_high_signal_candidate(
@@ -818,6 +1006,24 @@ def _display_schema_versions(schema_versions: list[str]) -> str:
     if not schema_versions:
         return "`unknown`"
     return ", ".join(f"`{version}`" for version in schema_versions)
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    midpoint = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return sorted_values[midpoint]
+    return (sorted_values[midpoint - 1] + sorted_values[midpoint]) / 2
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    index = round((len(sorted_values) - 1) * percentile)
+    return sorted_values[index]
 
 
 def _non_whitespace_char_count(text: str) -> int:

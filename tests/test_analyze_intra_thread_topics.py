@@ -1182,116 +1182,114 @@ def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):
 
 def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_path):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    messages = [
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id="m1",
+            role="user",
+            ts=101,
+            text="alpha opening request",
+        ),
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id="m2",
+            role="assistant",
+            ts=102,
+            text="alpha opening answer",
+        ),
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id="m3",
+            role="user",
+            ts=103,
+            text="beta topic request",
+        ),
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id="m4",
+            role="assistant",
+            ts=104,
+            text="beta topic answer",
+        ),
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id="m5",
+            role="user",
+            ts=105,
+            text="shared cache migration terms",
+        ),
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id="m6",
+            role="assistant",
+            ts=106,
+            text="shared cache migration answer",
+        ),
+    ]
+    for index in range(7, 87):
+        messages.append(
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id=f"m{index}",
+                role="user" if index % 2 else "assistant",
+                ts=100 + index,
+                text=f"long segment drift message {index}",
+            )
+        )
     _write_parsed_jsonl(
         parsed_path,
         provider_id="openai",
         conversation_id="conv-a",
-        messages=[
-            _message_row(
-                provider_id="openai",
-                conversation_id="conv-a",
-                message_id="m1",
-                role="user",
-                ts=101,
-                text="alpha opening request",
-            ),
-            _message_row(
-                provider_id="openai",
-                conversation_id="conv-a",
-                message_id="m2",
-                role="assistant",
-                ts=102,
-                text="alpha opening answer",
-            ),
-            _message_row(
-                provider_id="openai",
-                conversation_id="conv-a",
-                message_id="m3",
-                role="user",
-                ts=103,
-                text="beta topic request",
-            ),
-            _message_row(
-                provider_id="openai",
-                conversation_id="conv-a",
-                message_id="m4",
-                role="assistant",
-                ts=104,
-                text="beta topic answer",
-            ),
-            _message_row(
-                provider_id="openai",
-                conversation_id="conv-a",
-                message_id="m5",
-                role="user",
-                ts=105,
-                text="shared cache migration terms",
-            ),
-            _message_row(
-                provider_id="openai",
-                conversation_id="conv-a",
-                message_id="m6",
-                role="assistant",
-                ts=106,
-                text="shared cache migration answer",
-            ),
-        ],
+        messages=messages,
     )
+    boundary_rows = []
+    for split_before in range(2, 86):
+        boundary_rows.append(
+            {
+                "record_type": "intra_thread_boundary",
+                "schema_version": "0.3",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "previous_window_index": split_before - 2,
+                "next_window_index": split_before - 1,
+                "previous_window_message_ids": [],
+                "next_window_message_ids": [],
+                "similarity": 0.9,
+                "lexical_similarity": 0.0,
+                "structural_continuity": 0.0,
+                "continuity_score": 0.9,
+                "boundary": False,
+                "split_after_message_index": split_before - 1,
+                "split_before_message_index": split_before,
+            }
+        )
+    boundary_rows[0]["similarity"] = 0.39
+    boundary_rows[0]["continuity_score"] = 0.39
+    boundary_rows[0]["boundary"] = True
+    boundary_rows[2]["similarity"] = 0.3
+    boundary_rows[2]["structural_continuity"] = 1.0
+    boundary_rows[2]["continuity_score"] = 0.45
+    boundary_rows[3]["similarity"] = 0.36
+    boundary_rows[3]["lexical_similarity"] = 0.4
+    boundary_rows[3]["continuity_score"] = 0.44
+    boundary_rows[9]["similarity"] = 0.47
+    boundary_rows[9]["continuity_score"] = 0.47
+    boundary_rows[20]["similarity"] = 0.37
+    boundary_rows[20]["continuity_score"] = 0.37
+    boundary_rows[21]["similarity"] = 0.42
+    boundary_rows[21]["continuity_score"] = 0.42
+    boundary_rows[22]["similarity"] = 0.5
+    boundary_rows[22]["continuity_score"] = 0.5
     _write_jsonl_rows(
         intra_thread_boundaries_artifact_path(parsed_path),
-        [
-            {
-                "record_type": "intra_thread_boundary",
-                "schema_version": "0.3",
-                "provider_id": "openai",
-                "conversation_id": "conv-a",
-                "previous_window_index": 0,
-                "next_window_index": 1,
-                "previous_window_message_ids": ["m1", "m2"],
-                "next_window_message_ids": ["m3", "m4"],
-                "similarity": 0.39,
-                "lexical_similarity": 0.0,
-                "structural_continuity": 0.0,
-                "continuity_score": 0.39,
-                "boundary": True,
-                "split_after_message_index": 1,
-                "split_before_message_index": 2,
-            },
-            {
-                "record_type": "intra_thread_boundary",
-                "schema_version": "0.3",
-                "provider_id": "openai",
-                "conversation_id": "conv-a",
-                "previous_window_index": 1,
-                "next_window_index": 2,
-                "previous_window_message_ids": ["m3", "m4"],
-                "next_window_message_ids": ["m5", "m6"],
-                "similarity": 0.3,
-                "lexical_similarity": 0.0,
-                "structural_continuity": 1.0,
-                "continuity_score": 0.45,
-                "boundary": False,
-                "split_after_message_index": 3,
-                "split_before_message_index": 4,
-            },
-            {
-                "record_type": "intra_thread_boundary",
-                "schema_version": "0.3",
-                "provider_id": "openai",
-                "conversation_id": "conv-a",
-                "previous_window_index": 2,
-                "next_window_index": 3,
-                "previous_window_message_ids": ["m4", "m5"],
-                "next_window_message_ids": ["m5", "m6"],
-                "similarity": 0.36,
-                "lexical_similarity": 0.4,
-                "structural_continuity": 0.0,
-                "continuity_score": 0.44,
-                "boundary": False,
-                "split_after_message_index": 4,
-                "split_before_message_index": 5,
-            },
-        ],
+        boundary_rows,
     )
     _write_jsonl_rows(
         intra_thread_segments_artifact_path(parsed_path),
@@ -1315,9 +1313,9 @@ def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_
                 "conversation_id": "conv-a",
                 "segment_id": "segment_beta",
                 "start_index": 2,
-                "end_index": 5,
-                "message_ids": ["m3", "m4", "m5", "m6"],
-                "message_count": 4,
+                "end_index": 85,
+                "message_ids": [f"m{index}" for index in range(3, 87)],
+                "message_count": 84,
                 "text_sha1": "unused",
             },
         ],
@@ -1330,7 +1328,7 @@ def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_
     assert result == {"threads": 1, "reports": [report_path]}
     assert report_path.exists()
     assert "# Intra-thread Topics Report: conv-a" in report
-    assert "- Boundary rows: 3" in report
+    assert "- Boundary rows: 84" in report
     assert "- Fired boundaries: 1" in report
     assert "- Segments: 2" in report
     assert "### Segment 0" in report
@@ -1346,6 +1344,21 @@ def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_
     assert "lexical_similarity: 0.4000" in report
     assert "## Near-Threshold Candidates" in report
     assert "- Boundary threshold used for diagnostics: 0.4300" in report
+    assert "## Drift Diagnostics" in report
+    assert "### Segment 1 Drift" in report
+    assert "- Range: `2-85`" in report
+    assert "- Message count: 84" in report
+    assert "- Min continuity_score: 0.3700" in report
+    assert "- Median continuity_score:" in report
+    assert "- P10 continuity_score:" in report
+    assert "#### Weakest Internal Candidates" in report
+    assert "split_before_message_index=22" in report
+    assert "long segment drift message 22" in report
+    assert "#### Near-Threshold Internal Candidates" in report
+    assert "split_before_message_index=23" in report
+    assert "#### Low-Score Runs" in report
+    assert "##### Low-score run 22-24" in report
+    assert "- Run length: 3" in report
 
 
 def test_analyze_intra_thread_topics_cli_wires_new_command(tmp_path, capsys):
@@ -1466,4 +1479,7 @@ def test_analyze_intra_thread_topics_cli_report_uses_existing_artifacts(tmp_path
 
     report_path = intra_thread_report_artifact_path(parsed_path)
     assert report_path.exists()
-    assert "alpha opening request" in report_path.read_text(encoding="utf-8")
+    report = report_path.read_text(encoding="utf-8")
+    assert "alpha opening request" in report
+    assert "## Drift Diagnostics" in report
+    assert "_No long segments above drift diagnostic threshold._" in report
