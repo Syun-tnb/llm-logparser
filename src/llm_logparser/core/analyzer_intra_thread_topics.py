@@ -41,6 +41,8 @@ REPORT_DRIFT_WEAKEST_CANDIDATES = 5
 REPORT_DRIFT_NEAR_THRESHOLD_DISTANCE = 0.08
 REPORT_DRIFT_LOW_SCORE_CEILING = 0.55
 REPORT_DRIFT_LOW_SCORE_RUN_LENGTH = 3
+DRIFT_GUARDRAIL_LONG_SEGMENT_MESSAGE_COUNT = 80
+DRIFT_GUARDRAIL_THRESHOLD_MARGIN = 0.01
 STRUCTURAL_GAP_CONTINUITY = 0.2
 STRUCTURAL_MAX_SKIPPED_NON_SUBSTANTIVE = 2
 
@@ -315,6 +317,8 @@ def _segment_id(
 def build_contiguous_segments(
     messages: list[ReconstructedThreadMessage],
     boundaries: list[AdjacentWindowBoundary],
+    *,
+    boundary_threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
 ) -> list[ContiguousSegment]:
     if not messages:
         return []
@@ -333,6 +337,12 @@ def build_contiguous_segments(
             continue
         segment_ranges.append((segment_start, boundary_start))
         segment_start = boundary_start
+    segment_ranges = _apply_guarded_drift_splits(
+        messages,
+        boundaries,
+        segment_ranges,
+        boundary_threshold=boundary_threshold,
+    )
     cleaned_ranges = _absorb_empty_segment_ranges(messages, segment_ranges)
     return [
         _build_contiguous_segment(messages, start_index, end_index)
@@ -409,6 +419,105 @@ def _build_contiguous_segment(
         message_count=len(message_ids),
         text_sha1=hashlib.sha1(segment_text.encode("utf-8")).hexdigest(),
     )
+
+
+def _apply_guarded_drift_splits(
+    messages: list[ReconstructedThreadMessage],
+    boundaries: list[AdjacentWindowBoundary],
+    segment_ranges: list[tuple[int, int]],
+    *,
+    boundary_threshold: float,
+) -> list[tuple[int, int]]:
+    if not segment_ranges:
+        return segment_ranges
+
+    split_ranges: list[tuple[int, int]] = []
+    for start_index, end_index in segment_ranges:
+        split_before = _guarded_drift_split_index(
+            messages,
+            boundaries,
+            start_index,
+            end_index,
+            boundary_threshold=boundary_threshold,
+        )
+        if split_before is None:
+            split_ranges.append((start_index, end_index))
+            continue
+        split_ranges.extend([(start_index, split_before), (split_before, end_index)])
+    return split_ranges
+
+
+def _guarded_drift_split_index(
+    messages: list[ReconstructedThreadMessage],
+    boundaries: list[AdjacentWindowBoundary],
+    start_index: int,
+    end_index: int,
+    *,
+    boundary_threshold: float,
+) -> int | None:
+    if end_index - start_index < DRIFT_GUARDRAIL_LONG_SEGMENT_MESSAGE_COUNT:
+        return None
+
+    eligible = [
+        boundary
+        for boundary in boundaries
+        if _is_guarded_drift_split_candidate(
+            messages,
+            boundary,
+            start_index,
+            end_index,
+            boundary_threshold=boundary_threshold,
+        )
+    ]
+    if not eligible:
+        return None
+
+    weakest = min(
+        eligible,
+        key=lambda boundary: (
+            boundary.continuity_score,
+            boundary.split_before_message_index,
+        ),
+    )
+    return weakest.split_before_message_index
+
+
+def _is_guarded_drift_split_candidate(
+    messages: list[ReconstructedThreadMessage],
+    boundary: AdjacentWindowBoundary,
+    start_index: int,
+    end_index: int,
+    *,
+    boundary_threshold: float,
+) -> bool:
+    split_before = boundary.split_before_message_index
+    if boundary.boundary:
+        return False
+    if split_before <= start_index or split_before >= end_index:
+        return False
+    if boundary.continuity_score < boundary_threshold:
+        return False
+    if (
+        boundary.continuity_score
+        > boundary_threshold + DRIFT_GUARDRAIL_THRESHOLD_MARGIN
+    ):
+        return False
+    if boundary.structural_continuity > 0.0:
+        return False
+
+    left = _message_at(messages, split_before - 1)
+    right = _message_at(messages, split_before)
+    if left is None or right is None:
+        return False
+    if not _is_substantive_message(left) or not _is_substantive_message(right):
+        return False
+    if right.role != "user":
+        return False
+    # Request/answer handoffs are protected by structural continuity and should
+    # not be reintroduced as drift splits by the long-segment guardrail.
+    if left.role == "user" and right.role == "assistant":
+        return False
+    return True
 
 
 def _absorb_empty_segment_ranges(
@@ -507,7 +616,11 @@ def analyze_intra_thread_topics(
             embeddings,
             threshold=boundary_threshold,
         )
-        segments = build_contiguous_segments(messages, boundaries)
+        segments = build_contiguous_segments(
+            messages,
+            boundaries,
+            boundary_threshold=boundary_threshold,
+        )
 
         written_boundaries.append(
             _write_jsonl(boundaries_path, [_boundary_row(row) for row in boundaries])
@@ -606,7 +719,15 @@ def render_intra_thread_topic_report(
 
     if segments:
         for index, segment in enumerate(segments):
-            lines.extend(_render_segment_preview(index, segment, messages))
+            lines.extend(
+                _render_segment_preview(
+                    index,
+                    segment,
+                    messages,
+                    boundaries,
+                    boundary_threshold=boundary_threshold,
+                )
+            )
     else:
         lines.append("_No segments found._")
         lines.append("")
@@ -665,6 +786,9 @@ def _render_segment_preview(
     index: int,
     segment: dict[str, Any],
     messages: list[ReconstructedThreadMessage],
+    boundaries: list[dict[str, Any]],
+    *,
+    boundary_threshold: float,
 ) -> list[str]:
     start_index = _int_field(segment, "start_index")
     end_index = _int_field(segment, "end_index")
@@ -675,6 +799,14 @@ def _render_segment_preview(
         "",
         f"- Range: `{start_index}-{end_index}`",
         f"- Message count: {message_count}",
+        "- Start source: `"
+        + _segment_start_source(
+            segment,
+            boundaries,
+            messages,
+            boundary_threshold=boundary_threshold,
+        )
+        + "`",
         "- First messages:",
     ]
     for message in segment_messages[:REPORT_PREVIEW_MESSAGES_PER_EDGE]:
@@ -711,6 +843,64 @@ def _render_boundary_preview(
         "",
     ]
     return lines
+
+
+def _segment_start_source(
+    segment: dict[str, Any],
+    boundaries: list[dict[str, Any]],
+    messages: list[ReconstructedThreadMessage],
+    *,
+    boundary_threshold: float,
+) -> str:
+    start_index = _int_field(segment, "start_index")
+    if start_index == 0:
+        return "conversation_start"
+    matching_boundary = next(
+        (
+            boundary
+            for boundary in boundaries
+            if _int_field(boundary, "split_before_message_index") == start_index
+        ),
+        None,
+    )
+    if matching_boundary is None:
+        return "derived_or_cleanup"
+    if matching_boundary.get("boundary") is True:
+        return "boundary"
+    if _is_guarded_drift_report_candidate(
+        matching_boundary,
+        messages,
+        boundary_threshold=boundary_threshold,
+    ):
+        return "drift_guardrail"
+    return "derived_or_cleanup"
+
+
+def _is_guarded_drift_report_candidate(
+    boundary: dict[str, Any],
+    messages: list[ReconstructedThreadMessage],
+    *,
+    boundary_threshold: float,
+) -> bool:
+    continuity_score = _float_field(boundary, "continuity_score")
+    if boundary.get("boundary") is True:
+        return False
+    if continuity_score < boundary_threshold:
+        return False
+    if continuity_score > boundary_threshold + DRIFT_GUARDRAIL_THRESHOLD_MARGIN:
+        return False
+    if _float_field(boundary, "structural_continuity") > 0.0:
+        return False
+    split_before = _int_field(boundary, "split_before_message_index")
+    left = _message_at(messages, split_before - 1)
+    right = _message_at(messages, split_before)
+    if left is None or right is None:
+        return False
+    if not _is_substantive_message(left) or not _is_substantive_message(right):
+        return False
+    return right.role == "user" and not (
+        left.role == "user" and right.role == "assistant"
+    )
 
 
 def _render_drift_diagnostics(

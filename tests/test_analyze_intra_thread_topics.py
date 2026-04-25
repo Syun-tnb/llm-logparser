@@ -7,6 +7,7 @@ from unittest.mock import patch
 from llm_logparser.cli.cli import main
 from llm_logparser.core.analyzer_intra_thread_topics import (
     AdjacentWindowBoundary,
+    ReconstructedThreadMessage,
     analyze_intra_thread_topics,
     boundary_lexical_similarity,
     boundary_structural_continuity,
@@ -38,6 +39,10 @@ def _boundary(
     conversation_id: str,
     split_before_message_index: int,
     boundary: bool = True,
+    similarity: float = 0.0,
+    lexical_similarity: float = 0.0,
+    structural_continuity: float = 0.0,
+    continuity_score: float = 0.0,
 ) -> AdjacentWindowBoundary:
     return AdjacentWindowBoundary(
         provider_id="openai",
@@ -46,10 +51,10 @@ def _boundary(
         next_window_index=1,
         previous_window_message_ids=(),
         next_window_message_ids=(),
-        similarity=0.0,
-        lexical_similarity=0.0,
-        structural_continuity=0.0,
-        continuity_score=0.0,
+        similarity=similarity,
+        lexical_similarity=lexical_similarity,
+        structural_continuity=structural_continuity,
+        continuity_score=continuity_score,
         boundary=boundary,
         split_after_message_index=split_before_message_index - 1,
         split_before_message_index=split_before_message_index,
@@ -115,6 +120,49 @@ def _write_jsonl_rows(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+
+
+def _synthetic_reconstructed_messages(
+    *,
+    conversation_id: str = "conv-a",
+    count: int = 90,
+    split_before: int = 40,
+    left_role: str = "assistant",
+    right_role: str = "user",
+    left_text: str = "left topic",
+    right_text: str = "right topic",
+) -> list[ReconstructedThreadMessage]:
+    messages = [
+        ReconstructedThreadMessage(
+            provider_id="openai",
+            conversation_id=conversation_id,
+            message_id=f"m{index}",
+            role="assistant",
+            ts=100 + index,
+            text=f"message {index}",
+            ordinal=index,
+        )
+        for index in range(count)
+    ]
+    messages[split_before - 1] = ReconstructedThreadMessage(
+        provider_id="openai",
+        conversation_id=conversation_id,
+        message_id=f"m{split_before - 1}",
+        role=left_role,
+        ts=100 + split_before - 1,
+        text=left_text,
+        ordinal=split_before - 1,
+    )
+    messages[split_before] = ReconstructedThreadMessage(
+        provider_id="openai",
+        conversation_id=conversation_id,
+        message_id=f"m{split_before}",
+        role=right_role,
+        ts=100 + split_before,
+        text=right_text,
+        ordinal=split_before,
+    )
+    return messages
 
 
 def test_reconstruct_thread_messages_preserves_order_and_ordinals(tmp_path):
@@ -432,6 +480,172 @@ def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
     assert [(segment.start_index, segment.end_index) for segment in segments] == [
         (0, 2),
         (3, 4),
+    ]
+
+
+def test_guarded_drift_split_splits_long_segment_at_weak_candidate():
+    messages = _synthetic_reconstructed_messages(count=90, split_before=40)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                continuity_score=0.435,
+            )
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 39),
+        (40, 89),
+    ]
+
+
+def test_guarded_drift_split_ignores_short_segments():
+    messages = _synthetic_reconstructed_messages(count=79, split_before=40)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                continuity_score=0.435,
+            )
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 78),
+    ]
+
+
+def test_guarded_drift_split_ignores_user_assistant_handoff():
+    messages = _synthetic_reconstructed_messages(
+        count=90,
+        split_before=40,
+        left_role="user",
+        right_role="assistant",
+    )
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                continuity_score=0.435,
+            )
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 89),
+    ]
+
+
+def test_guarded_drift_split_ignores_system_or_tool_adjacent_rows():
+    messages = _synthetic_reconstructed_messages(
+        count=90,
+        split_before=40,
+        left_role="assistant",
+        right_role="tool",
+        right_text="tool payload",
+    )
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                continuity_score=0.435,
+            )
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 89),
+    ]
+
+
+def test_guarded_drift_split_ignores_structurally_protected_candidate():
+    messages = _synthetic_reconstructed_messages(count=90, split_before=40)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                structural_continuity=0.2,
+                continuity_score=0.435,
+            )
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 89),
+    ]
+
+
+def test_guarded_drift_split_ignores_score_far_above_threshold():
+    messages = _synthetic_reconstructed_messages(count=90, split_before=40)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                continuity_score=0.48,
+            )
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 89),
+    ]
+
+
+def test_guarded_drift_split_chooses_lowest_score_then_earliest_split():
+    messages = _synthetic_reconstructed_messages(count=90, split_before=40)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=30,
+                boundary=False,
+                continuity_score=0.438,
+            ),
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=40,
+                boundary=False,
+                continuity_score=0.435,
+            ),
+            _boundary(
+                conversation_id="conv-a",
+                split_before_message_index=50,
+                boundary=False,
+                continuity_score=0.435,
+            ),
+        ],
+        boundary_threshold=0.43,
+    )
+
+    assert [(segment.start_index, segment.end_index) for segment in segments] == [
+        (0, 39),
+        (40, 89),
     ]
 
 
@@ -1359,6 +1573,92 @@ def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_
     assert "#### Low-Score Runs" in report
     assert "##### Low-score run 22-24" in report
     assert "- Run length: 3" in report
+
+
+def test_intra_thread_report_marks_guarded_drift_segment_start(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    messages = [
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id=f"m{index}",
+            role="assistant",
+            ts=100 + index,
+            text=f"message {index}",
+        )
+        for index in range(90)
+    ]
+    messages[39]["text"] = "left topic"
+    messages[39]["content"]["parts"] = ["left topic"]
+    messages[40]["role"] = "user"
+    messages[40]["text"] = "right topic"
+    messages[40]["content"]["parts"] = ["right topic"]
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=messages,
+    )
+    _write_jsonl_rows(
+        intra_thread_boundaries_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_boundary",
+                "schema_version": "0.3",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "previous_window_index": 0,
+                "next_window_index": 1,
+                "previous_window_message_ids": [],
+                "next_window_message_ids": [],
+                "similarity": 0.435,
+                "lexical_similarity": 0.0,
+                "structural_continuity": 0.0,
+                "continuity_score": 0.435,
+                "boundary": False,
+                "split_after_message_index": 39,
+                "split_before_message_index": 40,
+            }
+        ],
+    )
+    _write_jsonl_rows(
+        intra_thread_segments_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_segment",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "segment_id": "segment-a",
+                "start_index": 0,
+                "end_index": 39,
+                "message_ids": [f"m{index}" for index in range(40)],
+                "message_count": 40,
+                "text_sha1": "a",
+            },
+            {
+                "record_type": "intra_thread_segment",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "segment_id": "segment-b",
+                "start_index": 40,
+                "end_index": 89,
+                "message_ids": [f"m{index}" for index in range(40, 90)],
+                "message_count": 50,
+                "text_sha1": "b",
+            },
+        ],
+    )
+
+    write_intra_thread_topic_reports(parsed_path, boundary_threshold=0.43)
+    report = intra_thread_report_artifact_path(parsed_path).read_text(
+        encoding="utf-8"
+    )
+
+    assert "### Segment 1" in report
+    assert "- Range: `40-89`" in report
+    assert "- Start source: `drift_guardrail`" in report
 
 
 def test_analyze_intra_thread_topics_cli_wires_new_command(tmp_path, capsys):
