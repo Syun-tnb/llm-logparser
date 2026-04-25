@@ -12,9 +12,11 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     boundary_lexical_similarity,
     boundary_structural_continuity,
     build_contiguous_segments,
+    build_segment_merge_groups,
     build_sliding_windows,
     detect_adjacent_boundaries,
     intra_thread_boundaries_artifact_path,
+    intra_thread_segment_merge_artifact_path,
     intra_thread_report_artifact_path,
     intra_thread_segments_artifact_path,
     lexical_jaccard_similarity,
@@ -28,10 +30,14 @@ class StaticEmbeddingBackend:
     def __init__(self, vectors: list[list[float]], *, model_id: str = "local/test-static"):
         self.model_id = model_id
         self._vectors = vectors
+        self._offset = 0
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        assert len(texts) == len(self._vectors)
-        return self._vectors
+        end_offset = self._offset + len(texts)
+        assert end_offset <= len(self._vectors)
+        vectors = self._vectors[self._offset : end_offset]
+        self._offset = end_offset
+        return vectors
 
 
 def _boundary(
@@ -646,6 +652,173 @@ def test_guarded_drift_split_chooses_lowest_score_then_earliest_split():
     assert [(segment.start_index, segment.end_index) for segment in segments] == [
         (0, 39),
         (40, 89),
+    ]
+
+
+def test_segment_merge_groups_non_contiguous_similar_segments():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    groups = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id, segments[2].segment_id),
+        (segments[1].segment_id,),
+    ]
+
+
+def test_segment_merge_groups_keeps_dissimilar_segments_separate():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    groups = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        ),
+    )
+
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id,),
+        (segments[1].segment_id,),
+        (segments[2].segment_id,),
+    ]
+
+
+def test_segment_merge_groups_are_deterministic():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+    vectors = [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0]]
+
+    first = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(vectors),
+    )
+    second = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(vectors),
+    )
+
+    assert [group.group_id for group in first] == [
+        group.group_id for group in second
+    ]
+
+
+def test_segment_merge_group_message_ids_are_deduplicated_and_sorted():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    groups = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+
+    merged_group = groups[0]
+    assert merged_group.message_ids == tuple(sorted(set(merged_group.message_ids)))
+    assert merged_group.message_ids == tuple(
+        sorted({*segments[0].message_ids, *segments[2].message_ids})
+    )
+
+
+def test_segment_merge_groups_do_not_merge_adjacent_segments():
+    messages = _synthetic_reconstructed_messages(count=6, split_before=3)
+    segments = build_contiguous_segments(
+        messages,
+        [_boundary(conversation_id="conv-a", split_before_message_index=3)],
+    )
+
+    groups = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id,),
+        (segments[1].segment_id,),
+    ]
+
+
+def test_segment_merge_groups_do_not_create_transitive_adjacent_group():
+    messages = _synthetic_reconstructed_messages(count=12, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+            _boundary(conversation_id="conv-a", split_before_message_index=9),
+        ],
+    )
+
+    groups = build_segment_merge_groups(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id, segments[2].segment_id),
+        (segments[1].segment_id, segments[3].segment_id),
     ]
 
 
@@ -1392,6 +1565,52 @@ def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):
         ["m4", "m5"],
     ]
     assert all(row["segment_id"].startswith("segment_") for row in segment_rows)
+
+
+def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id=f"m{index}",
+                role="user",
+                ts=100 + index,
+                text=f"text {index}",
+            )
+            for index in range(1, 6)
+        ],
+    )
+
+    result = analyze_intra_thread_topics(
+        parsed_path,
+        boundary_threshold=0.75,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [0.0, 1.0],
+            ]
+        ),
+        merge_segments=True,
+    )
+
+    merge_path = intra_thread_segment_merge_artifact_path(parsed_path)
+    merge_rows = _load_jsonl(merge_path)
+
+    assert result["segment_merge_groups"] == 2
+    assert result["segment_merge_artifacts"] == [merge_path]
+    assert merge_path.exists()
+    assert merge_rows[0]["record_type"] == "intra_thread_segment_merge_group"
+    assert merge_rows[0]["schema_version"] == "0.1"
+    assert "group_id" in merge_rows[0]
+    assert "centroid_embedding" in merge_rows[0]
 
 
 def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_path):

@@ -287,6 +287,7 @@ def run_analyze_intra_thread_topics(args, logger: logging.Logger) -> None:
             chunk_overlap_bytes=args.chunk_overlap_bytes,
             aggregate=args.aggregate,
             backend_options=getattr(args, "backend_options", None),
+            merge_segments=args.merge_segments,
         )
     except IntraThreadTopicsError as exc:
         logger.error(str(exc))
@@ -295,7 +296,8 @@ def run_analyze_intra_thread_topics(args, logger: logging.Logger) -> None:
     logger.info(
         "intra-thread topics artifacts written: "
         f"{result['threads']} thread(s), {result['segments']} segment(s), "
-        f"{result['boundaries']} boundary/boundaries -> "
+        f"{result['boundaries']} boundary/boundaries, "
+        f"{result['segment_merge_groups']} segment merge group(s) -> "
         f"{result['embedding_model']}"
     )
 

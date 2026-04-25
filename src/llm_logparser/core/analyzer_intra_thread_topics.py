@@ -29,8 +29,11 @@ DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD = 0.75
 DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS = 8
 DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT = 0.2
 DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT = 0.15
+DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD = 0.75
+SEGMENT_MERGE_MIN_MESSAGE_COUNT = 3
 BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
+SEGMENT_MERGE_SCHEMA_VERSION = "0.1"
 LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
 REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
 REPORT_PREVIEW_TEXT_CHARS = 120
@@ -104,6 +107,16 @@ class ContiguousSegment:
     text_sha1: str
 
 
+@dataclass(frozen=True)
+class SegmentMergeGroup:
+    provider_id: str
+    conversation_id: str
+    group_id: str
+    segment_ids: tuple[str, ...]
+    message_ids: tuple[str, ...]
+    centroid_embedding: tuple[float, ...]
+
+
 def intra_thread_topics_dir(parsed_path: Path) -> Path:
     return parsed_path.parent / "l3" / "intra-thread-topics"
 
@@ -114,6 +127,10 @@ def intra_thread_boundaries_artifact_path(parsed_path: Path) -> Path:
 
 def intra_thread_segments_artifact_path(parsed_path: Path) -> Path:
     return intra_thread_topics_dir(parsed_path) / "segments.jsonl"
+
+
+def intra_thread_segment_merge_artifact_path(parsed_path: Path) -> Path:
+    return intra_thread_topics_dir(parsed_path) / "segment-merge.jsonl"
 
 
 def intra_thread_report_artifact_path(parsed_path: Path) -> Path:
@@ -385,6 +402,19 @@ def _segment_row(segment: ContiguousSegment) -> dict[str, Any]:
     }
 
 
+def _segment_merge_group_row(group: SegmentMergeGroup) -> dict[str, Any]:
+    return {
+        "record_type": "intra_thread_segment_merge_group",
+        "schema_version": SEGMENT_MERGE_SCHEMA_VERSION,
+        "provider_id": group.provider_id,
+        "conversation_id": group.conversation_id,
+        "group_id": group.group_id,
+        "segment_ids": list(group.segment_ids),
+        "message_ids": list(group.message_ids),
+        "centroid_embedding": list(group.centroid_embedding),
+    }
+
+
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -419,6 +449,140 @@ def _build_contiguous_segment(
         message_count=len(message_ids),
         text_sha1=hashlib.sha1(segment_text.encode("utf-8")).hexdigest(),
     )
+
+
+def build_segment_merge_groups(
+    messages: list[ReconstructedThreadMessage],
+    segments: list[ContiguousSegment],
+    *,
+    backend: EmbeddingBackend,
+    similarity_threshold: float = DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD,
+    min_message_count: int = SEGMENT_MERGE_MIN_MESSAGE_COUNT,
+) -> list[SegmentMergeGroup]:
+    if not 0.0 <= similarity_threshold <= 1.0:
+        raise ValueError("similarity_threshold must be between 0.0 and 1.0")
+    if min_message_count < 0:
+        raise ValueError("min_message_count must be >= 0")
+    if not segments:
+        return []
+
+    segment_texts = [
+        _segment_text_from_message_ids(messages, segment) for segment in segments
+    ]
+    embeddings = backend.embed(segment_texts)
+    if len(embeddings) != len(segments):
+        raise IntraThreadTopicsError("segment embedding count mismatch")
+
+    parent = list(range(len(segments)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root == right_root:
+            return
+        if _segment_index_groups_would_be_adjacent(parent, left_root, right_root):
+            return
+        if left_root < right_root:
+            parent[right_root] = left_root
+        else:
+            parent[left_root] = right_root
+
+    for left_index, left_segment in enumerate(segments):
+        if left_segment.message_count < min_message_count:
+            continue
+        for right_index in range(left_index + 2, len(segments)):
+            right_segment = segments[right_index]
+            if right_segment.message_count < min_message_count:
+                continue
+            similarity = cosine_similarity(embeddings[left_index], embeddings[right_index])
+            if similarity >= similarity_threshold:
+                union(left_index, right_index)
+
+    grouped_indices: dict[int, list[int]] = {}
+    for index in range(len(segments)):
+        grouped_indices.setdefault(find(index), []).append(index)
+
+    groups: list[SegmentMergeGroup] = []
+    for indices in sorted(grouped_indices.values(), key=lambda item: item[0]):
+        group_segments = [segments[index] for index in indices]
+        group_embeddings = [embeddings[index] for index in indices]
+        groups.append(
+            SegmentMergeGroup(
+                provider_id=group_segments[0].provider_id,
+                conversation_id=group_segments[0].conversation_id,
+                group_id=_segment_merge_group_id(group_segments),
+                segment_ids=tuple(segment.segment_id for segment in group_segments),
+                message_ids=tuple(
+                    sorted(
+                        {
+                            message_id
+                            for segment in group_segments
+                            for message_id in segment.message_ids
+                        }
+                    )
+                ),
+                centroid_embedding=tuple(
+                    round(value, 6) for value in _mean_embedding(group_embeddings)
+                ),
+            )
+        )
+    return groups
+
+
+def _segment_index_groups_would_be_adjacent(
+    parent: list[int],
+    left_root: int,
+    right_root: int,
+) -> bool:
+    left_indices = [
+        index for index in range(len(parent)) if _find_parent(parent, index) == left_root
+    ]
+    right_indices = [
+        index for index in range(len(parent)) if _find_parent(parent, index) == right_root
+    ]
+    return any(abs(left - right) == 1 for left in left_indices for right in right_indices)
+
+
+def _find_parent(parent: list[int], index: int) -> int:
+    while parent[index] != index:
+        index = parent[index]
+    return index
+
+
+def _segment_text_from_message_ids(
+    messages: list[ReconstructedThreadMessage],
+    segment: ContiguousSegment,
+) -> str:
+    messages_by_id = {message.message_id: message for message in messages}
+    return "\n\n".join(
+        messages_by_id[message_id].text
+        for message_id in segment.message_ids
+        if message_id in messages_by_id and messages_by_id[message_id].text
+    )
+
+
+def _segment_merge_group_id(segments: list[ContiguousSegment]) -> str:
+    payload = "\n".join(sorted(segment.segment_id for segment in segments))
+    return "segment_merge_" + hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _mean_embedding(embeddings: list[list[float]]) -> list[float]:
+    if not embeddings:
+        return []
+    dimension = len(embeddings[0])
+    totals = [0.0] * dimension
+    for embedding in embeddings:
+        if len(embedding) != dimension:
+            raise IntraThreadTopicsError("segment embeddings have inconsistent dimensions")
+        for index, value in enumerate(embedding):
+            totals[index] += value
+    return [value / len(embeddings) for value in totals]
 
 
 def _apply_guarded_drift_splits(
@@ -568,6 +732,7 @@ def analyze_intra_thread_topics(
     aggregate: str | None = None,
     backend_options: dict[str, Any] | None = None,
     backend: EmbeddingBackend | None = None,
+    merge_segments: bool = False,
 ) -> dict[str, Any]:
     normalized_input = _normalize_parsed_path(input_path)
     parsed_files = discover_parsed_jsonl(normalized_input)
@@ -590,15 +755,27 @@ def analyze_intra_thread_topics(
 
     written_boundaries: list[Path] = []
     written_segments: list[Path] = []
+    written_segment_merges: list[Path] = []
     total_windows = 0
     total_boundaries = 0
     total_segments = 0
+    total_segment_merge_groups = 0
 
     for parsed_path in parsed_files:
         boundaries_path = intra_thread_boundaries_artifact_path(parsed_path)
         segments_path = intra_thread_segments_artifact_path(parsed_path)
-        if not overwrite and (boundaries_path.exists() or segments_path.exists()):
-            existing_path = boundaries_path if boundaries_path.exists() else segments_path
+        segment_merge_path = intra_thread_segment_merge_artifact_path(parsed_path)
+        existing_artifacts = [
+            path
+            for path in (
+                boundaries_path,
+                segments_path,
+                segment_merge_path if merge_segments else None,
+            )
+            if path is not None and path.exists()
+        ]
+        if not overwrite and existing_artifacts:
+            existing_path = existing_artifacts[0]
             raise IntraThreadTopicsError(
                 f"artifact already exists: {existing_path} (rerun with --overwrite)"
             )
@@ -628,6 +805,19 @@ def analyze_intra_thread_topics(
         written_segments.append(
             _write_jsonl(segments_path, [_segment_row(row) for row in segments])
         )
+        if merge_segments:
+            segment_merge_groups = build_segment_merge_groups(
+                messages,
+                segments,
+                backend=backend,
+            )
+            written_segment_merges.append(
+                _write_jsonl(
+                    segment_merge_path,
+                    [_segment_merge_group_row(row) for row in segment_merge_groups],
+                )
+            )
+            total_segment_merge_groups += len(segment_merge_groups)
 
         total_windows += len(windows)
         total_boundaries += sum(1 for row in boundaries if row.boundary)
@@ -641,6 +831,8 @@ def analyze_intra_thread_topics(
         "embedding_model": backend.model_id,
         "boundaries_artifacts": written_boundaries,
         "segments_artifacts": written_segments,
+        "segment_merge_groups": total_segment_merge_groups,
+        "segment_merge_artifacts": written_segment_merges,
     }
 
 
