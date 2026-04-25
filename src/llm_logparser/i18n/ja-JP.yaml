@@ -86,6 +86,7 @@ messages:
   cli.analyze.intra_thread_topics.opt.chunk_overlap_bytes.help: 決定的な埋め込み chunk 間で保持する UTF-8 バイト overlap 予算
   cli.analyze.intra_thread_topics.opt.aggregate.help: chunk 埋め込みの集約方式
   cli.analyze.intra_thread_topics.opt.overwrite.help: 既存の l3/intra-thread-topics 境界 / segment 成果物を上書きする
+  cli.analyze.intra_thread_topics.opt.report.help: 既存の intra-thread 成果物から l3/intra-thread-topics/report.md を生成する（埋め込み再計算なし）
   cli.analyze.semantic_preview.help: 保存済み L3 semantic prototype 成果物から cluster、conversation、window を閲覧する
   cli.analyze.semantic_preview.opt.input.help: "入力: ディレクトリのみ。message_windows.jsonl、window_clusters.jsonl、任意の window_neighbors.jsonl を含む provider 成果物ルート"
   cli.analyze.semantic_preview.opt.cluster_id.help: 1 つの cluster を詳細表示する

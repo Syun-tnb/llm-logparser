@@ -34,6 +34,10 @@ SEGMENT_SCHEMA_VERSION = "0.1"
 LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
 HANDOFF_ROLES = frozenset({"assistant", "tool"})
 HANDOFF_CONTENT_CHAR_LIMIT = 16
+REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
+REPORT_PREVIEW_TEXT_CHARS = 120
+REPORT_SUPPRESSED_SCORE_MARGIN = 0.15
+REPORT_NEAR_THRESHOLD_DISTANCE = 0.05
 
 
 class IntraThreadTopicsError(RuntimeError):
@@ -103,6 +107,10 @@ def intra_thread_boundaries_artifact_path(parsed_path: Path) -> Path:
 
 def intra_thread_segments_artifact_path(parsed_path: Path) -> Path:
     return intra_thread_topics_dir(parsed_path) / "segments.jsonl"
+
+
+def intra_thread_report_artifact_path(parsed_path: Path) -> Path:
+    return intra_thread_topics_dir(parsed_path) / "report.md"
 
 
 def _normalize_parsed_path(input_path: Path) -> Path:
@@ -516,6 +524,300 @@ def analyze_intra_thread_topics(
         "boundaries_artifacts": written_boundaries,
         "segments_artifacts": written_segments,
     }
+
+
+def write_intra_thread_topic_reports(
+    input_path: Path,
+    *,
+    boundary_threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
+) -> dict[str, Any]:
+    normalized_input = _normalize_parsed_path(input_path)
+    parsed_files = discover_parsed_jsonl(normalized_input)
+    if not 0.0 <= boundary_threshold <= 1.0:
+        raise IntraThreadTopicsError("--boundary-threshold must be between 0.0 and 1.0")
+
+    report_paths: list[Path] = []
+    for parsed_path in parsed_files:
+        messages = reconstruct_thread_messages(parsed_path)
+        boundaries = _load_intra_thread_jsonl(
+            intra_thread_boundaries_artifact_path(parsed_path),
+            "boundaries.jsonl",
+        )
+        segments = _load_intra_thread_jsonl(
+            intra_thread_segments_artifact_path(parsed_path),
+            "segments.jsonl",
+        )
+        report_paths.append(
+            _write_text(
+                intra_thread_report_artifact_path(parsed_path),
+                render_intra_thread_topic_report(
+                    messages,
+                    boundaries,
+                    segments,
+                    boundary_threshold=boundary_threshold,
+                ),
+            )
+        )
+
+    return {
+        "threads": len(parsed_files),
+        "reports": report_paths,
+    }
+
+
+def render_intra_thread_topic_report(
+    messages: list[ReconstructedThreadMessage],
+    boundaries: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    *,
+    boundary_threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
+) -> str:
+    conversation_id = messages[0].conversation_id if messages else "unknown"
+    boundary_schema_versions = sorted(
+        {
+            str(row.get("schema_version"))
+            for row in boundaries
+            if row.get("schema_version") is not None
+        }
+    )
+    fired_boundaries = [row for row in boundaries if row.get("boundary") is True]
+    lines = [
+        f"# Intra-thread Topics Report: {conversation_id}",
+        "",
+        "## Summary",
+        "",
+        f"- Conversation ID: `{conversation_id}`",
+        f"- Total messages: {len(messages)}",
+        f"- Boundary schema version: {_display_schema_versions(boundary_schema_versions)}",
+        f"- Boundary rows: {len(boundaries)}",
+        f"- Fired boundaries: {len(fired_boundaries)}",
+        f"- Segments: {len(segments)}",
+        f"- Near-threshold distance: {REPORT_NEAR_THRESHOLD_DISTANCE:.2f}",
+        f"- Boundary threshold used for diagnostics: {boundary_threshold:.4f}",
+        "",
+        "## Segment Preview",
+        "",
+    ]
+
+    if segments:
+        for index, segment in enumerate(segments):
+            lines.extend(_render_segment_preview(index, segment, messages))
+    else:
+        lines.append("_No segments found._")
+        lines.append("")
+
+    lines.extend(["## Fired Boundaries", ""])
+    if fired_boundaries:
+        for boundary in fired_boundaries:
+            lines.extend(_render_boundary_preview(boundary, messages))
+    else:
+        lines.append("_No fired boundaries._")
+        lines.append("")
+
+    suppressed = [
+        row
+        for row in boundaries
+        if _is_suppressed_high_signal_candidate(
+            row,
+            boundary_threshold=boundary_threshold,
+        )
+    ]
+    lines.extend(["## Suppressed High-Signal Candidates", ""])
+    if suppressed:
+        for boundary in suppressed:
+            lines.extend(_render_boundary_preview(boundary, messages))
+    else:
+        lines.append("_No suppressed high-signal candidates._")
+        lines.append("")
+
+    near_threshold = [
+        row
+        for row in boundaries
+        if abs(_float_field(row, "continuity_score") - boundary_threshold)
+        <= REPORT_NEAR_THRESHOLD_DISTANCE
+    ]
+    lines.extend(["## Near-Threshold Candidates", ""])
+    if near_threshold:
+        for boundary in near_threshold:
+            lines.extend(_render_boundary_preview(boundary, messages))
+    else:
+        lines.append("_No near-threshold candidates._")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_segment_preview(
+    index: int,
+    segment: dict[str, Any],
+    messages: list[ReconstructedThreadMessage],
+) -> list[str]:
+    start_index = _int_field(segment, "start_index")
+    end_index = _int_field(segment, "end_index")
+    message_count = _int_field(segment, "message_count")
+    segment_messages = _messages_in_range(messages, start_index, end_index)
+    lines = [
+        f"### Segment {index}",
+        "",
+        f"- Range: `{start_index}-{end_index}`",
+        f"- Message count: {message_count}",
+        "- First messages:",
+    ]
+    for message in segment_messages[:REPORT_PREVIEW_MESSAGES_PER_EDGE]:
+        lines.append(_message_preview_bullet(message))
+    if not segment_messages:
+        lines.append("  - _No messages in range._")
+    lines.append("- Last messages:")
+    tail = segment_messages[-REPORT_PREVIEW_MESSAGES_PER_EDGE:]
+    for message in tail:
+        lines.append(_message_preview_bullet(message))
+    if not tail:
+        lines.append("  - _No messages in range._")
+    lines.append("")
+    return lines
+
+
+def _render_boundary_preview(
+    boundary: dict[str, Any],
+    messages: list[ReconstructedThreadMessage],
+) -> list[str]:
+    split_before = _int_field(boundary, "split_before_message_index")
+    left = _message_at(messages, split_before - 1)
+    right = _message_at(messages, split_before)
+    lines = [
+        f"### split_before_message_index={split_before}",
+        "",
+        f"- boundary: `{bool(boundary.get('boundary'))}`",
+        f"- similarity: {_float_field(boundary, 'similarity'):.4f}",
+        f"- lexical_similarity: {_float_field(boundary, 'lexical_similarity'):.4f}",
+        f"- structural_continuity: {_float_field(boundary, 'structural_continuity'):.4f}",
+        f"- continuity_score: {_float_field(boundary, 'continuity_score'):.4f}",
+        f"- left: {_message_preview_inline(left)}",
+        f"- right: {_message_preview_inline(right)}",
+        "",
+    ]
+    return lines
+
+
+def _is_suppressed_high_signal_candidate(
+    boundary: dict[str, Any],
+    *,
+    boundary_threshold: float,
+) -> bool:
+    if boundary.get("boundary") is True:
+        return False
+    lexical_similarity = _float_field(boundary, "lexical_similarity")
+    structural_continuity = _float_field(boundary, "structural_continuity")
+    if lexical_similarity <= 0.0 and structural_continuity <= 0.0:
+        return False
+    continuity_score = _float_field(boundary, "continuity_score")
+    base_score = _float_field(boundary, "similarity") + (
+        DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT * lexical_similarity
+    )
+    # Keep this diagnostic section focused on candidates whose continuity
+    # signals plausibly affected review, not every stable request/answer pair.
+    return (
+        base_score < boundary_threshold <= continuity_score
+        or abs(continuity_score - boundary_threshold)
+        <= REPORT_SUPPRESSED_SCORE_MARGIN
+    )
+
+
+def _load_intra_thread_jsonl(path: Path, artifact_name: str) -> list[dict[str, Any]]:
+    if not path.exists():
+        raise IntraThreadTopicsError(
+            f"missing intra-thread {artifact_name}: {path} "
+            "(run analyze intra-thread-topics before --report)"
+        )
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise IntraThreadTopicsError(
+                    f"invalid JSON in {path} at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise IntraThreadTopicsError(
+                    f"invalid row in {path} at line {line_number}: expected object"
+                )
+            rows.append(row)
+    return rows
+
+
+def _write_text(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
+def _message_preview_bullet(message: ReconstructedThreadMessage) -> str:
+    return (
+        f"  - `{message.ordinal}` `{message.role}` `{message.message_id}`: "
+        f"{_preview_text(message.text)}"
+    )
+
+
+def _message_preview_inline(message: ReconstructedThreadMessage | None) -> str:
+    if message is None:
+        return "_out of range_"
+    return (
+        f"`{message.ordinal}` `{message.role}` `{message.message_id}`: "
+        f"{_preview_text(message.text)}"
+    )
+
+
+def _preview_text(text: str) -> str:
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return "_empty_"
+    if len(collapsed) <= REPORT_PREVIEW_TEXT_CHARS:
+        return collapsed
+    return collapsed[: REPORT_PREVIEW_TEXT_CHARS - 3] + "..."
+
+
+def _messages_in_range(
+    messages: list[ReconstructedThreadMessage],
+    start_index: int,
+    end_index: int,
+) -> list[ReconstructedThreadMessage]:
+    if start_index < 0 or end_index < start_index:
+        return []
+    return messages[start_index : min(end_index + 1, len(messages))]
+
+
+def _message_at(
+    messages: list[ReconstructedThreadMessage],
+    index: int,
+) -> ReconstructedThreadMessage | None:
+    if 0 <= index < len(messages):
+        return messages[index]
+    return None
+
+
+def _int_field(row: dict[str, Any], field: str) -> int:
+    value = row.get(field)
+    if isinstance(value, int):
+        return value
+    return 0
+
+
+def _float_field(row: dict[str, Any], field: str) -> float:
+    value = row.get(field)
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
+
+
+def _display_schema_versions(schema_versions: list[str]) -> str:
+    if not schema_versions:
+        return "`unknown`"
+    return ", ".join(f"`{version}`" for version in schema_versions)
 
 
 def _non_whitespace_char_count(text: str) -> int:

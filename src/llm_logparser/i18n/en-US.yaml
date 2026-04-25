@@ -82,6 +82,7 @@ messages:
   cli.analyze.intra_thread_topics.opt.chunk_overlap_bytes.help: UTF-8 byte overlap budget to retain between deterministic embedding chunks
   cli.analyze.intra_thread_topics.opt.aggregate.help: Aggregation method for chunk embeddings
   cli.analyze.intra_thread_topics.opt.overwrite.help: Overwrite existing l3/intra-thread-topics boundary and segment artifacts
+  cli.analyze.intra_thread_topics.opt.report.help: Write l3/intra-thread-topics/report.md from existing intra-thread artifacts without recomputing embeddings
   cli.analyze.semantic_preview.help: Browse semantic clusters, conversations, or individual windows from stored L3 prototype artifacts
   cli.analyze.semantic_preview.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files"
   cli.analyze.semantic_preview.opt.cluster_id.help: Show one cluster in detail

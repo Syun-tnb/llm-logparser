@@ -660,7 +660,10 @@ deterministic and model-derived capabilities.
   user request to assistant answer and empty assistant/tool handoffs. The
   current implementation remains intentionally narrow: fixed threshold only,
   contiguous splits only, and no topic labels, summaries, topic-unit merge
-  logic, or cross-thread merge logic.
+  logic, or cross-thread merge logic. `--report` is a read-only inspection
+  mode for existing intra-thread artifacts: it reconstructs canonical message
+  previews from sibling `parsed.jsonl` and writes
+  `l3/intra-thread-topics/report.md` without recomputing embeddings.
 
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus

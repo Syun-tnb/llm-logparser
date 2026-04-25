@@ -14,10 +14,12 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     build_sliding_windows,
     detect_adjacent_boundaries,
     intra_thread_boundaries_artifact_path,
+    intra_thread_report_artifact_path,
     intra_thread_segments_artifact_path,
     lexical_jaccard_similarity,
     lexical_token_set,
     reconstruct_thread_messages,
+    write_intra_thread_topic_reports,
 )
 
 
@@ -106,6 +108,13 @@ def _load_jsonl(path: Path) -> list[dict]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def _write_jsonl_rows(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 
 def test_reconstruct_thread_messages_preserves_order_and_ordinals(tmp_path):
@@ -934,6 +943,174 @@ def test_analyze_intra_thread_topics_writes_inspectable_artifacts(tmp_path):
     assert all(row["segment_id"].startswith("segment_") for row in segment_rows)
 
 
+def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="alpha opening request",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="alpha opening answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="beta topic request",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="beta topic answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="user",
+                ts=105,
+                text="shared cache migration terms",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m6",
+                role="assistant",
+                ts=106,
+                text="shared cache migration answer",
+            ),
+        ],
+    )
+    _write_jsonl_rows(
+        intra_thread_boundaries_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_boundary",
+                "schema_version": "0.3",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "previous_window_index": 0,
+                "next_window_index": 1,
+                "previous_window_message_ids": ["m1", "m2"],
+                "next_window_message_ids": ["m3", "m4"],
+                "similarity": 0.39,
+                "lexical_similarity": 0.0,
+                "structural_continuity": 0.0,
+                "continuity_score": 0.39,
+                "boundary": True,
+                "split_after_message_index": 1,
+                "split_before_message_index": 2,
+            },
+            {
+                "record_type": "intra_thread_boundary",
+                "schema_version": "0.3",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "previous_window_index": 1,
+                "next_window_index": 2,
+                "previous_window_message_ids": ["m3", "m4"],
+                "next_window_message_ids": ["m5", "m6"],
+                "similarity": 0.3,
+                "lexical_similarity": 0.0,
+                "structural_continuity": 1.0,
+                "continuity_score": 0.45,
+                "boundary": False,
+                "split_after_message_index": 3,
+                "split_before_message_index": 4,
+            },
+            {
+                "record_type": "intra_thread_boundary",
+                "schema_version": "0.3",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "previous_window_index": 2,
+                "next_window_index": 3,
+                "previous_window_message_ids": ["m4", "m5"],
+                "next_window_message_ids": ["m5", "m6"],
+                "similarity": 0.36,
+                "lexical_similarity": 0.4,
+                "structural_continuity": 0.0,
+                "continuity_score": 0.44,
+                "boundary": False,
+                "split_after_message_index": 4,
+                "split_before_message_index": 5,
+            },
+        ],
+    )
+    _write_jsonl_rows(
+        intra_thread_segments_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_segment",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "segment_id": "segment_alpha",
+                "start_index": 0,
+                "end_index": 1,
+                "message_ids": ["m1", "m2"],
+                "message_count": 2,
+                "text_sha1": "unused",
+            },
+            {
+                "record_type": "intra_thread_segment",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "segment_id": "segment_beta",
+                "start_index": 2,
+                "end_index": 5,
+                "message_ids": ["m3", "m4", "m5", "m6"],
+                "message_count": 4,
+                "text_sha1": "unused",
+            },
+        ],
+    )
+
+    result = write_intra_thread_topic_reports(parsed_path, boundary_threshold=0.43)
+
+    report_path = intra_thread_report_artifact_path(parsed_path)
+    report = report_path.read_text(encoding="utf-8")
+    assert result == {"threads": 1, "reports": [report_path]}
+    assert report_path.exists()
+    assert "# Intra-thread Topics Report: conv-a" in report
+    assert "- Boundary rows: 3" in report
+    assert "- Fired boundaries: 1" in report
+    assert "- Segments: 2" in report
+    assert "### Segment 0" in report
+    assert "- Range: `0-1`" in report
+    assert "`0` `user` `m1`: alpha opening request" in report
+    assert "## Fired Boundaries" in report
+    assert "split_before_message_index=2" in report
+    assert "- boundary: `True`" in report
+    assert "## Suppressed High-Signal Candidates" in report
+    assert "split_before_message_index=4" in report
+    assert "structural_continuity: 1.0000" in report
+    assert "split_before_message_index=5" in report
+    assert "lexical_similarity: 0.4000" in report
+    assert "## Near-Threshold Candidates" in report
+    assert "- Boundary threshold used for diagnostics: 0.4300" in report
+
+
 def test_analyze_intra_thread_topics_cli_wires_new_command(tmp_path, capsys):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -983,3 +1160,73 @@ def test_analyze_intra_thread_topics_cli_wires_new_command(tmp_path, capsys):
     assert segments_path.exists()
     captured = capsys.readouterr()
     assert "intra-thread topics artifacts written" in captured.out
+
+
+def test_analyze_intra_thread_topics_cli_report_uses_existing_artifacts(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="alpha opening request",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="alpha opening answer",
+            ),
+        ],
+    )
+    _write_jsonl_rows(
+        intra_thread_boundaries_artifact_path(parsed_path),
+        [],
+    )
+    _write_jsonl_rows(
+        intra_thread_segments_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_segment",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "segment_id": "segment_alpha",
+                "start_index": 0,
+                "end_index": 1,
+                "message_ids": ["m1", "m2"],
+                "message_count": 2,
+                "text_sha1": "unused",
+            }
+        ],
+    )
+
+    with patch(
+        "llm_logparser.core.analyzer_intra_thread_topics.resolve_embedding_backend",
+        side_effect=AssertionError("report mode must not resolve embeddings"),
+    ):
+        main(
+            [
+                "--locale",
+                "en-US",
+                "analyze",
+                "intra-thread-topics",
+                "--input",
+                str(parsed_path),
+                "--boundary-threshold",
+                "0.43",
+                "--report",
+            ]
+        )
+
+    report_path = intra_thread_report_artifact_path(parsed_path)
+    assert report_path.exists()
+    assert "alpha opening request" in report_path.read_text(encoding="utf-8")

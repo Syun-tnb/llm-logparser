@@ -541,6 +541,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=_("cli.analyze.intra_thread_topics.opt.overwrite.help"),
     )
+    analyze_intra_thread_topics_cmd.add_argument(
+        "--report",
+        dest="report",
+        action="store_true",
+        help=_("cli.analyze.intra_thread_topics.opt.report.help"),
+    )
 
     analyze_semantic_preview_cmd = analyze_subparsers.add_parser(
         "semantic-preview",

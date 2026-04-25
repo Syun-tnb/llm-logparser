@@ -260,10 +260,21 @@ def run_analyze_intra_thread_topics(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_intra_thread_topics import (
         IntraThreadTopicsError,
         analyze_intra_thread_topics,
+        write_intra_thread_topic_reports,
     )
 
     input_path = validate_path(args.input)
     try:
+        if args.report:
+            result = write_intra_thread_topic_reports(
+                input_path,
+                boundary_threshold=args.boundary_threshold,
+            )
+            logger.info(
+                "intra-thread topics report written: "
+                f"{result['threads']} thread(s)"
+            )
+            return
         result = analyze_intra_thread_topics(
             input_path,
             backend_name=args.backend,
