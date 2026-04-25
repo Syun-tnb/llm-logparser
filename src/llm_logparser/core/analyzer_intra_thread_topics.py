@@ -32,8 +32,6 @@ DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT = 0.15
 BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
 LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
-HANDOFF_ROLES = frozenset({"assistant", "tool"})
-HANDOFF_CONTENT_CHAR_LIMIT = 16
 REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
 REPORT_PREVIEW_TEXT_CHARS = 120
 REPORT_SUPPRESSED_SCORE_MARGIN = 0.15
@@ -888,64 +886,56 @@ def boundary_structural_continuity(
     ):
         return 0.0
 
-    left = messages[split_before_message_index - 1]
-    right = messages[split_before_message_index]
+    left = _nearest_substantive_message(
+        messages,
+        split_before_message_index - 1,
+        "left",
+    )
+    right = _nearest_substantive_message(
+        messages,
+        split_before_message_index,
+        "right",
+    )
+    if left is None or right is None:
+        return 0.0
 
     # A direct user request followed by an assistant answer is usually one
     # semantic unit. Boundaries belong before the request or after the answer.
     if left.role == "user" and right.role == "assistant":
         return 1.0
 
-    if left.role == "user" and _is_handoff_message(right):
-        return 0.85
-    if _is_handoff_message(left) and right.role == "assistant":
-        return 0.7
-    if left.role == "tool" and right.role == "user":
-        return 0.6
-
-    if _is_handoff_message(left) or _is_handoff_message(right):
-        previous_substantive = _nearest_substantive_message(
-            messages,
-            split_before_message_index - 1,
-            -1,
-        )
-        next_substantive = _nearest_substantive_message(
-            messages,
-            split_before_message_index,
-            1,
-        )
-        if previous_substantive is None or next_substantive is None:
-            return 0.0
-        if (
-            previous_substantive.role == "user"
-            and next_substantive.role == "assistant"
-        ):
-            return 0.7
-        if previous_substantive.role == "user" and next_substantive.role == "user":
-            return 0.4
+    if left.role == "user" and right.role == "user":
+        return 0.4
 
     return 0.0
-
-
-def _is_handoff_message(message: ReconstructedThreadMessage) -> bool:
-    return (
-        message.role in HANDOFF_ROLES
-        and _non_whitespace_char_count(message.text) <= HANDOFF_CONTENT_CHAR_LIMIT
-    )
 
 
 def _nearest_substantive_message(
     messages: list[ReconstructedThreadMessage],
     start_index: int,
-    step: int,
+    direction: str,
 ) -> ReconstructedThreadMessage | None:
+    if direction == "left":
+        step = -1
+    elif direction == "right":
+        step = 1
+    else:
+        raise ValueError("direction must be 'left' or 'right'")
+
     index = start_index
     while 0 <= index < len(messages):
         message = messages[index]
-        if not _is_handoff_message(message):
+        if _is_substantive_message(message):
             return message
         index += step
     return None
+
+
+def _is_substantive_message(message: ReconstructedThreadMessage) -> bool:
+    return (
+        message.role in {"user", "assistant"}
+        and _non_whitespace_char_count(message.text) > 0
+    )
 
 
 def _boundary_exclusive_texts(

@@ -384,8 +384,8 @@ def test_boundary_structural_continuity_scores_request_answer_and_handoff(tmp_pa
     messages = reconstruct_thread_messages(parsed_path)
     windows = build_sliding_windows(messages)
 
-    assert boundary_structural_continuity(messages, windows[0], windows[1]) == 0.85
-    assert boundary_structural_continuity(messages, windows[1], windows[2]) == 0.7
+    assert boundary_structural_continuity(messages, windows[0], windows[1]) == 1.0
+    assert boundary_structural_continuity(messages, windows[1], windows[2]) == 1.0
 
 
 def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
@@ -554,6 +554,187 @@ def test_structural_continuity_suppresses_user_request_answer_boundary(tmp_path)
     assert boundaries[0].boundary is False
 
 
+def test_structural_continuity_bridges_empty_system_gap(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="assistant",
+                ts=101,
+                text="prior substantial answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="user",
+                ts=102,
+                text="please create the header image",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="system",
+                ts=103,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="here is the header image prompt",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages, window_size=2)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.3, 0.9539392014169457],
+                [0.3, 0.9539392014169457],
+            ]
+        ).embed([window.text for window in windows]),
+        threshold=0.43,
+    )
+
+    assert [boundary.structural_continuity for boundary in boundaries] == [1.0, 1.0]
+    assert boundaries[0].continuity_score == 0.45
+    assert [boundary.boundary for boundary in boundaries] == [False, False]
+
+
+def test_structural_continuity_bridges_tool_gap(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="assistant",
+                ts=101,
+                text="prior substantial answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="user",
+                ts=102,
+                text="please generate the chart",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="tool",
+                ts=103,
+                text='{"status":"ok"}',
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="generated chart is ready",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages, window_size=2)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.3, 0.9539392014169457],
+                [0.3, 0.9539392014169457],
+            ]
+        ).embed([window.text for window in windows]),
+        threshold=0.43,
+    )
+
+    assert [boundary.structural_continuity for boundary in boundaries] == [1.0, 1.0]
+    assert [boundary.boundary for boundary in boundaries] == [False, False]
+
+
+def test_structural_continuity_does_not_hide_clear_topic_pivot(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="assistant",
+                ts=101,
+                text="prior substantial answer",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="assistant",
+                ts=102,
+                text="more prior context",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="user",
+                ts=103,
+                text="let's switch topic to deployment planning",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="assistant",
+                ts=104,
+                text="sure, new topic: deployment planning",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages)
+    boundaries = detect_adjacent_boundaries(
+        messages,
+        windows,
+        StaticEmbeddingBackend([[1.0, 0.0], [0.2, 0.9797958971132712]]).embed(
+            [window.text for window in windows]
+        ),
+        threshold=0.43,
+    )
+
+    assert boundaries[0].structural_continuity == 1.0
+    assert boundaries[0].continuity_score == 0.35
+    assert boundaries[0].boundary is True
+
+
 def test_structural_continuity_prevents_singleton_user_request_segment(tmp_path):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -694,7 +875,7 @@ def test_structural_continuity_suppresses_empty_tool_handoff_boundary(tmp_path):
         threshold=0.43,
     )
 
-    assert [boundary.structural_continuity for boundary in boundaries] == [0.85, 0.7]
+    assert [boundary.structural_continuity for boundary in boundaries] == [1.0, 1.0]
     assert [boundary.boundary for boundary in boundaries] == [False, False]
 
 
