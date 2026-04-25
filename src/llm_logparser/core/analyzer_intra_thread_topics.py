@@ -36,6 +36,8 @@ REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
 REPORT_PREVIEW_TEXT_CHARS = 120
 REPORT_SUPPRESSED_SCORE_MARGIN = 0.15
 REPORT_NEAR_THRESHOLD_DISTANCE = 0.05
+STRUCTURAL_GAP_CONTINUITY = 0.2
+STRUCTURAL_MAX_SKIPPED_NON_SUBSTANTIVE = 2
 
 
 class IntraThreadTopicsError(RuntimeError):
@@ -886,25 +888,35 @@ def boundary_structural_continuity(
     ):
         return 0.0
 
-    left = _nearest_substantive_message(
+    left_context = _nearest_substantive_message(
         messages,
         split_before_message_index - 1,
         "left",
     )
-    right = _nearest_substantive_message(
+    right_context = _nearest_substantive_message(
         messages,
         split_before_message_index,
         "right",
     )
-    if left is None or right is None:
+    if left_context is None or right_context is None:
         return 0.0
 
-    # A direct user request followed by an assistant answer is usually one
-    # semantic unit. Boundaries belong before the request or after the answer.
-    if left.role == "user" and right.role == "assistant":
-        return 1.0
+    left, left_index, left_skipped = left_context
+    right, right_index, right_skipped = right_context
+    skipped_non_substantive = left_skipped + right_skipped
+    is_direct_boundary = (
+        left_index == split_before_message_index - 1
+        and right_index == split_before_message_index
+    )
 
-    if left.role == "user" and right.role == "user":
+    if left.role == "user" and right.role == "assistant":
+        if is_direct_boundary:
+            return 1.0
+        if skipped_non_substantive <= STRUCTURAL_MAX_SKIPPED_NON_SUBSTANTIVE:
+            return STRUCTURAL_GAP_CONTINUITY
+        return 0.0
+
+    if is_direct_boundary and left.role == "user" and right.role == "user":
         return 0.4
 
     return 0.0
@@ -914,7 +926,7 @@ def _nearest_substantive_message(
     messages: list[ReconstructedThreadMessage],
     start_index: int,
     direction: str,
-) -> ReconstructedThreadMessage | None:
+) -> tuple[ReconstructedThreadMessage, int, int] | None:
     if direction == "left":
         step = -1
     elif direction == "right":
@@ -923,10 +935,12 @@ def _nearest_substantive_message(
         raise ValueError("direction must be 'left' or 'right'")
 
     index = start_index
+    skipped_count = 0
     while 0 <= index < len(messages):
         message = messages[index]
         if _is_substantive_message(message):
-            return message
+            return message, index, skipped_count
+        skipped_count += 1
         index += step
     return None
 

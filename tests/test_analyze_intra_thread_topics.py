@@ -384,8 +384,8 @@ def test_boundary_structural_continuity_scores_request_answer_and_handoff(tmp_pa
     messages = reconstruct_thread_messages(parsed_path)
     windows = build_sliding_windows(messages)
 
-    assert boundary_structural_continuity(messages, windows[0], windows[1]) == 1.0
-    assert boundary_structural_continuity(messages, windows[1], windows[2]) == 1.0
+    assert boundary_structural_continuity(messages, windows[0], windows[1]) == 0.2
+    assert boundary_structural_continuity(messages, windows[1], windows[2]) == 0.2
 
 
 def test_adjacent_boundary_detection_and_contiguous_segments(tmp_path):
@@ -604,15 +604,15 @@ def test_structural_continuity_bridges_empty_system_gap(tmp_path):
         StaticEmbeddingBackend(
             [
                 [1.0, 0.0],
-                [0.3, 0.9539392014169457],
-                [0.3, 0.9539392014169457],
+                [0.405, 0.9143144969794304],
+                [0.405, 0.9143144969794304],
             ]
         ).embed([window.text for window in windows]),
         threshold=0.43,
     )
 
-    assert [boundary.structural_continuity for boundary in boundaries] == [1.0, 1.0]
-    assert boundaries[0].continuity_score == 0.45
+    assert [boundary.structural_continuity for boundary in boundaries] == [0.2, 0.2]
+    assert boundaries[0].continuity_score == 0.435
     assert [boundary.boundary for boundary in boundaries] == [False, False]
 
 
@@ -666,15 +666,71 @@ def test_structural_continuity_bridges_tool_gap(tmp_path):
         StaticEmbeddingBackend(
             [
                 [1.0, 0.0],
-                [0.3, 0.9539392014169457],
-                [0.3, 0.9539392014169457],
+                [0.405, 0.9143144969794304],
+                [0.405, 0.9143144969794304],
             ]
         ).embed([window.text for window in windows]),
         threshold=0.43,
     )
 
-    assert [boundary.structural_continuity for boundary in boundaries] == [1.0, 1.0]
+    assert [boundary.structural_continuity for boundary in boundaries] == [0.2, 0.2]
     assert [boundary.boundary for boundary in boundaries] == [False, False]
+
+
+def test_structural_continuity_does_not_bridge_long_non_substantive_gap(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m1",
+                role="user",
+                ts=101,
+                text="please generate the chart",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m2",
+                role="system",
+                ts=102,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m3",
+                role="tool",
+                ts=103,
+                text='{"status":"ok"}',
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m4",
+                role="system",
+                ts=104,
+                text="",
+            ),
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id="m5",
+                role="assistant",
+                ts=105,
+                text="generated chart is ready",
+            ),
+        ],
+    )
+
+    messages = reconstruct_thread_messages(parsed_path)
+    windows = build_sliding_windows(messages, window_size=2)
+
+    assert boundary_structural_continuity(messages, windows[1], windows[2]) == 0.0
 
 
 def test_structural_continuity_does_not_hide_clear_topic_pivot(tmp_path):
@@ -868,14 +924,14 @@ def test_structural_continuity_suppresses_empty_tool_handoff_boundary(tmp_path):
         StaticEmbeddingBackend(
             [
                 [1.0, 0.0],
-                [0.35, 0.9367496997597597],
+                [0.405, 0.9143144969794304],
                 [0.1225, 0.9924666241912424],
             ]
         ).embed([window.text for window in windows]),
         threshold=0.43,
     )
 
-    assert [boundary.structural_continuity for boundary in boundaries] == [1.0, 1.0]
+    assert [boundary.structural_continuity for boundary in boundaries] == [0.2, 0.2]
     assert [boundary.boundary for boundary in boundaries] == [False, False]
 
 
