@@ -13,6 +13,7 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     boundary_structural_continuity,
     build_contiguous_segments,
     build_segment_merge_groups,
+    build_segment_merge_groups_with_diagnostics,
     build_sliding_windows,
     detect_adjacent_boundaries,
     intra_thread_boundaries_artifact_path,
@@ -682,6 +683,59 @@ def test_segment_merge_groups_non_contiguous_similar_segments():
         (segments[0].segment_id, segments[2].segment_id),
         (segments[1].segment_id,),
     ]
+
+
+def test_segment_merge_pair_diagnostics_include_lexical_anchors():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    replacements = {
+        0: "alpha alpha beta",
+        1: "beta carrot",
+        2: "alpha",
+        6: "alpha delta delta",
+        7: "echo alpha",
+        8: "delta",
+    }
+    messages = [
+        ReconstructedThreadMessage(
+            provider_id=message.provider_id,
+            conversation_id=message.conversation_id,
+            message_id=message.message_id,
+            role=message.role,
+            ts=message.ts,
+            text=replacements.get(index, message.text),
+            ordinal=message.ordinal,
+        )
+        for index, message in enumerate(messages)
+    ]
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    _groups, diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+    merged_pair = next(
+        row
+        for row in diagnostics
+        if row.left_segment_index == 0 and row.right_segment_index == 2
+    )
+
+    assert merged_pair.lexical_similarity > 0.0
+    assert merged_pair.shared_top_tokens == ("alpha",)
+    assert merged_pair.left_top_tokens[:3] == ("alpha", "beta", "carrot")
+    assert merged_pair.right_top_tokens[:3] == ("delta", "alpha", "echo")
 
 
 def test_segment_merge_groups_keeps_dissimilar_segments_separate():
@@ -1620,9 +1674,16 @@ def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
     )
     assert diagnostic_rows[0]["schema_version"] == "0.1"
     assert {row["decision"] for row in diagnostic_rows} >= {"short_segment"}
-    assert {"left_segment_id", "right_segment_id", "similarity", "reason"} <= set(
-        diagnostic_rows[0]
-    )
+    assert {
+        "left_segment_id",
+        "right_segment_id",
+        "similarity",
+        "lexical_similarity",
+        "shared_top_tokens",
+        "left_top_tokens",
+        "right_top_tokens",
+        "reason",
+    } <= set(diagnostic_rows[0])
 
 
 def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_path):
@@ -1969,6 +2030,10 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "right_segment_index": 4,
                 "segment_index_gap": 3,
                 "similarity": 0.8123,
+                "lexical_similarity": 0.0100,
+                "shared_top_tokens": [],
+                "left_top_tokens": ["setup", "draft"],
+                "right_top_tokens": ["prose", "names"],
                 "decision": "merged",
                 "reason": "similarity >= 0.75",
             },
@@ -1983,6 +2048,10 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "right_segment_index": 2,
                 "segment_index_gap": 0,
                 "similarity": 0.9000,
+                "lexical_similarity": 0.2500,
+                "shared_top_tokens": ["shared"],
+                "left_top_tokens": ["shared", "left"],
+                "right_top_tokens": ["shared", "right"],
                 "decision": "blocked_adjacent_group",
                 "reason": "directly adjacent segments are not merged",
             },
@@ -2001,9 +2070,14 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
     assert "#### Group `segment_merge_alpha`" in report
     assert "- Segment index gaps: `3`" in report
     assert "### Pairwise Segment Similarities" in report
+    assert "- lexical_similarity: 0.0100" in report
+    assert "- shared_top_tokens: `none`" in report
+    assert "- left_top_tokens: `setup`, `draft`" in report
+    assert "- right_top_tokens: `prose`, `names`" in report
     assert "- decision: `merged`" in report
     assert "- decision: `blocked_adjacent_group`" in report
     assert "### Suspicious Merge Candidates" in report
+    assert "low lexical anchor despite high embedding similarity" in report
     assert "segment_index_gap: 3" in report
 
 

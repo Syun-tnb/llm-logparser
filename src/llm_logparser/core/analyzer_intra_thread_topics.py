@@ -6,7 +6,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .analyzer_common import detect_header_metadata
 from .analyzer_semantic_prototype import (
@@ -31,6 +31,8 @@ DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT = 0.2
 DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT = 0.15
 DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD = 0.75
 SEGMENT_MERGE_MIN_MESSAGE_COUNT = 3
+SEGMENT_MERGE_TOP_TOKEN_LIMIT = 10
+SEGMENT_MERGE_MIN_TOKEN_LENGTH = 2
 BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
 SEGMENT_MERGE_SCHEMA_VERSION = "0.1"
@@ -129,6 +131,10 @@ class SegmentMergePairDiagnostic:
     right_segment_index: int
     segment_index_gap: int
     similarity: float
+    lexical_similarity: float
+    shared_top_tokens: tuple[str, ...]
+    left_top_tokens: tuple[str, ...]
+    right_top_tokens: tuple[str, ...]
     decision: str
     reason: str
 
@@ -449,6 +455,10 @@ def _segment_merge_pair_diagnostic_row(
         "right_segment_index": diagnostic.right_segment_index,
         "segment_index_gap": diagnostic.segment_index_gap,
         "similarity": diagnostic.similarity,
+        "lexical_similarity": diagnostic.lexical_similarity,
+        "shared_top_tokens": list(diagnostic.shared_top_tokens),
+        "left_top_tokens": list(diagnostic.left_top_tokens),
+        "right_top_tokens": list(diagnostic.right_top_tokens),
         "decision": diagnostic.decision,
         "reason": diagnostic.reason,
     }
@@ -526,6 +536,8 @@ def build_segment_merge_groups_with_diagnostics(
     segment_texts = [
         _segment_text_from_message_ids(messages, segment) for segment in segments
     ]
+    token_counts = [_segment_merge_token_counts(text) for text in segment_texts]
+    top_tokens = [_top_segment_merge_tokens(counts) for counts in token_counts]
     embeddings = backend.embed(segment_texts)
     if len(embeddings) != len(segments):
         raise IntraThreadTopicsError("segment embedding count mismatch")
@@ -556,6 +568,16 @@ def build_segment_merge_groups_with_diagnostics(
         for right_index in range(left_index + 1, len(segments)):
             right_segment = segments[right_index]
             similarity = cosine_similarity(embeddings[left_index], embeddings[right_index])
+            left_token_set = frozenset(token_counts[left_index])
+            right_token_set = frozenset(token_counts[right_index])
+            lexical_similarity = lexical_jaccard_similarity(
+                left_token_set,
+                right_token_set,
+            )
+            shared_top_tokens = _shared_segment_merge_top_tokens(
+                token_counts[left_index],
+                token_counts[right_index],
+            )
             decision = "below_threshold"
             reason = f"similarity below {similarity_threshold:.2f}"
             if (
@@ -584,6 +606,10 @@ def build_segment_merge_groups_with_diagnostics(
                     right_segment_index=right_index,
                     segment_index_gap=right_index - left_index - 1,
                     similarity=round(similarity, 4),
+                    lexical_similarity=round(lexical_similarity, 4),
+                    shared_top_tokens=tuple(shared_top_tokens),
+                    left_top_tokens=tuple(top_tokens[left_index]),
+                    right_top_tokens=tuple(top_tokens[right_index]),
                     decision=decision,
                     reason=reason,
                 )
@@ -650,6 +676,56 @@ def _segment_text_from_message_ids(
         for message_id in segment.message_ids
         if message_id in messages_by_id and messages_by_id[message_id].text
     )
+
+
+def _segment_merge_token_counts(text: str) -> dict[str, int]:
+    normalized = unicodedata.normalize("NFKC", text).casefold().strip()
+    word_tokens = [
+        token
+        for token in LEXICAL_WORD_TOKEN_RE.findall(normalized)
+        if len(token) >= SEGMENT_MERGE_MIN_TOKEN_LENGTH
+    ]
+    if len(word_tokens) >= 2:
+        return _token_counts(word_tokens)
+
+    compact = "".join(char for char in normalized if not char.isspace())
+    if len(compact) < SEGMENT_MERGE_MIN_TOKEN_LENGTH:
+        return {}
+    if len(compact) < 3:
+        return _token_counts([compact])
+    return _token_counts(
+        compact[index : index + 3] for index in range(len(compact) - 2)
+    )
+
+
+def _token_counts(tokens: Iterable[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for token in tokens:
+        if not token:
+            continue
+        counts[token] = counts.get(token, 0) + 1
+    return counts
+
+
+def _top_segment_merge_tokens(token_counts: dict[str, int]) -> list[str]:
+    return [
+        token
+        for token, _count in sorted(
+            token_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:SEGMENT_MERGE_TOP_TOKEN_LIMIT]
+    ]
+
+
+def _shared_segment_merge_top_tokens(
+    left_counts: dict[str, int],
+    right_counts: dict[str, int],
+) -> list[str]:
+    shared = set(left_counts) & set(right_counts)
+    return sorted(
+        shared,
+        key=lambda token: (-(left_counts[token] + right_counts[token]), token),
+    )[:SEGMENT_MERGE_TOP_TOKEN_LIMIT]
 
 
 def _segment_merge_group_id(segments: list[ContiguousSegment]) -> str:
@@ -1451,13 +1527,16 @@ def _render_segment_merge_diagnostics(
         for row in _sorted_segment_merge_pair_diagnostics(
             segment_merge_diagnostics or []
         )
-        if row.get("decision") == "merged" and _int_field(row, "segment_index_gap") > 2
+        if _segment_merge_suspicious_reason(row) is not None
     ]
     if suspicious:
         for row in suspicious[:REPORT_SEGMENT_MERGE_PAIR_LIMIT]:
+            reason = _segment_merge_suspicious_reason(row)
+            if reason is not None:
+                lines.extend(["#### Suspicious reason", "", f"- {reason}", ""])
             lines.extend(_render_segment_pair_diagnostic(row, segments, messages))
     else:
-        lines.append("_No suspicious merge candidates detected by v1 gap heuristic._")
+        lines.append("_No suspicious merge candidates detected._")
         lines.append("")
     return lines
 
@@ -1516,6 +1595,11 @@ def _render_segment_pair_diagnostic(
         f"- right: `{right_id}` {_segment_range_display(right)}",
         f"- segment_index_gap: {_int_field(row, 'segment_index_gap')}",
         f"- similarity: {_float_field(row, 'similarity'):.4f}",
+        f"- lexical_similarity: {_float_field(row, 'lexical_similarity'):.4f}",
+        "- shared_top_tokens: "
+        f"{_token_list_display(_string_list_field(row, 'shared_top_tokens'))}",
+        f"- left_top_tokens: {_token_list_display(_string_list_field(row, 'left_top_tokens'))}",
+        f"- right_top_tokens: {_token_list_display(_string_list_field(row, 'right_top_tokens'))}",
         f"- decision: `{row.get('decision', 'unknown')}`",
         f"- reason: {row.get('reason', '')}",
     ]
@@ -1531,6 +1615,20 @@ def _render_segment_pair_diagnostic(
         ]
     )
     return lines
+
+
+def _segment_merge_suspicious_reason(row: dict[str, Any]) -> str | None:
+    if row.get("decision") != "merged":
+        return None
+    if (
+        _float_field(row, "similarity")
+        >= DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD
+        and _float_field(row, "lexical_similarity") < 0.05
+    ):
+        return "low lexical anchor despite high embedding similarity"
+    if _int_field(row, "segment_index_gap") > 2:
+        return "large segment gap"
+    return None
 
 
 def _sorted_segment_merge_pair_diagnostics(
@@ -1605,6 +1703,12 @@ def _segment_edge_preview(
         _message_preview_inline(segment_messages[0]),
         _message_preview_inline(segment_messages[-1]),
     )
+
+
+def _token_list_display(tokens: list[str]) -> str:
+    if not tokens:
+        return "`none`"
+    return ", ".join(f"`{token}`" for token in tokens)
 
 
 def _is_suppressed_high_signal_candidate(
