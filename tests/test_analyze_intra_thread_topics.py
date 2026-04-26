@@ -17,6 +17,7 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     detect_adjacent_boundaries,
     intra_thread_boundaries_artifact_path,
     intra_thread_segment_merge_artifact_path,
+    intra_thread_segment_merge_diagnostics_artifact_path,
     intra_thread_report_artifact_path,
     intra_thread_segments_artifact_path,
     lexical_jaccard_similarity,
@@ -1602,15 +1603,26 @@ def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
     )
 
     merge_path = intra_thread_segment_merge_artifact_path(parsed_path)
+    diagnostics_path = intra_thread_segment_merge_diagnostics_artifact_path(parsed_path)
     merge_rows = _load_jsonl(merge_path)
+    diagnostic_rows = _load_jsonl(diagnostics_path)
 
     assert result["segment_merge_groups"] == 2
-    assert result["segment_merge_artifacts"] == [merge_path]
+    assert result["segment_merge_artifacts"] == [merge_path, diagnostics_path]
     assert merge_path.exists()
+    assert diagnostics_path.exists()
     assert merge_rows[0]["record_type"] == "intra_thread_segment_merge_group"
     assert merge_rows[0]["schema_version"] == "0.1"
     assert "group_id" in merge_rows[0]
     assert "centroid_embedding" in merge_rows[0]
+    assert diagnostic_rows[0]["record_type"] == (
+        "intra_thread_segment_merge_pair_diagnostic"
+    )
+    assert diagnostic_rows[0]["schema_version"] == "0.1"
+    assert {row["decision"] for row in diagnostic_rows} >= {"short_segment"}
+    assert {"left_segment_id", "right_segment_id", "similarity", "reason"} <= set(
+        diagnostic_rows[0]
+    )
 
 
 def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_path):
@@ -1880,6 +1892,121 @@ def test_intra_thread_report_marks_guarded_drift_segment_start(tmp_path):
     assert "- Start source: `drift_guardrail`" in report
 
 
+def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=[
+            _message_row(
+                provider_id="openai",
+                conversation_id="conv-a",
+                message_id=f"m{index}",
+                role="user" if index % 2 else "assistant",
+                ts=100 + index,
+                text=f"segment diagnostic message {index}",
+            )
+            for index in range(15)
+        ],
+    )
+    _write_jsonl_rows(intra_thread_boundaries_artifact_path(parsed_path), [])
+    segment_rows = [
+        {
+            "record_type": "intra_thread_segment",
+            "schema_version": "0.1",
+            "provider_id": "openai",
+            "conversation_id": "conv-a",
+            "segment_id": f"segment-{index}",
+            "start_index": index * 3,
+            "end_index": index * 3 + 2,
+            "message_ids": [
+                f"m{message_index}"
+                for message_index in range(index * 3, index * 3 + 3)
+            ],
+            "message_count": 3,
+            "text_sha1": f"sha-{index}",
+        }
+        for index in range(5)
+    ]
+    _write_jsonl_rows(intra_thread_segments_artifact_path(parsed_path), segment_rows)
+    _write_jsonl_rows(
+        intra_thread_segment_merge_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_segment_merge_group",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "group_id": "segment_merge_alpha",
+                "segment_ids": ["segment-0", "segment-4"],
+                "message_ids": ["m0", "m1", "m2", "m12", "m13", "m14"],
+                "centroid_embedding": [0.1, 0.2],
+            },
+            {
+                "record_type": "intra_thread_segment_merge_group",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "group_id": "segment_merge_beta",
+                "segment_ids": ["segment-1"],
+                "message_ids": ["m3", "m4", "m5"],
+                "centroid_embedding": [0.3, 0.4],
+            },
+        ],
+    )
+    _write_jsonl_rows(
+        intra_thread_segment_merge_diagnostics_artifact_path(parsed_path),
+        [
+            {
+                "record_type": "intra_thread_segment_merge_pair_diagnostic",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "left_segment_id": "segment-0",
+                "right_segment_id": "segment-4",
+                "left_segment_index": 0,
+                "right_segment_index": 4,
+                "segment_index_gap": 3,
+                "similarity": 0.8123,
+                "decision": "merged",
+                "reason": "similarity >= 0.75",
+            },
+            {
+                "record_type": "intra_thread_segment_merge_pair_diagnostic",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "left_segment_id": "segment-1",
+                "right_segment_id": "segment-2",
+                "left_segment_index": 1,
+                "right_segment_index": 2,
+                "segment_index_gap": 0,
+                "similarity": 0.9000,
+                "decision": "blocked_adjacent_group",
+                "reason": "directly adjacent segments are not merged",
+            },
+        ],
+    )
+
+    write_intra_thread_topic_reports(parsed_path, boundary_threshold=0.43)
+    report = intra_thread_report_artifact_path(parsed_path).read_text(
+        encoding="utf-8"
+    )
+
+    assert "## Segment Merge Diagnostics" in report
+    assert "### Merge Summary" in report
+    assert "- Merge groups: 2" in report
+    assert "- Merged groups: 1" in report
+    assert "#### Group `segment_merge_alpha`" in report
+    assert "- Segment index gaps: `3`" in report
+    assert "### Pairwise Segment Similarities" in report
+    assert "- decision: `merged`" in report
+    assert "- decision: `blocked_adjacent_group`" in report
+    assert "### Suspicious Merge Candidates" in report
+    assert "segment_index_gap: 3" in report
+
+
 def test_analyze_intra_thread_topics_cli_wires_new_command(tmp_path, capsys):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -2002,3 +2129,8 @@ def test_analyze_intra_thread_topics_cli_report_uses_existing_artifacts(tmp_path
     assert "alpha opening request" in report
     assert "## Drift Diagnostics" in report
     assert "_No long segments above drift diagnostic threshold._" in report
+    assert "## Segment Merge Diagnostics" in report
+    assert (
+        "_Segment merge artifact not found. Run with --merge-segments to generate diagnostics._"
+        in report
+    )

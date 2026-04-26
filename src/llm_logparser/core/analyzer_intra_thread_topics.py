@@ -34,11 +34,13 @@ SEGMENT_MERGE_MIN_MESSAGE_COUNT = 3
 BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
 SEGMENT_MERGE_SCHEMA_VERSION = "0.1"
+SEGMENT_MERGE_DIAGNOSTIC_SCHEMA_VERSION = "0.1"
 LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
 REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
 REPORT_PREVIEW_TEXT_CHARS = 120
 REPORT_SUPPRESSED_SCORE_MARGIN = 0.15
 REPORT_NEAR_THRESHOLD_DISTANCE = 0.05
+REPORT_SEGMENT_MERGE_PAIR_LIMIT = 20
 REPORT_LONG_SEGMENT_MESSAGE_COUNT = 80
 REPORT_DRIFT_WEAKEST_CANDIDATES = 5
 REPORT_DRIFT_NEAR_THRESHOLD_DISTANCE = 0.08
@@ -117,6 +119,20 @@ class SegmentMergeGroup:
     centroid_embedding: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class SegmentMergePairDiagnostic:
+    provider_id: str
+    conversation_id: str
+    left_segment_id: str
+    right_segment_id: str
+    left_segment_index: int
+    right_segment_index: int
+    segment_index_gap: int
+    similarity: float
+    decision: str
+    reason: str
+
+
 def intra_thread_topics_dir(parsed_path: Path) -> Path:
     return parsed_path.parent / "l3" / "intra-thread-topics"
 
@@ -131,6 +147,10 @@ def intra_thread_segments_artifact_path(parsed_path: Path) -> Path:
 
 def intra_thread_segment_merge_artifact_path(parsed_path: Path) -> Path:
     return intra_thread_topics_dir(parsed_path) / "segment-merge.jsonl"
+
+
+def intra_thread_segment_merge_diagnostics_artifact_path(parsed_path: Path) -> Path:
+    return intra_thread_topics_dir(parsed_path) / "segment-merge-diagnostics.jsonl"
 
 
 def intra_thread_report_artifact_path(parsed_path: Path) -> Path:
@@ -415,6 +435,25 @@ def _segment_merge_group_row(group: SegmentMergeGroup) -> dict[str, Any]:
     }
 
 
+def _segment_merge_pair_diagnostic_row(
+    diagnostic: SegmentMergePairDiagnostic,
+) -> dict[str, Any]:
+    return {
+        "record_type": "intra_thread_segment_merge_pair_diagnostic",
+        "schema_version": SEGMENT_MERGE_DIAGNOSTIC_SCHEMA_VERSION,
+        "provider_id": diagnostic.provider_id,
+        "conversation_id": diagnostic.conversation_id,
+        "left_segment_id": diagnostic.left_segment_id,
+        "right_segment_id": diagnostic.right_segment_id,
+        "left_segment_index": diagnostic.left_segment_index,
+        "right_segment_index": diagnostic.right_segment_index,
+        "segment_index_gap": diagnostic.segment_index_gap,
+        "similarity": diagnostic.similarity,
+        "decision": diagnostic.decision,
+        "reason": diagnostic.reason,
+    }
+
+
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -459,12 +498,30 @@ def build_segment_merge_groups(
     similarity_threshold: float = DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD,
     min_message_count: int = SEGMENT_MERGE_MIN_MESSAGE_COUNT,
 ) -> list[SegmentMergeGroup]:
+    groups, _diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=backend,
+        similarity_threshold=similarity_threshold,
+        min_message_count=min_message_count,
+    )
+    return groups
+
+
+def build_segment_merge_groups_with_diagnostics(
+    messages: list[ReconstructedThreadMessage],
+    segments: list[ContiguousSegment],
+    *,
+    backend: EmbeddingBackend,
+    similarity_threshold: float = DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD,
+    min_message_count: int = SEGMENT_MERGE_MIN_MESSAGE_COUNT,
+) -> tuple[list[SegmentMergeGroup], list[SegmentMergePairDiagnostic]]:
     if not 0.0 <= similarity_threshold <= 1.0:
         raise ValueError("similarity_threshold must be between 0.0 and 1.0")
     if min_message_count < 0:
         raise ValueError("min_message_count must be >= 0")
     if not segments:
-        return []
+        return [], []
 
     segment_texts = [
         _segment_text_from_message_ids(messages, segment) for segment in segments
@@ -481,28 +538,56 @@ def build_segment_merge_groups(
             index = parent[index]
         return index
 
-    def union(left: int, right: int) -> None:
+    def union(left: int, right: int) -> bool:
         left_root = find(left)
         right_root = find(right)
         if left_root == right_root:
-            return
+            return True
         if _segment_index_groups_would_be_adjacent(parent, left_root, right_root):
-            return
+            return False
         if left_root < right_root:
             parent[right_root] = left_root
         else:
             parent[left_root] = right_root
+        return True
 
+    diagnostics: list[SegmentMergePairDiagnostic] = []
     for left_index, left_segment in enumerate(segments):
-        if left_segment.message_count < min_message_count:
-            continue
-        for right_index in range(left_index + 2, len(segments)):
+        for right_index in range(left_index + 1, len(segments)):
             right_segment = segments[right_index]
-            if right_segment.message_count < min_message_count:
-                continue
             similarity = cosine_similarity(embeddings[left_index], embeddings[right_index])
-            if similarity >= similarity_threshold:
-                union(left_index, right_index)
+            decision = "below_threshold"
+            reason = f"similarity below {similarity_threshold:.2f}"
+            if (
+                left_segment.message_count < min_message_count
+                or right_segment.message_count < min_message_count
+            ):
+                decision = "short_segment"
+                reason = f"one or both segments below {min_message_count} messages"
+            elif right_index == left_index + 1:
+                decision = "blocked_adjacent_group"
+                reason = "directly adjacent segments are not merged"
+            elif similarity >= similarity_threshold:
+                if union(left_index, right_index):
+                    decision = "merged"
+                    reason = f"similarity >= {similarity_threshold:.2f}"
+                else:
+                    decision = "blocked_adjacent_group"
+                    reason = "merge would create a group containing adjacent segments"
+            diagnostics.append(
+                SegmentMergePairDiagnostic(
+                    provider_id=left_segment.provider_id,
+                    conversation_id=left_segment.conversation_id,
+                    left_segment_id=left_segment.segment_id,
+                    right_segment_id=right_segment.segment_id,
+                    left_segment_index=left_index,
+                    right_segment_index=right_index,
+                    segment_index_gap=right_index - left_index - 1,
+                    similarity=round(similarity, 4),
+                    decision=decision,
+                    reason=reason,
+                )
+            )
 
     grouped_indices: dict[int, list[int]] = {}
     for index in range(len(segments)):
@@ -532,7 +617,7 @@ def build_segment_merge_groups(
                 ),
             )
         )
-    return groups
+    return groups, diagnostics
 
 
 def _segment_index_groups_would_be_adjacent(
@@ -765,12 +850,16 @@ def analyze_intra_thread_topics(
         boundaries_path = intra_thread_boundaries_artifact_path(parsed_path)
         segments_path = intra_thread_segments_artifact_path(parsed_path)
         segment_merge_path = intra_thread_segment_merge_artifact_path(parsed_path)
+        segment_merge_diagnostics_path = (
+            intra_thread_segment_merge_diagnostics_artifact_path(parsed_path)
+        )
         existing_artifacts = [
             path
             for path in (
                 boundaries_path,
                 segments_path,
                 segment_merge_path if merge_segments else None,
+                segment_merge_diagnostics_path if merge_segments else None,
             )
             if path is not None and path.exists()
         ]
@@ -806,15 +895,26 @@ def analyze_intra_thread_topics(
             _write_jsonl(segments_path, [_segment_row(row) for row in segments])
         )
         if merge_segments:
-            segment_merge_groups = build_segment_merge_groups(
-                messages,
-                segments,
-                backend=backend,
+            segment_merge_groups, segment_merge_diagnostics = (
+                build_segment_merge_groups_with_diagnostics(
+                    messages,
+                    segments,
+                    backend=backend,
+                )
             )
             written_segment_merges.append(
                 _write_jsonl(
                     segment_merge_path,
                     [_segment_merge_group_row(row) for row in segment_merge_groups],
+                )
+            )
+            written_segment_merges.append(
+                _write_jsonl(
+                    segment_merge_diagnostics_path,
+                    [
+                        _segment_merge_pair_diagnostic_row(row)
+                        for row in segment_merge_diagnostics
+                    ],
                 )
             )
             total_segment_merge_groups += len(segment_merge_groups)
@@ -857,6 +957,12 @@ def write_intra_thread_topic_reports(
             intra_thread_segments_artifact_path(parsed_path),
             "segments.jsonl",
         )
+        segment_merges = _load_optional_intra_thread_jsonl(
+            intra_thread_segment_merge_artifact_path(parsed_path),
+        )
+        segment_merge_diagnostics = _load_optional_intra_thread_jsonl(
+            intra_thread_segment_merge_diagnostics_artifact_path(parsed_path),
+        )
         report_paths.append(
             _write_text(
                 intra_thread_report_artifact_path(parsed_path),
@@ -864,6 +970,8 @@ def write_intra_thread_topic_reports(
                     messages,
                     boundaries,
                     segments,
+                    segment_merges=segment_merges,
+                    segment_merge_diagnostics=segment_merge_diagnostics,
                     boundary_threshold=boundary_threshold,
                 ),
             )
@@ -880,6 +988,8 @@ def render_intra_thread_topic_report(
     boundaries: list[dict[str, Any]],
     segments: list[dict[str, Any]],
     *,
+    segment_merges: list[dict[str, Any]] | None = None,
+    segment_merge_diagnostics: list[dict[str, Any]] | None = None,
     boundary_threshold: float = DEFAULT_INTRA_THREAD_BOUNDARY_THRESHOLD,
 ) -> str:
     conversation_id = messages[0].conversation_id if messages else "unknown"
@@ -968,6 +1078,14 @@ def render_intra_thread_topic_report(
             boundaries,
             segments,
             boundary_threshold=boundary_threshold,
+        )
+    )
+    lines.extend(
+        _render_segment_merge_diagnostics(
+            messages,
+            segments,
+            segment_merges,
+            segment_merge_diagnostics,
         )
     )
 
@@ -1269,6 +1387,226 @@ def _render_low_score_run(
     ]
 
 
+def _render_segment_merge_diagnostics(
+    messages: list[ReconstructedThreadMessage],
+    segments: list[dict[str, Any]],
+    segment_merges: list[dict[str, Any]] | None,
+    segment_merge_diagnostics: list[dict[str, Any]] | None,
+) -> list[str]:
+    lines = ["## Segment Merge Diagnostics", ""]
+    if segment_merges is None:
+        lines.append(
+            "_Segment merge artifact not found. Run with --merge-segments "
+            "to generate diagnostics._"
+        )
+        lines.append("")
+        return lines
+
+    merged_groups = [
+        row
+        for row in segment_merges
+        if len(_string_list_field(row, "segment_ids")) > 1
+    ]
+    lines.extend(
+        [
+            "### Merge Summary",
+            "",
+            f"- Segments: {len(segments)}",
+            f"- Merge groups: {len(segment_merges)}",
+            f"- Merged groups: {len(merged_groups)}",
+            f"- Merge similarity threshold: {DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD:.2f}",
+            f"- Minimum merge candidate message count: {SEGMENT_MERGE_MIN_MESSAGE_COUNT}",
+            "- Note: experimental Phase4 baseline; inspect for stylistic over-merge.",
+            "",
+            "### Merge Groups",
+            "",
+        ]
+    )
+    if segment_merges:
+        for group in segment_merges:
+            lines.extend(_render_segment_merge_group(group, segments, messages))
+    else:
+        lines.append("_No merge groups found._")
+        lines.append("")
+
+    lines.extend(["### Pairwise Segment Similarities", ""])
+    if segment_merge_diagnostics:
+        for row in _sorted_segment_merge_pair_diagnostics(
+            segment_merge_diagnostics
+        )[:REPORT_SEGMENT_MERGE_PAIR_LIMIT]:
+            lines.extend(_render_segment_pair_diagnostic(row, segments, messages))
+    elif segment_merge_diagnostics is None:
+        lines.append(
+            "_Segment merge pair diagnostics artifact not found. Rerun with "
+            "--merge-segments to capture pair decisions._"
+        )
+        lines.append("")
+    else:
+        lines.append("_No pair diagnostics found._")
+        lines.append("")
+
+    lines.extend(["### Suspicious Merge Candidates", ""])
+    suspicious = [
+        row
+        for row in _sorted_segment_merge_pair_diagnostics(
+            segment_merge_diagnostics or []
+        )
+        if row.get("decision") == "merged" and _int_field(row, "segment_index_gap") > 2
+    ]
+    if suspicious:
+        for row in suspicious[:REPORT_SEGMENT_MERGE_PAIR_LIMIT]:
+            lines.extend(_render_segment_pair_diagnostic(row, segments, messages))
+    else:
+        lines.append("_No suspicious merge candidates detected by v1 gap heuristic._")
+        lines.append("")
+    return lines
+
+
+def _render_segment_merge_group(
+    group: dict[str, Any],
+    segments: list[dict[str, Any]],
+    messages: list[ReconstructedThreadMessage],
+) -> list[str]:
+    segment_ids = _string_list_field(group, "segment_ids")
+    lines = [
+        f"#### Group `{group.get('group_id', 'unknown')}`",
+        "",
+        f"- Segment IDs: {', '.join(f'`{segment_id}`' for segment_id in segment_ids)}",
+        f"- Segment index gaps: {_segment_group_gap_display(segment_ids, segments)}",
+        "- Segments:",
+    ]
+    for segment_id in segment_ids:
+        segment = _segment_by_id(segments, segment_id)
+        if segment is None:
+            lines.append(f"  - `{segment_id}`: _missing segment row_")
+            continue
+        index = _segment_index_by_id(segments, segment_id)
+        start_index = _int_field(segment, "start_index")
+        end_index = _int_field(segment, "end_index")
+        segment_messages = _messages_in_range(messages, start_index, end_index)
+        first = segment_messages[0] if segment_messages else None
+        last = segment_messages[-1] if segment_messages else None
+        lines.extend(
+            [
+                f"  - index `{index}` range `{start_index}-{end_index}` "
+                f"messages `{_int_field(segment, 'message_count')}`",
+                f"    - first: {_message_preview_inline(first)}",
+                f"    - last: {_message_preview_inline(last)}",
+            ]
+        )
+    lines.append("")
+    return lines
+
+
+def _render_segment_pair_diagnostic(
+    row: dict[str, Any],
+    segments: list[dict[str, Any]],
+    messages: list[ReconstructedThreadMessage],
+) -> list[str]:
+    left_id = str(row.get("left_segment_id", ""))
+    right_id = str(row.get("right_segment_id", ""))
+    left = _segment_by_id(segments, left_id)
+    right = _segment_by_id(segments, right_id)
+    lines = [
+        "#### "
+        f"{_int_field(row, 'left_segment_index')} -> "
+        f"{_int_field(row, 'right_segment_index')}",
+        "",
+        f"- left: `{left_id}` {_segment_range_display(left)}",
+        f"- right: `{right_id}` {_segment_range_display(right)}",
+        f"- segment_index_gap: {_int_field(row, 'segment_index_gap')}",
+        f"- similarity: {_float_field(row, 'similarity'):.4f}",
+        f"- decision: `{row.get('decision', 'unknown')}`",
+        f"- reason: {row.get('reason', '')}",
+    ]
+    left_preview = _segment_edge_preview(left, messages)
+    right_preview = _segment_edge_preview(right, messages)
+    lines.extend(
+        [
+            f"- left first: {left_preview[0]}",
+            f"- left last: {left_preview[1]}",
+            f"- right first: {right_preview[0]}",
+            f"- right last: {right_preview[1]}",
+            "",
+        ]
+    )
+    return lines
+
+
+def _sorted_segment_merge_pair_diagnostics(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            -_float_field(row, "similarity"),
+            _int_field(row, "left_segment_index"),
+            _int_field(row, "right_segment_index"),
+        ),
+    )
+
+
+def _segment_group_gap_display(
+    segment_ids: list[str],
+    segments: list[dict[str, Any]],
+) -> str:
+    indices = [
+        index
+        for segment_id in segment_ids
+        for index in [_segment_index_by_id(segments, segment_id)]
+        if index >= 0
+    ]
+    if len(indices) < 2:
+        return "`none`"
+    gaps = [
+        str(right - left - 1)
+        for left, right in zip(sorted(indices), sorted(indices)[1:], strict=False)
+    ]
+    return ", ".join(f"`{gap}`" for gap in gaps)
+
+
+def _segment_by_id(
+    segments: list[dict[str, Any]],
+    segment_id: str,
+) -> dict[str, Any] | None:
+    return next(
+        (segment for segment in segments if segment.get("segment_id") == segment_id),
+        None,
+    )
+
+
+def _segment_index_by_id(segments: list[dict[str, Any]], segment_id: str) -> int:
+    for index, segment in enumerate(segments):
+        if segment.get("segment_id") == segment_id:
+            return index
+    return -1
+
+
+def _segment_range_display(segment: dict[str, Any] | None) -> str:
+    if segment is None:
+        return "`unknown`"
+    return f"`{_int_field(segment, 'start_index')}-{_int_field(segment, 'end_index')}`"
+
+
+def _segment_edge_preview(
+    segment: dict[str, Any] | None,
+    messages: list[ReconstructedThreadMessage],
+) -> tuple[str, str]:
+    if segment is None:
+        return "_missing segment_", "_missing segment_"
+    segment_messages = _messages_in_range(
+        messages,
+        _int_field(segment, "start_index"),
+        _int_field(segment, "end_index"),
+    )
+    if not segment_messages:
+        return "_no messages_", "_no messages_"
+    return (
+        _message_preview_inline(segment_messages[0]),
+        _message_preview_inline(segment_messages[-1]),
+    )
+
+
 def _is_suppressed_high_signal_candidate(
     boundary: dict[str, Any],
     *,
@@ -1316,6 +1654,12 @@ def _load_intra_thread_jsonl(path: Path, artifact_name: str) -> list[dict[str, A
                 )
             rows.append(row)
     return rows
+
+
+def _load_optional_intra_thread_jsonl(path: Path) -> list[dict[str, Any]] | None:
+    if not path.exists():
+        return None
+    return _load_intra_thread_jsonl(path, path.name)
 
 
 def _write_text(path: Path, text: str) -> Path:
@@ -1382,6 +1726,13 @@ def _float_field(row: dict[str, Any], field: str) -> float:
     if isinstance(value, int | float):
         return float(value)
     return 0.0
+
+
+def _string_list_field(row: dict[str, Any], field: str) -> list[str]:
+    value = row.get(field)
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _display_schema_versions(schema_versions: list[str]) -> str:
