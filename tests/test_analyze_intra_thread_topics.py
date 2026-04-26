@@ -25,6 +25,10 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     lexical_token_set,
     reconstruct_thread_messages,
     write_intra_thread_topic_reports,
+    _filtered_segment_merge_token_counts,
+    _lexical_anchor_score,
+    _segment_merge_token_counts,
+    _top_segment_merge_tokens,
 )
 
 
@@ -736,9 +740,27 @@ def test_segment_merge_pair_diagnostics_include_lexical_anchors():
     assert merged_pair.shared_top_tokens == ("alpha",)
     assert merged_pair.left_top_tokens[:3] == ("alpha", "beta", "carrot")
     assert merged_pair.right_top_tokens[:3] == ("delta", "alpha", "echo")
+    assert hasattr(merged_pair, "filtered_shared_top_tokens")
+    assert hasattr(merged_pair, "filtered_left_top_tokens")
+    assert hasattr(merged_pair, "filtered_right_top_tokens")
+    assert hasattr(merged_pair, "lexical_anchor_score")
+    assert hasattr(merged_pair, "content_type_flags")
 
 
-def test_segment_merge_blocks_high_embedding_low_lexical_pair():
+def test_segment_merge_v2_token_filtering_and_anchor_score_are_deterministic():
+    counts = _segment_merge_token_counts(
+        "the and ください useful useful anchor anchor anchor"
+    )
+    filtered = _filtered_segment_merge_token_counts(counts)
+
+    assert "the" not in filtered
+    assert "and" not in filtered
+    assert "ください" not in filtered
+    assert _top_segment_merge_tokens(filtered) == ["anchor", "useful"]
+    assert _lexical_anchor_score(["anchor"], ["anchor", "useful"], ["anchor"]) == 1.0
+
+
+def test_segment_merge_default_allows_high_embedding_low_lexical_pair():
     messages = _synthetic_reconstructed_messages(count=9, split_before=4)
     replacements = {
         0: "alpha beta gamma",
@@ -787,6 +809,61 @@ def test_segment_merge_blocks_high_embedding_low_lexical_pair():
 
     assert guarded_pair.similarity >= 0.75
     assert guarded_pair.lexical_similarity < 0.05
+    assert guarded_pair.decision == "merged"
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id, segments[2].segment_id),
+        (segments[1].segment_id,),
+    ]
+
+
+def test_segment_merge_can_block_high_embedding_low_lexical_pair_explicitly():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    replacements = {
+        0: "alpha beta gamma",
+        1: "delta epsilon zeta",
+        2: "eta theta iota",
+        6: "kappa lambda mu",
+        7: "nu xi omicron",
+        8: "pi rho sigma",
+    }
+    messages = [
+        ReconstructedThreadMessage(
+            provider_id=message.provider_id,
+            conversation_id=message.conversation_id,
+            message_id=message.message_id,
+            role=message.role,
+            ts=message.ts,
+            text=replacements.get(index, message.text),
+            ordinal=message.ordinal,
+        )
+        for index, message in enumerate(messages)
+    ]
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    groups, diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ),
+        min_lexical_similarity=0.05,
+    )
+    guarded_pair = next(
+        row
+        for row in diagnostics
+        if row.left_segment_index == 0 and row.right_segment_index == 2
+    )
+
     assert guarded_pair.decision == "blocked_low_lexical_anchor"
     assert guarded_pair.reason == "lexical_similarity below 0.05"
     assert [group.segment_ids for group in groups] == [
@@ -1827,6 +1904,11 @@ def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
         "shared_top_tokens",
         "left_top_tokens",
         "right_top_tokens",
+        "filtered_shared_top_tokens",
+        "filtered_left_top_tokens",
+        "filtered_right_top_tokens",
+        "lexical_anchor_score",
+        "content_type_flags",
         "reason",
     } <= set(diagnostic_rows[0])
 
@@ -2179,6 +2261,14 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "shared_top_tokens": [],
                 "left_top_tokens": ["setup", "draft"],
                 "right_top_tokens": ["prose", "names"],
+                "filtered_shared_top_tokens": [],
+                "filtered_left_top_tokens": ["setup", "draft"],
+                "filtered_right_top_tokens": ["prose", "names"],
+                "lexical_anchor_score": 0.0,
+                "content_type_flags": {
+                    "left": ["summary_like"],
+                    "right": ["prose_like"],
+                },
                 "decision": "merged",
                 "reason": "similarity >= 0.75",
             },
@@ -2197,6 +2287,14 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "shared_top_tokens": ["shared"],
                 "left_top_tokens": ["shared", "left"],
                 "right_top_tokens": ["shared", "right"],
+                "filtered_shared_top_tokens": ["shared"],
+                "filtered_left_top_tokens": ["shared", "left"],
+                "filtered_right_top_tokens": ["shared", "right"],
+                "lexical_anchor_score": 0.5,
+                "content_type_flags": {
+                    "left": [],
+                    "right": [],
+                },
                 "decision": "blocked_adjacent_group",
                 "reason": "directly adjacent segments are not merged",
             },
@@ -2215,6 +2313,14 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "shared_top_tokens": [],
                 "left_top_tokens": ["setup"],
                 "right_top_tokens": ["style"],
+                "filtered_shared_top_tokens": [],
+                "filtered_left_top_tokens": ["setup"],
+                "filtered_right_top_tokens": ["style"],
+                "lexical_anchor_score": 0.0,
+                "content_type_flags": {
+                    "left": ["summary_like"],
+                    "right": ["name_list_like"],
+                },
                 "decision": "blocked_low_lexical_anchor",
                 "reason": "lexical_similarity below 0.05",
             },
@@ -2230,7 +2336,7 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
     assert "### Merge Summary" in report
     assert "- Merge groups: 2" in report
     assert "- Merged groups: 1" in report
-    assert "- Minimum lexical similarity for merge: 0.05" in report
+    assert "- Minimum lexical similarity for merge: 0.00" in report
     assert "#### Group `segment_merge_alpha`" in report
     assert "- Segment index gaps: `3`" in report
     assert "### Pairwise Segment Similarities" in report
@@ -2238,11 +2344,19 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
     assert "- shared_top_tokens: `none`" in report
     assert "- left_top_tokens: `setup`, `draft`" in report
     assert "- right_top_tokens: `prose`, `names`" in report
+    assert "- filtered_shared_top_tokens: `none`" in report
+    assert "- filtered_left_top_tokens: `setup`, `draft`" in report
+    assert "- filtered_right_top_tokens: `prose`, `names`" in report
+    assert "- lexical_anchor_score: 0.0000" in report
+    assert "- left_content_type_flags: `summary_like`" in report
+    assert "- right_content_type_flags: `prose_like`" in report
     assert "- decision: `merged`" in report
     assert "- decision: `blocked_adjacent_group`" in report
     assert "- decision: `blocked_low_lexical_anchor`" in report
     assert "### Suspicious Merge Candidates" in report
     assert "low lexical anchor despite high embedding similarity" in report
+    assert "low filtered lexical anchor despite high embedding similarity" in report
+    assert "content type mismatch in merged pair" in report
     assert "segment_index_gap: 3" in report
 
 

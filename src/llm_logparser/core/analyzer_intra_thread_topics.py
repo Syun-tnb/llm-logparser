@@ -30,10 +30,40 @@ DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS = 8
 DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT = 0.2
 DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT = 0.15
 DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD = 0.75
-DEFAULT_SEGMENT_MERGE_MIN_LEXICAL_SIMILARITY = 0.05
+DEFAULT_SEGMENT_MERGE_MIN_LEXICAL_SIMILARITY = 0.0
 SEGMENT_MERGE_MIN_MESSAGE_COUNT = 3
 SEGMENT_MERGE_TOP_TOKEN_LIMIT = 10
+SEGMENT_MERGE_FILTERED_TOP_TOKEN_LIMIT = 10
 SEGMENT_MERGE_MIN_TOKEN_LENGTH = 2
+SEGMENT_MERGE_GENERIC_TOKENS = frozenset(
+    {
+        "the",
+        "and",
+        "to",
+        "of",
+        "it",
+        "is",
+        "in",
+        "for",
+        "on",
+        "10",
+        "20",
+        "30",
+        "40",
+        "50",
+        "また",
+        "これ",
+        "それ",
+        "この",
+        "その",
+        "ため",
+        "ます",
+        "です",
+        "ください",
+        "お願いします",
+        "了解しました",
+    }
+)
 BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
 SEGMENT_MERGE_SCHEMA_VERSION = "0.1"
@@ -136,6 +166,11 @@ class SegmentMergePairDiagnostic:
     shared_top_tokens: tuple[str, ...]
     left_top_tokens: tuple[str, ...]
     right_top_tokens: tuple[str, ...]
+    filtered_shared_top_tokens: tuple[str, ...]
+    filtered_left_top_tokens: tuple[str, ...]
+    filtered_right_top_tokens: tuple[str, ...]
+    lexical_anchor_score: float
+    content_type_flags: dict[str, tuple[str, ...]]
     decision: str
     reason: str
 
@@ -460,6 +495,14 @@ def _segment_merge_pair_diagnostic_row(
         "shared_top_tokens": list(diagnostic.shared_top_tokens),
         "left_top_tokens": list(diagnostic.left_top_tokens),
         "right_top_tokens": list(diagnostic.right_top_tokens),
+        "filtered_shared_top_tokens": list(diagnostic.filtered_shared_top_tokens),
+        "filtered_left_top_tokens": list(diagnostic.filtered_left_top_tokens),
+        "filtered_right_top_tokens": list(diagnostic.filtered_right_top_tokens),
+        "lexical_anchor_score": diagnostic.lexical_anchor_score,
+        "content_type_flags": {
+            "left": list(diagnostic.content_type_flags.get("left", ())),
+            "right": list(diagnostic.content_type_flags.get("right", ())),
+        },
         "decision": diagnostic.decision,
         "reason": diagnostic.reason,
     }
@@ -544,6 +587,19 @@ def build_segment_merge_groups_with_diagnostics(
     ]
     token_counts = [_segment_merge_token_counts(text) for text in segment_texts]
     top_tokens = [_top_segment_merge_tokens(counts) for counts in token_counts]
+    filtered_token_counts = [
+        _filtered_segment_merge_token_counts(counts) for counts in token_counts
+    ]
+    filtered_top_tokens = [
+        _top_segment_merge_tokens(
+            counts,
+            limit=SEGMENT_MERGE_FILTERED_TOP_TOKEN_LIMIT,
+        )
+        for counts in filtered_token_counts
+    ]
+    content_type_flags = [
+        tuple(_segment_merge_content_type_flags(text)) for text in segment_texts
+    ]
     embeddings = backend.embed(segment_texts)
     if len(embeddings) != len(segments):
         raise IntraThreadTopicsError("segment embedding count mismatch")
@@ -584,6 +640,17 @@ def build_segment_merge_groups_with_diagnostics(
                 token_counts[left_index],
                 token_counts[right_index],
             )
+            filtered_shared_top_tokens = _shared_filtered_segment_merge_top_tokens(
+                filtered_token_counts[left_index],
+                filtered_token_counts[right_index],
+                filtered_top_tokens[left_index],
+                filtered_top_tokens[right_index],
+            )
+            lexical_anchor_score = _lexical_anchor_score(
+                filtered_shared_top_tokens,
+                filtered_top_tokens[left_index],
+                filtered_top_tokens[right_index],
+            )
             decision = "below_threshold"
             reason = f"similarity below {similarity_threshold:.2f}"
             if (
@@ -622,6 +689,14 @@ def build_segment_merge_groups_with_diagnostics(
                     shared_top_tokens=tuple(shared_top_tokens),
                     left_top_tokens=tuple(top_tokens[left_index]),
                     right_top_tokens=tuple(top_tokens[right_index]),
+                    filtered_shared_top_tokens=tuple(filtered_shared_top_tokens),
+                    filtered_left_top_tokens=tuple(filtered_top_tokens[left_index]),
+                    filtered_right_top_tokens=tuple(filtered_top_tokens[right_index]),
+                    lexical_anchor_score=round(lexical_anchor_score, 4),
+                    content_type_flags={
+                        "left": content_type_flags[left_index],
+                        "right": content_type_flags[right_index],
+                    },
                     decision=decision,
                     reason=reason,
                 )
@@ -719,25 +794,98 @@ def _token_counts(tokens: Iterable[str]) -> dict[str, int]:
     return counts
 
 
-def _top_segment_merge_tokens(token_counts: dict[str, int]) -> list[str]:
+def _top_segment_merge_tokens(
+    token_counts: dict[str, int],
+    *,
+    limit: int = SEGMENT_MERGE_TOP_TOKEN_LIMIT,
+) -> list[str]:
     return [
         token
         for token, _count in sorted(
             token_counts.items(),
             key=lambda item: (-item[1], item[0]),
-        )[:SEGMENT_MERGE_TOP_TOKEN_LIMIT]
+        )[:limit]
     ]
 
 
 def _shared_segment_merge_top_tokens(
     left_counts: dict[str, int],
     right_counts: dict[str, int],
+    *,
+    limit: int = SEGMENT_MERGE_TOP_TOKEN_LIMIT,
 ) -> list[str]:
     shared = set(left_counts) & set(right_counts)
     return sorted(
         shared,
         key=lambda token: (-(left_counts[token] + right_counts[token]), token),
-    )[:SEGMENT_MERGE_TOP_TOKEN_LIMIT]
+    )[:limit]
+
+
+def _shared_filtered_segment_merge_top_tokens(
+    left_counts: dict[str, int],
+    right_counts: dict[str, int],
+    filtered_left_top_tokens: list[str],
+    filtered_right_top_tokens: list[str],
+) -> list[str]:
+    shared = set(filtered_left_top_tokens) & set(filtered_right_top_tokens)
+    return sorted(
+        shared,
+        key=lambda token: (-(left_counts[token] + right_counts[token]), token),
+    )[:SEGMENT_MERGE_FILTERED_TOP_TOKEN_LIMIT]
+
+
+def _filtered_segment_merge_token_counts(
+    token_counts: dict[str, int],
+) -> dict[str, int]:
+    return {
+        token: count
+        for token, count in token_counts.items()
+        if token not in SEGMENT_MERGE_GENERIC_TOKENS
+    }
+
+
+def _lexical_anchor_score(
+    filtered_shared_top_tokens: list[str],
+    filtered_left_top_tokens: list[str],
+    filtered_right_top_tokens: list[str],
+) -> float:
+    denominator = max(
+        1,
+        min(len(filtered_left_top_tokens), len(filtered_right_top_tokens)),
+    )
+    return len(filtered_shared_top_tokens) / denominator
+
+
+def _segment_merge_content_type_flags(text: str) -> list[str]:
+    flags: list[str] = []
+    normalized = unicodedata.normalize("NFKC", text)
+    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+    numbered_lines = sum(
+        1 for line in lines if re.match(r"^(?:\d+|[0-9]+)[\.)、:：]", line)
+    )
+    numeric_markers = len(re.findall(r"(?:^|\s)(?:\d+)[\.)、:：]", normalized))
+    katakana_tokens = re.findall(r"[ァ-ヴー]{2,}", normalized)
+    short_lines = [line for line in lines if 0 < len(line) <= 24]
+
+    if numbered_lines >= 3 or numeric_markers >= 5:
+        flags.append("list_like")
+    if any(mark in normalized for mark in ("「", "」", "『", "』")) or len(normalized) >= 800:
+        flags.append("prose_like")
+    if len(katakana_tokens) >= 12 and len(short_lines) >= 5:
+        flags.append("name_list_like")
+    if any(
+        phrase in normalized
+        for phrase in (
+            "挙げてください",
+            "作成してください",
+            "まとめてください",
+            "提案してください",
+        )
+    ):
+        flags.append("instruction_like")
+    if any(term in normalized for term in ("まとめ", "設定", "概要")):
+        flags.append("summary_like")
+    return flags
 
 
 def _segment_merge_group_id(segments: list[ContiguousSegment]) -> str:
@@ -1545,9 +1693,11 @@ def _render_segment_merge_diagnostics(
     ]
     if suspicious:
         for row in suspicious[:REPORT_SEGMENT_MERGE_PAIR_LIMIT]:
-            reason = _segment_merge_suspicious_reason(row)
-            if reason is not None:
-                lines.extend(["#### Suspicious reason", "", f"- {reason}", ""])
+            reasons = _segment_merge_suspicious_reasons(row)
+            if reasons:
+                lines.extend(["#### Suspicious reasons", ""])
+                lines.extend(f"- {reason}" for reason in reasons)
+                lines.append("")
             lines.extend(_render_segment_pair_diagnostic(row, segments, messages))
     else:
         lines.append("_No suspicious merge candidates detected._")
@@ -1614,6 +1764,17 @@ def _render_segment_pair_diagnostic(
         f"{_token_list_display(_string_list_field(row, 'shared_top_tokens'))}",
         f"- left_top_tokens: {_token_list_display(_string_list_field(row, 'left_top_tokens'))}",
         f"- right_top_tokens: {_token_list_display(_string_list_field(row, 'right_top_tokens'))}",
+        "- filtered_shared_top_tokens: "
+        f"{_token_list_display(_string_list_field(row, 'filtered_shared_top_tokens'))}",
+        "- filtered_left_top_tokens: "
+        f"{_token_list_display(_string_list_field(row, 'filtered_left_top_tokens'))}",
+        "- filtered_right_top_tokens: "
+        f"{_token_list_display(_string_list_field(row, 'filtered_right_top_tokens'))}",
+        f"- lexical_anchor_score: {_float_field(row, 'lexical_anchor_score'):.4f}",
+        "- left_content_type_flags: "
+        f"{_token_list_display(_content_type_flags(row, 'left'))}",
+        "- right_content_type_flags: "
+        f"{_token_list_display(_content_type_flags(row, 'right'))}",
         f"- decision: `{row.get('decision', 'unknown')}`",
         f"- reason: {row.get('reason', '')}",
     ]
@@ -1631,18 +1792,44 @@ def _render_segment_pair_diagnostic(
     return lines
 
 
-def _segment_merge_suspicious_reason(row: dict[str, Any]) -> str | None:
+def _segment_merge_suspicious_reasons(row: dict[str, Any]) -> list[str]:
     if row.get("decision") != "merged":
-        return None
+        return []
+    reasons: list[str] = []
     if (
         _float_field(row, "similarity")
         >= DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD
         and _float_field(row, "lexical_similarity") < 0.05
     ):
-        return "low lexical anchor despite high embedding similarity"
+        reasons.append("low lexical anchor despite high embedding similarity")
+    if (
+        _float_field(row, "similarity")
+        >= DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD
+        and _float_field(row, "lexical_anchor_score") < 0.10
+    ):
+        reasons.append("low filtered lexical anchor despite high embedding similarity")
+    left_flags = set(_content_type_flags(row, "left"))
+    right_flags = set(_content_type_flags(row, "right"))
+    if _content_type_mismatch(left_flags, right_flags):
+        reasons.append("content type mismatch in merged pair")
     if _int_field(row, "segment_index_gap") > 2:
-        return "large segment gap"
-    return None
+        reasons.append("large segment gap")
+    return reasons
+
+
+def _segment_merge_suspicious_reason(row: dict[str, Any]) -> str | None:
+    reasons = _segment_merge_suspicious_reasons(row)
+    return reasons[0] if reasons else None
+
+
+def _content_type_mismatch(left_flags: set[str], right_flags: set[str]) -> bool:
+    return (
+        "summary_like" in left_flags
+        and bool(right_flags & {"prose_like", "name_list_like"})
+    ) or (
+        "summary_like" in right_flags
+        and bool(left_flags & {"prose_like", "name_list_like"})
+    )
 
 
 def _sorted_segment_merge_pair_diagnostics(
@@ -1851,6 +2038,16 @@ def _string_list_field(row: dict[str, Any], field: str) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _content_type_flags(row: dict[str, Any], side: str) -> list[str]:
+    value = row.get("content_type_flags")
+    if not isinstance(value, dict):
+        return []
+    flags = value.get(side)
+    if not isinstance(flags, list):
+        return []
+    return [flag for flag in flags if isinstance(flag, str)]
 
 
 def _display_schema_versions(schema_versions: list[str]) -> str:
