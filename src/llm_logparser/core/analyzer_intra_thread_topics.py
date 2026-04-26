@@ -30,6 +30,7 @@ DEFAULT_INTRA_THREAD_MIN_WINDOW_CONTENT_CHARS = 8
 DEFAULT_INTRA_THREAD_LEXICAL_CONTINUITY_WEIGHT = 0.2
 DEFAULT_INTRA_THREAD_STRUCTURAL_CONTINUITY_WEIGHT = 0.15
 DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD = 0.75
+DEFAULT_SEGMENT_MERGE_MIN_LEXICAL_SIMILARITY = 0.05
 SEGMENT_MERGE_MIN_MESSAGE_COUNT = 3
 SEGMENT_MERGE_TOP_TOKEN_LIMIT = 10
 SEGMENT_MERGE_MIN_TOKEN_LENGTH = 2
@@ -506,6 +507,7 @@ def build_segment_merge_groups(
     *,
     backend: EmbeddingBackend,
     similarity_threshold: float = DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD,
+    min_lexical_similarity: float = DEFAULT_SEGMENT_MERGE_MIN_LEXICAL_SIMILARITY,
     min_message_count: int = SEGMENT_MERGE_MIN_MESSAGE_COUNT,
 ) -> list[SegmentMergeGroup]:
     groups, _diagnostics = build_segment_merge_groups_with_diagnostics(
@@ -513,6 +515,7 @@ def build_segment_merge_groups(
         segments,
         backend=backend,
         similarity_threshold=similarity_threshold,
+        min_lexical_similarity=min_lexical_similarity,
         min_message_count=min_message_count,
     )
     return groups
@@ -524,10 +527,13 @@ def build_segment_merge_groups_with_diagnostics(
     *,
     backend: EmbeddingBackend,
     similarity_threshold: float = DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD,
+    min_lexical_similarity: float = DEFAULT_SEGMENT_MERGE_MIN_LEXICAL_SIMILARITY,
     min_message_count: int = SEGMENT_MERGE_MIN_MESSAGE_COUNT,
 ) -> tuple[list[SegmentMergeGroup], list[SegmentMergePairDiagnostic]]:
     if not 0.0 <= similarity_threshold <= 1.0:
         raise ValueError("similarity_threshold must be between 0.0 and 1.0")
+    if not 0.0 <= min_lexical_similarity <= 1.0:
+        raise ValueError("min_lexical_similarity must be between 0.0 and 1.0")
     if min_message_count < 0:
         raise ValueError("min_message_count must be >= 0")
     if not segments:
@@ -589,6 +595,12 @@ def build_segment_merge_groups_with_diagnostics(
             elif right_index == left_index + 1:
                 decision = "blocked_adjacent_group"
                 reason = "directly adjacent segments are not merged"
+            elif similarity < similarity_threshold:
+                decision = "below_threshold"
+                reason = f"similarity below {similarity_threshold:.2f}"
+            elif lexical_similarity < min_lexical_similarity:
+                decision = "blocked_low_lexical_anchor"
+                reason = f"lexical_similarity below {min_lexical_similarity:.2f}"
             elif similarity >= similarity_threshold:
                 if union(left_index, right_index):
                     decision = "merged"
@@ -1491,6 +1503,8 @@ def _render_segment_merge_diagnostics(
             f"- Merge groups: {len(segment_merges)}",
             f"- Merged groups: {len(merged_groups)}",
             f"- Merge similarity threshold: {DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD:.2f}",
+            "- Minimum lexical similarity for merge: "
+            f"{DEFAULT_SEGMENT_MERGE_MIN_LEXICAL_SIMILARITY:.2f}",
             f"- Minimum merge candidate message count: {SEGMENT_MERGE_MIN_MESSAGE_COUNT}",
             "- Note: experimental Phase4 baseline; inspect for stylistic over-merge.",
             "",

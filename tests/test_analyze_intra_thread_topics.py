@@ -738,6 +738,151 @@ def test_segment_merge_pair_diagnostics_include_lexical_anchors():
     assert merged_pair.right_top_tokens[:3] == ("delta", "alpha", "echo")
 
 
+def test_segment_merge_blocks_high_embedding_low_lexical_pair():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    replacements = {
+        0: "alpha beta gamma",
+        1: "delta epsilon zeta",
+        2: "eta theta iota",
+        6: "kappa lambda mu",
+        7: "nu xi omicron",
+        8: "pi rho sigma",
+    }
+    messages = [
+        ReconstructedThreadMessage(
+            provider_id=message.provider_id,
+            conversation_id=message.conversation_id,
+            message_id=message.message_id,
+            role=message.role,
+            ts=message.ts,
+            text=replacements.get(index, message.text),
+            ordinal=message.ordinal,
+        )
+        for index, message in enumerate(messages)
+    ]
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    groups, diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+    guarded_pair = next(
+        row
+        for row in diagnostics
+        if row.left_segment_index == 0 and row.right_segment_index == 2
+    )
+
+    assert guarded_pair.similarity >= 0.75
+    assert guarded_pair.lexical_similarity < 0.05
+    assert guarded_pair.decision == "blocked_low_lexical_anchor"
+    assert guarded_pair.reason == "lexical_similarity below 0.05"
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id,),
+        (segments[1].segment_id,),
+        (segments[2].segment_id,),
+    ]
+
+
+def test_segment_merge_allows_high_embedding_sufficient_lexical_pair():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    groups, diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+    merged_pair = next(
+        row
+        for row in diagnostics
+        if row.left_segment_index == 0 and row.right_segment_index == 2
+    )
+
+    assert merged_pair.lexical_similarity >= 0.05
+    assert merged_pair.decision == "merged"
+    assert [group.segment_ids for group in groups] == [
+        (segments[0].segment_id, segments[2].segment_id),
+        (segments[1].segment_id,),
+    ]
+
+
+def test_segment_merge_adjacent_guard_wins_before_lexical_guard():
+    messages = _synthetic_reconstructed_messages(count=6, split_before=3)
+    segments = build_contiguous_segments(
+        messages,
+        [_boundary(conversation_id="conv-a", split_before_message_index=3)],
+    )
+
+    _groups, diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+            ]
+        ),
+    )
+
+    assert diagnostics[0].decision == "blocked_adjacent_group"
+
+
+def test_segment_merge_below_threshold_wins_before_lexical_guard():
+    messages = _synthetic_reconstructed_messages(count=9, split_before=4)
+    segments = build_contiguous_segments(
+        messages,
+        [
+            _boundary(conversation_id="conv-a", split_before_message_index=3),
+            _boundary(conversation_id="conv-a", split_before_message_index=6),
+        ],
+    )
+
+    _groups, diagnostics = build_segment_merge_groups_with_diagnostics(
+        messages,
+        segments,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.7, 0.714142842854285],
+            ]
+        ),
+    )
+    below_pair = next(
+        row
+        for row in diagnostics
+        if row.left_segment_index == 0 and row.right_segment_index == 2
+    )
+
+    assert below_pair.similarity < 0.75
+    assert below_pair.decision == "below_threshold"
+
+
 def test_segment_merge_groups_keeps_dissimilar_segments_separate():
     messages = _synthetic_reconstructed_messages(count=9, split_before=4)
     segments = build_contiguous_segments(
@@ -2055,6 +2200,24 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "decision": "blocked_adjacent_group",
                 "reason": "directly adjacent segments are not merged",
             },
+            {
+                "record_type": "intra_thread_segment_merge_pair_diagnostic",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "left_segment_id": "segment-0",
+                "right_segment_id": "segment-3",
+                "left_segment_index": 0,
+                "right_segment_index": 3,
+                "segment_index_gap": 2,
+                "similarity": 0.8000,
+                "lexical_similarity": 0.0100,
+                "shared_top_tokens": [],
+                "left_top_tokens": ["setup"],
+                "right_top_tokens": ["style"],
+                "decision": "blocked_low_lexical_anchor",
+                "reason": "lexical_similarity below 0.05",
+            },
         ],
     )
 
@@ -2067,6 +2230,7 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
     assert "### Merge Summary" in report
     assert "- Merge groups: 2" in report
     assert "- Merged groups: 1" in report
+    assert "- Minimum lexical similarity for merge: 0.05" in report
     assert "#### Group `segment_merge_alpha`" in report
     assert "- Segment index gaps: `3`" in report
     assert "### Pairwise Segment Similarities" in report
@@ -2076,6 +2240,7 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
     assert "- right_top_tokens: `prose`, `names`" in report
     assert "- decision: `merged`" in report
     assert "- decision: `blocked_adjacent_group`" in report
+    assert "- decision: `blocked_low_lexical_anchor`" in report
     assert "### Suspicious Merge Candidates" in report
     assert "low lexical anchor despite high embedding similarity" in report
     assert "segment_index_gap: 3" in report
