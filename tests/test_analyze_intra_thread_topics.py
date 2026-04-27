@@ -21,12 +21,14 @@ from llm_logparser.core.analyzer_intra_thread_topics import (
     intra_thread_segment_merge_diagnostics_artifact_path,
     intra_thread_report_artifact_path,
     intra_thread_segments_artifact_path,
+    intra_thread_topic_candidates_artifact_path,
     lexical_jaccard_similarity,
     lexical_token_set,
     reconstruct_thread_messages,
     write_intra_thread_topic_reports,
     _filtered_segment_merge_token_counts,
     _lexical_anchor_score,
+    _lexical_anchor_band,
     _segment_merge_token_counts,
     _top_segment_merge_tokens,
 )
@@ -744,6 +746,7 @@ def test_segment_merge_pair_diagnostics_include_lexical_anchors():
     assert hasattr(merged_pair, "filtered_left_top_tokens")
     assert hasattr(merged_pair, "filtered_right_top_tokens")
     assert hasattr(merged_pair, "lexical_anchor_score")
+    assert hasattr(merged_pair, "lexical_anchor_band")
     assert hasattr(merged_pair, "content_type_flags")
 
 
@@ -758,6 +761,13 @@ def test_segment_merge_v2_token_filtering_and_anchor_score_are_deterministic():
     assert "ください" not in filtered
     assert _top_segment_merge_tokens(filtered) == ["anchor", "useful"]
     assert _lexical_anchor_score(["anchor"], ["anchor", "useful"], ["anchor"]) == 1.0
+
+
+def test_segment_merge_lexical_anchor_band_boundaries():
+    assert _lexical_anchor_band(0.09) == "weak"
+    assert _lexical_anchor_band(0.10) == "gray"
+    assert _lexical_anchor_band(0.19) == "gray"
+    assert _lexical_anchor_band(0.20) == "strong"
 
 
 def test_segment_merge_default_allows_high_embedding_low_lexical_pair():
@@ -1872,7 +1882,7 @@ def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
                 [0.0, 1.0],
                 [0.0, 1.0],
                 [1.0, 0.0],
-                [0.0, 1.0],
+                [1.0, 0.0],
             ]
         ),
         merge_segments=True,
@@ -1880,13 +1890,20 @@ def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
 
     merge_path = intra_thread_segment_merge_artifact_path(parsed_path)
     diagnostics_path = intra_thread_segment_merge_diagnostics_artifact_path(parsed_path)
+    topic_candidates_path = intra_thread_topic_candidates_artifact_path(parsed_path)
     merge_rows = _load_jsonl(merge_path)
     diagnostic_rows = _load_jsonl(diagnostics_path)
+    topic_candidate_rows = _load_jsonl(topic_candidates_path)
 
     assert result["segment_merge_groups"] == 2
-    assert result["segment_merge_artifacts"] == [merge_path, diagnostics_path]
+    assert result["segment_merge_artifacts"] == [
+        merge_path,
+        diagnostics_path,
+        topic_candidates_path,
+    ]
     assert merge_path.exists()
     assert diagnostics_path.exists()
+    assert topic_candidates_path.exists()
     assert merge_rows[0]["record_type"] == "intra_thread_segment_merge_group"
     assert merge_rows[0]["schema_version"] == "0.1"
     assert "group_id" in merge_rows[0]
@@ -1908,9 +1925,83 @@ def test_analyze_intra_thread_topics_writes_segment_merge_artifact(tmp_path):
         "filtered_left_top_tokens",
         "filtered_right_top_tokens",
         "lexical_anchor_score",
+        "lexical_anchor_band",
         "content_type_flags",
         "reason",
     } <= set(diagnostic_rows[0])
+    assert topic_candidate_rows[0]["record_type"] == "intra_thread_topic_candidate"
+    assert topic_candidate_rows[0]["schema_version"] == "0.1"
+
+
+def test_analyze_intra_thread_topics_writes_ordered_topic_candidates(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    segment_texts = [
+        ["anchor a01 a02 a03", "a04 a05 a06", "a07 a08 a09"],
+        ["x01 x02 x03 x04", "x05 x06 x07", "x08 x09 x10"],
+        ["anchor c01 c02 c03", "c04 c05 c06", "c07 c08 c09"],
+        ["anchor c01 d01 d02", "d03 d04 d05", "d06 d07 d08"],
+    ]
+    messages = [
+        _message_row(
+            provider_id="openai",
+            conversation_id="conv-a",
+            message_id=f"m{index}",
+            role="user",
+            ts=100 + index,
+            text=text,
+        )
+        for index, text in enumerate(
+            text for segment in segment_texts for text in segment
+        )
+    ]
+    _write_parsed_jsonl(
+        parsed_path,
+        provider_id="openai",
+        conversation_id="conv-a",
+        messages=messages,
+    )
+
+    analyze_intra_thread_topics(
+        parsed_path,
+        boundary_threshold=0.75,
+        backend=StaticEmbeddingBackend(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.0, 1.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.0, 1.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [0.9, 0.435889],
+                [0.8, 0.6],
+                [0.9, 0.435889],
+            ]
+        ),
+        merge_segments=True,
+    )
+
+    rows = _load_jsonl(intra_thread_topic_candidates_artifact_path(parsed_path))
+    similarities = [row["similarity"] for row in rows]
+    candidate_types = {row["candidate_type"] for row in rows}
+    candidate_roles = {row["candidate_role"] for row in rows}
+
+    assert rows
+    assert similarities == sorted(similarities, reverse=True)
+    assert all(row["similarity"] >= 0.75 for row in rows)
+    assert {"weak", "gray", "strong"} <= candidate_types
+    assert {
+        "suspicious_candidate",
+        "review_candidate",
+        "primary_merge",
+    } <= candidate_roles
+    assert all("reasons" in row for row in rows)
+    assert all(row["left_preview"] for row in rows)
+    assert all(row["right_preview"] for row in rows)
 
 
 def test_intra_thread_report_reconstructs_segments_and_boundary_diagnostics(tmp_path):
@@ -2265,9 +2356,37 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "filtered_left_top_tokens": ["setup", "draft"],
                 "filtered_right_top_tokens": ["prose", "names"],
                 "lexical_anchor_score": 0.0,
+                "lexical_anchor_band": "weak",
                 "content_type_flags": {
                     "left": ["summary_like"],
                     "right": ["prose_like"],
+                },
+                "decision": "merged",
+                "reason": "similarity >= 0.75",
+            },
+            {
+                "record_type": "intra_thread_segment_merge_pair_diagnostic",
+                "schema_version": "0.1",
+                "provider_id": "openai",
+                "conversation_id": "conv-a",
+                "left_segment_id": "segment-1",
+                "right_segment_id": "segment-4",
+                "left_segment_index": 1,
+                "right_segment_index": 4,
+                "segment_index_gap": 2,
+                "similarity": 0.8500,
+                "lexical_similarity": 0.1200,
+                "shared_top_tokens": ["gray"],
+                "left_top_tokens": ["gray", "left"],
+                "right_top_tokens": ["gray", "right"],
+                "filtered_shared_top_tokens": ["gray"],
+                "filtered_left_top_tokens": ["gray", "left"],
+                "filtered_right_top_tokens": ["gray", "right"],
+                "lexical_anchor_score": 0.1000,
+                "lexical_anchor_band": "gray",
+                "content_type_flags": {
+                    "left": [],
+                    "right": [],
                 },
                 "decision": "merged",
                 "reason": "similarity >= 0.75",
@@ -2291,6 +2410,7 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "filtered_left_top_tokens": ["shared", "left"],
                 "filtered_right_top_tokens": ["shared", "right"],
                 "lexical_anchor_score": 0.5,
+                "lexical_anchor_band": "strong",
                 "content_type_flags": {
                     "left": [],
                     "right": [],
@@ -2317,6 +2437,7 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
                 "filtered_left_top_tokens": ["setup"],
                 "filtered_right_top_tokens": ["style"],
                 "lexical_anchor_score": 0.0,
+                "lexical_anchor_band": "weak",
                 "content_type_flags": {
                     "left": ["summary_like"],
                     "right": ["name_list_like"],
@@ -2348,11 +2469,17 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
     assert "- filtered_left_top_tokens: `setup`, `draft`" in report
     assert "- filtered_right_top_tokens: `prose`, `names`" in report
     assert "- lexical_anchor_score: 0.0000" in report
+    assert "- lexical_anchor_band: `weak`" in report
     assert "- left_content_type_flags: `summary_like`" in report
     assert "- right_content_type_flags: `prose_like`" in report
     assert "- decision: `merged`" in report
     assert "- decision: `blocked_adjacent_group`" in report
     assert "- decision: `blocked_low_lexical_anchor`" in report
+    assert "### Strong Anchor Merge Candidates" in report
+    assert "### Gray-Zone Merge Candidates" in report
+    assert "### Weak Anchor Merge Candidates" in report
+    assert "- lexical_anchor_band: `gray`" in report
+    assert "- lexical_anchor_band: `strong`" in report
     assert "### Suspicious Merge Candidates" in report
     assert "low lexical anchor despite high embedding similarity" in report
     assert "low filtered lexical anchor despite high embedding similarity" in report

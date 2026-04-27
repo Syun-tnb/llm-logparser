@@ -68,6 +68,7 @@ BOUNDARY_SCHEMA_VERSION = "0.3"
 SEGMENT_SCHEMA_VERSION = "0.1"
 SEGMENT_MERGE_SCHEMA_VERSION = "0.1"
 SEGMENT_MERGE_DIAGNOSTIC_SCHEMA_VERSION = "0.1"
+TOPIC_CANDIDATE_SCHEMA_VERSION = "0.1"
 LEXICAL_WORD_TOKEN_RE = re.compile(r"\w+")
 REPORT_PREVIEW_MESSAGES_PER_EDGE = 3
 REPORT_PREVIEW_TEXT_CHARS = 120
@@ -170,6 +171,7 @@ class SegmentMergePairDiagnostic:
     filtered_left_top_tokens: tuple[str, ...]
     filtered_right_top_tokens: tuple[str, ...]
     lexical_anchor_score: float
+    lexical_anchor_band: str
     content_type_flags: dict[str, tuple[str, ...]]
     decision: str
     reason: str
@@ -193,6 +195,10 @@ def intra_thread_segment_merge_artifact_path(parsed_path: Path) -> Path:
 
 def intra_thread_segment_merge_diagnostics_artifact_path(parsed_path: Path) -> Path:
     return intra_thread_topics_dir(parsed_path) / "segment-merge-diagnostics.jsonl"
+
+
+def intra_thread_topic_candidates_artifact_path(parsed_path: Path) -> Path:
+    return intra_thread_topics_dir(parsed_path) / "topic-candidates.jsonl"
 
 
 def intra_thread_report_artifact_path(parsed_path: Path) -> Path:
@@ -499,12 +505,48 @@ def _segment_merge_pair_diagnostic_row(
         "filtered_left_top_tokens": list(diagnostic.filtered_left_top_tokens),
         "filtered_right_top_tokens": list(diagnostic.filtered_right_top_tokens),
         "lexical_anchor_score": diagnostic.lexical_anchor_score,
+        "lexical_anchor_band": diagnostic.lexical_anchor_band,
         "content_type_flags": {
             "left": list(diagnostic.content_type_flags.get("left", ())),
             "right": list(diagnostic.content_type_flags.get("right", ())),
         },
         "decision": diagnostic.decision,
         "reason": diagnostic.reason,
+    }
+
+
+def _topic_candidate_row(
+    diagnostic: SegmentMergePairDiagnostic,
+    *,
+    messages: list[ReconstructedThreadMessage],
+    segments: list[ContiguousSegment],
+) -> dict[str, Any]:
+    left_segment = segments[diagnostic.left_segment_index]
+    right_segment = segments[diagnostic.right_segment_index]
+    return {
+        "record_type": "intra_thread_topic_candidate",
+        "schema_version": TOPIC_CANDIDATE_SCHEMA_VERSION,
+        "thread_id": diagnostic.conversation_id,
+        "provider_id": diagnostic.provider_id,
+        "conversation_id": diagnostic.conversation_id,
+        "left_segment_id": diagnostic.left_segment_id,
+        "right_segment_id": diagnostic.right_segment_id,
+        "left_segment_index": diagnostic.left_segment_index,
+        "right_segment_index": diagnostic.right_segment_index,
+        "candidate_type": diagnostic.lexical_anchor_band,
+        "candidate_role": _topic_candidate_role(diagnostic.lexical_anchor_band),
+        "similarity": diagnostic.similarity,
+        "lexical_similarity": diagnostic.lexical_similarity,
+        "lexical_anchor_score": diagnostic.lexical_anchor_score,
+        "lexical_anchor_band": diagnostic.lexical_anchor_band,
+        "content_type_flags": {
+            "left": list(diagnostic.content_type_flags.get("left", ())),
+            "right": list(diagnostic.content_type_flags.get("right", ())),
+        },
+        "reasons": _topic_candidate_reasons(diagnostic),
+        "left_preview": _segment_preview_text(left_segment, messages),
+        "right_preview": _segment_preview_text(right_segment, messages),
+        "segment_index_gap": diagnostic.segment_index_gap,
     }
 
 
@@ -693,6 +735,7 @@ def build_segment_merge_groups_with_diagnostics(
                     filtered_left_top_tokens=tuple(filtered_top_tokens[left_index]),
                     filtered_right_top_tokens=tuple(filtered_top_tokens[right_index]),
                     lexical_anchor_score=round(lexical_anchor_score, 4),
+                    lexical_anchor_band=_lexical_anchor_band(lexical_anchor_score),
                     content_type_flags={
                         "left": content_type_flags[left_index],
                         "right": content_type_flags[right_index],
@@ -854,6 +897,14 @@ def _lexical_anchor_score(
         min(len(filtered_left_top_tokens), len(filtered_right_top_tokens)),
     )
     return len(filtered_shared_top_tokens) / denominator
+
+
+def _lexical_anchor_band(lexical_anchor_score: float) -> str:
+    if lexical_anchor_score < 0.10:
+        return "weak"
+    if lexical_anchor_score < 0.20:
+        return "gray"
+    return "strong"
 
 
 def _segment_merge_content_type_flags(text: str) -> list[str]:
@@ -1089,6 +1140,7 @@ def analyze_intra_thread_topics(
         segment_merge_diagnostics_path = (
             intra_thread_segment_merge_diagnostics_artifact_path(parsed_path)
         )
+        topic_candidates_path = intra_thread_topic_candidates_artifact_path(parsed_path)
         existing_artifacts = [
             path
             for path in (
@@ -1096,6 +1148,7 @@ def analyze_intra_thread_topics(
                 segments_path,
                 segment_merge_path if merge_segments else None,
                 segment_merge_diagnostics_path if merge_segments else None,
+                topic_candidates_path if merge_segments else None,
             )
             if path is not None and path.exists()
         ]
@@ -1152,6 +1205,16 @@ def analyze_intra_thread_topics(
                         for row in segment_merge_diagnostics
                     ],
                 )
+            )
+            topic_candidate_rows = [
+                _topic_candidate_row(row, messages=messages, segments=segments)
+                for row in _sorted_topic_candidate_diagnostics(
+                    segment_merge_diagnostics
+                )
+                if row.similarity >= DEFAULT_SEGMENT_MERGE_SIMILARITY_THRESHOLD
+            ]
+            written_segment_merges.append(
+                _write_jsonl(topic_candidates_path, topic_candidate_rows)
             )
             total_segment_merge_groups += len(segment_merge_groups)
 
@@ -1683,6 +1746,26 @@ def _render_segment_merge_diagnostics(
         lines.append("_No pair diagnostics found._")
         lines.append("")
 
+    for title, band in (
+        ("### Strong Anchor Merge Candidates", "strong"),
+        ("### Gray-Zone Merge Candidates", "gray"),
+        ("### Weak Anchor Merge Candidates", "weak"),
+    ):
+        lines.extend([title, ""])
+        band_rows = [
+            row
+            for row in _sorted_segment_merge_anchor_band_diagnostics(
+                segment_merge_diagnostics or []
+            )
+            if row.get("lexical_anchor_band") == band
+        ]
+        if band_rows:
+            for row in band_rows[:REPORT_SEGMENT_MERGE_PAIR_LIMIT]:
+                lines.extend(_render_segment_pair_diagnostic(row, segments, messages))
+        else:
+            lines.append(f"_No {band} anchor candidates._")
+            lines.append("")
+
     lines.extend(["### Suspicious Merge Candidates", ""])
     suspicious = [
         row
@@ -1771,6 +1854,7 @@ def _render_segment_pair_diagnostic(
         "- filtered_right_top_tokens: "
         f"{_token_list_display(_string_list_field(row, 'filtered_right_top_tokens'))}",
         f"- lexical_anchor_score: {_float_field(row, 'lexical_anchor_score'):.4f}",
+        f"- lexical_anchor_band: `{row.get('lexical_anchor_band', 'unknown')}`",
         "- left_content_type_flags: "
         f"{_token_list_display(_content_type_flags(row, 'left'))}",
         "- right_content_type_flags: "
@@ -1822,6 +1906,33 @@ def _segment_merge_suspicious_reason(row: dict[str, Any]) -> str | None:
     return reasons[0] if reasons else None
 
 
+def _topic_candidate_role(candidate_type: str) -> str:
+    if candidate_type == "strong":
+        return "primary_merge"
+    if candidate_type == "gray":
+        return "review_candidate"
+    return "suspicious_candidate"
+
+
+def _topic_candidate_reasons(diagnostic: SegmentMergePairDiagnostic) -> list[str]:
+    reasons: list[str] = []
+    if diagnostic.lexical_anchor_score < 0.10:
+        reasons.append("low filtered lexical anchor")
+    if _content_type_mismatch(
+        set(diagnostic.content_type_flags.get("left", ())),
+        set(diagnostic.content_type_flags.get("right", ())),
+    ):
+        reasons.append("content type mismatch")
+    if diagnostic.decision in {
+        "blocked_adjacent_group",
+        "below_threshold",
+        "short_segment",
+        "blocked_low_lexical_anchor",
+    }:
+        reasons.append(diagnostic.decision)
+    return reasons
+
+
 def _content_type_mismatch(left_flags: set[str], right_flags: set[str]) -> bool:
     return (
         "summary_like" in left_flags
@@ -1841,6 +1952,34 @@ def _sorted_segment_merge_pair_diagnostics(
             -_float_field(row, "similarity"),
             _int_field(row, "left_segment_index"),
             _int_field(row, "right_segment_index"),
+        ),
+    )
+
+
+def _sorted_segment_merge_anchor_band_diagnostics(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            -_float_field(row, "similarity"),
+            _float_field(row, "lexical_anchor_score"),
+            _int_field(row, "left_segment_index"),
+            _int_field(row, "right_segment_index"),
+        ),
+    )
+
+
+def _sorted_topic_candidate_diagnostics(
+    diagnostics: list[SegmentMergePairDiagnostic],
+) -> list[SegmentMergePairDiagnostic]:
+    return sorted(
+        diagnostics,
+        key=lambda row: (
+            -row.similarity,
+            row.lexical_anchor_score,
+            row.left_segment_index,
+            row.right_segment_index,
         ),
     )
 
@@ -1904,6 +2043,18 @@ def _segment_edge_preview(
         _message_preview_inline(segment_messages[0]),
         _message_preview_inline(segment_messages[-1]),
     )
+
+
+def _segment_preview_text(
+    segment: ContiguousSegment,
+    messages: list[ReconstructedThreadMessage],
+) -> str:
+    segment_messages = _messages_in_range(messages, segment.start_index, segment.end_index)
+    if not segment_messages:
+        return ""
+    first = _message_preview_inline(segment_messages[0])
+    last = _message_preview_inline(segment_messages[-1])
+    return first if first == last else f"{first} ... {last}"
 
 
 def _token_list_display(tokens: list[str]) -> str:
