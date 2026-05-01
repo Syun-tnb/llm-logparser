@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/intra_thread_topic_summary.schema.json",
+  "type": "object",
+  "required": [
+    "record_type",
+    "schema_version",
+    "provider_id",
+    "conversation_id",
+    "segment_id",
+    "start_index",
+    "end_index",
+    "message_ids",
+    "message_count",
+    "segment_text_sha1",
+    "title",
+    "summary",
+    "conclusion_text",
+    "conclusion_status",
+    "keywords",
+    "confidence",
+    "source"
+  ],
+  "properties": {
+    "record_type": { "type": "string", "const": "intra_thread_topic_summary" },
+    "schema_version": { "type": "string", "const": "0.1" },
+    "provider_id": { "type": "string", "minLength": 1 },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "start_index": { "type": "integer", "minimum": 0 },
+    "end_index": { "type": "integer", "minimum": 0 },
+    "message_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "message_count": { "type": "integer", "minimum": 1 },
+    "segment_text_sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "conclusion_text": { "type": ["string", "null"] },
+    "conclusion_status": {
+      "type": "string",
+      "enum": ["explicit", "inferred", "unknown"]
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "source": { "type": "string", "const": "heuristic" }
+  },
+  "additionalProperties": false
+}

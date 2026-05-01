@@ -302,6 +302,28 @@ def run_analyze_intra_thread_topics(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_intra_thread_topic_summaries(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_intra_thread_topic_summaries import (
+        IntraThreadTopicSummaryError,
+        write_intra_thread_topic_summaries,
+    )
+
+    input_path = validate_path(args.input)
+    try:
+        result = write_intra_thread_topic_summaries(
+            input_path,
+            overwrite=args.overwrite,
+        )
+    except IntraThreadTopicSummaryError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "intra-thread topic summary artifacts written: "
+        f"{result['threads']} thread(s), {result['summaries']} summary row(s)"
+    )
+
+
 def run_analyze_semantic_preview(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_preview import (
         SemanticPreviewError,

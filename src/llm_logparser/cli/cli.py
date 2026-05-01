@@ -23,6 +23,7 @@ from llm_logparser.cli.handlers import (
     run_analyze_cross_thread_intent_eval,
     run_analyze_cross_thread_memory_recall,
     run_analyze_datasheet,
+    run_analyze_intra_thread_topic_summaries,
     run_analyze_intra_thread_topics,
     run_analyze_metrics,
     run_analyze_semantic_normalization,
@@ -195,6 +196,7 @@ def _prompt_missing_required(
             "sqlite-build",
             "semantic-prototype",
             "intra-thread-topics",
+            "intra-thread-topic-summaries",
             "semantic-preview",
             "semantic-span-proposals",
             "cross-thread-candidates",
@@ -266,6 +268,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_semantic_prototype(args, logger)
         elif args.analyze_command == "intra-thread-topics":
             run_analyze_intra_thread_topics(args, logger)
+        elif args.analyze_command == "intra-thread-topic-summaries":
+            run_analyze_intra_thread_topic_summaries(args, logger)
         elif args.analyze_command == "semantic-preview":
             run_analyze_semantic_preview(args, logger)
         elif args.analyze_command == "semantic-span-proposals":

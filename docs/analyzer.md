@@ -665,6 +665,15 @@ deterministic and model-derived capabilities.
   previews from sibling `parsed.jsonl` and writes
   `l3/intra-thread-topics/report.md` without recomputing embeddings.
 
+- `intra-thread-topic-summaries` is a deterministic L3 sidecar builder on top
+  of existing intra-thread `segments.jsonl`. It reads canonical `parsed.jsonl`,
+  reconstructs each segment by `message_ids`, verifies the stored segment
+  `text_sha1`, and writes `l3/intra-thread-topics/topic-summaries.jsonl`.
+  Current output is heuristic only (`source: heuristic`): conservative extracted
+  title, truncated normalized excerpt summary, keywords, `conclusion_text: null`,
+  and usually `conclusion_status: unknown`. It is provisional input for later
+  cross-thread matching, not final topic determination.
+
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus
   `window_clusters.jsonl`, selects representative windows per cluster, and

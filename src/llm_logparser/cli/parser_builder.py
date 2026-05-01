@@ -554,6 +554,23 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.intra_thread_topics.opt.merge_segments.help"),
     )
 
+    analyze_intra_thread_topic_summaries_cmd = analyze_subparsers.add_parser(
+        "intra-thread-topic-summaries",
+        help=_("cli.analyze.intra_thread_topic_summaries.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.input.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.overwrite.help"),
+    )
+
     analyze_semantic_preview_cmd = analyze_subparsers.add_parser(
         "semantic-preview",
         help=_("cli.analyze.semantic_preview.help"),

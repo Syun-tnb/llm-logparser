@@ -789,6 +789,20 @@ For each parsed thread, the command writes:
 - `l3/intra-thread-topics/boundaries.jsonl`
 - `l3/intra-thread-topics/segments.jsonl`
 
+Build deterministic provisional summaries from those existing segments:
+
+```bash
+uv run llm-logparser analyze intra-thread-topic-summaries \
+  --input <parsed.jsonl-or-directory> \
+  [--overwrite]
+```
+
+This writes `l3/intra-thread-topics/topic-summaries.jsonl`. The artifact is an
+additive L3 sidecar only: it reconstructs segment text from canonical
+`parsed.jsonl` via `message_ids`, verifies the segment `text_sha1`, and emits
+conservative heuristic `title`, `summary`, `keywords`, and unknown conclusion
+fields. It does not call a model and does not determine final topics.
+
 This Phase 1 path is intentionally minimal. It reconstructs canonical message
 order from `parsed.jsonl`, builds overlapping sliding windows, embeds those
 windows, compares adjacent-window cosine similarity only, and splits the thread
