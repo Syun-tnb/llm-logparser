@@ -672,8 +672,12 @@ deterministic and model-derived capabilities.
   Default output is heuristic (`source: heuristic`): conservative extracted
   title, truncated normalized excerpt summary, keywords, `conclusion_text: null`,
   and usually `conclusion_status: unknown`. `--source local-llm` optionally uses
-  local Ollama generation, defaulting to `gemma4-Q8_K_XL:latest`; the tested
-  fallback candidate is `mistral-nemo:latest`. Local rows include `model`,
+  local Ollama generation. The default tested model is
+  `gemma4-Q8_K_XL:latest`; `mistral-nemo:latest` is a viable fallback
+  candidate. Current local evaluation does not recommend `gpt-oss-20b`,
+  `lfm-instruct`, or `lfm-thinking` for this artifact, but they are not blocked:
+  users may pass any local model explicitly with `--model`. Model quality may
+  vary, and prompt profiles may be added later. Local rows include `model`,
   `prompt_variant`, and `prompt_hash` provenance. If one segment fails local
   generation or strict output validation, only that segment falls back to the
   heuristic row. Conclusions remain provisional. This is input for later

@@ -806,12 +806,16 @@ conservative heuristic `title`, `summary`, `keywords`, and unknown conclusion
 fields by default.
 
 `--source local-llm` optionally asks a local Ollama generation model for the same
-fields. The default local model is `gemma4-Q8_K_XL:latest`; `mistral-nemo:latest`
-is the tested fallback candidate. Each segment is still grounded by
-`parsed.jsonl` and `segments.jsonl`; if local generation fails validation, that
-segment falls back to its heuristic row without failing the whole run. Local
-rows include `model`, `prompt_variant`, and `prompt_hash` provenance. Conclusions
-remain provisional, and this artifact does not determine final topics.
+fields. The default tested model is `gemma4-Q8_K_XL:latest`; `mistral-nemo:latest`
+is a viable fallback candidate. Current local evaluation does not recommend
+`gpt-oss-20b`, `lfm-instruct`, or `lfm-thinking` for this artifact, but they are
+not blocked: pass any local model explicitly with `--model` when testing. Model
+quality may vary, and prompt profiles may be added later. Each segment is still
+grounded by `parsed.jsonl` and `segments.jsonl`; if local generation fails
+validation, that segment falls back to its heuristic row without failing the
+whole run. Local rows include `model`, `prompt_variant`, and `prompt_hash`
+provenance. Conclusions remain provisional, and this artifact does not determine
+final topics.
 
 This Phase 1 path is intentionally minimal. It reconstructs canonical message
 order from `parsed.jsonl`, builds overlapping sliding windows, embeds those

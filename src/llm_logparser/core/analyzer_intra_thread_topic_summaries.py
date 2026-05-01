@@ -74,13 +74,6 @@ LOCAL_LLM_PAYLOAD_KEYS = frozenset(
     }
 )
 CONCLUSION_STATUSES = frozenset({"explicit", "inferred", "unknown"})
-BLOCKED_LOCAL_LLM_MODELS = frozenset(
-    {
-        "gpt-oss-20b:latest",
-        "lfm-instruct:latest",
-        "lfm-thinking:latest",
-    }
-)
 EXPLICIT_CONCLUSION_PATTERNS = (
     re.compile(r"\bDecision\s*:", re.IGNORECASE),
     re.compile(r"\bWe decided\b", re.IGNORECASE),
@@ -98,6 +91,9 @@ EXPLICIT_CONCLUSION_PATTERNS = (
     re.compile(r"採用"),
 )
 
+# Keep the local LLM prompt contract centralized until prompt profiles are
+# externalized under resources/prompts/. The helper functions below are the
+# intended boundary for future profile-backed prompt loading.
 LOCAL_LLM_PROMPT_TEMPLATE = """You summarize one intra-thread conversation segment for a downstream matching index.
 
 Return exactly one JSON object and nothing else. Do not use markdown. Do not add reasoning.
@@ -223,11 +219,17 @@ def _keyword_tokens(text: str) -> list[str]:
 
 
 def _prompt_hash() -> str:
+    """Return the provenance hash for the active local LLM prompt contract."""
     payload = LOCAL_LLM_PROMPT_TEMPLATE.encode("utf-8")
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
 def _build_local_llm_prompt(segment_text: str) -> str:
+    """Build the active local LLM prompt.
+
+    This intentionally isolates prompt assembly so the template can later move
+    to a prompt-profile resource without changing generation and fallback flow.
+    """
     return LOCAL_LLM_PROMPT_TEMPLATE.replace("{segment_text}", segment_text)
 
 
@@ -465,10 +467,6 @@ def _build_intra_thread_topic_summary_rows_with_stats(
     if source == "local_llm":
         if not isinstance(model, str) or not model.strip():
             raise IntraThreadTopicSummaryError("--model must be a non-empty string")
-        if model in BLOCKED_LOCAL_LLM_MODELS:
-            raise IntraThreadTopicSummaryError(
-                f"model is not supported for intra-thread topic summaries: {model}"
-            )
         if timeout_seconds <= 0:
             raise IntraThreadTopicSummaryError("--timeout-seconds must be > 0")
 

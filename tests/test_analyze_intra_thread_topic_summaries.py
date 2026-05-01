@@ -264,6 +264,37 @@ def test_intra_thread_topic_summaries_local_llm_defaults_model(tmp_path):
     assert client.calls[0]["model"] == DEFAULT_LOCAL_LLM_MODEL
 
 
+def test_intra_thread_topic_summaries_allows_explicit_not_recommended_model(
+    tmp_path,
+):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Launch checklist schema",
+                    "summary": "The segment discusses schema-backed topic summaries.",
+                    "conclusion_text": None,
+                    "conclusion_status": "unknown",
+                    "keywords": ["schema"],
+                    "confidence": 0.7,
+                }
+            )
+        ]
+    )
+
+    rows = build_intra_thread_topic_summary_rows(
+        parsed_path,
+        source="local_llm",
+        model="lfm-thinking:latest",
+        client=client,
+    )
+
+    assert rows[0]["source"] == "local_llm"
+    assert rows[0]["model"] == "ollama/lfm-thinking:latest"
+    assert client.calls[0]["model"] == "lfm-thinking:latest"
+
+
 def test_intra_thread_topic_summaries_invalid_json_falls_back_to_heuristic(tmp_path):
     parsed_path = _write_basic_thread_with_segments(tmp_path)
     client = FakeLLMClient(["not-json", "still-not-json"])
