@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from llm_logparser.core import analyzer_intra_thread_topic_summaries as summaries
 from llm_logparser.core.analyzer_intra_thread_topic_summaries import (
     DEFAULT_LOCAL_LLM_MODEL,
     IntraThreadTopicSummaryError,
@@ -300,7 +301,7 @@ def test_intra_thread_topic_summaries_local_llm_truncates_prompt_head_and_tail(
 ):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     head_text = "HEAD_CONTEXT keep this launch requirement."
-    middle_text = ("x" * 9000) + "MIDDLE_SHOULD_BE_REMOVED" + ("y" * 9000)
+    middle_text = ("x" * 15000) + "MIDDLE_SHOULD_BE_REMOVED" + ("y" * 15000)
     tail_text = "TAIL_CONTEXT keep this final decision. Decision: Use the schema."
     message_text = f"{head_text}\n{middle_text}\n{tail_text}"
     _write_parsed_jsonl(
@@ -341,6 +342,28 @@ def test_intra_thread_topic_summaries_local_llm_truncates_prompt_head_and_tail(
     assert "\n...\n" in prompt
     assert "MIDDLE_SHOULD_BE_REMOVED" not in prompt
     assert len(prompt) < len(message_text)
+    assert (
+        len(summaries._LocalPromptTokenizer().encode(prompt))
+        <= summaries.LOCAL_LLM_MAX_PROMPT_TOKENS
+    )
+
+
+def test_intra_thread_topic_summaries_prompt_truncation_falls_back_without_tokenizer(
+    monkeypatch,
+):
+    monkeypatch.setattr(summaries, "_load_prompt_tokenizer", lambda: None)
+    head_text = "HEAD_CONTEXT keep this launch requirement."
+    middle_text = ("x" * 9000) + "MIDDLE_SHOULD_BE_REMOVED" + ("y" * 9000)
+    tail_text = "TAIL_CONTEXT keep this final decision."
+    segment_text = f"{head_text}\n{middle_text}\n{tail_text}"
+
+    truncated = summaries._truncate_segment_text_for_prompt(segment_text)
+
+    assert head_text in truncated
+    assert tail_text in truncated
+    assert "\n...\n" in truncated
+    assert "MIDDLE_SHOULD_BE_REMOVED" not in truncated
+    assert len(truncated) < len(segment_text)
 
 
 def test_intra_thread_topic_summaries_invalid_json_falls_back_to_heuristic(tmp_path):

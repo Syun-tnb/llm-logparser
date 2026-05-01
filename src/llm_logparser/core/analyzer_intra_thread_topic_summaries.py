@@ -5,7 +5,7 @@ import json
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .llm_client_protocol import LLMClient
 from .ollama_client import OllamaClient
@@ -24,8 +24,10 @@ DEFAULT_LOCAL_LLM_MODEL = "gemma4-Q8_K_XL:latest"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_TIMEOUT_SECONDS = 120.0
 LOCAL_LLM_PROMPT_VARIANT = "intra_thread_topic_summary_v0"
-LOCAL_LLM_PROMPT_HEAD_CHARS = 8000
-LOCAL_LLM_PROMPT_TAIL_CHARS = 4000
+LOCAL_LLM_MAX_PROMPT_TOKENS = 4096
+LOCAL_LLM_PROMPT_TOKEN_MARGIN = 32
+LOCAL_LLM_PROMPT_FALLBACK_HEAD_CHARS = 8000
+LOCAL_LLM_PROMPT_FALLBACK_TAIL_CHARS = 4000
 LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR = "\n...\n"
 SUMMARY_MAX_CHARS = 280
 TITLE_MAX_CHARS = 72
@@ -33,6 +35,11 @@ TITLE_MAX_TOKENS = 8
 KEYWORD_LIMIT = 8
 KEYWORD_MIN_LENGTH = 2
 TOKEN_RE = re.compile(r"[a-z][a-z0-9_/-]*|[一-龯ぁ-んァ-ヶー]+", re.IGNORECASE)
+PROMPT_TOKEN_RE = re.compile(
+    r"\s+|[A-Za-z0-9_/-]+|[一-龯ぁ-んァ-ヶー]+|[^\s]",
+    re.IGNORECASE,
+)
+PROMPT_TOKEN_CHUNK_CHARS = 4
 STOPWORDS = frozenset(
     {
         "a",
@@ -137,6 +144,41 @@ class IntraThreadTopicSummaryError(RuntimeError):
     pass
 
 
+class _PromptTokenizer(Protocol):
+    def encode(self, text: str) -> list[str]:
+        ...
+
+    def decode(self, tokens: list[str]) -> str:
+        ...
+
+
+class _LocalPromptTokenizer:
+    """Lightweight local prompt tokenizer used only for budget estimation.
+
+    This is intentionally isolated and conservative. It preserves exact text
+    through decode(), while giving the prompt path a token-counting boundary
+    that can be replaced by a model-specific tokenizer later.
+    """
+
+    def encode(self, text: str) -> list[str]:
+        tokens: list[str] = []
+        for match in PROMPT_TOKEN_RE.finditer(text):
+            value = match.group(0)
+            if not value:
+                continue
+            if value.isspace() or len(value) <= PROMPT_TOKEN_CHUNK_CHARS:
+                tokens.append(value)
+                continue
+            tokens.extend(
+                value[index : index + PROMPT_TOKEN_CHUNK_CHARS]
+                for index in range(0, len(value), PROMPT_TOKEN_CHUNK_CHARS)
+            )
+        return tokens
+
+    def decode(self, tokens: list[str]) -> str:
+        return "".join(tokens)
+
+
 def intra_thread_topic_summaries_artifact_path(parsed_path: Path) -> Path:
     return intra_thread_topics_dir(parsed_path) / "topic-summaries.jsonl"
 
@@ -227,23 +269,70 @@ def _prompt_hash() -> str:
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
-def _truncate_segment_text_for_prompt(segment_text: str) -> str:
-    """Shorten segment text for local LLM prompts with a head+tail strategy.
+def _load_prompt_tokenizer() -> _PromptTokenizer | None:
+    """Return the active local tokenizer, or None to use character fallback."""
+    try:
+        return _LocalPromptTokenizer()
+    except Exception:
+        return None
 
-    Character-based truncation is intentionally simple for now. Keeping this in
-    one helper makes a later token-budget implementation a localized change.
-    """
+
+def _truncate_segment_text_for_prompt_by_chars(segment_text: str) -> str:
     max_chars = (
-        LOCAL_LLM_PROMPT_HEAD_CHARS
+        LOCAL_LLM_PROMPT_FALLBACK_HEAD_CHARS
         + len(LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR)
-        + LOCAL_LLM_PROMPT_TAIL_CHARS
+        + LOCAL_LLM_PROMPT_FALLBACK_TAIL_CHARS
     )
     if len(segment_text) <= max_chars:
         return segment_text
     return (
-        segment_text[:LOCAL_LLM_PROMPT_HEAD_CHARS]
+        segment_text[:LOCAL_LLM_PROMPT_FALLBACK_HEAD_CHARS]
         + LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR
-        + segment_text[-LOCAL_LLM_PROMPT_TAIL_CHARS :]
+        + segment_text[-LOCAL_LLM_PROMPT_FALLBACK_TAIL_CHARS :]
+    )
+
+
+def _truncate_segment_text_for_prompt(
+    segment_text: str,
+    *,
+    tokenizer: _PromptTokenizer | None = None,
+    max_prompt_tokens: int = LOCAL_LLM_MAX_PROMPT_TOKENS,
+) -> str:
+    """Shorten segment text for local LLM prompts with a token head+tail budget.
+
+    The tokenizer is isolated so a model-specific tokenizer can replace the
+    current local estimator. If tokenization is unavailable, the previous
+    character-based head+tail fallback is used.
+    """
+    prompt_tokenizer = tokenizer or _load_prompt_tokenizer()
+    if prompt_tokenizer is None:
+        return _truncate_segment_text_for_prompt_by_chars(segment_text)
+
+    template_without_segment = LOCAL_LLM_PROMPT_TEMPLATE.replace("{segment_text}", "")
+    template_tokens = prompt_tokenizer.encode(template_without_segment)
+    segment_tokens = prompt_tokenizer.encode(segment_text)
+    available_segment_tokens = (
+        max_prompt_tokens - len(template_tokens) - LOCAL_LLM_PROMPT_TOKEN_MARGIN
+    )
+
+    if available_segment_tokens <= 0:
+        return ""
+    if len(segment_tokens) <= available_segment_tokens:
+        return segment_text
+
+    separator_tokens = prompt_tokenizer.encode(LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR)
+    content_budget = available_segment_tokens - len(separator_tokens)
+    if content_budget <= 0:
+        return ""
+    if content_budget == 1:
+        return prompt_tokenizer.decode(segment_tokens[:1])
+
+    tail_budget = max(1, content_budget // 3)
+    head_budget = content_budget - tail_budget
+    return (
+        prompt_tokenizer.decode(segment_tokens[:head_budget])
+        + LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR
+        + prompt_tokenizer.decode(segment_tokens[-tail_budget:])
     )
 
 
