@@ -56,7 +56,13 @@
       "minimum": 0,
       "maximum": 1
     },
-    "source": { "type": "string", "const": "heuristic" }
+    "source": {
+      "type": "string",
+      "enum": ["heuristic", "local_llm"]
+    },
+    "model": { "type": "string", "minLength": 1 },
+    "prompt_variant": { "type": "string", "minLength": 1 },
+    "prompt_hash": { "type": "string", "minLength": 1 }
   },
   "additionalProperties": false
 }

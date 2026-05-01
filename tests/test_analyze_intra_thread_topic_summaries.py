@@ -183,9 +183,36 @@ def test_intra_thread_topic_summary_schema_validation(tmp_path):
     validator = load_intra_thread_topic_summary_validator()
 
     assert list(validator.iter_errors(rows[0])) == []
+    assert "model" not in rows[0]
+    assert "prompt_variant" not in rows[0]
+    assert "prompt_hash" not in rows[0]
 
     invalid = dict(rows[0])
     invalid["conclusion_status"] = "done"
     errors = list(validator.iter_errors(invalid))
+
+    assert errors
+
+
+def test_intra_thread_topic_summary_schema_accepts_local_llm_provenance(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    row = build_intra_thread_topic_summary_rows(parsed_path)[0]
+    row["source"] = "local_llm"
+    row["model"] = "ollama/test-model"
+    row["prompt_variant"] = "intra_thread_topic_summary_v0"
+    row["prompt_hash"] = "sha256:" + ("a" * 64)
+
+    validator = load_intra_thread_topic_summary_validator()
+
+    assert list(validator.iter_errors(row)) == []
+
+
+def test_intra_thread_topic_summary_schema_rejects_invalid_source(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    row = build_intra_thread_topic_summary_rows(parsed_path)[0]
+    row["source"] = "api_llm"
+
+    validator = load_intra_thread_topic_summary_validator()
+    errors = list(validator.iter_errors(row))
 
     assert errors
