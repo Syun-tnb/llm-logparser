@@ -295,6 +295,54 @@ def test_intra_thread_topic_summaries_allows_explicit_not_recommended_model(
     assert client.calls[0]["model"] == "lfm-thinking:latest"
 
 
+def test_intra_thread_topic_summaries_local_llm_truncates_prompt_head_and_tail(
+    tmp_path,
+):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    head_text = "HEAD_CONTEXT keep this launch requirement."
+    middle_text = ("x" * 9000) + "MIDDLE_SHOULD_BE_REMOVED" + ("y" * 9000)
+    tail_text = "TAIL_CONTEXT keep this final decision. Decision: Use the schema."
+    message_text = f"{head_text}\n{middle_text}\n{tail_text}"
+    _write_parsed_jsonl(
+        parsed_path,
+        messages=[
+            _message_row(message_id="m1", role="user", ts=100, text=message_text),
+        ],
+    )
+    _write_segments_jsonl(
+        parsed_path.parent / "l3" / "intra-thread-topics" / "segments.jsonl",
+        [_segment_row(message_ids=["m1"], text=message_text, end_index=0)],
+    )
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Schema decision",
+                    "summary": "The segment preserves the launch requirement and final schema decision.",
+                    "conclusion_text": "Decision: Use the schema.",
+                    "conclusion_status": "explicit",
+                    "keywords": ["schema", "decision"],
+                    "confidence": 0.8,
+                }
+            )
+        ]
+    )
+
+    rows = build_intra_thread_topic_summary_rows(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+    prompt = str(client.calls[0]["prompt"])
+
+    assert rows[0]["source"] == "local_llm"
+    assert head_text in prompt
+    assert tail_text in prompt
+    assert "\n...\n" in prompt
+    assert "MIDDLE_SHOULD_BE_REMOVED" not in prompt
+    assert len(prompt) < len(message_text)
+
+
 def test_intra_thread_topic_summaries_invalid_json_falls_back_to_heuristic(tmp_path):
     parsed_path = _write_basic_thread_with_segments(tmp_path)
     client = FakeLLMClient(["not-json", "still-not-json"])

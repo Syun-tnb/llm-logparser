@@ -24,6 +24,9 @@ DEFAULT_LOCAL_LLM_MODEL = "gemma4-Q8_K_XL:latest"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_TIMEOUT_SECONDS = 120.0
 LOCAL_LLM_PROMPT_VARIANT = "intra_thread_topic_summary_v0"
+LOCAL_LLM_PROMPT_HEAD_CHARS = 8000
+LOCAL_LLM_PROMPT_TAIL_CHARS = 4000
+LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR = "\n...\n"
 SUMMARY_MAX_CHARS = 280
 TITLE_MAX_CHARS = 72
 TITLE_MAX_TOKENS = 8
@@ -224,13 +227,34 @@ def _prompt_hash() -> str:
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
+def _truncate_segment_text_for_prompt(segment_text: str) -> str:
+    """Shorten segment text for local LLM prompts with a head+tail strategy.
+
+    Character-based truncation is intentionally simple for now. Keeping this in
+    one helper makes a later token-budget implementation a localized change.
+    """
+    max_chars = (
+        LOCAL_LLM_PROMPT_HEAD_CHARS
+        + len(LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR)
+        + LOCAL_LLM_PROMPT_TAIL_CHARS
+    )
+    if len(segment_text) <= max_chars:
+        return segment_text
+    return (
+        segment_text[:LOCAL_LLM_PROMPT_HEAD_CHARS]
+        + LOCAL_LLM_PROMPT_TRUNCATION_SEPARATOR
+        + segment_text[-LOCAL_LLM_PROMPT_TAIL_CHARS :]
+    )
+
+
 def _build_local_llm_prompt(segment_text: str) -> str:
     """Build the active local LLM prompt.
 
     This intentionally isolates prompt assembly so the template can later move
     to a prompt-profile resource without changing generation and fallback flow.
     """
-    return LOCAL_LLM_PROMPT_TEMPLATE.replace("{segment_text}", segment_text)
+    prompt_segment_text = _truncate_segment_text_for_prompt(segment_text)
+    return LOCAL_LLM_PROMPT_TEMPLATE.replace("{segment_text}", prompt_segment_text)
 
 
 def _has_explicit_conclusion_marker(segment_text: str) -> bool:
