@@ -304,15 +304,22 @@ def run_analyze_intra_thread_topics(args, logger: logging.Logger) -> None:
 
 def run_analyze_intra_thread_topic_summaries(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_intra_thread_topic_summaries import (
+        DEFAULT_LOCAL_LLM_MODEL,
         IntraThreadTopicSummaryError,
         write_intra_thread_topic_summaries,
     )
 
     input_path = validate_path(args.input)
+    source = "local_llm" if args.source == "local-llm" else "heuristic"
+    model = args.model or DEFAULT_LOCAL_LLM_MODEL
     try:
         result = write_intra_thread_topic_summaries(
             input_path,
             overwrite=args.overwrite,
+            source=source,
+            model=model,
+            base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
         )
     except IntraThreadTopicSummaryError as exc:
         logger.error(str(exc))
@@ -320,7 +327,9 @@ def run_analyze_intra_thread_topic_summaries(args, logger: logging.Logger) -> No
 
     logger.info(
         "intra-thread topic summary artifacts written: "
-        f"{result['threads']} thread(s), {result['summaries']} summary row(s)"
+        f"{result['threads']} thread(s), {result['summaries']} summary row(s), "
+        f"{result['local_llm_summaries']} local LLM row(s), "
+        f"{result['local_llm_failures']} local LLM fallback(s)"
     )
 
 

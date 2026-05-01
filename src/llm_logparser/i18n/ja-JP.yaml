@@ -90,6 +90,10 @@ messages:
   cli.analyze.intra_thread_topics.opt.merge_segments.help: 非連続の intra-thread segment group を l3/intra-thread-topics/segment-merge.jsonl に出力する
   cli.analyze.intra_thread_topic_summaries.help: 既存の intra-thread segment から決定的な heuristic topic-summaries.jsonl を構築する
   cli.analyze.intra_thread_topic_summaries.opt.input.help: "入力: l3/intra-thread-topics/segments.jsonl を持つ parsed.jsonl ファイル、または parsed.jsonl を含むディレクトリ"
+  cli.analyze.intra_thread_topic_summaries.opt.source.help: 出力する summary source (heuristic または local-llm)
+  cli.analyze.intra_thread_topic_summaries.opt.model.help: --source local-llm で使うローカル Ollama 生成モデル。既定は gemma4-Q8_K_XL:latest。
+  cli.analyze.intra_thread_topic_summaries.opt.base_url.help: ローカル Ollama サーバーの base URL
+  cli.analyze.intra_thread_topic_summaries.opt.timeout_seconds.help: segment ごとの Ollama リクエスト timeout 秒数
   cli.analyze.intra_thread_topic_summaries.opt.overwrite.help: 既存の l3/intra-thread-topics/topic-summaries.jsonl 成果物を上書きする
   cli.analyze.semantic_preview.help: 保存済み L3 semantic prototype 成果物から cluster、conversation、window を閲覧する
   cli.analyze.semantic_preview.opt.input.help: "入力: ディレクトリのみ。message_windows.jsonl、window_clusters.jsonl、任意の window_neighbors.jsonl を含む provider 成果物ルート"

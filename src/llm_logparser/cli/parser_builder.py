@@ -565,6 +565,31 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.intra_thread_topic_summaries.opt.input.help"),
     )
     analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--source",
+        choices=["heuristic", "local-llm"],
+        default="heuristic",
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.source.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--model",
+        required=False,
+        default=None,
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.model.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--base-url",
+        dest="base_url",
+        default="http://localhost:11434",
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.base_url.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--timeout-seconds",
+        dest="timeout_seconds",
+        type=float,
+        default=120.0,
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.timeout_seconds.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",

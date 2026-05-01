@@ -669,13 +669,15 @@ deterministic and model-derived capabilities.
   of existing intra-thread `segments.jsonl`. It reads canonical `parsed.jsonl`,
   reconstructs each segment by `message_ids`, verifies the stored segment
   `text_sha1`, and writes `l3/intra-thread-topics/topic-summaries.jsonl`.
-  Current output is heuristic only (`source: heuristic`): conservative extracted
+  Default output is heuristic (`source: heuristic`): conservative extracted
   title, truncated normalized excerpt summary, keywords, `conclusion_text: null`,
-  and usually `conclusion_status: unknown`. The schema reserves optional
-  `model`, `prompt_variant`, and `prompt_hash` fields for the next
-  `source: local_llm` phase, but local LLM summary generation is not implemented
-  yet. It is provisional input for later cross-thread matching, not final topic
-  determination.
+  and usually `conclusion_status: unknown`. `--source local-llm` optionally uses
+  local Ollama generation, defaulting to `gemma4-Q8_K_XL:latest`; the tested
+  fallback candidate is `mistral-nemo:latest`. Local rows include `model`,
+  `prompt_variant`, and `prompt_hash` provenance. If one segment fails local
+  generation or strict output validation, only that segment falls back to the
+  heuristic row. Conclusions remain provisional. This is input for later
+  cross-thread matching, not final topic determination.
 
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus

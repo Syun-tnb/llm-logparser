@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from llm_logparser.core.analyzer_intra_thread_topic_summaries import (
+    DEFAULT_LOCAL_LLM_MODEL,
     IntraThreadTopicSummaryError,
     build_intra_thread_topic_summary_rows,
     intra_thread_topic_summaries_artifact_path,
@@ -129,6 +130,38 @@ def _load_jsonl(path: Path) -> list[dict]:
     ]
 
 
+class FakeLLMClient:
+    def __init__(self, responses: list[str]):
+        self.responses = list(responses)
+        self.calls: list[dict[str, object]] = []
+
+    def generate_text(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        response_format: str | None = None,
+        options: dict[str, object] | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "model": model,
+                "prompt": prompt,
+                "response_format": response_format,
+                "options": options or {},
+            }
+        )
+        if self.responses:
+            return self.responses.pop(0)
+        return "{}"
+
+    def embeddings(self, model: str, prompt: str) -> list[float]:
+        raise AssertionError("embeddings should not be called")
+
+    def generate_json(self, model: str, prompt: str) -> dict:
+        raise AssertionError("generate_json should not be called")
+
+
 def test_intra_thread_topic_summaries_fail_when_segments_missing(tmp_path):
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
@@ -162,8 +195,177 @@ def test_intra_thread_topic_summaries_write_successful_heuristic_output(tmp_path
     assert rows[0]["conclusion_text"] is None
     assert rows[0]["conclusion_status"] == "unknown"
     assert rows[0]["source"] == "heuristic"
+    assert "model" not in rows[0]
+    assert "prompt_variant" not in rows[0]
+    assert "prompt_hash" not in rows[0]
     assert "launch" in rows[0]["keywords"]
     assert rows[0]["confidence"] == 0.3
+
+
+def test_intra_thread_topic_summaries_local_llm_writes_valid_response(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Launch checklist schema",
+                    "summary": "The segment discusses adding deterministic schema-backed topic summaries.",
+                    "conclusion_text": None,
+                    "conclusion_status": "unknown",
+                    "keywords": ["schema", "topic summaries", "tests"],
+                    "confidence": 0.82,
+                }
+            )
+        ]
+    )
+
+    result = write_intra_thread_topic_summaries(
+        parsed_path,
+        source="local_llm",
+        model="mistral-nemo:latest",
+        client=client,
+    )
+    row = _load_jsonl(intra_thread_topic_summaries_artifact_path(parsed_path))[0]
+
+    assert result["local_llm_summaries"] == 1
+    assert result["local_llm_failures"] == 0
+    assert row["source"] == "local_llm"
+    assert row["title"] == "Launch checklist schema"
+    assert row["model"] == "ollama/mistral-nemo:latest"
+    assert row["prompt_variant"] == "intra_thread_topic_summary_v0"
+    assert row["prompt_hash"].startswith("sha256:")
+    assert client.calls[0]["response_format"] == "json"
+
+
+def test_intra_thread_topic_summaries_local_llm_defaults_model(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Launch checklist schema",
+                    "summary": "The segment discusses schema-backed topic summaries.",
+                    "conclusion_text": None,
+                    "conclusion_status": "unknown",
+                    "keywords": ["schema"],
+                    "confidence": 0.7,
+                }
+            )
+        ]
+    )
+
+    rows = build_intra_thread_topic_summary_rows(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+
+    assert rows[0]["model"] == f"ollama/{DEFAULT_LOCAL_LLM_MODEL}"
+    assert client.calls[0]["model"] == DEFAULT_LOCAL_LLM_MODEL
+
+
+def test_intra_thread_topic_summaries_invalid_json_falls_back_to_heuristic(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(["not-json", "still-not-json"])
+
+    result = write_intra_thread_topic_summaries(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+    row = _load_jsonl(intra_thread_topic_summaries_artifact_path(parsed_path))[0]
+
+    assert result["local_llm_summaries"] == 0
+    assert result["local_llm_failures"] == 1
+    assert row["source"] == "heuristic"
+    assert "model" not in row
+
+
+def test_intra_thread_topic_summaries_invalid_schema_falls_back_to_heuristic(
+    tmp_path,
+):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Launch checklist schema",
+                    "summary": "The segment discusses schema-backed topic summaries.",
+                    "conclusion_text": None,
+                    "conclusion_status": "unknown",
+                    "keywords": ["schema"],
+                    "confidence": 0.7,
+                    "extra": "not allowed",
+                }
+            )
+        ]
+    )
+
+    result = write_intra_thread_topic_summaries(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+    row = _load_jsonl(intra_thread_topic_summaries_artifact_path(parsed_path))[0]
+
+    assert result["local_llm_failures"] == 1
+    assert row["source"] == "heuristic"
+
+
+def test_intra_thread_topic_summaries_invalid_conclusion_status_falls_back(
+    tmp_path,
+):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Launch checklist schema",
+                    "summary": "The segment discusses schema-backed topic summaries.",
+                    "conclusion_text": None,
+                    "conclusion_status": "done",
+                    "keywords": ["schema"],
+                    "confidence": 0.7,
+                }
+            )
+        ]
+    )
+
+    rows = build_intra_thread_topic_summary_rows(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+
+    assert rows[0]["source"] == "heuristic"
+
+
+def test_intra_thread_topic_summaries_assistant_suggestion_not_explicit(
+    tmp_path,
+):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "Launch checklist schema",
+                    "summary": "The assistant suggests validating schemas and running tests.",
+                    "conclusion_text": "Draft release notes, validate schemas, and run focused tests.",
+                    "conclusion_status": "explicit",
+                    "keywords": ["schema", "tests"],
+                    "confidence": 0.9,
+                }
+            )
+        ]
+    )
+
+    rows = build_intra_thread_topic_summary_rows(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+
+    assert rows[0]["source"] == "heuristic"
 
 
 def test_intra_thread_topic_summaries_fail_on_sha1_drift(tmp_path):

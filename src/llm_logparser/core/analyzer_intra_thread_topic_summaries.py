@@ -7,6 +7,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+from .llm_client_protocol import LLMClient
+from .ollama_client import OllamaClient
 from .analyzer_intra_thread_topics import (
     IntraThreadTopicsError,
     intra_thread_segments_artifact_path,
@@ -15,8 +17,13 @@ from .analyzer_intra_thread_topics import (
 )
 from .l1_derivation import discover_parsed_jsonl
 from .schema_validation import load_intra_thread_topic_summary_validator
+from .structured_llm import generate_structured_json
 
 TOPIC_SUMMARY_SCHEMA_VERSION = "0.1"
+DEFAULT_LOCAL_LLM_MODEL = "gemma4-Q8_K_XL:latest"
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_TIMEOUT_SECONDS = 120.0
+LOCAL_LLM_PROMPT_VARIANT = "intra_thread_topic_summary_v0"
 SUMMARY_MAX_CHARS = 280
 TITLE_MAX_CHARS = 72
 TITLE_MAX_TOKENS = 8
@@ -56,6 +63,75 @@ STOPWORDS = frozenset(
         "お願いします",
     }
 )
+LOCAL_LLM_PAYLOAD_KEYS = frozenset(
+    {
+        "title",
+        "summary",
+        "conclusion_text",
+        "conclusion_status",
+        "keywords",
+        "confidence",
+    }
+)
+CONCLUSION_STATUSES = frozenset({"explicit", "inferred", "unknown"})
+BLOCKED_LOCAL_LLM_MODELS = frozenset(
+    {
+        "gpt-oss-20b:latest",
+        "lfm-instruct:latest",
+        "lfm-thinking:latest",
+    }
+)
+EXPLICIT_CONCLUSION_PATTERNS = (
+    re.compile(r"\bDecision\s*:", re.IGNORECASE),
+    re.compile(r"\bWe decided\b", re.IGNORECASE),
+    re.compile(r"\bWe will\b", re.IGNORECASE),
+    re.compile(r"\bAgreed\b", re.IGNORECASE),
+    re.compile(r"\bLet's proceed with\b", re.IGNORECASE),
+    re.compile(r"\bShip it\b", re.IGNORECASE),
+    re.compile(r"決定"),
+    re.compile(r"これで決まり"),
+    re.compile(r"今回は.+で進め"),
+    re.compile(r"にします"),
+    re.compile(r"でいく"),
+    re.compile(r"一旦これで"),
+    re.compile(r"これでOK", re.IGNORECASE),
+    re.compile(r"採用"),
+)
+
+LOCAL_LLM_PROMPT_TEMPLATE = """You summarize one intra-thread conversation segment for a downstream matching index.
+
+Return exactly one JSON object and nothing else. Do not use markdown. Do not add reasoning.
+
+Required JSON shape:
+{
+  "title": "short extracted phrase, max 8 words",
+  "summary": "1-2 sentence conservative summary grounded only in the segment",
+  "conclusion_text": null or "short quoted/near-quoted conclusion if explicitly present",
+  "conclusion_status": "explicit" | "inferred" | "unknown",
+  "keywords": ["3-8 concise keywords"],
+  "confidence": 0.0
+}
+
+Rules:
+- Use "unknown" and null conclusion_text when the segment has no clear conclusion.
+- Use "explicit" only when a decision/resolution is directly stated.
+- Assistant suggestions alone must not become explicit conclusions.
+- If the segment only contains advice, options, planning, or unresolved discussion, use unknown.
+- Use "inferred" only for a strongly implied outcome, not a guess.
+- Prefer preserving the segment language for title and summary when possible.
+- Translation is acceptable only if faithful.
+- Do not invent conclusions, technologies, dates, owners, or outcomes.
+
+Explicit conclusion markers include:
+- English: "Decision:", "We decided", "We will", "Agreed", "Let's proceed with", "Use X", "Ship it"
+- Japanese: "決定", "これで決まり", "今回は〜で進める", "〜にします", "〜でいく", "一旦これで", "これでOK", "採用"
+
+If uncertain, return unknown.
+
+Segment:
+<<<
+{segment_text}
+>>>"""
 
 
 class IntraThreadTopicSummaryError(RuntimeError):
@@ -144,6 +220,125 @@ def _keyword_tokens(text: str) -> list[str]:
         position += 1
     ranked = sorted(counts, key=lambda item: (-counts[item], first_seen[item], item))
     return ranked[:KEYWORD_LIMIT]
+
+
+def _prompt_hash() -> str:
+    payload = LOCAL_LLM_PROMPT_TEMPLATE.encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _build_local_llm_prompt(segment_text: str) -> str:
+    return LOCAL_LLM_PROMPT_TEMPLATE.replace("{segment_text}", segment_text)
+
+
+def _has_explicit_conclusion_marker(segment_text: str) -> bool:
+    return any(pattern.search(segment_text) for pattern in EXPLICIT_CONCLUSION_PATTERNS)
+
+
+def _normalize_llm_keywords(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            return None
+        normalized = _compact_text(item)
+        if not normalized:
+            return None
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        keywords.append(normalized)
+        if len(keywords) == KEYWORD_LIMIT:
+            break
+    return keywords
+
+
+def _validated_llm_fields(
+    payload: dict[str, Any],
+    *,
+    segment_text: str,
+) -> dict[str, Any] | None:
+    if frozenset(payload) != LOCAL_LLM_PAYLOAD_KEYS:
+        return None
+
+    title = payload.get("title")
+    summary = payload.get("summary")
+    conclusion_text = payload.get("conclusion_text")
+    conclusion_status = payload.get("conclusion_status")
+    confidence = payload.get("confidence")
+    keywords = _normalize_llm_keywords(payload.get("keywords"))
+
+    if not isinstance(title, str) or not isinstance(summary, str):
+        return None
+    if conclusion_text is not None and not isinstance(conclusion_text, str):
+        return None
+    if conclusion_status not in CONCLUSION_STATUSES:
+        return None
+    if keywords is None:
+        return None
+    if not isinstance(confidence, (int, float)):
+        return None
+    normalized_confidence = float(confidence)
+    if not 0.0 <= normalized_confidence <= 1.0:
+        return None
+    if conclusion_status == "unknown" and conclusion_text is not None:
+        return None
+    if conclusion_status == "explicit" and not _has_explicit_conclusion_marker(
+        segment_text
+    ):
+        return None
+
+    return {
+        "title": _compact_text(title),
+        "summary": _compact_text(summary),
+        "conclusion_text": _compact_text(conclusion_text)
+        if isinstance(conclusion_text, str)
+        else None,
+        "conclusion_status": conclusion_status,
+        "keywords": keywords,
+        "confidence": round(normalized_confidence, 4),
+    }
+
+
+def _local_llm_summary_row(
+    *,
+    heuristic_row: dict[str, Any],
+    segment_text: str,
+    client: LLMClient,
+    model: str,
+) -> dict[str, Any] | None:
+    try:
+        payload = generate_structured_json(
+            client,
+            model=model,
+            prompt=_build_local_llm_prompt(segment_text),
+            options={
+                "temperature": 0.0,
+                "num_predict": 320,
+            },
+        )
+    except RuntimeError:
+        return None
+
+    fields = _validated_llm_fields(payload, segment_text=segment_text)
+    if fields is None:
+        return None
+
+    row = {
+        **heuristic_row,
+        **fields,
+        "source": "local_llm",
+        "model": f"ollama/{model}",
+        "prompt_variant": LOCAL_LLM_PROMPT_VARIANT,
+        "prompt_hash": _prompt_hash(),
+    }
+    validator = load_intra_thread_topic_summary_validator()
+    if list(validator.iter_errors(row)):
+        return None
+    return row
 
 
 def _coerce_segment_row(
@@ -254,14 +449,40 @@ def build_intra_thread_topic_summary_row(
     }
 
 
-def build_intra_thread_topic_summary_rows(parsed_path: Path) -> list[dict[str, Any]]:
+def _build_intra_thread_topic_summary_rows_with_stats(
+    parsed_path: Path,
+    *,
+    source: str = "heuristic",
+    model: str = DEFAULT_LOCAL_LLM_MODEL,
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    client: LLMClient | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    if source not in {"heuristic", "local_llm"}:
+        raise IntraThreadTopicSummaryError(
+            "--source must be either 'heuristic' or 'local_llm'"
+        )
+    if source == "local_llm":
+        if not isinstance(model, str) or not model.strip():
+            raise IntraThreadTopicSummaryError("--model must be a non-empty string")
+        if model in BLOCKED_LOCAL_LLM_MODELS:
+            raise IntraThreadTopicSummaryError(
+                f"model is not supported for intra-thread topic summaries: {model}"
+            )
+        if timeout_seconds <= 0:
+            raise IntraThreadTopicSummaryError("--timeout-seconds must be > 0")
+
     segments_path = intra_thread_segments_artifact_path(parsed_path)
     segment_rows = [
         _coerce_segment_row(row, path=segments_path, line_no=line_no)
         for line_no, row in enumerate(_load_jsonl(segments_path), start=1)
     ]
     if not segment_rows:
-        return []
+        return [], {
+            "heuristic_rows": 0,
+            "local_llm_rows": 0,
+            "local_llm_failures": 0,
+        }
 
     try:
         messages = reconstruct_thread_messages(parsed_path)
@@ -269,17 +490,37 @@ def build_intra_thread_topic_summary_rows(parsed_path: Path) -> list[dict[str, A
         raise IntraThreadTopicSummaryError(str(exc)) from exc
     messages_by_id = {message.message_id: message for message in messages}
 
-    rows = [
-        build_intra_thread_topic_summary_row(
+    llm_client = client
+    if source == "local_llm" and llm_client is None:
+        llm_client = OllamaClient(base_url=base_url, timeout=timeout_seconds)
+
+    rows: list[dict[str, Any]] = []
+    local_llm_rows = 0
+    local_llm_failures = 0
+    for segment_row in segment_rows:
+        segment_text = _segment_text(
+            parsed_path=parsed_path,
             segment_row=segment_row,
-            segment_text=_segment_text(
-                parsed_path=parsed_path,
-                segment_row=segment_row,
-                messages_by_id=messages_by_id,
-            ),
+            messages_by_id=messages_by_id,
         )
-        for segment_row in segment_rows
-    ]
+        heuristic_row = build_intra_thread_topic_summary_row(
+            segment_row=segment_row,
+            segment_text=segment_text,
+        )
+        output_row = heuristic_row
+        if source == "local_llm" and llm_client is not None:
+            llm_row = _local_llm_summary_row(
+                heuristic_row=heuristic_row,
+                segment_text=segment_text,
+                client=llm_client,
+                model=model.strip(),
+            )
+            if llm_row is None:
+                local_llm_failures += 1
+            else:
+                output_row = llm_row
+                local_llm_rows += 1
+        rows.append(output_row)
 
     validator = load_intra_thread_topic_summary_validator()
     for index, row in enumerate(rows, start=1):
@@ -289,6 +530,30 @@ def build_intra_thread_topic_summary_rows(parsed_path: Path) -> list[dict[str, A
                 f"topic summary schema validation failed for row {index}: "
                 f"{errors[0].message}"
             )
+    return rows, {
+        "heuristic_rows": len(rows) - local_llm_rows,
+        "local_llm_rows": local_llm_rows,
+        "local_llm_failures": local_llm_failures,
+    }
+
+
+def build_intra_thread_topic_summary_rows(
+    parsed_path: Path,
+    *,
+    source: str = "heuristic",
+    model: str = DEFAULT_LOCAL_LLM_MODEL,
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    client: LLMClient | None = None,
+) -> list[dict[str, Any]]:
+    rows, _stats = _build_intra_thread_topic_summary_rows_with_stats(
+        parsed_path,
+        source=source,
+        model=model,
+        base_url=base_url,
+        timeout_seconds=timeout_seconds,
+        client=client,
+    )
     return rows
 
 
@@ -296,10 +561,17 @@ def write_intra_thread_topic_summaries(
     input_path: Path,
     *,
     overwrite: bool = False,
+    source: str = "heuristic",
+    model: str = DEFAULT_LOCAL_LLM_MODEL,
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    client: LLMClient | None = None,
 ) -> dict[str, Any]:
     parsed_files = discover_parsed_jsonl(input_path)
     written_paths: list[Path] = []
     total_rows = 0
+    total_local_llm_rows = 0
+    total_local_llm_failures = 0
 
     for parsed_path in parsed_files:
         output_path = intra_thread_topic_summaries_artifact_path(parsed_path)
@@ -307,12 +579,24 @@ def write_intra_thread_topic_summaries(
             raise IntraThreadTopicSummaryError(
                 f"artifact already exists: {output_path} (rerun with --overwrite)"
             )
-        rows = build_intra_thread_topic_summary_rows(parsed_path)
+        rows, stats = _build_intra_thread_topic_summary_rows_with_stats(
+            parsed_path,
+            source=source,
+            model=model,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            client=client,
+        )
         written_paths.append(_write_jsonl(output_path, rows))
         total_rows += len(rows)
+        total_local_llm_rows += stats["local_llm_rows"]
+        total_local_llm_failures += stats["local_llm_failures"]
 
     return {
         "threads": len(parsed_files),
         "summaries": total_rows,
+        "source": source,
+        "local_llm_summaries": total_local_llm_rows,
+        "local_llm_failures": total_local_llm_failures,
         "artifacts": written_paths,
     }
