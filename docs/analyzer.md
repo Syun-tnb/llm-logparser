@@ -901,9 +901,15 @@ deterministic and model-derived capabilities.
   back to semantic-topics otherwise. Missing topic-summary files are coverage
   gaps rather than errors; invalid rows, empty title+summary rows, and
   low-confidence local LLM rows are skipped and counted in `summary.json`.
+  Topic-summary mode now requires direct semantic evidence before candidate
+  admission. Weak recurrence signals such as dormant gap, task-like signal,
+  specificity, timestamp distance, and context shift remain useful
+  diagnostics/ranking signals, but they are not sufficient on their own.
   Heuristic summary rows remain usable but lower-weight, and inferred
-  conclusions are not treated as strong evidence. The recommended comparison
-  flow is: generate intra-thread topic summaries, run
+  conclusions are not treated as strong evidence. `summary.json` records
+  `topic_summary_admission_filtered_count` and filter reasons for pairs removed
+  by this precision gate. The recommended comparison flow is: generate
+  intra-thread topic summaries, run
   `cross-thread-candidates --unit-source topic-summaries`, then compare against
   the default semantic-topics output.
   In addition to the original similarity-driven route, it now also admits a

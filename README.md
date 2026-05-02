@@ -845,7 +845,11 @@ span path. `topic-summaries` is an optional provisional mode that reads
 from title, summary, keywords, and explicit conclusions only. Missing
 topic-summary files are tolerated; invalid, empty, or very low-confidence local
 LLM rows are skipped and counted in `l3/cross-thread-candidates/summary.json`.
-Heuristic summary rows and inferred conclusions are weak evidence.
+Topic-summary mode requires direct semantic evidence before candidate emission;
+weak recurrence signals such as dormant gap, task-likeness, specificity,
+timestamp distance, and context shift are retained as diagnostics/ranking
+signals but are not sufficient admission evidence by themselves. Heuristic
+summary rows and inferred conclusions are weak evidence.
 
 Recommended comparison flow:
 

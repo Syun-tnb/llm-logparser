@@ -3042,8 +3042,100 @@ def test_cross_thread_candidate_rows_default_unit_source_matches_semantic_topics
         min_score=0.58,
         unit_source="semantic-topics",
     )
+    result = write_cross_thread_candidates_artifact(root, unit_source="semantic-topics")
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
 
     assert default_rows == explicit_rows
+    assert "topic_summary_admission_filtered_count" not in summary
+
+
+def test_topic_summary_candidates_filter_weak_recurrence_without_direct_signal(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="GPT-4o GPT-5 Raina workflow",
+        summary=(
+            "A browser automation task describes files, repository actions, "
+            "and tests around one tool."
+        ),
+        keywords=["browser", "repository"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="GPT-4o GPT-5 Raina weekend",
+        summary=(
+            "A casual greeting discusses room temperature, holidays, and a "
+            "relaxed daily schedule."
+        ),
+        keywords=["weekend", "temperature"],
+        ts=100 + (10 * 24 * 60 * 60 * 1000),
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert rows == []
+    assert summary["topic_summary_admission_filtered_count"] == 2
+    assert summary["topic_summary_admission_filter_reasons"] == {
+        "generic_strong_anchor_only": 2
+    }
+
+
+def test_topic_summary_candidates_filter_generic_keyword_only_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="Browser setup",
+        summary="Configure repository tests for a parser artifact.",
+        keywords=["GPT-4o", "GPT-5"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="Weekend note",
+        summary="Discuss holiday room temperature and casual greeting.",
+        keywords=["GPT-4o", "GPT-5"],
+        ts=100 + (10 * 24 * 60 * 60 * 1000),
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert rows == []
+    assert summary["topic_summary_admission_filter_reasons"] == {
+        "generic_shared_keywords_only": 2
+    }
 
 
 def test_cross_thread_candidate_rows_can_use_topic_summaries_from_multiple_threads(
@@ -3084,6 +3176,39 @@ def test_cross_thread_candidate_rows_can_use_topic_summaries_from_multiple_threa
     assert row["target_segment_id"] == "segment-0001"
     assert row["source_summary_source"] == "local_llm"
     assert row["target_summary_source"] == "local_llm"
+
+
+def test_topic_summary_candidates_allow_non_generic_strong_anchor_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="llm-logparser parsed.jsonl validation",
+        summary="Review command wiring for artifact checks and repository tests.",
+        keywords=["schema"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="llm-logparser parsed.jsonl repair",
+        summary="Adjust file discovery behavior for generated sidecar outputs.",
+        keywords=["discovery"],
+        ts=100 + (10 * 24 * 60 * 60 * 1000),
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+
+    assert rows
+    assert "anchor_overlap_strong" in rows[0]["evidence"]["reason_codes"]
 
 
 def test_cross_thread_candidate_summary_counts_invalid_empty_and_low_confidence_summaries(
@@ -3147,6 +3272,8 @@ def test_cross_thread_candidate_summary_counts_invalid_empty_and_low_confidence_
         "skipped_empty": 1,
         "skipped_low_confidence": 1,
     }
+    assert summary["topic_summary_admission_filtered_count"] == 0
+    assert summary["topic_summary_admission_filter_reasons"] == {}
 
 
 def test_cross_thread_candidate_rows_keep_heuristic_summaries_as_lower_weight_units(
@@ -3185,6 +3312,40 @@ def test_cross_thread_candidate_rows_keep_heuristic_summaries_as_lower_weight_un
     assert rows
     assert rows[0]["source_summary_source"] == "heuristic"
     assert "summary_source_heuristic_penalty" in rows[0]["evidence"]["reason_codes"]
+
+
+def test_topic_summary_candidates_filter_heuristic_generic_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="GPT-4o GPT-5 Raina workflow",
+        summary="A repository automation task discusses generated artifacts.",
+        keywords=["browser", "repository"],
+        source="heuristic",
+        confidence=0.3,
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="GPT-4o GPT-5 Raina weekend",
+        summary="A casual chat discusses holidays and room temperature.",
+        keywords=["weekend", "temperature"],
+        ts=100 + (10 * 24 * 60 * 60 * 1000),
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+
+    assert rows == []
 
 
 def test_cross_thread_candidate_rows_use_explicit_conclusions_as_evidence(

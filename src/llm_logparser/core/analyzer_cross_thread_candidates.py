@@ -91,6 +91,26 @@ _EXPLICIT_CONCLUSION_OVERLAP_SCORE = 0.08
 _SUMMARY_LOCAL_LLM_SOURCE_BONUS = 0.04
 _SUMMARY_HEURISTIC_SOURCE_PENALTY = 0.04
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
+_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
+    {
+        "ai",
+        "gpt",
+        "gpt-4o",
+        "gpt4o",
+        "gpt-5",
+        "gpt5",
+        "raina",
+        "reina",
+        "レイナ",
+        "human-like",
+        "humanlike",
+        "philosophy",
+        "long-term",
+        "longterm",
+        "prompt",
+        "プロンプト",
+    }
+)
 _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
 _SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
 _SELECTIVE_CONTEXT_MAX_CHARS = 240
@@ -214,6 +234,12 @@ class _UnitLoadResult:
     topics_artifact: dict[str, Any] | None
     units: list[_RepresentativeSpanUnit]
     topic_summary_stats: _TopicSummaryLoadStats
+
+
+@dataclass(frozen=True)
+class _TopicSummaryAdmissionStats:
+    filtered_count: int = 0
+    filter_reasons: Counter[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -1875,6 +1901,91 @@ def _structural_signal_score_and_reasons(
     return round(score, 4), _dedupe_reason_codes(reason_codes)
 
 
+def _topic_summary_pair(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+) -> bool:
+    return source.unit_kind == "topic_summary" and target.unit_kind == "topic_summary"
+
+
+def _admission_anchor_token_key(token: str) -> str:
+    normalized = normalize_analysis_text(token)
+    return re.sub(r"[^a-z0-9一-龯ぁ-んァ-ヶー]+", "", normalized)
+
+
+def _non_generic_strong_anchor_overlap(signals: _PairSignals) -> tuple[str, ...]:
+    generic_keys = {
+        _admission_anchor_token_key(token)
+        for token in _TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS
+    }
+    return tuple(
+        token
+        for token in signals.shared_strong_anchor_tokens
+        if _admission_anchor_token_key(token) not in generic_keys
+    )
+
+
+def _non_generic_shared_keywords(signals: _PairSignals) -> tuple[str, ...]:
+    generic_keys = {
+        _admission_anchor_token_key(token)
+        for token in _TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS
+    }
+    return tuple(
+        keyword
+        for keyword in signals.shared_keywords
+        if _admission_anchor_token_key(keyword) not in generic_keys
+    )
+
+
+def _topic_summary_admission_filter_reason(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    evidence: _Evidence,
+    signals: _PairSignals,
+) -> str | None:
+    if not _topic_summary_pair(source, target):
+        return None
+
+    reason_codes = set(evidence.reason_codes)
+    high_similarity = bool(
+        reason_codes
+        & {
+            "topic_label_similarity_high",
+            "excerpt_similarity_high",
+            "topic_excerpt_combination_high",
+        }
+    )
+    strong_keyword_reason = "shared_keywords_high" in reason_codes
+    strong_keyword = strong_keyword_reason and bool(_non_generic_shared_keywords(signals))
+    dense_dictionary = "dictionary_token_overlap_dense" in reason_codes
+    concentrated_bundle = "bundle_overlap_concentrated" in reason_codes
+    explicit_conclusion = "explicit_conclusion_overlap" in reason_codes
+    strong_anchor_reason = "anchor_overlap_strong" in reason_codes
+    non_generic_strong_anchor = bool(_non_generic_strong_anchor_overlap(signals))
+    strong_anchor = strong_anchor_reason and non_generic_strong_anchor
+
+    has_direct_signal = any(
+        (
+            high_similarity,
+            strong_keyword,
+            dense_dictionary,
+            concentrated_bundle,
+            explicit_conclusion,
+            strong_anchor,
+        )
+    )
+    if has_direct_signal:
+        return None
+
+    if strong_keyword_reason and not strong_keyword:
+        return "generic_shared_keywords_only"
+    if strong_anchor_reason and not non_generic_strong_anchor:
+        return "generic_strong_anchor_only"
+    if source.summary_source == "heuristic" or target.summary_source == "heuristic":
+        return "heuristic_requires_strong_direct_signal"
+    return "missing_direct_semantic_signal"
+
+
 def _weak_recurrence_evidence_for_pair(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
@@ -2234,7 +2345,12 @@ def _build_cross_thread_candidate_rows_with_stats(
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
-) -> tuple[list[dict[str, Any]], int, _UnitLoadResult]:
+) -> tuple[
+    list[dict[str, Any]],
+    int,
+    _UnitLoadResult,
+    _TopicSummaryAdmissionStats,
+]:
     if top_per_source < 1:
         raise CrossThreadCandidateError("top_per_source must be at least 1")
     if min_score < 0 or min_score > 1:
@@ -2253,6 +2369,8 @@ def _build_cross_thread_candidate_rows_with_stats(
     units = unit_load_result.units
     recurrence_context = _build_recurrence_instrumentation_context(input_root, units)
     filtered_low_value_pair_count = 0
+    topic_summary_admission_filtered_count = 0
+    topic_summary_admission_filter_reasons: Counter[str] = Counter()
     selected_by_source: list[
         tuple[_RepresentativeSpanUnit, list[tuple[_RepresentativeSpanUnit, _Evidence]]]
     ] = []
@@ -2290,6 +2408,22 @@ def _build_cross_thread_candidate_rows_with_stats(
                 cross_thread_rules=cross_thread_rules,
             ):
                 filtered_low_value_pair_count += 1
+                continue
+            admission_signals = _pair_signals(
+                source,
+                target,
+                recurrence_context=recurrence_context,
+                token_dictionary_signals=token_dictionary_signals,
+            )
+            admission_filter_reason = _topic_summary_admission_filter_reason(
+                source,
+                target,
+                candidate_for_filter,
+                admission_signals,
+            )
+            if admission_filter_reason is not None:
+                topic_summary_admission_filtered_count += 1
+                topic_summary_admission_filter_reasons[admission_filter_reason] += 1
                 continue
             if similarity_evidence is not None and similarity_evidence.score >= min_score_rounded:
                 ranked_similarity.append((target, similarity_evidence))
@@ -2380,7 +2514,15 @@ def _build_cross_thread_candidate_rows_with_stats(
             row["target_span_id"],
         )
     )
-    return rows, filtered_low_value_pair_count, unit_load_result
+    return (
+        rows,
+        filtered_low_value_pair_count,
+        unit_load_result,
+        _TopicSummaryAdmissionStats(
+            filtered_count=topic_summary_admission_filtered_count,
+            filter_reasons=topic_summary_admission_filter_reasons,
+        ),
+    )
 
 
 def build_cross_thread_candidate_rows(
@@ -2394,7 +2536,12 @@ def build_cross_thread_candidate_rows(
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> list[dict[str, Any]]:
-    rows, _filtered_low_value_pair_count, _unit_load_result = _build_cross_thread_candidate_rows_with_stats(
+    (
+        rows,
+        _filtered_low_value_pair_count,
+        _unit_load_result,
+        _topic_summary_admission_stats,
+    ) = _build_cross_thread_candidate_rows_with_stats(
         input_root,
         min_score=min_score,
         top_per_source=top_per_source,
@@ -2426,6 +2573,7 @@ def _summary(
     min_score: float,
     top_per_source: int,
     filtered_low_value_pair_count: int = 0,
+    topic_summary_admission_stats: _TopicSummaryAdmissionStats | None = None,
 ) -> dict[str, Any]:
     reason_counts: Counter[str] = Counter()
     score_bands: Counter[str] = Counter()
@@ -2473,6 +2621,14 @@ def _summary(
         "skipped_empty": topic_summary_stats.skipped_empty,
         "skipped_low_confidence": topic_summary_stats.skipped_low_confidence,
     }
+    if topic_summary_admission_stats is not None:
+        filter_reasons = topic_summary_admission_stats.filter_reasons or Counter()
+        summary["topic_summary_admission_filtered_count"] = (
+            topic_summary_admission_stats.filtered_count
+        )
+        summary["topic_summary_admission_filter_reasons"] = dict(
+            sorted(filter_reasons.items())
+        )
     if filtered_low_value_pair_count:
         summary["filtered_low_value_pair_count"] = filtered_low_value_pair_count
     return summary
@@ -2493,7 +2649,12 @@ def write_cross_thread_candidates_artifact(
     if not provider_root.exists() or not provider_root.is_dir():
         raise CrossThreadCandidateError(f"provider root not found: {provider_root}")
 
-    rows, filtered_low_value_pair_count, unit_load_result = _build_cross_thread_candidate_rows_with_stats(
+    (
+        rows,
+        filtered_low_value_pair_count,
+        unit_load_result,
+        topic_summary_admission_stats,
+    ) = _build_cross_thread_candidate_rows_with_stats(
         provider_root,
         min_score=min_score,
         top_per_source=top_per_source,
@@ -2536,6 +2697,11 @@ def write_cross_thread_candidates_artifact(
         min_score=min_score,
         top_per_source=top_per_source,
         filtered_low_value_pair_count=filtered_low_value_pair_count,
+        topic_summary_admission_stats=(
+            topic_summary_admission_stats
+            if unit_load_result.unit_source == "topic-summaries"
+            else None
+        ),
     )
     write_json_artifact(summary_path, summary)
 
