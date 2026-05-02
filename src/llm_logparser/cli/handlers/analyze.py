@@ -410,6 +410,7 @@ def run_analyze_cross_thread_candidates(args, logger: logging.Logger) -> None:
     logger.info(
         "cross-thread candidate artifact written: "
         f"{result['candidate_count']} candidate link(s) "
+        f"({result['duplicate_pairs_removed']} duplicate pair(s) removed) "
         f"from {result['unit_source']} -> "
         f"{format_display_path(result['candidates_path'])}"
     )

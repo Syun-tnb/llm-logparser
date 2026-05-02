@@ -596,6 +596,15 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
+def _row_for_topic_pair(rows: list[dict], left: str, right: str) -> dict:
+    pair = {left, right}
+    return next(
+        row
+        for row in rows
+        if {row["source_topic_id"], row["target_topic_id"]} == pair
+    )
+
+
 class _FakeEmbeddingBackend:
     def __init__(self, vectors_by_text: dict[str, list[float]], calls: list[list[str]]) -> None:
         self.model_id = "fake/test-embedding"
@@ -847,13 +856,8 @@ def test_build_cross_thread_candidate_rows_applies_timestamp_distance_bonus(
 
     rows = build_cross_thread_candidate_rows(root, min_score=0.58)
 
-    assert len(rows) == 2
-    row = next(
-        candidate
-        for candidate in rows
-        if candidate["source_topic_id"] == "topic-a"
-        and candidate["target_topic_id"] == "topic-b"
-    )
+    assert len(rows) == 1
+    row = _row_for_topic_pair(rows, "topic-a", "topic-b")
     assert row["timestamp_delta_ms"] == 10 * 24 * 60 * 60 * 1000
     assert "timestamp_distance_high" in row["evidence"]["reason_codes"]
     assert row["score"] > 0.6
@@ -1829,18 +1833,8 @@ def test_dense_nucleus_overlap_scores_higher_than_broad_technical_overlap(
     )
 
     rows = build_cross_thread_candidate_rows(root, min_score=0.0)
-    dense_row = next(
-        candidate
-        for candidate in rows
-        if candidate["source_topic_id"] == "topic-source"
-        and candidate["target_topic_id"] == "topic-dense"
-    )
-    broad_row = next(
-        candidate
-        for candidate in rows
-        if candidate["source_topic_id"] == "topic-source"
-        and candidate["target_topic_id"] == "topic-broad"
-    )
+    dense_row = _row_for_topic_pair(rows, "topic-source", "topic-dense")
+    broad_row = _row_for_topic_pair(rows, "topic-source", "topic-broad")
 
     assert dense_row["score"] > broad_row["score"]
     assert "dictionary_token_overlap_dense" in dense_row["evidence"]["reason_codes"]
@@ -2596,13 +2590,8 @@ def test_build_cross_thread_candidate_rows_applies_high_topic_excerpt_combinatio
 
     rows = build_cross_thread_candidate_rows(root, min_score=0.58)
 
-    assert len(rows) == 2
-    row = next(
-        candidate
-        for candidate in rows
-        if candidate["source_topic_id"] == "topic-a"
-        and candidate["target_topic_id"] == "topic-b"
-    )
+    assert len(rows) == 1
+    row = _row_for_topic_pair(rows, "topic-a", "topic-b")
     assert row["score"] > 0.58
     assert "topic_label_similarity_high" in row["evidence"]["reason_codes"]
     assert "excerpt_similarity_high" in row["evidence"]["reason_codes"]
@@ -2649,13 +2638,8 @@ def test_build_cross_thread_candidate_rows_does_not_apply_high_topic_excerpt_com
 
     assert rows == []
     strict_rows = build_cross_thread_candidate_rows(root, min_score=0.0)
-    assert len(strict_rows) == 2
-    row = next(
-        candidate
-        for candidate in strict_rows
-        if candidate["source_topic_id"] == "topic-a"
-        and candidate["target_topic_id"] == "topic-b"
-    )
+    assert len(strict_rows) == 1
+    row = _row_for_topic_pair(strict_rows, "topic-a", "topic-b")
     assert "topic_label_similarity_high" in row["evidence"]["reason_codes"]
     assert "excerpt_similarity_high" not in row["evidence"]["reason_codes"]
     assert "topic_excerpt_combination_high" not in row["evidence"]["reason_codes"]
@@ -2700,13 +2684,8 @@ def test_build_cross_thread_candidate_rows_emits_weak_recurrence_candidate_below
 
     rows = build_cross_thread_candidate_rows(root)
 
-    assert len(rows) == 2
-    row = next(
-        candidate
-        for candidate in rows
-        if candidate["source_topic_id"] == "topic-source"
-        and candidate["target_topic_id"] == "topic-target"
-    )
+    assert len(rows) == 1
+    row = _row_for_topic_pair(rows, "topic-source", "topic-target")
     assert 0.1 <= row["score"] < 0.6
     assert "dormant_gap" in row["evidence"]["reason_codes"]
     assert any(
@@ -2840,7 +2819,7 @@ def test_build_cross_thread_candidate_rows_does_not_emit_weak_recurrence_candida
 
     rows = build_cross_thread_candidate_rows(root, min_score=0.0)
 
-    assert len(rows) == 2
+    assert len(rows) == 1
     assert all(
         "dormant_gap" not in row["evidence"]["reason_codes"]
         for row in rows
@@ -2937,14 +2916,15 @@ def test_build_cross_thread_candidate_rows_unions_similarity_and_weak_recurrence
     _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
 
     rows = build_cross_thread_candidate_rows(root, top_per_source=1)
-    source_rows = [
-        row
-        for row in rows
-        if row["source_topic_id"] == "topic-source"
-    ]
 
-    assert {row["target_topic_id"] for row in source_rows} == {"topic-strong", "topic-weak"}
-    weak_row = next(row for row in source_rows if row["target_topic_id"] == "topic-weak")
+    assert {
+        frozenset((row["source_topic_id"], row["target_topic_id"]))
+        for row in rows
+    } >= {
+        frozenset(("topic-source", "topic-strong")),
+        frozenset(("topic-source", "topic-weak")),
+    }
+    weak_row = _row_for_topic_pair(rows, "topic-source", "topic-weak")
     assert "dormant_gap" in weak_row["evidence"]["reason_codes"]
     assert any(
         code in {"anchor_overlap", "anchor_overlap_strong"}
@@ -3041,14 +3021,91 @@ def test_build_cross_thread_candidate_rows_keeps_repeated_project_summary_pairs(
 
     rows = build_cross_thread_candidate_rows(root)
 
-    assert len(rows) == 2
+    assert len(rows) == 1
     assert {
-        (row["source_topic_id"], row["target_topic_id"])
+        frozenset((row["source_topic_id"], row["target_topic_id"]))
         for row in rows
     } == {
-        ("topic-a", "topic-b"),
-        ("topic-b", "topic-a"),
+        frozenset(("topic-a", "topic-b")),
     }
+
+
+def test_cross_thread_candidate_dedupe_keeps_higher_score_direction():
+    low_score = {
+        "source_conversation_id": "conv-a",
+        "source_span_id": "span-a",
+        "source_unit_kind": "topic_summary",
+        "source_segment_id": "seg-a",
+        "source_summary_source": "local_llm",
+        "target_conversation_id": "conv-b",
+        "target_span_id": "span-b",
+        "target_unit_kind": "topic_summary",
+        "target_segment_id": "seg-b",
+        "target_summary_source": "local_llm",
+        "timestamp_delta_ms": 200,
+        "score": 0.4,
+        "rank": 1,
+    }
+    high_score = {
+        **low_score,
+        "source_conversation_id": "conv-b",
+        "source_span_id": "span-b",
+        "source_segment_id": "seg-b",
+        "target_conversation_id": "conv-a",
+        "target_span_id": "span-a",
+        "target_segment_id": "seg-a",
+        "score": 0.6,
+    }
+
+    rows, removed = cross_thread_module._dedupe_undirected_candidate_rows(
+        [low_score, high_score]
+    )
+
+    assert removed == 1
+    assert rows == [high_score]
+
+
+def test_cross_thread_candidate_summary_reports_duplicate_pairs_removed(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    topics = [
+        _topic_record(
+            topic_id="topic-a",
+            conversation_id="conv-a",
+            cluster_id="cluster-a",
+            window_id="window-a",
+            label="Project summary",
+            keywords=["llm-logparser", "summary", "project"],
+            excerpt="Summarize llm-logparser CLI boundaries for the project.",
+            message_ids=["a-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100,
+        ),
+        _topic_record(
+            topic_id="topic-b",
+            conversation_id="conv-b",
+            cluster_id="cluster-b",
+            window_id="window-b",
+            label="Project summary",
+            keywords=["llm-logparser", "summary", "project"],
+            excerpt="Summarize llm-logparser CLI boundaries for the next handoff.",
+            message_ids=["b-1"],
+            normalized_label="status_update",
+            raw_label="status_note",
+            first_seen=100,
+        ),
+    ]
+    _write_json(root / "l3" / "semantic-topics" / "topics.json", _topics_artifact(topics))
+
+    result = write_cross_thread_candidates_artifact(root)
+    rows = _read_jsonl(result["candidates_path"])
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert len(rows) == 1
+    assert summary["candidate_link_count"] == 1
+    assert summary["duplicate_pairs_removed"] == 1
 
 
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):

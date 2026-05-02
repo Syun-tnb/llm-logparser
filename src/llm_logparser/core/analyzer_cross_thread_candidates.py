@@ -2250,6 +2250,59 @@ def _unit_key(unit: _RepresentativeSpanUnit) -> tuple[str, str]:
     return (unit.conversation_id, unit.span_id)
 
 
+def _candidate_unit_key(row: dict[str, Any], side: str) -> tuple[str, str, str]:
+    return (
+        str(row[f"{side}_conversation_id"]),
+        str(row.get(f"{side}_unit_kind") or "semantic_topic_span"),
+        str(row.get(f"{side}_segment_id") or row[f"{side}_span_id"]),
+    )
+
+
+def _candidate_pair_key(row: dict[str, Any]) -> tuple[tuple[str, str, str], tuple[str, str, str]]:
+    source_key = _candidate_unit_key(row, "source")
+    target_key = _candidate_unit_key(row, "target")
+    if source_key <= target_key:
+        return (source_key, target_key)
+    return (target_key, source_key)
+
+
+def _summary_source_rank(value: Any) -> int:
+    return 1 if value == "local_llm" else 0
+
+
+def _candidate_dedupe_sort_key(row: dict[str, Any]) -> tuple[float, int, int, int]:
+    timestamp_delta = row.get("timestamp_delta_ms")
+    timestamp_rank = (
+        -int(timestamp_delta)
+        if isinstance(timestamp_delta, int)
+        else -1_000_000_000_000_000
+    )
+    source_rank = _summary_source_rank(row.get("source_summary_source"))
+    target_rank = _summary_source_rank(row.get("target_summary_source"))
+    return (
+        float(row["score"]),
+        source_rank + target_rank,
+        timestamp_rank,
+        -int(row.get("rank", 0)),
+    )
+
+
+def _dedupe_undirected_candidate_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    selected_by_pair: dict[
+        tuple[tuple[str, str, str], tuple[str, str, str]],
+        dict[str, Any],
+    ] = {}
+    for row in rows:
+        pair_key = _candidate_pair_key(row)
+        existing = selected_by_pair.get(pair_key)
+        if existing is None or _candidate_dedupe_sort_key(row) > _candidate_dedupe_sort_key(existing):
+            selected_by_pair[pair_key] = row
+    deduped = list(selected_by_pair.values())
+    return deduped, len(rows) - len(deduped)
+
+
 def _is_low_value_artifact_instruction_text(
     text: str,
     *,
@@ -2410,6 +2463,7 @@ def _build_cross_thread_candidate_rows_with_stats(
 ) -> tuple[
     list[dict[str, Any]],
     int,
+    int,
     _UnitLoadResult,
     _TopicSummaryAdmissionStats,
 ]:
@@ -2566,6 +2620,7 @@ def _build_cross_thread_candidate_rows_with_stats(
                 )
             )
 
+    rows, duplicate_pairs_removed = _dedupe_undirected_candidate_rows(rows)
     rows.sort(
         key=lambda row: (
             row["source_conversation_id"],
@@ -2580,6 +2635,7 @@ def _build_cross_thread_candidate_rows_with_stats(
     return (
         rows,
         filtered_low_value_pair_count,
+        duplicate_pairs_removed,
         unit_load_result,
         _TopicSummaryAdmissionStats(
             filtered_count=topic_summary_admission_filtered_count,
@@ -2602,6 +2658,7 @@ def build_cross_thread_candidate_rows(
     (
         rows,
         _filtered_low_value_pair_count,
+        _duplicate_pairs_removed,
         _unit_load_result,
         _topic_summary_admission_stats,
     ) = _build_cross_thread_candidate_rows_with_stats(
@@ -2636,6 +2693,7 @@ def _summary(
     min_score: float,
     top_per_source: int,
     filtered_low_value_pair_count: int = 0,
+    duplicate_pairs_removed: int = 0,
     topic_summary_admission_stats: _TopicSummaryAdmissionStats | None = None,
 ) -> dict[str, Any]:
     reason_counts: Counter[str] = Counter()
@@ -2694,6 +2752,7 @@ def _summary(
         )
     if filtered_low_value_pair_count:
         summary["filtered_low_value_pair_count"] = filtered_low_value_pair_count
+    summary["duplicate_pairs_removed"] = duplicate_pairs_removed
     return summary
 
 
@@ -2715,6 +2774,7 @@ def write_cross_thread_candidates_artifact(
     (
         rows,
         filtered_low_value_pair_count,
+        duplicate_pairs_removed,
         unit_load_result,
         topic_summary_admission_stats,
     ) = _build_cross_thread_candidate_rows_with_stats(
@@ -2760,6 +2820,7 @@ def write_cross_thread_candidates_artifact(
         min_score=min_score,
         top_per_source=top_per_source,
         filtered_low_value_pair_count=filtered_low_value_pair_count,
+        duplicate_pairs_removed=duplicate_pairs_removed,
         topic_summary_admission_stats=(
             topic_summary_admission_stats
             if unit_load_result.unit_source == "topic-summaries"
@@ -2770,6 +2831,7 @@ def write_cross_thread_candidates_artifact(
 
     return {
         "candidate_count": len(rows),
+        "duplicate_pairs_removed": duplicate_pairs_removed,
         "unit_source": unit_load_result.unit_source,
         "candidates_path": candidates_path,
         "summary_path": summary_path,
