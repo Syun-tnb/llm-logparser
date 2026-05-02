@@ -111,6 +111,11 @@ _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
         "プロンプト",
     }
 )
+_FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHOR_PATTERNS = (
+    r"^turn\d+search\d*$",
+    r"^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$",
+    r"^websearch\d*$",
+)
 _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
 _SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
 _SELECTIVE_CONTEXT_MAX_CHARS = 240
@@ -1936,15 +1941,44 @@ def _topic_summary_generic_admission_anchor_keys(
     return {key for key in generic_keys if key}
 
 
+def _topic_summary_generic_admission_anchor_patterns(
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    patterns = getattr(
+        cross_thread_rules,
+        "topic_summary_admission_generic_anchor_patterns",
+        (),
+    )
+    if patterns:
+        return tuple(patterns)
+    return _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHOR_PATTERNS
+
+
+def _is_topic_summary_generic_admission_anchor(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    key = _admission_anchor_token_key(token)
+    if not key:
+        return True
+    if key in _topic_summary_generic_admission_anchor_keys(cross_thread_rules):
+        return True
+    return any(
+        re.fullmatch(pattern, key)
+        for pattern in _topic_summary_generic_admission_anchor_patterns(
+            cross_thread_rules
+        )
+    )
+
+
 def _non_generic_strong_anchor_overlap(
     signals: _PairSignals,
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> tuple[str, ...]:
-    generic_keys = _topic_summary_generic_admission_anchor_keys(cross_thread_rules)
     return tuple(
         token
         for token in signals.shared_strong_anchor_tokens
-        if _admission_anchor_token_key(token) not in generic_keys
+        if not _is_topic_summary_generic_admission_anchor(token, cross_thread_rules)
     )
 
 
@@ -1952,11 +1986,10 @@ def _non_generic_shared_keywords(
     signals: _PairSignals,
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> tuple[str, ...]:
-    generic_keys = _topic_summary_generic_admission_anchor_keys(cross_thread_rules)
     return tuple(
         keyword
         for keyword in signals.shared_keywords
-        if _admission_anchor_token_key(keyword) not in generic_keys
+        if not _is_topic_summary_generic_admission_anchor(keyword, cross_thread_rules)
     )
 
 

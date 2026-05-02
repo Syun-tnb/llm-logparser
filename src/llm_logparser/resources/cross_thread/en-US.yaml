@@ -145,4 +145,12 @@ cross_thread:
       - OpenAI
       - LLM
       - prompt
+      - cite
+      - search
+      - web search
+      - web_search
       - プロンプト
+    generic_anchor_patterns:
+      - '^turn\d+search\d*$'
+      - '^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$'
+      - '^websearch\d*$'

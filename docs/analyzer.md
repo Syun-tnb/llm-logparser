@@ -909,7 +909,9 @@ deterministic and model-derived capabilities.
   diagnostics/ranking signals, but they are not sufficient on their own.
   Generic admission anchors for topic-summary mode are lexical policy loaded
   from the built-in cross-thread lexical resources, not from
-  `l3/token-dictionary/dictionary.json`.
+  `l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such
+  as `cite` and `turn0search*` are treated as non-semantic markers and cannot
+  admit topic-summary candidates by themselves.
   Heuristic summary rows remain usable but lower-weight, and inferred
   conclusions are not treated as strong evidence. `summary.json` records
   `topic_summary_admission_filtered_count` and filter reasons for pairs removed

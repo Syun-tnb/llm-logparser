@@ -799,6 +799,9 @@ Auxiliary L3 note:
   canonical text, L1 sidecars, or SQLite state
 - cross-thread generic admission anchors are lexical policy owned by the
   built-in cross-thread lexical resources, not by token dictionary artifacts
+- citation and tool residue tokens, for example `cite` and `turn0search*`, are
+  non-semantic lexical markers and are suppressed from topic-summary admission
+  evidence
 - current L3 cross-thread candidate generation can optionally use those token
   and bundle signals while building a selective-context `task_nucleus_text`
   from representative spans; this remains additive and rebuildable rather than

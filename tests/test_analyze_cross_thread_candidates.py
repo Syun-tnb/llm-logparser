@@ -1376,6 +1376,11 @@ def test_cross_thread_lexical_rules_expose_topic_summary_generic_anchors():
     assert "ai" in rules.topic_summary_admission_generic_anchor_tokens
     assert "gpt-4o" in rules.topic_summary_admission_generic_anchor_tokens
     assert "prompt" in rules.topic_summary_admission_generic_anchor_tokens
+    assert "cite" in rules.topic_summary_admission_generic_anchor_tokens
+    assert any(
+        "turn" in pattern and "search" in pattern
+        for pattern in rules.topic_summary_admission_generic_anchor_patterns
+    )
     assert "reina" not in rules.topic_summary_admission_generic_anchor_tokens
 
 
@@ -1389,6 +1394,10 @@ def test_topic_summary_generic_anchor_fallback_supports_legacy_rules():
 
     assert "gpt-4o" in tokens
     assert "prompt" in tokens
+    assert cross_thread_module._is_topic_summary_generic_admission_anchor(
+        "turn0search10",
+        LegacyRules(),
+    )
 
 
 def test_japanese_task_text_is_not_treated_as_residue():
@@ -3143,6 +3152,51 @@ def test_topic_summary_candidates_filter_generic_keyword_only_overlap(
         title="Weekend note",
         summary="Discuss holiday room temperature and casual greeting.",
         keywords=["GPT-4o", "GPT-5"],
+        ts=100 + (10 * 24 * 60 * 60 * 1000),
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert rows == []
+    assert summary["topic_summary_admission_filter_reasons"] == {
+        "generic_shared_keywords_only": 2
+    }
+
+
+def test_topic_summary_candidates_filter_citation_residue_keyword_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="Scout.new company background",
+        summary="Review whether Scout.new has China-related ownership risk.",
+        keywords=["cite", "turn0search10"],
+        source="heuristic",
+        confidence=0.3,
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="Bitcoin ten year roadmap",
+        summary="Discuss ETF adoption and long-term Bitcoin market scenarios.",
+        keywords=["cite", "turn0search10"],
+        source="heuristic",
+        confidence=0.3,
         ts=100 + (10 * 24 * 60 * 60 * 1000),
     )
 

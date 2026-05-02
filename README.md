@@ -852,7 +852,9 @@ signals but are not sufficient admission evidence by themselves. Heuristic
 summary rows and inferred conclusions are weak evidence. Generic admission
 anchors used by this gate are lexical policy loaded from the built-in
 cross-thread lexical resources, not corpus facts from
-`l3/token-dictionary/dictionary.json`.
+`l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such as
+`cite` and `turn0search*` are treated as non-semantic admission anchors, so they
+cannot admit topic-summary candidates by themselves.
 
 When token-dictionary artifacts are present, `dictionary.json` should be read as
 an observed token index / corpus token statistics artifact, and `bundles.json`
