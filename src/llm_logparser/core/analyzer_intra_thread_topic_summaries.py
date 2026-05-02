@@ -620,17 +620,20 @@ def _build_intra_thread_topic_summary_rows_with_stats(
         )
         output_row = heuristic_row
         if source == "local_llm" and llm_client is not None:
-            llm_row = _local_llm_summary_row(
-                heuristic_row=heuristic_row,
-                segment_text=segment_text,
-                client=llm_client,
-                model=model.strip(),
-            )
-            if llm_row is None:
+            if not segment_text.strip():
                 local_llm_failures += 1
             else:
-                output_row = llm_row
-                local_llm_rows += 1
+                llm_row = _local_llm_summary_row(
+                    heuristic_row=heuristic_row,
+                    segment_text=segment_text,
+                    client=llm_client,
+                    model=model.strip(),
+                )
+                if llm_row is None:
+                    local_llm_failures += 1
+                else:
+                    output_row = llm_row
+                    local_llm_rows += 1
         rows.append(output_row)
 
     validator = load_intra_thread_topic_summary_validator()

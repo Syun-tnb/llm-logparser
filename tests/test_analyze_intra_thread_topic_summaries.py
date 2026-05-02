@@ -238,6 +238,52 @@ def test_intra_thread_topic_summaries_local_llm_writes_valid_response(tmp_path):
     assert client.calls[0]["response_format"] == "json"
 
 
+def test_intra_thread_topic_summaries_empty_segment_skips_local_llm(tmp_path):
+    parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        messages=[
+            _message_row(message_id="m1", role="user", ts=100, text=""),
+        ],
+    )
+    _write_segments_jsonl(
+        parsed_path.parent / "l3" / "intra-thread-topics" / "segments.jsonl",
+        [_segment_row(message_ids=["m1"], text="", end_index=0)],
+    )
+    client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "title": "No segment provided",
+                    "summary": "No conversation segment was provided for summarization.",
+                    "conclusion_text": None,
+                    "conclusion_status": "unknown",
+                    "keywords": ["empty"],
+                    "confidence": 0.0,
+                }
+            )
+        ]
+    )
+
+    result = write_intra_thread_topic_summaries(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+    row = _load_jsonl(intra_thread_topic_summaries_artifact_path(parsed_path))[0]
+
+    assert client.calls == []
+    assert result["local_llm_summaries"] == 0
+    assert result["local_llm_failures"] == 1
+    assert row["source"] == "heuristic"
+    assert row["title"] == ""
+    assert row["summary"] == ""
+    assert row["confidence"] == 0.0
+    assert "model" not in row
+    assert "prompt_variant" not in row
+    assert "prompt_hash" not in row
+
+
 def test_intra_thread_topic_summaries_local_llm_defaults_model(tmp_path):
     parsed_path = _write_basic_thread_with_segments(tmp_path)
     client = FakeLLMClient(
