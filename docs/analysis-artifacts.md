@@ -802,6 +802,10 @@ Auxiliary L3 note:
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence
+- topic-summary candidate scoring uses a separate semantic profile from the
+  default semantic-topics recurrence scorer; title overlap, summary keyphrases,
+  cleaned keyword overlap, and local-LLM provenance are emphasized, while
+  recurrence-style signals remain secondary support
 - current L3 cross-thread candidate generation can optionally use those token
   and bundle signals while building a selective-context `task_nucleus_text`
   from representative spans; this remains additive and rebuildable rather than

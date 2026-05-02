@@ -912,6 +912,13 @@ deterministic and model-derived capabilities.
   `l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such
   as `cite` and `turn0search*` are treated as non-semantic markers and cannot
   admit topic-summary candidates by themselves.
+  Topic-summary mode also uses a separate semantic scoring profile after
+  admission: title overlap, summary keyphrase overlap, cleaned keyword-field
+  overlap, and local-LLM summary provenance are weighted more heavily, while
+  recurrence-style signals such as timestamp distance, dictionary overlap, weak
+  bundle overlap, and generic anchor overlap remain secondary support. Its score
+  bands are calibrated separately from the default semantic-topics path: low
+  `<0.45`, medium `0.45-0.7`, and high `>=0.7`.
   Heuristic summary rows remain usable but lower-weight, and inferred
   conclusions are not treated as strong evidence. `summary.json` records
   `topic_summary_admission_filtered_count` and filter reasons for pairs removed

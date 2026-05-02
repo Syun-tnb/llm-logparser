@@ -786,7 +786,14 @@ def test_build_cross_thread_candidate_rows_embedding_tie_break_is_predictable(
         local_context_delta=None,
     )
 
-    def fake_evidence(source, target, *, recurrence_context, token_dictionary_signals=None):
+    def fake_evidence(
+        source,
+        target,
+        *,
+        recurrence_context,
+        token_dictionary_signals=None,
+        cross_thread_rules=None,
+    ):
         if source.topic_id != "topic-a":
             return None
         if target.topic_id in {"topic-b", "topic-c"}:
@@ -3520,6 +3527,79 @@ def test_cross_thread_candidate_rows_use_explicit_conclusions_as_evidence(
 
     assert rows
     assert "explicit_conclusion_overlap" in rows[0]["evidence"]["reason_codes"]
+
+
+def test_topic_summary_semantic_scoring_separates_good_and_partial_pairs(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="good-a",
+        segment_id="seg-good-a",
+        title="DALL-E character design prompt",
+        summary=(
+            "Refine a DALL-E character design prompt for mascot visual "
+            "consistency and prompt revision."
+        ),
+        keywords=["DALL-E", "character design", "prompt revision"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="good-b",
+        segment_id="seg-good-b",
+        title="DALL-E character design revision",
+        summary=(
+            "Revise the DALL-E character design prompt to keep mascot visual "
+            "consistency across generated images."
+        ),
+        keywords=["DALL-E", "character design", "prompt revision"],
+        ts=200,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="partial-a",
+        segment_id="seg-partial-a",
+        title="Daily agenda planning",
+        summary="Morning greeting and daily agenda planning for possible tasks.",
+        keywords=["morning", "daily routine"],
+        ts=300,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="partial-b",
+        segment_id="seg-partial-b",
+        title="Server rack fridge note",
+        summary="Morning greeting and server rack fridge clarification before casual chat.",
+        keywords=["morning", "daily routine"],
+        ts=400,
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+    good_row = _row_for_topic_pair(
+        rows,
+        "good-a:seg-good-a",
+        "good-b:seg-good-b",
+    )
+    partial_row = _row_for_topic_pair(
+        rows,
+        "partial-a:seg-partial-a",
+        "partial-b:seg-partial-b",
+    )
+
+    assert good_row["score"] > partial_row["score"]
+    assert good_row["score"] >= 0.7
+    assert partial_row["score"] >= 0.45
+    assert summary["score_band_counts"]["high"] >= 1
+    assert summary["score_band_counts"]["medium"] >= 1
+    assert summary["score_band_counts"]["low"] < summary["candidate_link_count"]
 
 
 def test_cross_thread_candidate_auto_falls_back_to_semantic_topics_when_summaries_absent(

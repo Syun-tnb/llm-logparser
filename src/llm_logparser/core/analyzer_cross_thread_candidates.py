@@ -90,6 +90,20 @@ _NUCLEUS_OVERLAP_SPECIFIC_SCORE = 0.03
 _EXPLICIT_CONCLUSION_OVERLAP_SCORE = 0.08
 _SUMMARY_LOCAL_LLM_SOURCE_BONUS = 0.04
 _SUMMARY_HEURISTIC_SOURCE_PENALTY = 0.04
+_TOPIC_SUMMARY_TITLE_OVERLAP_HIGH_SCORE = 0.28
+_TOPIC_SUMMARY_TITLE_OVERLAP_MEDIUM_SCORE = 0.16
+_TOPIC_SUMMARY_TITLE_OVERLAP_LOW_SCORE = 0.08
+_TOPIC_SUMMARY_KEYPHRASE_OVERLAP_HIGH_SCORE = 0.24
+_TOPIC_SUMMARY_KEYPHRASE_OVERLAP_MEDIUM_SCORE = 0.14
+_TOPIC_SUMMARY_KEYPHRASE_OVERLAP_LOW_SCORE = 0.07
+_TOPIC_SUMMARY_KEYWORD_OVERLAP_HIGH_SCORE = 0.3
+_TOPIC_SUMMARY_KEYWORD_OVERLAP_LOW_SCORE = 0.16
+_TOPIC_SUMMARY_LOCAL_LLM_PAIR_SCORE = 0.08
+_TOPIC_SUMMARY_HEURISTIC_PENALTY = 0.04
+_TOPIC_SUMMARY_TIMESTAMP_DISTANCE_HIGH_SCORE = 0.03
+_TOPIC_SUMMARY_TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.015
+_TOPIC_SUMMARY_ANCHOR_OVERLAP_SCORE = 0.02
+_TOPIC_SUMMARY_ANCHOR_OVERLAP_STRONG_SCORE = 0.04
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
     {
@@ -160,6 +174,7 @@ class _RepresentativeSpanUnit:
     summary_confidence: float | None = None
     conclusion_status: str | None = None
     explicit_conclusion_text: str | None = None
+    summary_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -1255,6 +1270,11 @@ def _topic_summary_units(
             )
             first_seen, last_seen = _message_timestamp_bounds(parsed_path, message_ids)
             topic_label = " ".join(title.split()) if isinstance(title, str) and title.strip() else None
+            summary_text = (
+                " ".join(summary.split())
+                if isinstance(summary, str) and summary.strip()
+                else ""
+            )
             task_nucleus_text = _task_nucleus_text(
                 matching_text,
                 lexical_rules=lexical_rules,
@@ -1354,6 +1374,7 @@ def _topic_summary_units(
                     summary_confidence=round(confidence, 4),
                     conclusion_status=str(row.get("conclusion_status")),
                     explicit_conclusion_text=explicit_conclusion_text,
+                    summary_text=summary_text,
                 )
             )
 
@@ -1879,6 +1900,204 @@ def _similarity_score_and_reasons(
     return score, _dedupe_reason_codes(reason_codes), has_strong_signal
 
 
+def _topic_summary_semantic_tokens(
+    text: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for token in _token_list(text):
+        normalized = _normalize_anchor_token(token)
+        if len(normalized) < 3:
+            continue
+        if _is_topic_summary_generic_admission_anchor(normalized, cross_thread_rules):
+            continue
+        tokens.append(normalized)
+        if re.search(r"[一-龯ぁ-んァ-ヶー]", normalized) and len(normalized) >= 4:
+            for size in (2, 3):
+                tokens.extend(
+                    normalized[index : index + size]
+                    for index in range(0, len(normalized) - size + 1)
+                )
+    return tuple(dict.fromkeys(tokens))
+
+
+def _token_overlap_ratio(left: tuple[str, ...], right: tuple[str, ...]) -> float:
+    if not left or not right:
+        return 0.0
+    left_set = set(left)
+    right_set = set(right)
+    denominator = min(len(left_set), len(right_set))
+    if denominator == 0:
+        return 0.0
+    return round(len(left_set & right_set) / denominator, 4)
+
+
+def _top_topic_summary_keyphrases(
+    text: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+    limit: int = 16,
+) -> tuple[str, ...]:
+    counts: Counter[str] = Counter(
+        _topic_summary_semantic_tokens(text, cross_thread_rules=cross_thread_rules)
+    )
+    ranked = sorted(
+        counts,
+        key=lambda token: (
+            -counts[token],
+            -len(token),
+            token,
+        ),
+    )
+    return tuple(ranked[:limit])
+
+
+def _topic_summary_score_and_reasons(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    signals: _PairSignals,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[float, tuple[str, ...], bool]:
+    score = 0.0
+    reason_codes: list[str] = []
+
+    source_title_tokens = _topic_summary_semantic_tokens(
+        source.topic_label or "",
+        cross_thread_rules=cross_thread_rules,
+    )
+    target_title_tokens = _topic_summary_semantic_tokens(
+        target.topic_label or "",
+        cross_thread_rules=cross_thread_rules,
+    )
+    title_overlap = _token_overlap_ratio(source_title_tokens, target_title_tokens)
+    if title_overlap >= 0.55:
+        score += _TOPIC_SUMMARY_TITLE_OVERLAP_HIGH_SCORE
+        reason_codes.append("topic_summary_title_overlap_high")
+    elif title_overlap >= 0.35:
+        score += _TOPIC_SUMMARY_TITLE_OVERLAP_MEDIUM_SCORE
+        reason_codes.append("topic_summary_title_overlap_medium")
+    elif title_overlap >= 0.18:
+        score += _TOPIC_SUMMARY_TITLE_OVERLAP_LOW_SCORE
+        reason_codes.append("topic_summary_title_overlap_low")
+
+    source_keyphrases = _top_topic_summary_keyphrases(
+        source.summary_text or source.excerpt,
+        cross_thread_rules=cross_thread_rules,
+    )
+    target_keyphrases = _top_topic_summary_keyphrases(
+        target.summary_text or target.excerpt,
+        cross_thread_rules=cross_thread_rules,
+    )
+    keyphrase_overlap = _token_overlap_ratio(source_keyphrases, target_keyphrases)
+    if keyphrase_overlap >= 0.36:
+        score += _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_HIGH_SCORE
+        reason_codes.append("topic_summary_keyphrase_overlap_high")
+    elif keyphrase_overlap >= 0.22:
+        score += _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_MEDIUM_SCORE
+        reason_codes.append("topic_summary_keyphrase_overlap_medium")
+    elif keyphrase_overlap >= 0.1:
+        score += _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_LOW_SCORE
+        reason_codes.append("topic_summary_keyphrase_overlap_low")
+
+    non_generic_keywords = _non_generic_shared_keywords(signals, cross_thread_rules)
+    if len(non_generic_keywords) >= 2:
+        score += _TOPIC_SUMMARY_KEYWORD_OVERLAP_HIGH_SCORE
+        reason_codes.append("shared_keywords_high")
+        reason_codes.append("topic_summary_keyword_overlap_high")
+    elif len(non_generic_keywords) == 1:
+        score += _TOPIC_SUMMARY_KEYWORD_OVERLAP_LOW_SCORE
+        reason_codes.append("shared_keywords_low")
+        reason_codes.append("topic_summary_keyword_overlap_low")
+    elif len(signals.shared_keywords) >= 2:
+        reason_codes.append("shared_keywords_high")
+    elif len(signals.shared_keywords) == 1:
+        reason_codes.append("shared_keywords_low")
+
+    if (
+        signals.shared_dictionary_token_mass >= 1.5
+        and signals.dictionary_overlap_ratio >= 0.55
+        and signals.min_dictionary_density >= 0.18
+    ):
+        score += 0.05
+        reason_codes.append("dictionary_token_overlap_dense")
+    elif (
+        signals.shared_dictionary_token_mass >= 0.9
+        and signals.dictionary_overlap_ratio >= 0.25
+        and signals.min_dictionary_density >= 0.08
+    ):
+        score += 0.01
+        reason_codes.append("dictionary_token_overlap_weak")
+
+    if (
+        signals.shared_bundle_ids
+        and signals.bundle_concentration >= 0.6
+        and signals.shared_dictionary_token_mass >= 1.2
+    ):
+        score += 0.04
+        reason_codes.append("bundle_overlap_concentrated")
+    elif (
+        signals.shared_bundle_ids
+        and signals.bundle_concentration >= 0.25
+        and signals.shared_dictionary_token_mass >= 0.9
+    ):
+        reason_codes.append("bundle_overlap_broad")
+
+    if (
+        signals.dictionary_overlap_ratio >= 0.55
+        and signals.min_dictionary_density >= 0.18
+        and (
+            signals.bundle_concentration >= 0.5
+            or signals.shared_dictionary_token_mass >= 2.0
+        )
+    ):
+        score += _NUCLEUS_OVERLAP_SPECIFIC_SCORE
+        reason_codes.append("nucleus_overlap_specific")
+
+    if signals.explicit_conclusion_overlap:
+        score += 0.1
+        reason_codes.append("explicit_conclusion_overlap")
+
+    if signals.local_llm_pair:
+        score += _TOPIC_SUMMARY_LOCAL_LLM_PAIR_SCORE
+        reason_codes.append("summary_source_local_llm_pair")
+    elif signals.heuristic_pair:
+        score -= _TOPIC_SUMMARY_HEURISTIC_PENALTY
+        reason_codes.append("summary_source_heuristic_penalty")
+
+    if signals.timestamp_delta_ms is not None:
+        if signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
+            score += _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_HIGH_SCORE
+            reason_codes.append("timestamp_distance_high")
+        elif signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_MEDIUM_THRESHOLD_MS:
+            score += _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_MEDIUM_SCORE
+            reason_codes.append("timestamp_distance_medium")
+
+    if len(signals.shared_strong_anchor_tokens) >= 2:
+        score += _TOPIC_SUMMARY_ANCHOR_OVERLAP_STRONG_SCORE
+        reason_codes.append("anchor_overlap_strong")
+    elif signals.shared_anchor_tokens:
+        score += _TOPIC_SUMMARY_ANCHOR_OVERLAP_SCORE
+        reason_codes.append("anchor_overlap")
+
+    has_strong_signal = any(
+        reason in reason_codes
+        for reason in (
+            "topic_summary_title_overlap_high",
+            "topic_summary_title_overlap_medium",
+            "topic_summary_keyphrase_overlap_high",
+            "topic_summary_keyphrase_overlap_medium",
+            "topic_summary_keyword_overlap_high",
+            "topic_summary_keyword_overlap_low",
+            "dictionary_token_overlap_dense",
+            "bundle_overlap_concentrated",
+            "explicit_conclusion_overlap",
+        )
+    ) or len(signals.shared_keywords) >= 1
+    return score, _dedupe_reason_codes(reason_codes), has_strong_signal
+
+
 def _structural_signal_score_and_reasons(
     signals: _PairSignals,
 ) -> tuple[float, tuple[str, ...]]:
@@ -1904,6 +2123,23 @@ def _structural_signal_score_and_reasons(
         score += _WEAK_ROUTE_CONTEXT_SHIFT_SCORE
         reason_codes.append("context_shift_signal")
     return round(score, 4), _dedupe_reason_codes(reason_codes)
+
+
+def _score_and_reasons_for_pair(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    signals: _PairSignals,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[float, tuple[str, ...], bool]:
+    if _topic_summary_pair(source, target):
+        return _topic_summary_score_and_reasons(
+            source,
+            target,
+            signals,
+            cross_thread_rules=cross_thread_rules,
+        )
+    return _similarity_score_and_reasons(signals)
 
 
 def _topic_summary_pair(
@@ -2054,6 +2290,7 @@ def _weak_recurrence_evidence_for_pair(
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
     token_dictionary_signals: TokenDictionarySignals | None = None,
+    cross_thread_rules: CrossThreadLexicalRules,
     base_evidence: _Evidence | None = None,
 ) -> _WeakRecurrenceCandidate | None:
     signals = _pair_signals(
@@ -2106,7 +2343,12 @@ def _weak_recurrence_evidence_for_pair(
     if signals.reflective_score >= _WEAK_RECURRENCE_REFLECTIVE_THRESHOLD:
         return None
 
-    score, base_reason_codes, _has_strong_signal = _similarity_score_and_reasons(signals)
+    score, base_reason_codes, _has_strong_signal = _score_and_reasons_for_pair(
+        source,
+        target,
+        signals,
+        cross_thread_rules=cross_thread_rules,
+    )
     structural_score, structural_reason_codes = _structural_signal_score_and_reasons(signals)
 
     if base_evidence is not None:
@@ -2149,6 +2391,7 @@ def _evidence_for_pair(
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
     token_dictionary_signals: TokenDictionarySignals | None = None,
+    cross_thread_rules: CrossThreadLexicalRules,
 ) -> _Evidence | None:
     signals = _pair_signals(
         source,
@@ -2158,7 +2401,12 @@ def _evidence_for_pair(
     )
     if signals.residue_pair:
         return None
-    score, reason_codes, has_strong_signal = _similarity_score_and_reasons(signals)
+    score, reason_codes, has_strong_signal = _score_and_reasons_for_pair(
+        source,
+        target,
+        signals,
+        cross_thread_rules=cross_thread_rules,
+    )
     if not has_strong_signal or not reason_codes:
         return None
     return _evidence_from_signals(
@@ -2504,12 +2752,14 @@ def _build_cross_thread_candidate_rows_with_stats(
                 target,
                 recurrence_context=recurrence_context,
                 token_dictionary_signals=token_dictionary_signals,
+                cross_thread_rules=cross_thread_rules,
             )
             weak_candidate = _weak_recurrence_evidence_for_pair(
                 source,
                 target,
                 recurrence_context=recurrence_context,
                 token_dictionary_signals=token_dictionary_signals,
+                cross_thread_rules=cross_thread_rules,
                 base_evidence=evidence,
             )
             similarity_evidence = weak_candidate.evidence if weak_candidate is not None else evidence
@@ -2674,7 +2924,13 @@ def build_cross_thread_candidate_rows(
     return rows
 
 
-def _score_band(score: float) -> str:
+def _score_band(score: float, *, unit_source: str) -> str:
+    if unit_source == "topic-summaries":
+        if score >= 0.7:
+            return "high"
+        if score >= 0.45:
+            return "medium"
+        return "low"
     if score >= 0.9:
         return "high"
     if score >= 0.75:
@@ -2714,7 +2970,7 @@ def _summary(
     for row in rows:
         for reason_code in row["evidence"]["reason_codes"]:
             reason_counts[str(reason_code)] += 1
-        score_bands[_score_band(float(row["score"]))] += 1
+        score_bands[_score_band(float(row["score"]), unit_source=unit_source)] += 1
     summary = {
         "artifact_type": CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE,
         "schema_version": CROSS_THREAD_CANDIDATE_SCHEMA_VERSION,

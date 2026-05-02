@@ -856,6 +856,14 @@ cross-thread lexical resources, not corpus facts from
 `cite` and `turn0search*` are treated as non-semantic admission anchors, so they
 cannot admit topic-summary candidates by themselves.
 
+When `--unit-source topic-summaries` is selected, candidate scores use a
+topic-summary-specific semantic profile. Title overlap, summary keyphrase
+overlap, cleaned keyword-field overlap, and local-LLM summary provenance carry
+more weight, while recurrence-style signals such as timestamp distance,
+dictionary overlap, weak bundle overlap, and generic anchor overlap are kept as
+secondary support. Topic-summary score bands are calibrated separately from the
+default semantic-topics path: low `<0.45`, medium `0.45-0.7`, high `>=0.7`.
+
 When token-dictionary artifacts are present, `dictionary.json` should be read as
 an observed token index / corpus token statistics artifact, and `bundles.json`
 as corpus-derived cooccurrence bundles. They are additive L3 signals only, not
