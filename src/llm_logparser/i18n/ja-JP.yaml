@@ -94,6 +94,7 @@ messages:
   cli.analyze.intra_thread_topic_summaries.opt.model.help: --source local-llm で使うローカル Ollama 生成モデル。既定は gemma4-Q8_K_XL:latest。
   cli.analyze.intra_thread_topic_summaries.opt.base_url.help: ローカル Ollama サーバーの base URL
   cli.analyze.intra_thread_topic_summaries.opt.timeout_seconds.help: segment ごとの Ollama リクエスト timeout 秒数
+  cli.analyze.intra_thread_topic_summaries.opt.jobs.help: thread 単位の worker 数。ローカル Ollama では 1 または 2 など控えめな値を推奨
   cli.analyze.intra_thread_topic_summaries.opt.overwrite.help: 既存の l3/intra-thread-topics/topic-summaries.jsonl 成果物を上書きする
   cli.analyze.semantic_preview.help: 保存済み L3 semantic prototype 成果物から cluster、conversation、window を閲覧する
   cli.analyze.semantic_preview.opt.input.help: "入力: ディレクトリのみ。message_windows.jsonl、window_clusters.jsonl、任意の window_neighbors.jsonl を含む provider 成果物ルート"

@@ -90,6 +90,7 @@ messages:
   cli.analyze.intra_thread_topic_summaries.opt.model.help: Local Ollama generation model for --source local-llm. Defaults to gemma4-Q8_K_XL:latest.
   cli.analyze.intra_thread_topic_summaries.opt.base_url.help: Base URL for the local Ollama server
   cli.analyze.intra_thread_topic_summaries.opt.timeout_seconds.help: Per-segment Ollama request timeout in seconds
+  cli.analyze.intra_thread_topic_summaries.opt.jobs.help: Number of thread-level workers. Use conservative values such as 1 or 2 for local Ollama.
   cli.analyze.intra_thread_topic_summaries.opt.overwrite.help: Overwrite existing l3/intra-thread-topics/topic-summaries.jsonl artifacts
   cli.analyze.semantic_preview.help: Browse semantic clusters, conversations, or individual windows from stored L3 prototype artifacts
   cli.analyze.semantic_preview.opt.input.help: "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files"

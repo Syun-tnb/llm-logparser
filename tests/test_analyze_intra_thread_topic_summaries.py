@@ -123,6 +123,28 @@ def _write_basic_thread_with_segments(tmp_path: Path) -> Path:
     return parsed_path
 
 
+def _write_thread_with_single_segment(root: Path, thread_id: str, text: str) -> Path:
+    parsed_path = root / thread_id / "parsed.jsonl"
+    _write_parsed_jsonl(
+        parsed_path,
+        messages=[
+            _message_row(message_id=f"{thread_id}-m1", role="user", ts=100, text=text),
+        ],
+    )
+    _write_segments_jsonl(
+        parsed_path.parent / "l3" / "intra-thread-topics" / "segments.jsonl",
+        [
+            _segment_row(
+                message_ids=[f"{thread_id}-m1"],
+                text=text,
+                segment_id=f"{thread_id}-segment",
+                end_index=0,
+            )
+        ],
+    )
+    return parsed_path
+
+
 def _load_jsonl(path: Path) -> list[dict]:
     return [
         json.loads(line)
@@ -203,6 +225,136 @@ def test_intra_thread_topic_summaries_write_successful_heuristic_output(tmp_path
     assert rows[0]["confidence"] == 0.3
 
 
+def test_intra_thread_topic_summaries_provider_root_skips_existing_and_writes_missing(
+    tmp_path,
+):
+    root = tmp_path / "openai"
+    existing_parsed = _write_thread_with_single_segment(
+        root,
+        "thread-existing",
+        "Existing artifact should be preserved.",
+    )
+    missing_parsed = _write_thread_with_single_segment(
+        root,
+        "thread-missing",
+        "Missing artifact should be generated.",
+    )
+    existing_output = intra_thread_topic_summaries_artifact_path(existing_parsed)
+    existing_output.parent.mkdir(parents=True, exist_ok=True)
+    existing_output.write_text('{"sentinel": true}\n', encoding="utf-8")
+
+    result = write_intra_thread_topic_summaries(root)
+
+    assert result["threads_found"] == 2
+    assert result["written_threads"] == 1
+    assert result["skipped_existing"] == 1
+    assert result["summaries"] == 1
+    assert result["jobs"] == 1
+    assert result["skipped_artifacts"] == [existing_output]
+    assert existing_output.read_text(encoding="utf-8") == '{"sentinel": true}\n'
+    missing_rows = _load_jsonl(intra_thread_topic_summaries_artifact_path(missing_parsed))
+    assert missing_rows[0]["source"] == "heuristic"
+
+
+def test_intra_thread_topic_summaries_single_thread_skips_existing(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    output_path = intra_thread_topic_summaries_artifact_path(parsed_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text('{"sentinel": true}\n', encoding="utf-8")
+
+    result = write_intra_thread_topic_summaries(parsed_path)
+
+    assert result["threads_found"] == 1
+    assert result["written_threads"] == 0
+    assert result["skipped_existing"] == 1
+    assert result["summaries"] == 0
+    assert result["artifacts"] == []
+    assert output_path.read_text(encoding="utf-8") == '{"sentinel": true}\n'
+
+
+def test_intra_thread_topic_summaries_overwrite_replaces_existing(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    output_path = intra_thread_topic_summaries_artifact_path(parsed_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text('{"sentinel": true}\n', encoding="utf-8")
+
+    result = write_intra_thread_topic_summaries(parsed_path, overwrite=True)
+    rows = _load_jsonl(output_path)
+
+    assert result["written_threads"] == 1
+    assert result["skipped_existing"] == 0
+    assert rows[0]["record_type"] == "intra_thread_topic_summary"
+    assert "sentinel" not in rows[0]
+
+
+def test_intra_thread_topic_summaries_skipped_existing_does_not_call_llm(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+    output_path = intra_thread_topic_summaries_artifact_path(parsed_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text('{"sentinel": true}\n', encoding="utf-8")
+    client = FakeLLMClient(["{}"])
+
+    result = write_intra_thread_topic_summaries(
+        parsed_path,
+        source="local_llm",
+        client=client,
+    )
+
+    assert result["written_threads"] == 0
+    assert result["skipped_existing"] == 1
+    assert result["local_llm_summaries"] == 0
+    assert result["local_llm_failures"] == 0
+    assert client.calls == []
+
+
+def test_intra_thread_topic_summaries_jobs_two_processes_missing_threads(tmp_path):
+    root = tmp_path / "openai"
+    first = _write_thread_with_single_segment(root, "thread-a", "First thread text.")
+    second = _write_thread_with_single_segment(root, "thread-b", "Second thread text.")
+
+    result = write_intra_thread_topic_summaries(root, jobs=2)
+
+    assert result["threads_found"] == 2
+    assert result["written_threads"] == 2
+    assert result["skipped_existing"] == 0
+    assert result["summaries"] == 2
+    assert result["jobs"] == 2
+    assert intra_thread_topic_summaries_artifact_path(first).exists()
+    assert intra_thread_topic_summaries_artifact_path(second).exists()
+
+
+def test_intra_thread_topic_summaries_parallel_skips_existing_artifacts(tmp_path):
+    root = tmp_path / "openai"
+    existing = _write_thread_with_single_segment(
+        root,
+        "thread-existing",
+        "Existing artifact should be skipped.",
+    )
+    missing_a = _write_thread_with_single_segment(root, "thread-a", "First text.")
+    missing_b = _write_thread_with_single_segment(root, "thread-b", "Second text.")
+    existing_output = intra_thread_topic_summaries_artifact_path(existing)
+    existing_output.parent.mkdir(parents=True, exist_ok=True)
+    existing_output.write_text('{"sentinel": true}\n', encoding="utf-8")
+
+    result = write_intra_thread_topic_summaries(root, jobs=2)
+
+    assert result["threads_found"] == 3
+    assert result["written_threads"] == 2
+    assert result["skipped_existing"] == 1
+    assert result["summaries"] == 2
+    assert result["jobs"] == 2
+    assert existing_output.read_text(encoding="utf-8") == '{"sentinel": true}\n'
+    assert intra_thread_topic_summaries_artifact_path(missing_a).exists()
+    assert intra_thread_topic_summaries_artifact_path(missing_b).exists()
+
+
+def test_intra_thread_topic_summaries_rejects_invalid_jobs(tmp_path):
+    parsed_path = _write_basic_thread_with_segments(tmp_path)
+
+    with pytest.raises(IntraThreadTopicSummaryError, match="--jobs"):
+        write_intra_thread_topic_summaries(parsed_path, jobs=0)
+
+
 def test_intra_thread_topic_summaries_local_llm_writes_valid_response(tmp_path):
     parsed_path = _write_basic_thread_with_segments(tmp_path)
     client = FakeLLMClient(
@@ -230,6 +382,7 @@ def test_intra_thread_topic_summaries_local_llm_writes_valid_response(tmp_path):
 
     assert result["local_llm_summaries"] == 1
     assert result["local_llm_failures"] == 0
+    assert result["jobs"] == 1
     assert row["source"] == "local_llm"
     assert row["title"] == "Launch checklist schema"
     assert row["model"] == "ollama/mistral-nemo:latest"

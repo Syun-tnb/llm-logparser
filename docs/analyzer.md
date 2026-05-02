@@ -671,8 +671,12 @@ deterministic and model-derived capabilities.
   `text_sha1`, and writes `l3/intra-thread-topics/topic-summaries.jsonl`.
   Default output is heuristic (`source: heuristic`): conservative extracted
   title, truncated normalized excerpt summary, keywords, `conclusion_text: null`,
-  and usually `conclusion_status: unknown`. `--source local-llm` optionally uses
-  local Ollama generation. The default tested model is
+  and usually `conclusion_status: unknown`. Existing `topic-summaries.jsonl`
+  artifacts are skipped unless `--overwrite` is supplied, making provider-root
+  runs resumable. `--jobs` adds bounded thread-level parallelism; use
+  conservative values such as `--jobs 1` or `--jobs 2` for local Ollama because
+  higher values may overload consumer hardware. `--source local-llm` optionally
+  uses local Ollama generation. The default tested model is
   `gemma4-Q8_K_XL:latest`; `mistral-nemo:latest` is a viable fallback
   candidate. Current local evaluation does not recommend `gpt-oss-20b`,
   `lfm-instruct`, or `lfm-thinking` for this artifact, but they are not blocked:
@@ -680,8 +684,10 @@ deterministic and model-derived capabilities.
   vary, and prompt profiles may be added later. Local rows include `model`,
   `prompt_variant`, and `prompt_hash` provenance. If one segment fails local
   generation or strict output validation, only that segment falls back to the
-  heuristic row. Conclusions remain provisional. This is input for later
-  cross-thread matching, not final topic determination.
+  heuristic row. Full local LLM generation over large datasets can be slow; the
+  default heuristic path remains the lightweight option. Conclusions remain
+  provisional. This is input for later cross-thread matching, not final topic
+  determination.
 
 - `semantic-topic` is an experimental L4 read-only layer on top of stored L3
   cluster artifacts: it reads `message_windows.jsonl` plus

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -680,19 +681,27 @@ def write_intra_thread_topic_summaries(
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     client: LLMClient | None = None,
+    jobs: int = 1,
 ) -> dict[str, Any]:
+    if not isinstance(jobs, int) or jobs < 1:
+        raise IntraThreadTopicSummaryError("--jobs must be an integer >= 1")
+
     parsed_files = discover_parsed_jsonl(input_path)
     written_paths: list[Path] = []
+    skipped_paths: list[Path] = []
     total_rows = 0
     total_local_llm_rows = 0
     total_local_llm_failures = 0
 
+    pending: list[Path] = []
     for parsed_path in parsed_files:
         output_path = intra_thread_topic_summaries_artifact_path(parsed_path)
         if output_path.exists() and not overwrite:
-            raise IntraThreadTopicSummaryError(
-                f"artifact already exists: {output_path} (rerun with --overwrite)"
-            )
+            skipped_paths.append(output_path)
+            continue
+        pending.append(parsed_path)
+
+    def process_one(parsed_path: Path) -> tuple[Path, int, dict[str, int]]:
         rows, stats = _build_intra_thread_topic_summary_rows_with_stats(
             parsed_path,
             source=source,
@@ -701,16 +710,46 @@ def write_intra_thread_topic_summaries(
             timeout_seconds=timeout_seconds,
             client=client,
         )
-        written_paths.append(_write_jsonl(output_path, rows))
-        total_rows += len(rows)
+        output_path = _write_jsonl(
+            intra_thread_topic_summaries_artifact_path(parsed_path),
+            rows,
+        )
+        return output_path, len(rows), stats
+
+    if jobs == 1 or len(pending) <= 1:
+        results = [process_one(parsed_path) for parsed_path in pending]
+    else:
+        results = []
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            future_to_path = {
+                executor.submit(process_one, parsed_path): parsed_path
+                for parsed_path in pending
+            }
+            for future in as_completed(future_to_path):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    parsed_path = future_to_path[future]
+                    raise IntraThreadTopicSummaryError(
+                        f"failed to write topic summaries for {parsed_path}: {exc}"
+                    ) from exc
+
+    for output_path, row_count, stats in results:
+        written_paths.append(output_path)
+        total_rows += row_count
         total_local_llm_rows += stats["local_llm_rows"]
         total_local_llm_failures += stats["local_llm_failures"]
 
     return {
         "threads": len(parsed_files),
+        "threads_found": len(parsed_files),
+        "written_threads": len(written_paths),
+        "skipped_existing": len(skipped_paths),
         "summaries": total_rows,
         "source": source,
         "local_llm_summaries": total_local_llm_rows,
         "local_llm_failures": total_local_llm_failures,
+        "jobs": jobs,
         "artifacts": written_paths,
+        "skipped_artifacts": skipped_paths,
     }

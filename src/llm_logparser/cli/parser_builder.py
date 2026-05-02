@@ -590,6 +590,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.intra_thread_topic_summaries.opt.timeout_seconds.help"),
     )
     analyze_intra_thread_topic_summaries_cmd.add_argument(
+        "--jobs",
+        dest="jobs",
+        type=int,
+        default=1,
+        help=_("cli.analyze.intra_thread_topic_summaries.opt.jobs.help"),
+    )
+    analyze_intra_thread_topic_summaries_cmd.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",

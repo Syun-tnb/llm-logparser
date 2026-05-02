@@ -320,6 +320,7 @@ def run_analyze_intra_thread_topic_summaries(args, logger: logging.Logger) -> No
             model=model,
             base_url=args.base_url,
             timeout_seconds=args.timeout_seconds,
+            jobs=args.jobs,
         )
     except IntraThreadTopicSummaryError as exc:
         logger.error(str(exc))
@@ -327,9 +328,11 @@ def run_analyze_intra_thread_topic_summaries(args, logger: logging.Logger) -> No
 
     logger.info(
         "intra-thread topic summary artifacts written: "
-        f"{result['threads']} thread(s), {result['summaries']} summary row(s), "
+        f"{result['written_threads']}/{result['threads_found']} thread(s), "
+        f"{result['summaries']} summary row(s), "
         f"{result['local_llm_summaries']} local LLM row(s), "
-        f"{result['local_llm_failures']} local LLM fallback(s)"
+        f"{result['local_llm_failures']} local LLM fallback(s), "
+        f"{result['skipped_existing']} skipped existing, jobs={result['jobs']}"
     )
 
 
