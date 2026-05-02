@@ -893,6 +893,19 @@ deterministic and model-derived capabilities.
   `l3/semantic-topics/topics.json`, compares representative spans across
   different conversations with a small deterministic evidence stack, and
   writes `l3/cross-thread-candidates/candidates.jsonl` plus `summary.json`.
+  This semantic-topics path remains the default. `--unit-source topic-summaries`
+  optionally reads provisional
+  `thread-*/l3/intra-thread-topics/topic-summaries.jsonl` rows instead, using
+  title, summary, keywords, and explicit conclusion text as matching input.
+  `--unit-source auto` prefers usable topic summaries when present and falls
+  back to semantic-topics otherwise. Missing topic-summary files are coverage
+  gaps rather than errors; invalid rows, empty title+summary rows, and
+  low-confidence local LLM rows are skipped and counted in `summary.json`.
+  Heuristic summary rows remain usable but lower-weight, and inferred
+  conclusions are not treated as strong evidence. The recommended comparison
+  flow is: generate intra-thread topic summaries, run
+  `cross-thread-candidates --unit-source topic-summaries`, then compare against
+  the default semantic-topics output.
   In addition to the original similarity-driven route, it now also admits a
   narrow weak-recurrence route for structurally anchored pairs that are
   separated by a meaningful gap, so low-similarity revisits can still reach

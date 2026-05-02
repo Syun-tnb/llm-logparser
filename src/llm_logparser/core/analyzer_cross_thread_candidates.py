@@ -29,13 +29,21 @@ from llm_logparser.resources.cross_thread_lexical import (
     DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
     load_cross_thread_lexical_rules,
 )
-from .schema_validation import load_cross_thread_candidate_validator, load_topics_validator
+from .schema_validation import (
+    load_cross_thread_candidate_validator,
+    load_intra_thread_topic_summary_validator,
+    load_topics_validator,
+)
 
 CROSS_THREAD_CANDIDATE_SCHEMA_VERSION = "0.3"
 CROSS_THREAD_CANDIDATE_RECORD_TYPE = "cross_thread_candidate"
 CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE = "cross_thread_candidates_summary"
 DEFAULT_CROSS_THREAD_MIN_SCORE = 0.6
 DEFAULT_CROSS_THREAD_TOP_PER_SOURCE = 3
+DEFAULT_CROSS_THREAD_UNIT_SOURCE = "semantic-topics"
+SUPPORTED_CROSS_THREAD_UNIT_SOURCES = frozenset(
+    {"semantic-topics", "topic-summaries", "auto"}
+)
 _DAY_MS = 24 * 60 * 60 * 1000
 
 _LABEL_MATCH_SCORE = 0.45
@@ -79,6 +87,9 @@ _DICTIONARY_TOKEN_OVERLAP_DENSE_SCORE = 0.08
 _BUNDLE_OVERLAP_BROAD_SCORE = 0.01
 _BUNDLE_OVERLAP_CONCENTRATED_SCORE = 0.05
 _NUCLEUS_OVERLAP_SPECIFIC_SCORE = 0.03
+_EXPLICIT_CONCLUSION_OVERLAP_SCORE = 0.08
+_SUMMARY_LOCAL_LLM_SOURCE_BONUS = 0.04
+_SUMMARY_HEURISTIC_SOURCE_PENALTY = 0.04
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
 _SELECTIVE_CONTEXT_MIN_FRAGMENT_SCORE = 0.34
 _SELECTIVE_CONTEXT_TOP_FRAGMENTS = 3
@@ -118,6 +129,12 @@ class _RepresentativeSpanUnit:
     dictionary_token_mass: float
     dictionary_density: float
     residue_like: bool
+    unit_kind: str = "semantic_topic_span"
+    segment_id: str | None = None
+    summary_source: str | None = None
+    summary_confidence: float | None = None
+    conclusion_status: str | None = None
+    explicit_conclusion_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +194,26 @@ class _PairSignals:
     reflective_score: float
     fragment_dictionary_support: float
     residue_pair: bool
+    explicit_conclusion_overlap: bool
+    local_llm_pair: bool
+    heuristic_pair: bool
+
+
+@dataclass(frozen=True)
+class _TopicSummaryLoadStats:
+    files_found: int = 0
+    units_loaded: int = 0
+    skipped_invalid: int = 0
+    skipped_empty: int = 0
+    skipped_low_confidence: int = 0
+
+
+@dataclass(frozen=True)
+class _UnitLoadResult:
+    unit_source: str
+    topics_artifact: dict[str, Any] | None
+    units: list[_RepresentativeSpanUnit]
+    topic_summary_stats: _TopicSummaryLoadStats
 
 
 @dataclass(frozen=True)
@@ -1061,6 +1098,305 @@ def _representative_units(
     return units
 
 
+def _topic_summary_matching_text(row: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("title", "summary"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(" ".join(value.split()))
+    keywords = row.get("keywords")
+    if isinstance(keywords, list):
+        keyword_text = " ".join(
+            str(keyword).strip()
+            for keyword in keywords
+            if isinstance(keyword, str) and keyword.strip()
+        )
+        if keyword_text:
+            parts.append(keyword_text)
+    conclusion_text = row.get("conclusion_text")
+    if row.get("conclusion_status") == "explicit" and isinstance(conclusion_text, str):
+        conclusion = " ".join(conclusion_text.split())
+        if conclusion:
+            parts.append(conclusion)
+    return "\n".join(parts)
+
+
+def _message_timestamp_bounds(
+    parsed_path: Path,
+    message_ids: tuple[str, ...],
+) -> tuple[int | None, int | None]:
+    wanted = set(message_ids)
+    timestamps: list[int] = []
+    try:
+        with parsed_path.open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                if row.get("record_type") != "message":
+                    continue
+                if row.get("message_id") not in wanted:
+                    continue
+                ts = row.get("ts")
+                if isinstance(ts, int):
+                    timestamps.append(ts)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None, None
+    if not timestamps:
+        return None, None
+    return min(timestamps), max(timestamps)
+
+
+def _topic_summary_units(
+    input_root: Path,
+    *,
+    lexical_rules: TokenDictionaryLexicalRules | None = None,
+    token_dictionary_signals: TokenDictionarySignals | None = None,
+    cross_thread_rules: CrossThreadLexicalRules | None = None,
+) -> tuple[list[_RepresentativeSpanUnit], _TopicSummaryLoadStats]:
+    lexical_rules = lexical_rules or default_token_dictionary_lexical_rules()
+    cross_thread_rules = cross_thread_rules or load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
+    validator = load_intra_thread_topic_summary_validator()
+    summary_paths = sorted(
+        input_root.glob("thread-*/l3/intra-thread-topics/topic-summaries.jsonl")
+    )
+    units: list[_RepresentativeSpanUnit] = []
+    skipped_invalid = 0
+    skipped_empty = 0
+    skipped_low_confidence = 0
+
+    for summary_path in summary_paths:
+        parsed_path = summary_path.parents[2] / "parsed.jsonl"
+        try:
+            raw_lines = summary_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            skipped_invalid += 1
+            continue
+        for line in raw_lines:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                skipped_invalid += 1
+                continue
+            if not isinstance(row, dict):
+                skipped_invalid += 1
+                continue
+            if list(validator.iter_errors(row)):
+                skipped_invalid += 1
+                continue
+
+            title = row.get("title")
+            summary = row.get("summary")
+            if not (
+                isinstance(title, str)
+                and title.strip()
+                or isinstance(summary, str)
+                and summary.strip()
+            ):
+                skipped_empty += 1
+                continue
+
+            source = str(row.get("source"))
+            confidence_raw = row.get("confidence")
+            confidence = float(confidence_raw) if isinstance(confidence_raw, (int, float)) else 0.0
+            if source == "local_llm" and confidence <= 0.1:
+                skipped_low_confidence += 1
+                continue
+
+            message_ids = tuple(
+                str(message_id)
+                for message_id in row.get("message_ids", [])
+                if isinstance(message_id, str) and message_id
+            )
+            matching_text = _topic_summary_matching_text(row)
+            if not matching_text.strip() or not message_ids:
+                skipped_empty += 1
+                continue
+            keywords = tuple(
+                str(keyword)
+                for keyword in row.get("keywords", [])
+                if isinstance(keyword, str) and keyword.strip()
+            )
+            first_seen, last_seen = _message_timestamp_bounds(parsed_path, message_ids)
+            topic_label = " ".join(title.split()) if isinstance(title, str) and title.strip() else None
+            task_nucleus_text = _task_nucleus_text(
+                matching_text,
+                lexical_rules=lexical_rules,
+                token_dictionary_signals=token_dictionary_signals,
+                cross_thread_rules=cross_thread_rules,
+            )
+            task_fragment_view = _task_fragment_view(
+                matching_text,
+                lexical_rules,
+                token_dictionary_signals,
+                cross_thread_rules,
+            )
+            dictionary_source_text = task_nucleus_text or matching_text
+            dictionary_tokens = _dictionary_tokens_for_text(
+                dictionary_source_text,
+                token_dictionary_signals,
+            )
+            bundle_ids = _bundle_ids_for_tokens(dictionary_tokens, token_dictionary_signals)
+            anchor_source_values = tuple(
+                value
+                for value in (
+                    topic_label or "",
+                    task_fragment_view,
+                    *keywords,
+                )
+                if value
+            )
+            anchor_tokens = _anchor_tokens_for_texts(anchor_source_values, lexical_rules)
+            strong_anchor_tokens = _strong_anchor_tokens_for_texts(anchor_source_values, lexical_rules)
+            segment_id = str(row["segment_id"])
+            explicit_conclusion = row.get("conclusion_text")
+            explicit_conclusion_text = (
+                " ".join(explicit_conclusion.split())
+                if row.get("conclusion_status") == "explicit"
+                and isinstance(explicit_conclusion, str)
+                and explicit_conclusion.strip()
+                else None
+            )
+            units.append(
+                _RepresentativeSpanUnit(
+                    provider_id=str(row["provider_id"]),
+                    topic_id=f"{row['conversation_id']}:{segment_id}",
+                    conversation_id=str(row["conversation_id"]),
+                    span_id=segment_id,
+                    message_ids=message_ids,
+                    source_window_ids=(),
+                    excerpt=matching_text,
+                    task_nucleus_text=task_nucleus_text,
+                    task_fragment_view=task_fragment_view,
+                    topic_label=topic_label,
+                    keywords=keywords,
+                    normalized_label=None,
+                    raw_label=None,
+                    first_seen=first_seen,
+                    last_seen=last_seen,
+                    excerpt_specificity=_text_specificity_score(
+                        task_fragment_view,
+                        lexical_rules,
+                    ),
+                    reflective_score=_reflective_text_score(
+                        task_fragment_view,
+                        lexical_rules,
+                        cross_thread_rules,
+                    ),
+                    anchor_tokens=anchor_tokens,
+                    strong_anchor_tokens=strong_anchor_tokens,
+                    task_like_score=_task_like_text_score(
+                        task_fragment_view,
+                        anchor_tokens,
+                        strong_anchor_tokens,
+                        lexical_rules,
+                        cross_thread_rules,
+                    ),
+                    dictionary_tokens=dictionary_tokens,
+                    bundle_ids=bundle_ids,
+                    fragment_dictionary_support=_fragment_dictionary_support(
+                        dictionary_source_text,
+                        token_dictionary_signals,
+                    ),
+                    nucleus_token_count=len(set(_token_list(task_nucleus_text))),
+                    dictionary_token_mass=_dictionary_token_mass(
+                        dictionary_tokens,
+                        token_dictionary_signals,
+                    ),
+                    dictionary_density=_nucleus_dictionary_density(
+                        task_nucleus_text,
+                        dictionary_tokens,
+                        token_dictionary_signals,
+                    ),
+                    residue_like=_is_residue_fragment(
+                        matching_text,
+                        cross_thread_rules=cross_thread_rules,
+                    ),
+                    unit_kind="topic_summary",
+                    segment_id=segment_id,
+                    summary_source=source,
+                    summary_confidence=round(confidence, 4),
+                    conclusion_status=str(row.get("conclusion_status")),
+                    explicit_conclusion_text=explicit_conclusion_text,
+                )
+            )
+
+    units.sort(
+        key=lambda item: (
+            item.conversation_id,
+            item.topic_id,
+            item.span_id,
+        )
+    )
+    return units, _TopicSummaryLoadStats(
+        files_found=len(summary_paths),
+        units_loaded=len(units),
+        skipped_invalid=skipped_invalid,
+        skipped_empty=skipped_empty,
+        skipped_low_confidence=skipped_low_confidence,
+    )
+
+
+def _load_units(
+    input_root: Path,
+    *,
+    requested_unit_source: str,
+    lexical_rules: TokenDictionaryLexicalRules,
+    token_dictionary_signals: TokenDictionarySignals | None,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> _UnitLoadResult:
+    if requested_unit_source not in SUPPORTED_CROSS_THREAD_UNIT_SOURCES:
+        raise CrossThreadCandidateError(
+            "--unit-source must be semantic-topics, topic-summaries, or auto"
+        )
+
+    topic_units: list[_RepresentativeSpanUnit] = []
+    topic_stats = _TopicSummaryLoadStats()
+    if requested_unit_source in {"topic-summaries", "auto"}:
+        topic_units, topic_stats = _topic_summary_units(
+            input_root,
+            lexical_rules=lexical_rules,
+            token_dictionary_signals=token_dictionary_signals,
+            cross_thread_rules=cross_thread_rules,
+        )
+        if requested_unit_source == "topic-summaries":
+            if not topic_units:
+                raise CrossThreadCandidateError(
+                    "no usable topic summary units found under provider root"
+                )
+            return _UnitLoadResult(
+                unit_source="topic-summaries",
+                topics_artifact=None,
+                units=topic_units,
+                topic_summary_stats=topic_stats,
+            )
+        if topic_units:
+            return _UnitLoadResult(
+                unit_source="topic-summaries",
+                topics_artifact=None,
+                units=topic_units,
+                topic_summary_stats=topic_stats,
+            )
+
+    topics_artifact = _load_topics_artifact(input_root)
+    return _UnitLoadResult(
+        unit_source="semantic-topics",
+        topics_artifact=topics_artifact,
+        units=_representative_units(
+            topics_artifact,
+            lexical_rules=lexical_rules,
+            token_dictionary_signals=token_dictionary_signals,
+            cross_thread_rules=cross_thread_rules,
+        ),
+        topic_summary_stats=topic_stats,
+    )
+
+
 def _build_recurrence_instrumentation_context(
     input_root: Path,
     units: list[_RepresentativeSpanUnit],
@@ -1312,6 +1648,15 @@ def _pair_signals(
         min(source.dictionary_density, target.dictionary_density),
         4,
     )
+    explicit_conclusion_overlap = (
+        source.explicit_conclusion_text is not None
+        and target.explicit_conclusion_text is not None
+        and normalized_similarity(
+            source.explicit_conclusion_text,
+            target.explicit_conclusion_text,
+        )
+        >= 0.72
+    )
     return _PairSignals(
         excerpt_similarity=excerpt_similarity,
         topic_label_similarity=topic_label_similarity,
@@ -1346,6 +1691,15 @@ def _pair_signals(
             4,
         ),
         residue_pair=source.residue_like and target.residue_like,
+        explicit_conclusion_overlap=explicit_conclusion_overlap,
+        local_llm_pair=(
+            source.summary_source == "local_llm"
+            and target.summary_source == "local_llm"
+        ),
+        heuristic_pair=(
+            source.summary_source == "heuristic"
+            or target.summary_source == "heuristic"
+        ),
     )
 
 
@@ -1356,7 +1710,7 @@ def _evidence_from_signals(
     reason_codes: tuple[str, ...],
 ) -> _Evidence:
     return _Evidence(
-        score=round(min(score, 1.0), 4),
+        score=round(max(0.0, min(score, 1.0)), 4),
         reason_codes=reason_codes,
         excerpt_similarity=signals.excerpt_similarity,
         topic_label_similarity=signals.topic_label_similarity,
@@ -1461,6 +1815,17 @@ def _similarity_score_and_reasons(
         score += _NUCLEUS_OVERLAP_SPECIFIC_SCORE
         reason_codes.append("nucleus_overlap_specific")
 
+    if signals.explicit_conclusion_overlap:
+        score += _EXPLICIT_CONCLUSION_OVERLAP_SCORE
+        reason_codes.append("explicit_conclusion_overlap")
+
+    if signals.local_llm_pair:
+        score += _SUMMARY_LOCAL_LLM_SOURCE_BONUS
+        reason_codes.append("summary_source_local_llm_pair")
+    elif signals.heuristic_pair:
+        score -= _SUMMARY_HEURISTIC_SOURCE_PENALTY
+        reason_codes.append("summary_source_heuristic_penalty")
+
     if signals.timestamp_delta_ms is not None:
         if signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
             score += _TIMESTAMP_DISTANCE_HIGH_SCORE
@@ -1478,6 +1843,7 @@ def _similarity_score_and_reasons(
             bool(signals.shared_bundle_ids)
             and signals.bundle_concentration >= 0.25
         )
+        or signals.explicit_conclusion_overlap
     )
     return score, _dedupe_reason_codes(reason_codes), has_strong_signal
 
@@ -1684,6 +2050,21 @@ def _candidate_row(
     }
     if embedding_similarity is not None:
         row["embedding_similarity"] = embedding_similarity
+    if source.unit_kind != "semantic_topic_span" or target.unit_kind != "semantic_topic_span":
+        row["source_unit_kind"] = source.unit_kind
+        row["target_unit_kind"] = target.unit_kind
+    if source.segment_id is not None:
+        row["source_segment_id"] = source.segment_id
+    if target.segment_id is not None:
+        row["target_segment_id"] = target.segment_id
+    if source.summary_source is not None:
+        row["source_summary_source"] = source.summary_source
+    if target.summary_source is not None:
+        row["target_summary_source"] = target.summary_source
+    if source.summary_confidence is not None:
+        row["source_summary_confidence"] = source.summary_confidence
+    if target.summary_confidence is not None:
+        row["target_summary_confidence"] = target.summary_confidence
     errors = list(load_cross_thread_candidate_validator().iter_errors(row))
     if errors:
         raise CrossThreadCandidateError(
@@ -1848,26 +2229,28 @@ def _build_cross_thread_candidate_rows_with_stats(
     *,
     min_score: float = DEFAULT_CROSS_THREAD_MIN_SCORE,
     top_per_source: int = DEFAULT_CROSS_THREAD_TOP_PER_SOURCE,
+    unit_source: str = DEFAULT_CROSS_THREAD_UNIT_SOURCE,
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, _UnitLoadResult]:
     if top_per_source < 1:
         raise CrossThreadCandidateError("top_per_source must be at least 1")
     if min_score < 0 or min_score > 1:
         raise CrossThreadCandidateError("min_score must be between 0 and 1")
 
-    topics_artifact = _load_topics_artifact(input_root)
     lexical_rules = load_token_dictionary_lexical_rules(input_root)
     token_dictionary_signals = load_token_dictionary_signals(input_root)
     cross_thread_rules = load_cross_thread_lexical_rules(locale)
-    units = _representative_units(
-        topics_artifact,
+    unit_load_result = _load_units(
+        input_root,
+        requested_unit_source=unit_source,
         lexical_rules=lexical_rules,
         token_dictionary_signals=token_dictionary_signals,
         cross_thread_rules=cross_thread_rules,
     )
+    units = unit_load_result.units
     recurrence_context = _build_recurrence_instrumentation_context(input_root, units)
     filtered_low_value_pair_count = 0
     selected_by_source: list[
@@ -1997,7 +2380,7 @@ def _build_cross_thread_candidate_rows_with_stats(
             row["target_span_id"],
         )
     )
-    return rows, filtered_low_value_pair_count
+    return rows, filtered_low_value_pair_count, unit_load_result
 
 
 def build_cross_thread_candidate_rows(
@@ -2005,15 +2388,17 @@ def build_cross_thread_candidate_rows(
     *,
     min_score: float = DEFAULT_CROSS_THREAD_MIN_SCORE,
     top_per_source: int = DEFAULT_CROSS_THREAD_TOP_PER_SOURCE,
+    unit_source: str = DEFAULT_CROSS_THREAD_UNIT_SOURCE,
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> list[dict[str, Any]]:
-    rows, _filtered_low_value_pair_count = _build_cross_thread_candidate_rows_with_stats(
+    rows, _filtered_low_value_pair_count, _unit_load_result = _build_cross_thread_candidate_rows_with_stats(
         input_root,
         min_score=min_score,
         top_per_source=top_per_source,
+        unit_source=unit_source,
         embedding_model=embedding_model,
         embedding_base_url=embedding_base_url,
         embedding_timeout_seconds=embedding_timeout_seconds,
@@ -2032,23 +2417,16 @@ def _score_band(score: float) -> str:
 
 def _summary(
     *,
-    topics_artifact: dict[str, Any],
+    provider_id: str,
+    generated_from: str,
+    source_unit_count: int,
+    unit_source: str,
+    topic_summary_stats: _TopicSummaryLoadStats,
     rows: list[dict[str, Any]],
-    input_root: Path,
     min_score: float,
     top_per_source: int,
     filtered_low_value_pair_count: int = 0,
-    locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
 ) -> dict[str, Any]:
-    lexical_rules = load_token_dictionary_lexical_rules(input_root)
-    token_dictionary_signals = load_token_dictionary_signals(input_root)
-    cross_thread_rules = load_cross_thread_lexical_rules(locale)
-    units = _representative_units(
-        topics_artifact,
-        lexical_rules=lexical_rules,
-        token_dictionary_signals=token_dictionary_signals,
-        cross_thread_rules=cross_thread_rules,
-    )
     reason_counts: Counter[str] = Counter()
     score_bands: Counter[str] = Counter()
     source_keys = {
@@ -2071,9 +2449,10 @@ def _summary(
     summary = {
         "artifact_type": CROSS_THREAD_CANDIDATE_SUMMARY_ARTIFACT_TYPE,
         "schema_version": CROSS_THREAD_CANDIDATE_SCHEMA_VERSION,
-        "provider_id": topics_artifact["provider_id"],
-        "generated_from": str((input_root / "l3" / "semantic-topics" / "topics.json").resolve()),
-        "source_unit_count": len(units),
+        "provider_id": provider_id,
+        "generated_from": generated_from,
+        "unit_source": unit_source,
+        "source_unit_count": source_unit_count,
         "source_unit_with_candidates_count": len(source_keys),
         "candidate_link_count": len(rows),
         "thread_count_with_candidates": len(threads_involved),
@@ -2087,6 +2466,13 @@ def _summary(
             for band in ("high", "medium", "low")
         },
     }
+    summary["topic_summary_units"] = {
+        "files_found": topic_summary_stats.files_found,
+        "units_loaded": topic_summary_stats.units_loaded,
+        "skipped_invalid": topic_summary_stats.skipped_invalid,
+        "skipped_empty": topic_summary_stats.skipped_empty,
+        "skipped_low_confidence": topic_summary_stats.skipped_low_confidence,
+    }
     if filtered_low_value_pair_count:
         summary["filtered_low_value_pair_count"] = filtered_low_value_pair_count
     return summary
@@ -2097,6 +2483,7 @@ def write_cross_thread_candidates_artifact(
     *,
     min_score: float = DEFAULT_CROSS_THREAD_MIN_SCORE,
     top_per_source: int = DEFAULT_CROSS_THREAD_TOP_PER_SOURCE,
+    unit_source: str = DEFAULT_CROSS_THREAD_UNIT_SOURCE,
     embedding_model: str | None = None,
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
@@ -2106,11 +2493,11 @@ def write_cross_thread_candidates_artifact(
     if not provider_root.exists() or not provider_root.is_dir():
         raise CrossThreadCandidateError(f"provider root not found: {provider_root}")
 
-    topics_artifact = _load_topics_artifact(provider_root)
-    rows, filtered_low_value_pair_count = _build_cross_thread_candidate_rows_with_stats(
+    rows, filtered_low_value_pair_count, unit_load_result = _build_cross_thread_candidate_rows_with_stats(
         provider_root,
         min_score=min_score,
         top_per_source=top_per_source,
+        unit_source=unit_source,
         embedding_model=embedding_model,
         embedding_base_url=embedding_base_url,
         embedding_timeout_seconds=embedding_timeout_seconds,
@@ -2127,19 +2514,34 @@ def write_cross_thread_candidates_artifact(
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     tmp_candidates_path.replace(candidates_path)
 
+    provider_id = (
+        unit_load_result.topics_artifact["provider_id"]
+        if unit_load_result.topics_artifact is not None
+        else unit_load_result.units[0].provider_id
+        if unit_load_result.units
+        else "unknown"
+    )
+    generated_from = (
+        str((provider_root / "l3" / "semantic-topics" / "topics.json").resolve())
+        if unit_load_result.unit_source == "semantic-topics"
+        else "thread-*/l3/intra-thread-topics/topic-summaries.jsonl"
+    )
     summary = _summary(
-        topics_artifact=topics_artifact,
+        provider_id=provider_id,
+        generated_from=generated_from,
+        source_unit_count=len(unit_load_result.units),
+        unit_source=unit_load_result.unit_source,
+        topic_summary_stats=unit_load_result.topic_summary_stats,
         rows=rows,
-        input_root=provider_root,
         min_score=min_score,
         top_per_source=top_per_source,
         filtered_low_value_pair_count=filtered_low_value_pair_count,
-        locale=locale,
     )
     write_json_artifact(summary_path, summary)
 
     return {
         "candidate_count": len(rows),
+        "unit_source": unit_load_result.unit_source,
         "candidates_path": candidates_path,
         "summary_path": summary_path,
     }

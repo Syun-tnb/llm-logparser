@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -499,6 +500,90 @@ def _write_preview_fixture(root: Path) -> None:
         thread_dir = root / f"thread-{conversation_id}"
         _write_jsonl(thread_dir / "parsed.jsonl", payload["messages"])
         _write_jsonl(thread_dir / "message_windows.jsonl", payload["windows"])
+
+
+def _topic_summary_row(
+    *,
+    conversation_id: str,
+    segment_id: str,
+    message_ids: list[str],
+    title: str,
+    summary: str,
+    keywords: list[str],
+    source: str = "local_llm",
+    confidence: float = 0.8,
+    conclusion_status: str = "unknown",
+    conclusion_text: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "record_type": "intra_thread_topic_summary",
+        "schema_version": "0.1",
+        "provider_id": "openai",
+        "conversation_id": conversation_id,
+        "segment_id": segment_id,
+        "start_index": 0,
+        "end_index": len(message_ids) - 1,
+        "message_ids": message_ids,
+        "message_count": len(message_ids),
+        "segment_text_sha1": hashlib.sha1(summary.encode("utf-8")).hexdigest(),
+        "title": title,
+        "summary": summary,
+        "conclusion_text": conclusion_text,
+        "conclusion_status": conclusion_status,
+        "keywords": keywords,
+        "confidence": confidence,
+        "source": source,
+    }
+
+
+def _write_topic_summary_fixture(
+    root: Path,
+    *,
+    conversation_id: str,
+    segment_id: str,
+    title: str,
+    summary: str,
+    keywords: list[str],
+    source: str = "local_llm",
+    confidence: float = 0.8,
+    conclusion_status: str = "unknown",
+    conclusion_text: str | None = None,
+    ts: int = 100,
+    invalid_row: dict[str, Any] | None = None,
+) -> Path:
+    message_ids = [f"{conversation_id}-m1"]
+    thread_dir = root / f"thread-{conversation_id}"
+    _write_jsonl(
+        thread_dir / "parsed.jsonl",
+        [
+            _message_row(
+                conversation_id=conversation_id,
+                message_id=message_ids[0],
+                role="user",
+                text=summary,
+                ts=ts,
+            )
+        ],
+    )
+    rows = [
+        _topic_summary_row(
+            conversation_id=conversation_id,
+            segment_id=segment_id,
+            message_ids=message_ids,
+            title=title,
+            summary=summary,
+            keywords=keywords,
+            source=source,
+            confidence=confidence,
+            conclusion_status=conclusion_status,
+            conclusion_text=conclusion_text,
+        )
+    ]
+    if invalid_row is not None:
+        rows.append(invalid_row)
+    path = thread_dir / "l3" / "intra-thread-topics" / "topic-summaries.jsonl"
+    _write_jsonl(path, rows)
+    return path
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -2943,6 +3028,252 @@ def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):
     for row in rows:
         errors = list(validator.iter_errors(row))
         assert not errors, errors[0].message if errors else ""
+
+
+def test_cross_thread_candidate_rows_default_unit_source_matches_semantic_topics(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+
+    default_rows = build_cross_thread_candidate_rows(root, min_score=0.58)
+    explicit_rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.58,
+        unit_source="semantic-topics",
+    )
+
+    assert default_rows == explicit_rows
+
+
+def test_cross_thread_candidate_rows_can_use_topic_summaries_from_multiple_threads(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="segment-0001",
+        title="Migration checklist",
+        summary="Draft migration checklist with rollback gates for production.",
+        keywords=["migration", "rollback", "checklist"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="segment-0001",
+        title="Migration checklist",
+        summary="Revise migration checklist and confirm rollback gates before rollout.",
+        keywords=["migration", "rollback", "checklist"],
+        ts=200,
+    )
+    root.joinpath("thread-without-summary").mkdir(parents=True)
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.2,
+        unit_source="topic-summaries",
+    )
+
+    assert rows
+    row = rows[0]
+    assert row["source_unit_kind"] == "topic_summary"
+    assert row["target_unit_kind"] == "topic_summary"
+    assert row["source_segment_id"] == "segment-0001"
+    assert row["target_segment_id"] == "segment-0001"
+    assert row["source_summary_source"] == "local_llm"
+    assert row["target_summary_source"] == "local_llm"
+
+
+def test_cross_thread_candidate_summary_counts_invalid_empty_and_low_confidence_summaries(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="Migration checklist",
+        summary="Draft migration checklist with rollback gates for production.",
+        keywords=["migration", "rollback", "checklist"],
+        ts=100,
+        invalid_row={"record_type": "intra_thread_topic_summary"},
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="Migration checklist",
+        summary="Revise migration checklist and confirm rollback gates before rollout.",
+        keywords=["migration", "rollback", "checklist"],
+        ts=200,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-empty",
+        segment_id="seg-empty",
+        title="",
+        summary="",
+        keywords=["migration"],
+        source="heuristic",
+        confidence=0.0,
+        ts=300,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-low",
+        segment_id="seg-low",
+        title="Migration checklist",
+        summary="A low confidence local summary should be skipped.",
+        keywords=["migration"],
+        source="local_llm",
+        confidence=0.1,
+        ts=400,
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.2,
+        unit_source="topic-summaries",
+    )
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert summary["unit_source"] == "topic-summaries"
+    assert summary["topic_summary_units"] == {
+        "files_found": 4,
+        "units_loaded": 2,
+        "skipped_invalid": 1,
+        "skipped_empty": 1,
+        "skipped_low_confidence": 1,
+    }
+
+
+def test_cross_thread_candidate_rows_keep_heuristic_summaries_as_lower_weight_units(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="Migration checklist",
+        summary="Draft migration checklist with rollback gates for production.",
+        keywords=["migration", "rollback", "checklist"],
+        source="heuristic",
+        confidence=0.0,
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="Migration checklist",
+        summary="Revise migration checklist and confirm rollback gates before rollout.",
+        keywords=["migration", "rollback", "checklist"],
+        source="heuristic",
+        confidence=0.0,
+        ts=200,
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.2,
+        unit_source="topic-summaries",
+    )
+
+    assert rows
+    assert rows[0]["source_summary_source"] == "heuristic"
+    assert "summary_source_heuristic_penalty" in rows[0]["evidence"]["reason_codes"]
+
+
+def test_cross_thread_candidate_rows_use_explicit_conclusions_as_evidence(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="Decision",
+        summary="Discussed rollout options.",
+        keywords=["rollout"],
+        conclusion_status="explicit",
+        conclusion_text="Use staged rollout with rollback gate.",
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="Decision",
+        summary="Compared release plans.",
+        keywords=["release"],
+        conclusion_status="explicit",
+        conclusion_text="Use staged rollout with rollback gate.",
+        ts=200,
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.1,
+        unit_source="topic-summaries",
+    )
+
+    assert rows
+    assert "explicit_conclusion_overlap" in rows[0]["evidence"]["reason_codes"]
+
+
+def test_cross_thread_candidate_auto_falls_back_to_semantic_topics_when_summaries_absent(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+
+    result = write_cross_thread_candidates_artifact(root, unit_source="auto")
+    rows = _read_jsonl(result["candidates_path"])
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert summary["unit_source"] == "semantic-topics"
+    assert rows
+    assert "source_segment_id" not in rows[0]
+
+
+def test_cross_thread_candidate_auto_prefers_topic_summaries_when_usable(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="Migration checklist",
+        summary="Draft migration checklist with rollback gates for production.",
+        keywords=["migration", "rollback", "checklist"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="Migration checklist",
+        summary="Revise migration checklist and confirm rollback gates before rollout.",
+        keywords=["migration", "rollback", "checklist"],
+        ts=200,
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.2,
+        unit_source="auto",
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+
+    assert summary["unit_source"] == "topic-summaries"
+    assert rows
+    assert rows[0]["source_unit_kind"] == "topic_summary"
 
 
 def test_cli_analyze_cross_thread_candidates_writes_artifact(tmp_path: Path):

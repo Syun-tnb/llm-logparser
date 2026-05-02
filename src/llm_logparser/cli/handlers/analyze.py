@@ -397,6 +397,7 @@ def run_analyze_cross_thread_candidates(args, logger: logging.Logger) -> None:
             input_root,
             min_score=args.min_score,
             top_per_source=args.top_per_source,
+            unit_source=args.unit_source,
             embedding_model=args.embedding_model,
             embedding_base_url=args.embedding_base_url,
             embedding_timeout_seconds=args.embedding_timeout_seconds,
@@ -408,7 +409,8 @@ def run_analyze_cross_thread_candidates(args, logger: logging.Logger) -> None:
 
     logger.info(
         "cross-thread candidate artifact written: "
-        f"{result['candidate_count']} candidate link(s) -> "
+        f"{result['candidate_count']} candidate link(s) "
+        f"from {result['unit_source']} -> "
         f"{format_display_path(result['candidates_path'])}"
     )
 

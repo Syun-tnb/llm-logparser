@@ -55,6 +55,28 @@
     "target_normalized_label": { "type": ["string", "null"] },
     "source_raw_label": { "type": ["string", "null"] },
     "target_raw_label": { "type": ["string", "null"] },
+    "source_unit_kind": { "type": "string", "minLength": 1 },
+    "target_unit_kind": { "type": "string", "minLength": 1 },
+    "source_segment_id": { "type": "string", "minLength": 1 },
+    "target_segment_id": { "type": "string", "minLength": 1 },
+    "source_summary_source": {
+      "type": "string",
+      "enum": ["heuristic", "local_llm"]
+    },
+    "target_summary_source": {
+      "type": "string",
+      "enum": ["heuristic", "local_llm"]
+    },
+    "source_summary_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "target_summary_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
     "timestamp_delta_ms": {
       "type": ["integer", "null"],
       "minimum": 0

@@ -829,6 +829,30 @@ still processed sequentially. Keep local Ollama runs conservative, such as
 Full local LLM generation over large datasets can be slow; the default
 heuristic path remains the lightweight option.
 
+### Analyze Cross-Thread Candidates
+
+Build experimental L3 cross-thread candidate links from existing semantic units:
+
+```bash
+uv run llm-logparser analyze cross-thread-candidates \
+  --input <provider-artifact-root> \
+  [--unit-source semantic-topics|topic-summaries|auto]
+```
+
+`semantic-topics` is still the default and preserves the existing representative
+span path. `topic-summaries` is an optional provisional mode that reads
+`thread-*/l3/intra-thread-topics/topic-summaries.jsonl` and builds matching text
+from title, summary, keywords, and explicit conclusions only. Missing
+topic-summary files are tolerated; invalid, empty, or very low-confidence local
+LLM rows are skipped and counted in `l3/cross-thread-candidates/summary.json`.
+Heuristic summary rows and inferred conclusions are weak evidence.
+
+Recommended comparison flow:
+
+1. Generate intra-thread topic summaries.
+2. Run `cross-thread-candidates --unit-source topic-summaries`.
+3. Compare the output against the default `semantic-topics` mode.
+
 This Phase 1 path is intentionally minimal. It reconstructs canonical message
 order from `parsed.jsonl`, builds overlapping sliding windows, embeds those
 windows, compares adjacent-window cosine similarity only, and splits the thread

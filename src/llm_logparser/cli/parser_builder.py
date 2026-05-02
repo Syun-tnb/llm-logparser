@@ -720,6 +720,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.cross_thread_candidates.opt.top_per_source.help"),
     )
     analyze_cross_thread_candidates_cmd.add_argument(
+        "--unit-source",
+        dest="unit_source",
+        choices=("semantic-topics", "topic-summaries", "auto"),
+        default="semantic-topics",
+        help=_("cli.analyze.cross_thread_candidates.opt.unit_source.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
         "--embedding-model",
         dest="embedding_model",
         default=None,
