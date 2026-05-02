@@ -1354,6 +1354,10 @@ def test_cross_thread_lexical_rules_fall_back_to_en_us_for_unknown_locale():
     assert fallback.locale == "en-US"
     assert fallback.residue.prompt_exact_markers == default.residue.prompt_exact_markers
     assert fallback.broad_overlap.markers == default.broad_overlap.markers
+    assert (
+        fallback.topic_summary_admission_generic_anchor_tokens
+        == default.topic_summary_admission_generic_anchor_tokens
+    )
 
 
 def test_cross_thread_lexical_rules_merge_ja_kansai_with_ja_jp_and_en_us():
@@ -1363,6 +1367,28 @@ def test_cross_thread_lexical_rules_merge_ja_kansai_with_ja_jp_and_en_us():
     assert "詰める" in rules.task.verbs
     assert "直す" in rules.task.verbs
     assert "gpt-4o returned" in rules.residue.prompt_exact_markers
+    assert "gpt-4o" in rules.topic_summary_admission_generic_anchor_tokens
+
+
+def test_cross_thread_lexical_rules_expose_topic_summary_generic_anchors():
+    rules = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+
+    assert "ai" in rules.topic_summary_admission_generic_anchor_tokens
+    assert "gpt-4o" in rules.topic_summary_admission_generic_anchor_tokens
+    assert "prompt" in rules.topic_summary_admission_generic_anchor_tokens
+    assert "reina" not in rules.topic_summary_admission_generic_anchor_tokens
+
+
+def test_topic_summary_generic_anchor_fallback_supports_legacy_rules():
+    class LegacyRules:
+        pass
+
+    tokens = cross_thread_module._topic_summary_generic_admission_anchor_tokens(
+        LegacyRules()
+    )
+
+    assert "gpt-4o" in tokens
+    assert "prompt" in tokens
 
 
 def test_japanese_task_text_is_not_treated_as_residue():

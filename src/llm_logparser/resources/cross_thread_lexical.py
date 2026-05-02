@@ -49,12 +49,22 @@ class CrossThreadBroadOverlapRules:
 
 
 @dataclass(frozen=True)
+class CrossThreadTopicSummaryAdmissionRules:
+    generic_anchor_tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CrossThreadLexicalRules:
     locale: str
     residue: CrossThreadResidueRules
     task: CrossThreadTaskRules
     reflective: CrossThreadReflectiveRules
     broad_overlap: CrossThreadBroadOverlapRules
+    topic_summary_admission: CrossThreadTopicSummaryAdmissionRules
+
+    @property
+    def topic_summary_admission_generic_anchor_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_admission.generic_anchor_tokens
 
 
 def _normalize_locale(value: str | None) -> str:
@@ -158,5 +168,13 @@ def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLex
         ),
         broad_overlap=CrossThreadBroadOverlapRules(
             markers=_merged_list(payloads, "broad_overlap", "markers")
+        ),
+        topic_summary_admission=CrossThreadTopicSummaryAdmissionRules(
+            generic_anchor_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary_admission",
+                "generic_anchor_tokens",
+            )
         ),
     )

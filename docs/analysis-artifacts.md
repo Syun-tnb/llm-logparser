@@ -790,10 +790,15 @@ Auxiliary L3 note:
   `<provider-root>/l3/token-dictionary/`
 - it currently emits `dictionary.json`, `bundles.json`, `provenance.json`, and
   `lexical_rules.json`
+- despite the historical name, `dictionary.json` is an observed token index /
+  corpus token statistics artifact, while `bundles.json` records corpus-derived
+  cooccurrence bundles
 - these artifacts are derived from canonical `parsed.jsonl` plus optional
   `token_stats.json` and `topics.json`
 - they are signal sources for later L3/L4 analysis only; they do not redefine
   canonical text, L1 sidecars, or SQLite state
+- cross-thread generic admission anchors are lexical policy owned by the
+  built-in cross-thread lexical resources, not by token dictionary artifacts
 - current L3 cross-thread candidate generation can optionally use those token
   and bundle signals while building a selective-context `task_nucleus_text`
   from representative spans; this remains additive and rebuildable rather than

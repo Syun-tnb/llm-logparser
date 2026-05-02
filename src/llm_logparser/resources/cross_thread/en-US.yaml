@@ -134,3 +134,15 @@ broad_overlap:
     - code fence
     - markdown
     - yaml
+cross_thread:
+  topic_summary_admission:
+    generic_anchor_tokens:
+      - AI
+      - GPT
+      - GPT-4o
+      - GPT-5
+      - ChatGPT
+      - OpenAI
+      - LLM
+      - prompt
+      - プロンプト

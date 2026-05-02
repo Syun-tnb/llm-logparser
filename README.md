@@ -849,7 +849,15 @@ Topic-summary mode requires direct semantic evidence before candidate emission;
 weak recurrence signals such as dormant gap, task-likeness, specificity,
 timestamp distance, and context shift are retained as diagnostics/ranking
 signals but are not sufficient admission evidence by themselves. Heuristic
-summary rows and inferred conclusions are weak evidence.
+summary rows and inferred conclusions are weak evidence. Generic admission
+anchors used by this gate are lexical policy loaded from the built-in
+cross-thread lexical resources, not corpus facts from
+`l3/token-dictionary/dictionary.json`.
+
+When token-dictionary artifacts are present, `dictionary.json` should be read as
+an observed token index / corpus token statistics artifact, and `bundles.json`
+as corpus-derived cooccurrence bundles. They are additive L3 signals only, not
+user-authored lexical rules.
 
 Recommended comparison flow:
 

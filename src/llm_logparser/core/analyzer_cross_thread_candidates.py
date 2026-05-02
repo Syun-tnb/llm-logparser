@@ -91,7 +91,7 @@ _EXPLICIT_CONCLUSION_OVERLAP_SCORE = 0.08
 _SUMMARY_LOCAL_LLM_SOURCE_BONUS = 0.04
 _SUMMARY_HEURISTIC_SOURCE_PENALTY = 0.04
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
-_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
+_FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
     {
         "ai",
         "gpt",
@@ -1913,11 +1913,34 @@ def _admission_anchor_token_key(token: str) -> str:
     return re.sub(r"[^a-z0-9一-龯ぁ-んァ-ヶー]+", "", normalized)
 
 
-def _non_generic_strong_anchor_overlap(signals: _PairSignals) -> tuple[str, ...]:
+def _topic_summary_generic_admission_anchor_tokens(
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    tokens = getattr(
+        cross_thread_rules,
+        "topic_summary_admission_generic_anchor_tokens",
+        (),
+    )
+    if tokens:
+        return tuple(tokens)
+    return tuple(_FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS)
+
+
+def _topic_summary_generic_admission_anchor_keys(
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> set[str]:
     generic_keys = {
         _admission_anchor_token_key(token)
-        for token in _TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS
+        for token in _topic_summary_generic_admission_anchor_tokens(cross_thread_rules)
     }
+    return {key for key in generic_keys if key}
+
+
+def _non_generic_strong_anchor_overlap(
+    signals: _PairSignals,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    generic_keys = _topic_summary_generic_admission_anchor_keys(cross_thread_rules)
     return tuple(
         token
         for token in signals.shared_strong_anchor_tokens
@@ -1925,11 +1948,11 @@ def _non_generic_strong_anchor_overlap(signals: _PairSignals) -> tuple[str, ...]
     )
 
 
-def _non_generic_shared_keywords(signals: _PairSignals) -> tuple[str, ...]:
-    generic_keys = {
-        _admission_anchor_token_key(token)
-        for token in _TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS
-    }
+def _non_generic_shared_keywords(
+    signals: _PairSignals,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    generic_keys = _topic_summary_generic_admission_anchor_keys(cross_thread_rules)
     return tuple(
         keyword
         for keyword in signals.shared_keywords
@@ -1942,6 +1965,8 @@ def _topic_summary_admission_filter_reason(
     target: _RepresentativeSpanUnit,
     evidence: _Evidence,
     signals: _PairSignals,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
 ) -> str | None:
     if not _topic_summary_pair(source, target):
         return None
@@ -1956,12 +1981,16 @@ def _topic_summary_admission_filter_reason(
         }
     )
     strong_keyword_reason = "shared_keywords_high" in reason_codes
-    strong_keyword = strong_keyword_reason and bool(_non_generic_shared_keywords(signals))
+    strong_keyword = strong_keyword_reason and bool(
+        _non_generic_shared_keywords(signals, cross_thread_rules)
+    )
     dense_dictionary = "dictionary_token_overlap_dense" in reason_codes
     concentrated_bundle = "bundle_overlap_concentrated" in reason_codes
     explicit_conclusion = "explicit_conclusion_overlap" in reason_codes
     strong_anchor_reason = "anchor_overlap_strong" in reason_codes
-    non_generic_strong_anchor = bool(_non_generic_strong_anchor_overlap(signals))
+    non_generic_strong_anchor = bool(
+        _non_generic_strong_anchor_overlap(signals, cross_thread_rules)
+    )
     strong_anchor = strong_anchor_reason and non_generic_strong_anchor
 
     has_direct_signal = any(
@@ -2420,6 +2449,7 @@ def _build_cross_thread_candidate_rows_with_stats(
                 target,
                 candidate_for_filter,
                 admission_signals,
+                cross_thread_rules=cross_thread_rules,
             )
             if admission_filter_reason is not None:
                 topic_summary_admission_filtered_count += 1

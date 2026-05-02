@@ -123,15 +123,17 @@ Current Layer 1 implementations include:
 
 `analyze token-dictionary` writes additive L3 auxiliary artifacts under
 `l3/token-dictionary/` from canonical `parsed.jsonl` plus optional
-`token_stats.json` and `l3/semantic-topics/topics.json`. These token/bundle
-artifacts are rebuildable higher-layer signals only; they do not replace
-canonical or L1 outputs. The same token-dictionary family now also owns seeded
-lexical resources via `lexical_rules.json`, so analyzer code can load task /
-reflective / specificity token groups from artifacts instead of embedding large
-vocabulary sets directly in Python. L3 cross-thread candidate selection may
-also consume `dictionary.json` and `bundles.json` when present as additive
-evidence only; missing token-dictionary artifacts fall back to the pre-existing
-candidate path.
+`token_stats.json` and `l3/semantic-topics/topics.json`. Despite the historical
+name, `dictionary.json` is an observed token index / corpus token statistics
+artifact, and `bundles.json` records corpus-derived cooccurrence bundles. These
+token/bundle artifacts are rebuildable higher-layer signals only; they do not
+replace canonical or L1 outputs. Seeded `lexical_rules.json` remains a generated
+L3 lexical sidecar for task / reflective / specificity token groups. Cross-thread
+generic admission anchors are lexical policy, not corpus token facts, and are
+owned by the cross-thread lexical resources instead of token dictionary
+artifacts. L3 cross-thread candidate selection may also consume
+`dictionary.json` and `bundles.json` when present as additive evidence only;
+missing token-dictionary artifacts fall back to the pre-existing candidate path.
 
 ## Analyze Pipeline
 
@@ -905,6 +907,9 @@ deterministic and model-derived capabilities.
   admission. Weak recurrence signals such as dormant gap, task-like signal,
   specificity, timestamp distance, and context shift remain useful
   diagnostics/ranking signals, but they are not sufficient on their own.
+  Generic admission anchors for topic-summary mode are lexical policy loaded
+  from the built-in cross-thread lexical resources, not from
+  `l3/token-dictionary/dictionary.json`.
   Heuristic summary rows remain usable but lower-weight, and inferred
   conclusions are not treated as strong evidence. `summary.json` records
   `topic_summary_admission_filtered_count` and filter reasons for pairs removed
