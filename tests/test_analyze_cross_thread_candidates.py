@@ -3602,6 +3602,92 @@ def test_topic_summary_semantic_scoring_separates_good_and_partial_pairs(
     assert summary["score_band_counts"]["low"] < summary["candidate_link_count"]
 
 
+def test_topic_summary_keyword_scoring_ignores_generic_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="generic-a",
+        segment_id="seg-generic-a",
+        title="Link viewing request",
+        summary="Someone asks whether a shared page can be opened.",
+        keywords=["link", "viewing", "AI", "company", "年"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="generic-b",
+        segment_id="seg-generic-b",
+        title="Open page link",
+        summary="A separate note mentions a generic page view.",
+        keywords=["link", "viewing", "AI", "company", "年"],
+        ts=100 + (10 * 24 * 60 * 60 * 1000),
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    row = _row_for_topic_pair(
+        rows,
+        "generic-a:seg-generic-a",
+        "generic-b:seg-generic-b",
+    )
+
+    assert row["score"] < 0.45
+    assert "topic_summary_keyword_overlap_high" not in row["evidence"]["reason_codes"]
+    assert "topic_summary_title_overlap_high" not in row["evidence"]["reason_codes"]
+
+
+def test_topic_summary_keyword_scoring_preserves_specific_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="invest-a",
+        segment_id="seg-invest-a",
+        title="ETF investment strategy",
+        summary=(
+            "Discuss dollar-cost averaging into broad market ETFs as a long-term "
+            "investment strategy."
+        ),
+        keywords=["ETF", "dollar-cost averaging", "investment strategy"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="invest-b",
+        segment_id="seg-invest-b",
+        title="ETF investment strategy update",
+        summary=(
+            "Compare dollar-cost averaging cadence and ETF allocation for the "
+            "same long-term investment strategy."
+        ),
+        keywords=["ETF", "dollar-cost averaging", "investment strategy"],
+        ts=200,
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    row = _row_for_topic_pair(
+        rows,
+        "invest-a:seg-invest-a",
+        "invest-b:seg-invest-b",
+    )
+
+    assert row["score"] >= 0.7
+    assert "topic_summary_keyword_overlap_high" in row["evidence"]["reason_codes"]
+    assert "topic_summary_title_overlap_high" in row["evidence"]["reason_codes"]
+
+
 def test_cross_thread_candidate_auto_falls_back_to_semantic_topics_when_summaries_absent(
     tmp_path: Path,
 ):

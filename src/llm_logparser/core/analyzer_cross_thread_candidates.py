@@ -105,6 +105,67 @@ _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.015
 _TOPIC_SUMMARY_ANCHOR_OVERLAP_SCORE = 0.02
 _TOPIC_SUMMARY_ANCHOR_OVERLAP_STRONG_SCORE = 0.04
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
+_TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset(
+    {
+        "ai",
+        "chat",
+        "check",
+        "company",
+        "data",
+        "date",
+        "day",
+        "entity",
+        "error",
+        "link",
+        "model",
+        "models",
+        "month",
+        "open",
+        "page",
+        "request",
+        "search",
+        "shared",
+        "system",
+        "time",
+        "view",
+        "viewing",
+        "web",
+        "year",
+        "www",
+        "w",
+        "あはは",
+        "あはははは",
+        "おはようございます",
+        "こんにちは",
+        "こんばんは",
+        "笑",
+        "年",
+        "月",
+        "日",
+    }
+)
+_TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS = frozenset(
+    {
+        "api",
+        "btc",
+        "cpu",
+        "css",
+        "csv",
+        "dca",
+        "dns",
+        "etl",
+        "etf",
+        "gpu",
+        "json",
+        "llm",
+        "pdf",
+        "pr",
+        "sql",
+        "ui",
+        "ux",
+        "yaml",
+    }
+)
 _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
     {
         "ai",
@@ -1910,7 +1971,7 @@ def _topic_summary_semantic_tokens(
         normalized = _normalize_anchor_token(token)
         if len(normalized) < 3:
             continue
-        if _is_topic_summary_generic_admission_anchor(normalized, cross_thread_rules):
+        if _is_topic_summary_generic_scoring_token(normalized, cross_thread_rules):
             continue
         tokens.append(normalized)
         if re.search(r"[一-龯ぁ-んァ-ヶー]", normalized) and len(normalized) >= 4:
@@ -2001,12 +2062,12 @@ def _topic_summary_score_and_reasons(
         score += _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_LOW_SCORE
         reason_codes.append("topic_summary_keyphrase_overlap_low")
 
-    non_generic_keywords = _non_generic_shared_keywords(signals, cross_thread_rules)
-    if len(non_generic_keywords) >= 2:
+    specific_keywords = _specific_shared_scoring_keywords(signals, cross_thread_rules)
+    if len(specific_keywords) >= 2:
         score += _TOPIC_SUMMARY_KEYWORD_OVERLAP_HIGH_SCORE
         reason_codes.append("shared_keywords_high")
         reason_codes.append("topic_summary_keyword_overlap_high")
-    elif len(non_generic_keywords) == 1:
+    elif len(specific_keywords) == 1:
         score += _TOPIC_SUMMARY_KEYWORD_OVERLAP_LOW_SCORE
         reason_codes.append("shared_keywords_low")
         reason_codes.append("topic_summary_keyword_overlap_low")
@@ -2207,6 +2268,22 @@ def _is_topic_summary_generic_admission_anchor(
     )
 
 
+def _is_topic_summary_generic_scoring_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    key = _admission_anchor_token_key(token)
+    if not key:
+        return True
+    if _is_topic_summary_generic_admission_anchor(token, cross_thread_rules):
+        return True
+    if key in _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS:
+        return True
+    if len(key) <= 2 and key not in _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS:
+        return True
+    return False
+
+
 def _non_generic_strong_anchor_overlap(
     signals: _PairSignals,
     cross_thread_rules: CrossThreadLexicalRules,
@@ -2226,6 +2303,17 @@ def _non_generic_shared_keywords(
         keyword
         for keyword in signals.shared_keywords
         if not _is_topic_summary_generic_admission_anchor(keyword, cross_thread_rules)
+    )
+
+
+def _specific_shared_scoring_keywords(
+    signals: _PairSignals,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    return tuple(
+        keyword
+        for keyword in signals.shared_keywords
+        if not _is_topic_summary_generic_scoring_token(keyword, cross_thread_rules)
     )
 
 

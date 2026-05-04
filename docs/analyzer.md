@@ -916,9 +916,13 @@ deterministic and model-derived capabilities.
   admission: title overlap, summary keyphrase overlap, cleaned keyword-field
   overlap, and local-LLM summary provenance are weighted more heavily, while
   recurrence-style signals such as timestamp distance, dictionary overlap, weak
-  bundle overlap, and generic anchor overlap remain secondary support. Its score
-  bands are calibrated separately from the default semantic-topics path: low
-  `<0.45`, medium `0.45-0.7`, and high `>=0.7`.
+  bundle overlap, and generic anchor overlap remain secondary support.
+  Keyword-field and title scoring is specificity-aware: generic UI/system,
+  domain, and date tokens such as `link`, `viewing`, `ai`, `company`, `entity`,
+  `年`, `月`, and `日` are treated as low-information overlap and do not raise
+  rank bands by themselves. Its score bands are calibrated separately from the
+  default semantic-topics path: low `<0.45`, medium `0.45-0.7`, and high
+  `>=0.7`.
   Heuristic summary rows remain usable but lower-weight, and inferred
   conclusions are not treated as strong evidence. `summary.json` records
   `topic_summary_admission_filtered_count` and filter reasons for pairs removed
