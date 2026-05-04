@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from llm_logparser.core.schema_validation import (
 )
 from llm_logparser.resources.cross_thread_lexical import (
     DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    CrossThreadTopicSummaryScoringRules,
     load_cross_thread_lexical_rules,
 )
 
@@ -602,6 +604,52 @@ def _row_for_topic_pair(rows: list[dict], left: str, right: str) -> dict:
         row
         for row in rows
         if {row["source_topic_id"], row["target_topic_id"]} == pair
+    )
+
+
+def _rules_with_topic_summary_scoring(
+    **overrides: tuple[str, ...],
+):
+    rules = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+    current = rules.topic_summary_scoring
+    return replace(
+        rules,
+        topic_summary_scoring=CrossThreadTopicSummaryScoringRules(
+            generic_tokens=overrides.get("generic_tokens", current.generic_tokens),
+            generic_patterns=overrides.get("generic_patterns", current.generic_patterns),
+            short_specific_tokens=overrides.get(
+                "short_specific_tokens",
+                current.short_specific_tokens,
+            ),
+            distinctive_allow_tokens=overrides.get(
+                "distinctive_allow_tokens",
+                current.distinctive_allow_tokens,
+            ),
+            distinctive_block_tokens=overrides.get(
+                "distinctive_block_tokens",
+                current.distinctive_block_tokens,
+            ),
+            weak_distinctive_tokens=overrides.get(
+                "weak_distinctive_tokens",
+                current.weak_distinctive_tokens,
+            ),
+            persona_weak_tokens=overrides.get(
+                "persona_weak_tokens",
+                current.persona_weak_tokens,
+            ),
+            tool_residue_patterns=overrides.get(
+                "tool_residue_patterns",
+                current.tool_residue_patterns,
+            ),
+            citation_residue_patterns=overrides.get(
+                "citation_residue_patterns",
+                current.citation_residue_patterns,
+            ),
+            ritual_title_phrases=overrides.get(
+                "ritual_title_phrases",
+                current.ritual_title_phrases,
+            ),
+        ),
     )
 
 
@@ -3156,7 +3204,7 @@ def test_topic_summary_candidates_filter_weak_recurrence_without_direct_signal(
         root,
         conversation_id="summary-a",
         segment_id="seg-a",
-        title="GPT-4o GPT-5 Raina workflow",
+        title="GPT-4o GPT-5 prompt workflow",
         summary=(
             "A browser automation task describes files, repository actions, "
             "and tests around one tool."
@@ -3168,7 +3216,7 @@ def test_topic_summary_candidates_filter_weak_recurrence_without_direct_signal(
         root,
         conversation_id="summary-b",
         segment_id="seg-b",
-        title="GPT-4o GPT-5 Raina weekend",
+        title="GPT-4o GPT-5 prompt weekend",
         summary=(
             "A casual greeting discusses room temperature, holidays, and a "
             "relaxed daily schedule."
@@ -3466,7 +3514,7 @@ def test_topic_summary_candidates_filter_heuristic_generic_overlap(
         root,
         conversation_id="summary-a",
         segment_id="seg-a",
-        title="GPT-4o GPT-5 Raina workflow",
+        title="GPT-4o GPT-5 prompt workflow",
         summary="A repository automation task discusses generated artifacts.",
         keywords=["browser", "repository"],
         source="heuristic",
@@ -3477,7 +3525,7 @@ def test_topic_summary_candidates_filter_heuristic_generic_overlap(
         root,
         conversation_id="summary-b",
         segment_id="seg-b",
-        title="GPT-4o GPT-5 Raina weekend",
+        title="GPT-4o GPT-5 prompt weekend",
         summary="A casual chat discusses holidays and room temperature.",
         keywords=["weekend", "temperature"],
         ts=100 + (10 * 24 * 60 * 60 * 1000),
@@ -3646,6 +3694,97 @@ def test_topic_summary_keyword_scoring_ignores_generic_overlap(
     )
 
 
+def test_topic_summary_scoring_uses_resource_loaded_generic_and_short_specific_tokens():
+    rules = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+
+    assert cross_thread_module._is_topic_summary_generic_scoring_token(
+        "viewing",
+        rules,
+    )
+    assert cross_thread_module._is_topic_summary_generic_scoring_token(
+        "turn0search3",
+        rules,
+    )
+    assert not cross_thread_module._is_topic_summary_generic_scoring_token(
+        "ETF",
+        rules,
+    )
+    assert cross_thread_module._is_topic_summary_distinctive_scoring_token(
+        "ETF",
+        rules,
+    )
+
+
+def test_topic_summary_scoring_missing_resource_fields_use_fallbacks():
+    rules = _rules_with_topic_summary_scoring(
+        generic_tokens=(),
+        generic_patterns=(),
+        short_specific_tokens=(),
+        distinctive_allow_tokens=(),
+        distinctive_block_tokens=(),
+        weak_distinctive_tokens=(),
+        persona_weak_tokens=(),
+        tool_residue_patterns=(),
+        citation_residue_patterns=(),
+        ritual_title_phrases=(),
+    )
+
+    assert cross_thread_module._is_topic_summary_generic_scoring_token(
+        "link",
+        rules,
+    )
+    assert not cross_thread_module._is_topic_summary_generic_scoring_token(
+        "api",
+        rules,
+    )
+    assert cross_thread_module._is_topic_summary_distinctive_scoring_token(
+        "api",
+        rules,
+    )
+
+
+def test_topic_summary_built_in_resources_exclude_user_project_specific_terms():
+    rules = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+    forbidden = {
+        "syun",
+        "シュン",
+        "シュンさん",
+        "raina",
+        "reina",
+        "reyna",
+        "レイナ",
+        "shigure",
+        "シグレ",
+        "shizuku",
+        "シズク",
+        "味噌",
+        "ちゃぶ台",
+        "gemipon",
+        "sas介護士説",
+    }
+    resource_values = (
+        set(rules.topic_summary_scoring.generic_tokens)
+        | set(rules.topic_summary_scoring.short_specific_tokens)
+        | set(rules.topic_summary_scoring.distinctive_allow_tokens)
+        | set(rules.topic_summary_scoring.distinctive_block_tokens)
+        | set(rules.topic_summary_scoring.weak_distinctive_tokens)
+        | set(rules.topic_summary_scoring.persona_weak_tokens)
+        | set(rules.topic_summary_admission.generic_anchor_tokens)
+    )
+    fallback_values = (
+        set(cross_thread_module._TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS)
+        | set(cross_thread_module._TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS)
+        | set(cross_thread_module._TOPIC_SUMMARY_DISTINCTIVE_ALLOW_TOKENS)
+        | set(cross_thread_module._TOPIC_SUMMARY_DISTINCTIVE_BLOCK_TOKENS)
+        | set(cross_thread_module._TOPIC_SUMMARY_WEAK_DISTINCTIVE_TOKENS)
+        | set(cross_thread_module._TOPIC_SUMMARY_PERSONA_WEAK_TOKENS)
+        | set(cross_thread_module._FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS)
+    )
+
+    assert forbidden.isdisjoint(resource_values)
+    assert forbidden.isdisjoint(fallback_values)
+
+
 def test_topic_summary_keyword_scoring_preserves_specific_overlap(
     tmp_path: Path,
 ):
@@ -3768,8 +3907,13 @@ def test_topic_summary_distinctive_boost_ignores_conversational_address_overlap(
         confidence=0.3,
         ts=200,
     )
-    cross_thread_rules = load_cross_thread_lexical_rules(
-        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    cross_thread_rules = _rules_with_topic_summary_scoring(
+        generic_tokens=(
+            "うん",
+            "わたし",
+            "これはね",
+        ),
+        persona_weak_tokens=("シュンさん",),
     )
     units, _stats = cross_thread_module._topic_summary_units(
         root,

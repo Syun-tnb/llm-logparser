@@ -129,9 +129,11 @@ artifact, and `bundles.json` records corpus-derived cooccurrence bundles. These
 token/bundle artifacts are rebuildable higher-layer signals only; they do not
 replace canonical or L1 outputs. Seeded `lexical_rules.json` remains a generated
 L3 lexical sidecar for task / reflective / specificity token groups. Cross-thread
-generic admission anchors are lexical policy, not corpus token facts, and are
-owned by the cross-thread lexical resources instead of token dictionary
-artifacts. L3 cross-thread candidate selection may also consume
+generic admission anchors and topic-summary scoring token policy are lexical
+policy, not corpus token facts, and are owned by the cross-thread lexical
+resources instead of token dictionary artifacts. Project/user lexical rule files
+are planned but are not active in the current implementation. L3 cross-thread
+candidate selection may also consume
 `dictionary.json` and `bundles.json` when present as additive evidence only;
 missing token-dictionary artifacts fall back to the pre-existing candidate path.
 
@@ -907,8 +909,8 @@ deterministic and model-derived capabilities.
   admission. Weak recurrence signals such as dormant gap, task-like signal,
   specificity, timestamp distance, and context shift remain useful
   diagnostics/ranking signals, but they are not sufficient on their own.
-  Generic admission anchors for topic-summary mode are lexical policy loaded
-  from the built-in cross-thread lexical resources, not from
+  Generic admission anchors and topic-summary scoring token policy are lexical
+  policy loaded from the built-in cross-thread lexical resources, not from
   `l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such
   as `cite` and `turn0search*` are treated as non-semantic markers and cannot
   admit topic-summary candidates by themselves.

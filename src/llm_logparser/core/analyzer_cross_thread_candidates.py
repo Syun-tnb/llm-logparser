@@ -147,8 +147,6 @@ _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset(
         "これはね",
         "さん",
         "して",
-        "シュン",
-        "シュンさん",
         "その",
         "って",
         "うん",
@@ -186,25 +184,23 @@ _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS = frozenset(
         "yaml",
     }
 )
-_TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKENS = frozenset(
-    {
-        "raina",
-        "reina",
-        "reyna",
-        "shigure",
-        "shizuku",
-        "シグレ",
-        "シズク",
-        "レイナ",
-    }
+_TOPIC_SUMMARY_DISTINCTIVE_ALLOW_TOKENS = frozenset[str]()
+_TOPIC_SUMMARY_DISTINCTIVE_BLOCK_TOKENS = frozenset[str]()
+_TOPIC_SUMMARY_WEAK_DISTINCTIVE_TOKENS = frozenset[str]()
+_TOPIC_SUMMARY_PERSONA_WEAK_TOKENS = frozenset[str]()
+_TOPIC_SUMMARY_GENERIC_SCORING_PATTERNS = (
+    r"^turn\d+search\d*$",
+    r"^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$",
+    r"^websearch\d*$",
 )
-_TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKEN_KEYS = frozenset(
-    re.sub(
-        r"[^a-z0-9一-龯ぁ-んァ-ヶー]+",
-        "",
-        " ".join(value.casefold().split()),
-    )
-    for value in _TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKENS
+_TOPIC_SUMMARY_TOOL_RESIDUE_PATTERNS = _TOPIC_SUMMARY_GENERIC_SCORING_PATTERNS
+_TOPIC_SUMMARY_CITATION_RESIDUE_PATTERNS = (
+    r"^cite$",
+    r"^search$",
+)
+_TOPIC_SUMMARY_RITUAL_TITLE_PHRASES = (
+    "morning check-in",
+    "daily check-in",
 )
 _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
     {
@@ -214,9 +210,6 @@ _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
         "gpt4o",
         "gpt-5",
         "gpt5",
-        "raina",
-        "reina",
-        "レイナ",
         "human-like",
         "humanlike",
         "philosophy",
@@ -2468,11 +2461,98 @@ def _has_cjk(token: str) -> bool:
     return bool(re.search(r"[一-龯ぁ-んァ-ヶー]", token))
 
 
-def _is_topic_summary_persona_distinctive_token(token: str) -> bool:
-    return (
+def _topic_summary_scoring_tokens(
+    cross_thread_rules: CrossThreadLexicalRules,
+    attr_name: str,
+    fallback: frozenset[str] | tuple[str, ...],
+) -> tuple[str, ...]:
+    tokens = getattr(cross_thread_rules, attr_name, ())
+    if tokens:
+        return tuple(tokens)
+    return tuple(fallback)
+
+
+def _topic_summary_scoring_token_keys(
+    cross_thread_rules: CrossThreadLexicalRules,
+    attr_name: str,
+    fallback: frozenset[str] | tuple[str, ...],
+) -> set[str]:
+    keys = {
         _admission_anchor_token_key(token)
-        in _TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKEN_KEYS
+        for token in _topic_summary_scoring_tokens(
+            cross_thread_rules,
+            attr_name,
+            fallback,
+        )
+    }
+    return {key for key in keys if key}
+
+
+def _topic_summary_scoring_patterns(
+    cross_thread_rules: CrossThreadLexicalRules,
+    attr_name: str,
+    fallback: tuple[str, ...],
+) -> tuple[str, ...]:
+    patterns = getattr(cross_thread_rules, attr_name, ())
+    if patterns:
+        return tuple(patterns)
+    return fallback
+
+
+def _topic_summary_short_specific_token_keys(
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> set[str]:
+    return _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_short_specific_tokens",
+        _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS,
     )
+
+
+def _is_topic_summary_distinctive_block_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    return _admission_anchor_token_key(token) in _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_distinctive_block_tokens",
+        _TOPIC_SUMMARY_DISTINCTIVE_BLOCK_TOKENS,
+    )
+
+
+def _is_topic_summary_distinctive_allow_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    return _admission_anchor_token_key(token) in _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_distinctive_allow_tokens",
+        _TOPIC_SUMMARY_DISTINCTIVE_ALLOW_TOKENS,
+    )
+
+
+def _is_topic_summary_weak_distinctive_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    key = _admission_anchor_token_key(token)
+    weak_keys = _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_weak_distinctive_tokens",
+        _TOPIC_SUMMARY_WEAK_DISTINCTIVE_TOKENS,
+    ) | _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_persona_weak_tokens",
+        _TOPIC_SUMMARY_PERSONA_WEAK_TOKENS,
+    )
+    return key in weak_keys
+
+
+def _is_topic_summary_persona_distinctive_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    return _is_topic_summary_weak_distinctive_token(token, cross_thread_rules)
 
 
 def _topic_summary_generic_admission_anchor_tokens(
@@ -2537,12 +2617,36 @@ def _is_topic_summary_generic_scoring_token(
         return True
     if _is_topic_summary_generic_admission_anchor(token, cross_thread_rules):
         return True
-    if key in _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS:
+    generic_keys = _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_generic_tokens",
+        _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS,
+    )
+    if key in generic_keys:
+        return True
+    generic_patterns = (
+        _topic_summary_scoring_patterns(
+            cross_thread_rules,
+            "topic_summary_scoring_generic_patterns",
+            _TOPIC_SUMMARY_GENERIC_SCORING_PATTERNS,
+        )
+        + _topic_summary_scoring_patterns(
+            cross_thread_rules,
+            "topic_summary_scoring_tool_residue_patterns",
+            _TOPIC_SUMMARY_TOOL_RESIDUE_PATTERNS,
+        )
+        + _topic_summary_scoring_patterns(
+            cross_thread_rules,
+            "topic_summary_scoring_citation_residue_patterns",
+            _TOPIC_SUMMARY_CITATION_RESIDUE_PATTERNS,
+        )
+    )
+    if any(re.fullmatch(pattern, key) for pattern in generic_patterns):
         return True
     if (
         len(key) <= 2
         and not _has_cjk(key)
-        and key not in _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS
+        and key not in _topic_summary_short_specific_token_keys(cross_thread_rules)
     ):
         return True
     return False
@@ -2553,11 +2657,15 @@ def _is_topic_summary_distinctive_scoring_token(
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> bool:
     key = _admission_anchor_token_key(token)
+    if _is_topic_summary_distinctive_block_token(token, cross_thread_rules):
+        return False
+    if _is_topic_summary_distinctive_allow_token(token, cross_thread_rules):
+        return True
     if _is_topic_summary_generic_scoring_token(token, cross_thread_rules):
         return False
     if _has_cjk(key):
         return len(key) >= 2
-    if key in _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS:
+    if key in _topic_summary_short_specific_token_keys(cross_thread_rules):
         return True
     if any(char.isdigit() for char in key):
         return len(key) >= 3
@@ -2644,7 +2752,10 @@ def _topic_summary_distinctive_token_boost(
     non_persona_tokens = [
         item
         for item in eligible_tokens
-        if not _is_topic_summary_persona_distinctive_token(item[0])
+        if not _is_topic_summary_persona_distinctive_token(
+            item[0],
+            cross_thread_rules,
+        )
     ]
     if not non_persona_tokens:
         return 0.0

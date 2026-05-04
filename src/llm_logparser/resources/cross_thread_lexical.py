@@ -55,6 +55,20 @@ class CrossThreadTopicSummaryAdmissionRules:
 
 
 @dataclass(frozen=True)
+class CrossThreadTopicSummaryScoringRules:
+    generic_tokens: tuple[str, ...]
+    generic_patterns: tuple[str, ...]
+    short_specific_tokens: tuple[str, ...]
+    distinctive_allow_tokens: tuple[str, ...]
+    distinctive_block_tokens: tuple[str, ...]
+    weak_distinctive_tokens: tuple[str, ...]
+    persona_weak_tokens: tuple[str, ...]
+    tool_residue_patterns: tuple[str, ...]
+    citation_residue_patterns: tuple[str, ...]
+    ritual_title_phrases: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CrossThreadLexicalRules:
     locale: str
     residue: CrossThreadResidueRules
@@ -62,6 +76,7 @@ class CrossThreadLexicalRules:
     reflective: CrossThreadReflectiveRules
     broad_overlap: CrossThreadBroadOverlapRules
     topic_summary_admission: CrossThreadTopicSummaryAdmissionRules
+    topic_summary_scoring: CrossThreadTopicSummaryScoringRules
 
     @property
     def topic_summary_admission_generic_anchor_tokens(self) -> tuple[str, ...]:
@@ -70,6 +85,46 @@ class CrossThreadLexicalRules:
     @property
     def topic_summary_admission_generic_anchor_patterns(self) -> tuple[str, ...]:
         return self.topic_summary_admission.generic_anchor_patterns
+
+    @property
+    def topic_summary_scoring_generic_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.generic_tokens
+
+    @property
+    def topic_summary_scoring_generic_patterns(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.generic_patterns
+
+    @property
+    def topic_summary_scoring_short_specific_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.short_specific_tokens
+
+    @property
+    def topic_summary_scoring_distinctive_allow_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.distinctive_allow_tokens
+
+    @property
+    def topic_summary_scoring_distinctive_block_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.distinctive_block_tokens
+
+    @property
+    def topic_summary_scoring_weak_distinctive_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.weak_distinctive_tokens
+
+    @property
+    def topic_summary_scoring_persona_weak_tokens(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.persona_weak_tokens
+
+    @property
+    def topic_summary_scoring_tool_residue_patterns(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.tool_residue_patterns
+
+    @property
+    def topic_summary_scoring_citation_residue_patterns(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.citation_residue_patterns
+
+    @property
+    def topic_summary_scoring_ritual_title_phrases(self) -> tuple[str, ...]:
+        return self.topic_summary_scoring.ritual_title_phrases
 
 
 def _normalize_locale(value: str | None) -> str:
@@ -186,6 +241,78 @@ def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLex
                 "cross_thread",
                 "topic_summary_admission",
                 "generic_anchor_patterns",
+            ),
+        ),
+        topic_summary_scoring=CrossThreadTopicSummaryScoringRules(
+            generic_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "generic_tokens",
+            ),
+            generic_patterns=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "generic_patterns",
+            ),
+            short_specific_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "short_specific_tokens",
+            ),
+            distinctive_allow_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "distinctive_allow_tokens",
+            ),
+            distinctive_block_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "distinctive_block_tokens",
+            ),
+            weak_distinctive_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "weak_distinctive_tokens",
+            ),
+            persona_weak_tokens=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "persona_weak_tokens",
+            ),
+            tool_residue_patterns=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "tool_residue_patterns",
+            ),
+            citation_residue_patterns=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "citation_residue_patterns",
+            ),
+            ritual_title_phrases=_merged_list(
+                payloads,
+                "cross_thread",
+                "topic_summary",
+                "scoring",
+                "ritual_title_phrases",
             ),
         ),
     )

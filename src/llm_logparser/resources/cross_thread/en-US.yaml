@@ -154,3 +154,94 @@ cross_thread:
       - '^turn\d+search\d*$'
       - '^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$'
       - '^websearch\d*$'
+  topic_summary:
+    scoring:
+      generic_tokens:
+        - ai
+        - chat
+        - check
+        - company
+        - conversation
+        - data
+        - daily
+        - date
+        - day
+        - entity
+        - error
+        - greeting
+        - link
+        - model
+        - models
+        - month
+        - noting
+        - open
+        - page
+        - request
+        - search
+        - shared
+        - speaker
+        - speakers
+        - suggests
+        - system
+        - time
+        - view
+        - viewing
+        - web
+        - while
+        - year
+        - www
+        - w
+        - これは
+        - これはね
+        - さん
+        - して
+        - その
+        - って
+        - うん
+        - わたし
+        - あはは
+        - あはははは
+        - おはようございます
+        - こんにちは
+        - こんばんは
+        - 笑
+        - 年
+        - 月
+        - 日
+      generic_patterns:
+        - '^turn\d+search\d*$'
+        - '^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$'
+        - '^websearch\d*$'
+      short_specific_tokens:
+        - api
+        - btc
+        - cpu
+        - css
+        - csv
+        - dca
+        - dns
+        - etl
+        - etf
+        - gpu
+        - json
+        - llm
+        - pdf
+        - pr
+        - sql
+        - ui
+        - ux
+        - yaml
+      distinctive_allow_tokens: []
+      distinctive_block_tokens: []
+      weak_distinctive_tokens: []
+      persona_weak_tokens: []
+      tool_residue_patterns:
+        - '^turn\d+search\d*$'
+        - '^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$'
+        - '^websearch\d*$'
+      citation_residue_patterns:
+        - '^cite$'
+        - '^search$'
+      ritual_title_phrases:
+        - morning check-in
+        - daily check-in

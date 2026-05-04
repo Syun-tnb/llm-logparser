@@ -850,8 +850,8 @@ weak recurrence signals such as dormant gap, task-likeness, specificity,
 timestamp distance, and context shift are retained as diagnostics/ranking
 signals but are not sufficient admission evidence by themselves. Heuristic
 summary rows and inferred conclusions are weak evidence. Generic admission
-anchors used by this gate are lexical policy loaded from the built-in
-cross-thread lexical resources, not corpus facts from
+anchors and topic-summary scoring token policy used by this mode are lexical
+policy loaded from the built-in cross-thread lexical resources, not corpus facts from
 `l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such as
 `cite` and `turn0search*` are treated as non-semantic admission anchors, so they
 cannot admit topic-summary candidates by themselves.
@@ -871,7 +871,8 @@ from the default semantic-topics path: low `<0.45`, medium `0.45-0.7`, high
 When token-dictionary artifacts are present, `dictionary.json` should be read as
 an observed token index / corpus token statistics artifact, and `bundles.json`
 as corpus-derived cooccurrence bundles. They are additive L3 signals only, not
-user-authored lexical rules.
+user-authored lexical rules. Reviewed project/user lexical rules are planned but
+are not part of the current implementation.
 
 Recommended comparison flow:
 

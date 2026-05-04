@@ -797,8 +797,11 @@ Auxiliary L3 note:
   `token_stats.json` and `topics.json`
 - they are signal sources for later L3/L4 analysis only; they do not redefine
   canonical text, L1 sidecars, or SQLite state
-- cross-thread generic admission anchors are lexical policy owned by the
-  built-in cross-thread lexical resources, not by token dictionary artifacts
+- cross-thread generic admission anchors and topic-summary scoring token policy
+  are lexical policy owned by the built-in cross-thread lexical resources, not
+  by token dictionary artifacts
+- reviewed project/user lexical rules are planned, but this artifact family does
+  not implement them yet
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence
