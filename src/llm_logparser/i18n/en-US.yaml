@@ -140,6 +140,8 @@ messages:
   cli.analyze.cross_thread_candidates.opt.embedding_model.help: Optional local Ollama embedding model used only to enrich already-emitted candidate rows with embedding similarity
   cli.analyze.cross_thread_candidates.opt.embedding_base_url.help: Base URL for the optional local Ollama embedding endpoint
   cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help: Timeout in seconds for optional local Ollama embedding requests
+  cli.analyze.cross_thread_candidates.opt.project_lexical_rules.help: Explicit reviewed project lexical rules YAML to merge above built-in cross-thread resources
+  cli.analyze.cross_thread_candidates.opt.user_lexical_rules.help: Explicit reviewed user lexical rules YAML to merge above built-in and project cross-thread resources
   cli.analyze.cross_thread_intent_eval.help: Evaluate whether existing cross-thread candidate pairs express the same underlying intent or task continuation and write an additive L4 sidecar
   cli.analyze.cross_thread_intent_eval.opt.input.help: "Input: directory only; provider artifact root containing l3/cross-thread-candidates/candidates.jsonl"
   cli.analyze.cross_thread_intent_eval.opt.model.help: Local Ollama model used to judge same-intent continuity for each emitted candidate pair

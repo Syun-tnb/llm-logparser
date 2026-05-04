@@ -131,9 +131,10 @@ replace canonical or L1 outputs. Seeded `lexical_rules.json` remains a generated
 L3 lexical sidecar for task / reflective / specificity token groups. Cross-thread
 generic admission anchors and topic-summary scoring token policy are lexical
 policy, not corpus token facts, and are owned by the cross-thread lexical
-resources instead of token dictionary artifacts. Project/user lexical rule files
-are planned but are not active in the current implementation. L3 cross-thread
-candidate selection may also consume
+resources instead of token dictionary artifacts. Explicit reviewed project/user
+lexical rule files may be provided to `cross-thread-candidates` as additive
+layers above the built-in resources; there is no automatic discovery or
+promotion. L3 cross-thread candidate selection may also consume
 `dictionary.json` and `bundles.json` when present as additive evidence only;
 missing token-dictionary artifacts fall back to the pre-existing candidate path.
 
@@ -916,8 +917,13 @@ deterministic and model-derived capabilities.
   admit topic-summary candidates by themselves. `summary.json` records compact
   lexical-rule diagnostics for the resolved built-in resource layers, including
   locale chain, package-relative resource paths, resource SHA1 hashes, and
-  category counts. It does not emit full token lists. Full resolved-policy export
-  and reviewed project/user rule loading are deferred.
+  category counts. Explicit reviewed project/user lexical rule files can be
+  loaded with `--project-lexical-rules` and `--user-lexical-rules`; they append
+  to built-in rule categories and are reported as reviewed layers. The summary
+  does not emit full token lists, and full resolved-policy export is deferred.
+  Reviewed rule files are YAML with `schema_version: "0.1"`,
+  `owner_scope: "project"` or `"user"`, and additive lists under
+  `rules.topic_summary.scoring`.
   Topic-summary mode also uses a separate semantic scoring profile after
   admission: title overlap, summary keyphrase overlap, cleaned keyword-field
   overlap, and local-LLM summary provenance are weighted more heavily, while

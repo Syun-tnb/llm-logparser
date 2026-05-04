@@ -800,12 +800,13 @@ Auxiliary L3 note:
 - cross-thread generic admission anchors and topic-summary scoring token policy
   are lexical policy owned by the built-in cross-thread lexical resources, not
   by token dictionary artifacts
-- reviewed project/user lexical rules are planned, but this artifact family does
-  not implement them yet
+- explicitly provided reviewed project/user lexical rule files can be merged as
+  additive policy layers above the built-in resources; no automatic discovery,
+  candidate generation, or promotion is implemented
 - cross-thread candidate `summary.json` records compact diagnostics for resolved
-  built-in lexical resources, including locale chain, package-relative resource
-  paths, resource SHA1 hashes, and category counts; it does not emit full token
-  lists, and full resolved-policy export is deferred
+  built-in and reviewed lexical resources, including locale chain, safe resource
+  paths, resource SHA1 hashes, owner scope, schema version, and category counts;
+  it does not emit full token lists, and full resolved-policy export is deferred
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence

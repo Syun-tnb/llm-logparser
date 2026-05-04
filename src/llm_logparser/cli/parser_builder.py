@@ -745,6 +745,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=30.0,
         help=_("cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help"),
     )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--project-lexical-rules",
+        dest="project_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.analyze.cross_thread_candidates.opt.project_lexical_rules.help"),
+    )
+    analyze_cross_thread_candidates_cmd.add_argument(
+        "--user-lexical-rules",
+        dest="user_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.analyze.cross_thread_candidates.opt.user_lexical_rules.help"),
+    )
 
     analyze_cross_thread_intent_eval_cmd = analyze_subparsers.add_parser(
         "cross-thread-intent-eval",

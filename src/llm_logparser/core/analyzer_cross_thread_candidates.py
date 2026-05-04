@@ -26,6 +26,7 @@ from .analyzer_semantic_preview import WindowPreviewRecord, load_window_preview_
 from .embedding_backend import create_embedding_backend
 from llm_logparser.resources.cross_thread_lexical import (
     CrossThreadLexicalRules,
+    CrossThreadLexicalRulesError,
     DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
     cross_thread_lexical_rules_diagnostics,
     load_cross_thread_lexical_rules,
@@ -3379,12 +3380,15 @@ def _build_cross_thread_candidate_rows_with_stats(
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    project_lexical_rules: Path | str | None = None,
+    user_lexical_rules: Path | str | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     int,
     int,
     _UnitLoadResult,
     _TopicSummaryAdmissionStats,
+    CrossThreadLexicalRules,
 ]:
     if top_per_source < 1:
         raise CrossThreadCandidateError("top_per_source must be at least 1")
@@ -3393,7 +3397,14 @@ def _build_cross_thread_candidate_rows_with_stats(
 
     lexical_rules = load_token_dictionary_lexical_rules(input_root)
     token_dictionary_signals = load_token_dictionary_signals(input_root)
-    cross_thread_rules = load_cross_thread_lexical_rules(locale)
+    try:
+        cross_thread_rules = load_cross_thread_lexical_rules(
+            locale,
+            project_rules_path=project_lexical_rules,
+            user_rules_path=user_lexical_rules,
+        )
+    except CrossThreadLexicalRulesError as exc:
+        raise CrossThreadCandidateError(str(exc)) from exc
     unit_load_result = _load_units(
         input_root,
         requested_unit_source=unit_source,
@@ -3605,6 +3616,7 @@ def _build_cross_thread_candidate_rows_with_stats(
             filtered_count=topic_summary_admission_filtered_count,
             filter_reasons=topic_summary_admission_filter_reasons,
         ),
+        cross_thread_rules,
     )
 
 
@@ -3618,6 +3630,8 @@ def build_cross_thread_candidate_rows(
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    project_lexical_rules: Path | str | None = None,
+    user_lexical_rules: Path | str | None = None,
 ) -> list[dict[str, Any]]:
     (
         rows,
@@ -3625,6 +3639,7 @@ def build_cross_thread_candidate_rows(
         _duplicate_pairs_removed,
         _unit_load_result,
         _topic_summary_admission_stats,
+        _cross_thread_rules,
     ) = _build_cross_thread_candidate_rows_with_stats(
         input_root,
         min_score=min_score,
@@ -3634,6 +3649,8 @@ def build_cross_thread_candidate_rows(
         embedding_base_url=embedding_base_url,
         embedding_timeout_seconds=embedding_timeout_seconds,
         locale=locale,
+        project_lexical_rules=project_lexical_rules,
+        user_lexical_rules=user_lexical_rules,
     )
     return rows
 
@@ -3739,6 +3756,8 @@ def write_cross_thread_candidates_artifact(
     embedding_base_url: str = "http://localhost:11434",
     embedding_timeout_seconds: float = 30.0,
     locale: str = DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    project_lexical_rules: Path | str | None = None,
+    user_lexical_rules: Path | str | None = None,
 ) -> dict[str, Any]:
     provider_root = input_root.expanduser()
     if not provider_root.exists() or not provider_root.is_dir():
@@ -3750,6 +3769,7 @@ def write_cross_thread_candidates_artifact(
         duplicate_pairs_removed,
         unit_load_result,
         topic_summary_admission_stats,
+        cross_thread_rules,
     ) = _build_cross_thread_candidate_rows_with_stats(
         provider_root,
         min_score=min_score,
@@ -3759,6 +3779,8 @@ def write_cross_thread_candidates_artifact(
         embedding_base_url=embedding_base_url,
         embedding_timeout_seconds=embedding_timeout_seconds,
         locale=locale,
+        project_lexical_rules=project_lexical_rules,
+        user_lexical_rules=user_lexical_rules,
     )
     output_dir = provider_root / "l3" / "cross-thread-candidates"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -3800,7 +3822,7 @@ def write_cross_thread_candidates_artifact(
             else None
         ),
         lexical_rules_diagnostics=cross_thread_lexical_rules_diagnostics(
-            load_cross_thread_lexical_rules(locale)
+            cross_thread_rules
         ),
     )
     write_json_artifact(summary_path, summary)
