@@ -5,7 +5,7 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -205,6 +205,14 @@ class CrossThreadCandidateError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class _TopicSummaryScoringFeatures:
+    title_tokens: tuple[str, ...] = ()
+    summary_keyphrases: tuple[str, ...] = ()
+    keyword_tokens: tuple[str, ...] = ()
+    distinctive_token_profile: dict[str, dict[str, int]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class _RepresentativeSpanUnit:
     provider_id: str
     topic_id: str
@@ -240,6 +248,9 @@ class _RepresentativeSpanUnit:
     conclusion_status: str | None = None
     explicit_conclusion_text: str | None = None
     summary_text: str = ""
+    topic_summary_scoring: _TopicSummaryScoringFeatures = field(
+        default_factory=_TopicSummaryScoringFeatures
+    )
 
 
 @dataclass(frozen=True)
@@ -265,6 +276,9 @@ class _RecurrenceInstrumentationContext:
     message_timestamps: tuple[int, ...]
     span_timestamps: tuple[int, ...]
     previous_target_by_key: dict[tuple[str, str], _RepresentativeSpanUnit]
+
+
+_SimilarityCache = dict[tuple[str, str], float]
 
 
 @dataclass(frozen=True)
@@ -1378,6 +1392,12 @@ def _topic_summary_units(
                 and explicit_conclusion.strip()
                 else None
             )
+            topic_summary_scoring = _topic_summary_scoring_features(
+                topic_label=topic_label,
+                summary_text=summary_text or matching_text,
+                keywords=keywords,
+                cross_thread_rules=cross_thread_rules,
+            )
             units.append(
                 _RepresentativeSpanUnit(
                     provider_id=str(row["provider_id"]),
@@ -1440,6 +1460,7 @@ def _topic_summary_units(
                     conclusion_status=str(row.get("conclusion_status")),
                     explicit_conclusion_text=explicit_conclusion_text,
                     summary_text=summary_text,
+                    topic_summary_scoring=topic_summary_scoring,
                 )
             )
 
@@ -1626,6 +1647,22 @@ def _dormancy_score(volume_gap: _VolumeGap) -> float:
     )
 
 
+def _cached_normalized_similarity(
+    left: str,
+    right: str,
+    cache: _SimilarityCache | None = None,
+) -> float:
+    if cache is None:
+        return normalized_similarity(left, right)
+    key = (left, right)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    value = normalized_similarity(left, right)
+    cache[key] = value
+    return value
+
+
 def _local_context_delta(
     *,
     source: _RepresentativeSpanUnit,
@@ -1633,6 +1670,7 @@ def _local_context_delta(
     excerpt_similarity: float,
     topic_label_similarity: float,
     context: _RecurrenceInstrumentationContext,
+    similarity_cache: _SimilarityCache | None = None,
 ) -> float | None:
     # This is a lightweight proxy for local context re-entry. It only compares
     # the current target against the immediately previous representative span in
@@ -1640,17 +1678,51 @@ def _local_context_delta(
     previous_target = context.previous_target_by_key.get((target.conversation_id, target.span_id))
     if previous_target is None:
         return None
-    prior_excerpt_similarity = normalized_similarity(
+    prior_excerpt_similarity = _cached_normalized_similarity(
         source.task_nucleus_text or source.excerpt,
         previous_target.task_nucleus_text or previous_target.excerpt,
+        similarity_cache,
     )
-    prior_topic_label_similarity = normalized_similarity(
+    prior_topic_label_similarity = _cached_normalized_similarity(
         source.topic_label or "",
         previous_target.topic_label or "",
+        similarity_cache,
     )
     current_signal = max(excerpt_similarity, topic_label_similarity)
     prior_signal = max(round(prior_excerpt_similarity, 4), round(prior_topic_label_similarity, 4))
     return round(max(0.0, current_signal - prior_signal), 4)
+
+
+def _signals_with_local_context_delta(
+    signals: _PairSignals,
+    *,
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    context: _RecurrenceInstrumentationContext,
+    similarity_cache: _SimilarityCache | None = None,
+) -> _PairSignals:
+    if signals.local_context_delta is not None:
+        return signals
+    return replace(
+        signals,
+        local_context_delta=_local_context_delta(
+            source=source,
+            target=target,
+            excerpt_similarity=signals.excerpt_similarity,
+            topic_label_similarity=signals.topic_label_similarity,
+            context=context,
+            similarity_cache=similarity_cache,
+        ),
+    )
+
+
+def _evidence_with_local_context_delta(
+    evidence: _Evidence,
+    local_context_delta: float | None,
+) -> _Evidence:
+    if evidence.local_context_delta == local_context_delta:
+        return evidence
+    return replace(evidence, local_context_delta=local_context_delta)
 
 
 def _intervening_temporal_gap_seconds(
@@ -1688,16 +1760,23 @@ def _pair_signals(
     *,
     recurrence_context: _RecurrenceInstrumentationContext,
     token_dictionary_signals: TokenDictionarySignals | None = None,
+    similarity_cache: _SimilarityCache | None = None,
+    compute_local_context_delta: bool = True,
 ) -> _PairSignals:
     excerpt_similarity = round(
-        normalized_similarity(
+        _cached_normalized_similarity(
             source.task_nucleus_text or source.excerpt,
             target.task_nucleus_text or target.excerpt,
+            similarity_cache,
         ),
         4,
     )
     topic_label_similarity = round(
-        normalized_similarity(source.topic_label or "", target.topic_label or ""),
+        _cached_normalized_similarity(
+            source.topic_label or "",
+            target.topic_label or "",
+            similarity_cache,
+        ),
         4,
     )
     source_keywords = set(_normalized_keywords(source.keywords))
@@ -1724,12 +1803,17 @@ def _pair_signals(
         (source.excerpt_specificity + target.excerpt_specificity) / 2.0,
         4,
     )
-    local_context_delta = _local_context_delta(
-        source=source,
-        target=target,
-        excerpt_similarity=excerpt_similarity,
-        topic_label_similarity=topic_label_similarity,
-        context=recurrence_context,
+    local_context_delta = (
+        _local_context_delta(
+            source=source,
+            target=target,
+            excerpt_similarity=excerpt_similarity,
+            topic_label_similarity=topic_label_similarity,
+            context=recurrence_context,
+            similarity_cache=similarity_cache,
+        )
+        if compute_local_context_delta
+        else None
     )
     shared_anchor_tokens = tuple(
         sorted(set(source.anchor_tokens) & set(target.anchor_tokens))
@@ -1768,9 +1852,10 @@ def _pair_signals(
     explicit_conclusion_overlap = (
         source.explicit_conclusion_text is not None
         and target.explicit_conclusion_text is not None
-        and normalized_similarity(
+        and _cached_normalized_similarity(
             source.explicit_conclusion_text,
             target.explicit_conclusion_text,
+            similarity_cache,
         )
         >= 0.72
     )
@@ -2043,6 +2128,86 @@ def _top_topic_summary_keyphrases(
     return tuple(ranked[:limit])
 
 
+def _topic_summary_keyword_scoring_tokens(
+    keywords: tuple[str, ...],
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    return tuple(
+        keyword
+        for keyword in _normalized_keywords(keywords)
+        if not _is_topic_summary_generic_scoring_token(keyword, cross_thread_rules)
+    )
+
+
+def _topic_summary_scoring_features(
+    *,
+    topic_label: str | None,
+    summary_text: str,
+    keywords: tuple[str, ...],
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> _TopicSummaryScoringFeatures:
+    return _TopicSummaryScoringFeatures(
+        title_tokens=_topic_summary_semantic_tokens(
+            topic_label or "",
+            cross_thread_rules=cross_thread_rules,
+        ),
+        summary_keyphrases=_top_topic_summary_keyphrases(
+            summary_text,
+            cross_thread_rules=cross_thread_rules,
+        ),
+        keyword_tokens=_topic_summary_keyword_scoring_tokens(
+            keywords,
+            cross_thread_rules=cross_thread_rules,
+        ),
+        distinctive_token_profile=_topic_summary_token_profile_from_values(
+            topic_label=topic_label,
+            summary_text=summary_text,
+            keywords=keywords,
+            cross_thread_rules=cross_thread_rules,
+        ),
+    )
+
+
+def _topic_summary_title_tokens_for_unit(
+    unit: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    if unit.topic_summary_scoring.title_tokens:
+        return unit.topic_summary_scoring.title_tokens
+    return _topic_summary_semantic_tokens(
+        unit.topic_label or "",
+        cross_thread_rules=cross_thread_rules,
+    )
+
+
+def _topic_summary_keyphrases_for_unit(
+    unit: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    if unit.topic_summary_scoring.summary_keyphrases:
+        return unit.topic_summary_scoring.summary_keyphrases
+    return _top_topic_summary_keyphrases(
+        unit.summary_text or unit.excerpt,
+        cross_thread_rules=cross_thread_rules,
+    )
+
+
+def _topic_summary_keyword_tokens_for_unit(
+    unit: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    if unit.topic_summary_scoring.keyword_tokens:
+        return unit.topic_summary_scoring.keyword_tokens
+    return _topic_summary_keyword_scoring_tokens(
+        unit.keywords,
+        cross_thread_rules=cross_thread_rules,
+    )
+
+
 def _topic_summary_score_and_reasons(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
@@ -2053,15 +2218,16 @@ def _topic_summary_score_and_reasons(
     score = 0.0
     reason_codes: list[str] = []
 
-    source_title_tokens = _topic_summary_semantic_tokens(
-        source.topic_label or "",
-        cross_thread_rules=cross_thread_rules,
+    title_overlap = _token_overlap_ratio(
+        _topic_summary_title_tokens_for_unit(
+            source,
+            cross_thread_rules=cross_thread_rules,
+        ),
+        _topic_summary_title_tokens_for_unit(
+            target,
+            cross_thread_rules=cross_thread_rules,
+        ),
     )
-    target_title_tokens = _topic_summary_semantic_tokens(
-        target.topic_label or "",
-        cross_thread_rules=cross_thread_rules,
-    )
-    title_overlap = _token_overlap_ratio(source_title_tokens, target_title_tokens)
     if title_overlap >= 0.55:
         score += _TOPIC_SUMMARY_TITLE_OVERLAP_HIGH_SCORE
         reason_codes.append("topic_summary_title_overlap_high")
@@ -2072,15 +2238,16 @@ def _topic_summary_score_and_reasons(
         score += _TOPIC_SUMMARY_TITLE_OVERLAP_LOW_SCORE
         reason_codes.append("topic_summary_title_overlap_low")
 
-    source_keyphrases = _top_topic_summary_keyphrases(
-        source.summary_text or source.excerpt,
-        cross_thread_rules=cross_thread_rules,
+    keyphrase_overlap = _token_overlap_ratio(
+        _topic_summary_keyphrases_for_unit(
+            source,
+            cross_thread_rules=cross_thread_rules,
+        ),
+        _topic_summary_keyphrases_for_unit(
+            target,
+            cross_thread_rules=cross_thread_rules,
+        ),
     )
-    target_keyphrases = _top_topic_summary_keyphrases(
-        target.summary_text or target.excerpt,
-        cross_thread_rules=cross_thread_rules,
-    )
-    keyphrase_overlap = _token_overlap_ratio(source_keyphrases, target_keyphrases)
     if keyphrase_overlap >= 0.36:
         score += _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_HIGH_SCORE
         reason_codes.append("topic_summary_keyphrase_overlap_high")
@@ -2091,7 +2258,11 @@ def _topic_summary_score_and_reasons(
         score += _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_LOW_SCORE
         reason_codes.append("topic_summary_keyphrase_overlap_low")
 
-    specific_keywords = _specific_shared_scoring_keywords(signals, cross_thread_rules)
+    specific_keywords = _specific_shared_scoring_keywords(
+        source,
+        target,
+        cross_thread_rules=cross_thread_rules,
+    )
     if len(specific_keywords) >= 2:
         score += _TOPIC_SUMMARY_KEYWORD_OVERLAP_HIGH_SCORE
         reason_codes.append("shared_keywords_high")
@@ -2354,6 +2525,23 @@ def _topic_summary_token_profile(
     *,
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> dict[str, dict[str, int]]:
+    if unit.topic_summary_scoring.distinctive_token_profile:
+        return unit.topic_summary_scoring.distinctive_token_profile
+    return _topic_summary_token_profile_from_values(
+        topic_label=unit.topic_label,
+        summary_text=unit.summary_text or unit.excerpt,
+        keywords=unit.keywords,
+        cross_thread_rules=cross_thread_rules,
+    )
+
+
+def _topic_summary_token_profile_from_values(
+    *,
+    topic_label: str | None,
+    summary_text: str,
+    keywords: tuple[str, ...],
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> dict[str, dict[str, int]]:
     profile: dict[str, dict[str, int]] = {}
 
     def add(location: str, text: str) -> None:
@@ -2369,9 +2557,9 @@ def _topic_summary_token_profile(
             bucket = profile.setdefault(token, {})
             bucket[location] = bucket.get(location, 0) + count
 
-    add("title", unit.topic_label or "")
-    add("summary", unit.summary_text or unit.excerpt)
-    for keyword in unit.keywords:
+    add("title", topic_label or "")
+    add("summary", summary_text)
+    for keyword in keywords:
         add("keyword", keyword)
     return profile
 
@@ -2449,13 +2637,26 @@ def _non_generic_shared_keywords(
 
 
 def _specific_shared_scoring_keywords(
-    signals: _PairSignals,
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> tuple[str, ...]:
     return tuple(
-        keyword
-        for keyword in signals.shared_keywords
-        if not _is_topic_summary_generic_scoring_token(keyword, cross_thread_rules)
+        sorted(
+            set(
+                _topic_summary_keyword_tokens_for_unit(
+                    source,
+                    cross_thread_rules=cross_thread_rules,
+                )
+            )
+            & set(
+                _topic_summary_keyword_tokens_for_unit(
+                    target,
+                    cross_thread_rules=cross_thread_rules,
+                )
+            )
+        )
     )
 
 
@@ -2522,13 +2723,16 @@ def _weak_recurrence_evidence_for_pair(
     token_dictionary_signals: TokenDictionarySignals | None = None,
     cross_thread_rules: CrossThreadLexicalRules,
     base_evidence: _Evidence | None = None,
+    signals: _PairSignals | None = None,
+    similarity_cache: _SimilarityCache | None = None,
 ) -> _WeakRecurrenceCandidate | None:
-    signals = _pair_signals(
-        source,
-        target,
-        recurrence_context=recurrence_context,
-        token_dictionary_signals=token_dictionary_signals,
-    )
+    if signals is None:
+        signals = _pair_signals(
+            source,
+            target,
+            recurrence_context=recurrence_context,
+            token_dictionary_signals=token_dictionary_signals,
+        )
     if signals.residue_pair:
         return None
     if not signals.shared_anchor_tokens:
@@ -2552,6 +2756,19 @@ def _weak_recurrence_evidence_for_pair(
             and len(signals.shared_anchor_tokens) >= 2
         )
     )
+    if (
+        not has_anchor_support
+        and len(signals.shared_strong_anchor_tokens) == 1
+        and signals.task_like_score >= _WEAK_RECURRENCE_SINGLE_ANCHOR_TASK_LIKE_THRESHOLD
+        and signals.specificity_score >= _WEAK_RECURRENCE_SPECIFICITY_THRESHOLD
+    ):
+        signals = _signals_with_local_context_delta(
+            signals,
+            source=source,
+            target=target,
+            context=recurrence_context,
+            similarity_cache=similarity_cache,
+        )
     has_single_anchor_exception = (
         len(signals.shared_strong_anchor_tokens) == 1
         and signals.task_like_score >= _WEAK_RECURRENCE_SINGLE_ANCHOR_TASK_LIKE_THRESHOLD
@@ -2573,6 +2790,13 @@ def _weak_recurrence_evidence_for_pair(
     if signals.reflective_score >= _WEAK_RECURRENCE_REFLECTIVE_THRESHOLD:
         return None
 
+    signals = _signals_with_local_context_delta(
+        signals,
+        source=source,
+        target=target,
+        context=recurrence_context,
+        similarity_cache=similarity_cache,
+    )
     score, base_reason_codes, _has_strong_signal = _score_and_reasons_for_pair(
         source,
         target,
@@ -2582,6 +2806,10 @@ def _weak_recurrence_evidence_for_pair(
     structural_score, structural_reason_codes = _structural_signal_score_and_reasons(signals)
 
     if base_evidence is not None:
+        base_evidence = _evidence_with_local_context_delta(
+            base_evidence,
+            signals.local_context_delta,
+        )
         evidence = _Evidence(
             score=base_evidence.score,
             reason_codes=_dedupe_reason_codes(
@@ -2629,6 +2857,21 @@ def _evidence_for_pair(
         recurrence_context=recurrence_context,
         token_dictionary_signals=token_dictionary_signals,
     )
+    return _evidence_for_pair_from_signals(
+        source,
+        target,
+        signals,
+        cross_thread_rules=cross_thread_rules,
+    )
+
+
+def _evidence_for_pair_from_signals(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    signals: _PairSignals,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> _Evidence | None:
     if signals.residue_pair:
         return None
     score, reason_codes, has_strong_signal = _score_and_reasons_for_pair(
@@ -2969,6 +3212,8 @@ def _build_cross_thread_candidate_rows_with_stats(
         tuple[_RepresentativeSpanUnit, list[tuple[_RepresentativeSpanUnit, _Evidence]]]
     ] = []
     min_score_rounded = round(min_score, 4)
+    topic_summary_mode = unit_load_result.unit_source == "topic-summaries"
+    similarity_cache: _SimilarityCache | None = {} if topic_summary_mode else None
     for source in units:
         ranked_similarity: list[tuple[_RepresentativeSpanUnit, _Evidence]] = []
         ranked_weak: list[tuple[_RepresentativeSpanUnit, _Evidence, int]] = []
@@ -2977,21 +3222,49 @@ def _build_cross_thread_candidate_rows_with_stats(
                 continue
             if source.topic_id == target.topic_id and source.span_id == target.span_id:
                 continue
-            evidence = _evidence_for_pair(
-                source,
-                target,
-                recurrence_context=recurrence_context,
-                token_dictionary_signals=token_dictionary_signals,
-                cross_thread_rules=cross_thread_rules,
-            )
-            weak_candidate = _weak_recurrence_evidence_for_pair(
-                source,
-                target,
-                recurrence_context=recurrence_context,
-                token_dictionary_signals=token_dictionary_signals,
-                cross_thread_rules=cross_thread_rules,
-                base_evidence=evidence,
-            )
+            if topic_summary_mode:
+                pair_signals = _pair_signals(
+                    source,
+                    target,
+                    recurrence_context=recurrence_context,
+                    token_dictionary_signals=token_dictionary_signals,
+                    similarity_cache=similarity_cache,
+                    compute_local_context_delta=False,
+                )
+                evidence = _evidence_for_pair_from_signals(
+                    source,
+                    target,
+                    pair_signals,
+                    cross_thread_rules=cross_thread_rules,
+                )
+                weak_candidate = _weak_recurrence_evidence_for_pair(
+                    source,
+                    target,
+                    recurrence_context=recurrence_context,
+                    token_dictionary_signals=token_dictionary_signals,
+                    cross_thread_rules=cross_thread_rules,
+                    base_evidence=evidence,
+                    signals=pair_signals,
+                    similarity_cache=similarity_cache,
+                )
+                admission_signals = pair_signals
+            else:
+                evidence = _evidence_for_pair(
+                    source,
+                    target,
+                    recurrence_context=recurrence_context,
+                    token_dictionary_signals=token_dictionary_signals,
+                    cross_thread_rules=cross_thread_rules,
+                )
+                weak_candidate = _weak_recurrence_evidence_for_pair(
+                    source,
+                    target,
+                    recurrence_context=recurrence_context,
+                    token_dictionary_signals=token_dictionary_signals,
+                    cross_thread_rules=cross_thread_rules,
+                    base_evidence=evidence,
+                )
+                admission_signals = None
             similarity_evidence = weak_candidate.evidence if weak_candidate is not None else evidence
             if similarity_evidence is None and weak_candidate is None:
                 continue
@@ -3005,12 +3278,13 @@ def _build_cross_thread_candidate_rows_with_stats(
             ):
                 filtered_low_value_pair_count += 1
                 continue
-            admission_signals = _pair_signals(
-                source,
-                target,
-                recurrence_context=recurrence_context,
-                token_dictionary_signals=token_dictionary_signals,
-            )
+            if admission_signals is None:
+                admission_signals = _pair_signals(
+                    source,
+                    target,
+                    recurrence_context=recurrence_context,
+                    token_dictionary_signals=token_dictionary_signals,
+                )
             admission_filter_reason = _topic_summary_admission_filter_reason(
                 source,
                 target,
@@ -3023,6 +3297,18 @@ def _build_cross_thread_candidate_rows_with_stats(
                 topic_summary_admission_filter_reasons[admission_filter_reason] += 1
                 continue
             if similarity_evidence is not None and similarity_evidence.score >= min_score_rounded:
+                if topic_summary_mode:
+                    pair_signals = _signals_with_local_context_delta(
+                        pair_signals,
+                        source=source,
+                        target=target,
+                        context=recurrence_context,
+                        similarity_cache=similarity_cache,
+                    )
+                    similarity_evidence = _evidence_with_local_context_delta(
+                        similarity_evidence,
+                        pair_signals.local_context_delta,
+                    )
                 ranked_similarity.append((target, similarity_evidence))
             elif weak_candidate is not None:
                 ranked_weak.append(

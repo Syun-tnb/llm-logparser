@@ -3740,6 +3740,80 @@ def test_topic_summary_distinctive_cjk_token_boosts_motif_recurrence(
     )
 
 
+def test_topic_summary_scoring_reuses_precomputed_unit_features(
+    tmp_path: Path,
+    monkeypatch,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-a",
+        segment_id="seg-a",
+        title="ETF investment strategy",
+        summary="Discuss ETF allocation and dollar-cost averaging strategy.",
+        keywords=["ETF", "dollar-cost averaging", "investment strategy"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="summary-b",
+        segment_id="seg-b",
+        title="ETF investment strategy update",
+        summary="Compare ETF allocation and dollar-cost averaging cadence.",
+        keywords=["ETF", "dollar-cost averaging", "investment strategy"],
+        ts=200,
+    )
+    cross_thread_rules = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
+    units, _stats = cross_thread_module._topic_summary_units(
+        root,
+        cross_thread_rules=cross_thread_rules,
+    )
+    recurrence_context = cross_thread_module._build_recurrence_instrumentation_context(
+        root,
+        units,
+    )
+    signals = cross_thread_module._pair_signals(
+        units[0],
+        units[1],
+        recurrence_context=recurrence_context,
+        compute_local_context_delta=False,
+    )
+
+    def fail_recompute(*_args, **_kwargs):
+        raise AssertionError("topic-summary scoring feature was recomputed")
+
+    monkeypatch.setattr(
+        cross_thread_module,
+        "_topic_summary_semantic_tokens",
+        fail_recompute,
+    )
+    monkeypatch.setattr(
+        cross_thread_module,
+        "_top_topic_summary_keyphrases",
+        fail_recompute,
+    )
+    monkeypatch.setattr(
+        cross_thread_module,
+        "_topic_summary_token_profile_from_values",
+        fail_recompute,
+    )
+
+    score, reason_codes, has_strong_signal = (
+        cross_thread_module._topic_summary_score_and_reasons(
+            units[0],
+            units[1],
+            signals,
+            cross_thread_rules=cross_thread_rules,
+        )
+    )
+
+    assert score >= 0.7
+    assert has_strong_signal
+    assert "topic_summary_keyword_overlap_high" in reason_codes
+
+
 def test_cross_thread_candidate_auto_falls_back_to_semantic_topics_when_summaries_absent(
     tmp_path: Path,
 ):
