@@ -113,6 +113,7 @@ _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset(
         "chat",
         "check",
         "company",
+        "conversation",
         "data",
         "daily",
         "date",
@@ -124,19 +125,34 @@ _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset(
         "model",
         "models",
         "month",
+        "noting",
         "open",
         "page",
         "request",
         "search",
         "shared",
+        "speaker",
+        "speakers",
+        "suggests",
         "system",
         "time",
         "view",
         "viewing",
         "web",
+        "while",
         "year",
         "www",
         "w",
+        "これは",
+        "これはね",
+        "さん",
+        "して",
+        "シュン",
+        "シュンさん",
+        "その",
+        "って",
+        "うん",
+        "わたし",
         "あはは",
         "あはははは",
         "おはようございます",
@@ -169,6 +185,26 @@ _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS = frozenset(
         "ux",
         "yaml",
     }
+)
+_TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKENS = frozenset(
+    {
+        "raina",
+        "reina",
+        "reyna",
+        "shigure",
+        "shizuku",
+        "シグレ",
+        "シズク",
+        "レイナ",
+    }
+)
+_TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKEN_KEYS = frozenset(
+    re.sub(
+        r"[^a-z0-9一-龯ぁ-んァ-ヶー]+",
+        "",
+        " ".join(value.casefold().split()),
+    )
+    for value in _TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKENS
 )
 _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
     {
@@ -2076,6 +2112,7 @@ def _topic_summary_semantic_token_counts(
     text: str,
     *,
     cross_thread_rules: CrossThreadLexicalRules,
+    include_cjk_ngrams: bool = True,
 ) -> Counter[str]:
     counts: Counter[str] = Counter()
     for token in _token_list(text):
@@ -2085,7 +2122,7 @@ def _topic_summary_semantic_token_counts(
         if _is_topic_summary_generic_scoring_token(normalized, cross_thread_rules):
             continue
         counts[normalized] += 1
-        if _has_cjk(normalized) and len(normalized) >= 4:
+        if include_cjk_ngrams and _has_cjk(normalized) and len(normalized) >= 4:
             for size in (2, 3):
                 for index in range(0, len(normalized) - size + 1):
                     ngram = normalized[index : index + size]
@@ -2431,6 +2468,13 @@ def _has_cjk(token: str) -> bool:
     return bool(re.search(r"[一-龯ぁ-んァ-ヶー]", token))
 
 
+def _is_topic_summary_persona_distinctive_token(token: str) -> bool:
+    return (
+        _admission_anchor_token_key(token)
+        in _TOPIC_SUMMARY_PERSONA_DISTINCTIVE_TOKEN_KEYS
+    )
+
+
 def _topic_summary_generic_admission_anchor_tokens(
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> tuple[str, ...]:
@@ -2548,6 +2592,7 @@ def _topic_summary_token_profile_from_values(
         for token, count in _topic_summary_semantic_token_counts(
             text,
             cross_thread_rules=cross_thread_rules,
+            include_cjk_ngrams=False,
         ).items():
             if not _is_topic_summary_distinctive_scoring_token(
                 token,
@@ -2582,10 +2627,30 @@ def _topic_summary_distinctive_token_boost(
     if not shared_tokens:
         return 0.0
 
-    boost = 0.0
+    eligible_tokens: list[tuple[str, dict[str, int], dict[str, int]]] = []
     for token in shared_tokens:
         source_locations = source_profile[token]
         target_locations = target_profile[token]
+        if not _has_distinctive_strong_location_evidence(
+            token,
+            source_locations,
+            target_locations,
+        ):
+            continue
+        eligible_tokens.append((token, source_locations, target_locations))
+
+    if not eligible_tokens:
+        return 0.0
+    non_persona_tokens = [
+        item
+        for item in eligible_tokens
+        if not _is_topic_summary_persona_distinctive_token(item[0])
+    ]
+    if not non_persona_tokens:
+        return 0.0
+
+    boost = 0.0
+    for token, source_locations, target_locations in non_persona_tokens:
         location_score = 0.0
         if "title" in source_locations and "title" in target_locations:
             location_score += 0.04
@@ -2612,6 +2677,27 @@ def _topic_summary_distinctive_token_boost(
     if boost > 0:
         return _TOPIC_SUMMARY_DISTINCTIVE_TOKEN_SCORE
     return 0.0
+
+
+def _has_distinctive_strong_location_evidence(
+    token: str,
+    source_locations: dict[str, int],
+    target_locations: dict[str, int],
+) -> bool:
+    source_has_keyword = "keyword" in source_locations
+    target_has_keyword = "keyword" in target_locations
+    is_short_cjk = _has_cjk(token) and len(_admission_anchor_token_key(token)) == 2
+    if source_has_keyword and target_has_keyword:
+        return True
+    if is_short_cjk:
+        return False
+    return (
+        source_has_keyword
+        and ("title" in target_locations or "summary" in target_locations)
+    ) or (
+        target_has_keyword
+        and ("title" in source_locations or "summary" in source_locations)
+    )
 
 
 def _non_generic_strong_anchor_overlap(

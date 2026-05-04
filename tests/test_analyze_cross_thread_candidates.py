@@ -3735,6 +3735,160 @@ def test_topic_summary_distinctive_cjk_token_boosts_motif_recurrence(
 
     assert row["score"] >= 0.45
     assert (
+        "topic_summary_distinctive_token_overlap"
+        in row["evidence"]["reason_codes"]
+        or "topic_summary_distinctive_token_overlap_strong"
+        in row["evidence"]["reason_codes"]
+    )
+
+
+def test_topic_summary_distinctive_boost_ignores_conversational_address_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="address-a",
+        segment_id="seg-address-a",
+        title="うん、シュンさん。",
+        summary="うん、シュンさん。わたしはその説明を続ける。",
+        keywords=["シュンさん", "うん", "わたし"],
+        source="heuristic",
+        confidence=0.3,
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="address-b",
+        segment_id="seg-address-b",
+        title="ううん、シュンさん。",
+        summary="ううん、シュンさん。これはね、別の話を説明する。",
+        keywords=["シュンさん", "うん", "これはね"],
+        source="heuristic",
+        confidence=0.3,
+        ts=200,
+    )
+    cross_thread_rules = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
+    units, _stats = cross_thread_module._topic_summary_units(
+        root,
+        cross_thread_rules=cross_thread_rules,
+    )
+    recurrence_context = cross_thread_module._build_recurrence_instrumentation_context(
+        root,
+        units,
+    )
+    signals = cross_thread_module._pair_signals(
+        units[0],
+        units[1],
+        recurrence_context=recurrence_context,
+        compute_local_context_delta=False,
+    )
+
+    _score, reason_codes, _has_strong_signal = (
+        cross_thread_module._topic_summary_score_and_reasons(
+            units[0],
+            units[1],
+            signals,
+            cross_thread_rules=cross_thread_rules,
+        )
+    )
+
+    assert "topic_summary_distinctive_token_overlap_strong" not in reason_codes
+    assert "topic_summary_distinctive_token_overlap" not in reason_codes
+
+
+def test_topic_summary_distinctive_boost_ignores_generated_cjk_ngrams(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="phrase-a",
+        segment_id="seg-phrase-a",
+        title="GPU上の居間とちゃぶ台の物語",
+        summary="レイナがちゃぶ台のある居間について話す。",
+        keywords=["GPU", "居間"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="phrase-b",
+        segment_id="seg-phrase-b",
+        title="ちゃぶ台クラッシュ",
+        summary="ちゃぶ台がクラッシュする短い話。",
+        keywords=["クラッシュ", "物語"],
+        ts=200,
+    )
+    cross_thread_rules = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE
+    )
+    units, _stats = cross_thread_module._topic_summary_units(
+        root,
+        cross_thread_rules=cross_thread_rules,
+    )
+    recurrence_context = cross_thread_module._build_recurrence_instrumentation_context(
+        root,
+        units,
+    )
+    signals = cross_thread_module._pair_signals(
+        units[0],
+        units[1],
+        recurrence_context=recurrence_context,
+        compute_local_context_delta=False,
+    )
+
+    _score, reason_codes, _has_strong_signal = (
+        cross_thread_module._topic_summary_score_and_reasons(
+            units[0],
+            units[1],
+            signals,
+            cross_thread_rules=cross_thread_rules,
+        )
+    )
+
+    assert "topic_summary_distinctive_token_overlap_strong" not in reason_codes
+    assert "topic_summary_distinctive_token_overlap" not in reason_codes
+
+
+def test_topic_summary_distinctive_boost_preserves_dalle_whole_token_match(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="dalle-a",
+        segment_id="seg-dalle-a",
+        title="DALL-E character prompt repair",
+        summary="DALL-E prompt repair for character consistency.",
+        keywords=["DALL-E", "character prompt", "repair"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="dalle-b",
+        segment_id="seg-dalle-b",
+        title="DALL-E prompt limitation",
+        summary="DALL-E prompt limitations require character repair.",
+        keywords=["DALL-E", "prompt limitation", "repair"],
+        ts=200,
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    row = _row_for_topic_pair(
+        rows,
+        "dalle-a:seg-dalle-a",
+        "dalle-b:seg-dalle-b",
+    )
+
+    assert row["score"] >= 0.45
+    assert (
         "topic_summary_distinctive_token_overlap_strong"
         in row["evidence"]["reason_codes"]
     )
