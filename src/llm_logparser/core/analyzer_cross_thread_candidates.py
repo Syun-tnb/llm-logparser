@@ -98,6 +98,8 @@ _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_MEDIUM_SCORE = 0.14
 _TOPIC_SUMMARY_KEYPHRASE_OVERLAP_LOW_SCORE = 0.07
 _TOPIC_SUMMARY_KEYWORD_OVERLAP_HIGH_SCORE = 0.3
 _TOPIC_SUMMARY_KEYWORD_OVERLAP_LOW_SCORE = 0.16
+_TOPIC_SUMMARY_DISTINCTIVE_TOKEN_SCORE = 0.08
+_TOPIC_SUMMARY_DISTINCTIVE_TOKEN_STRONG_SCORE = 0.14
 _TOPIC_SUMMARY_LOCAL_LLM_PAIR_SCORE = 0.08
 _TOPIC_SUMMARY_HEURISTIC_PENALTY = 0.04
 _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_HIGH_SCORE = 0.03
@@ -112,10 +114,12 @@ _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset(
         "check",
         "company",
         "data",
+        "daily",
         "date",
         "day",
         "entity",
         "error",
+        "greeting",
         "link",
         "model",
         "models",
@@ -1969,7 +1973,7 @@ def _topic_summary_semantic_tokens(
     tokens: list[str] = []
     for token in _token_list(text):
         normalized = _normalize_anchor_token(token)
-        if len(normalized) < 3:
+        if len(normalized) < 3 and not _has_cjk(normalized):
             continue
         if _is_topic_summary_generic_scoring_token(normalized, cross_thread_rules):
             continue
@@ -1981,6 +1985,31 @@ def _topic_summary_semantic_tokens(
                     for index in range(0, len(normalized) - size + 1)
                 )
     return tuple(dict.fromkeys(tokens))
+
+
+def _topic_summary_semantic_token_counts(
+    text: str,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for token in _token_list(text):
+        normalized = _normalize_anchor_token(token)
+        if len(normalized) < 3 and not _has_cjk(normalized):
+            continue
+        if _is_topic_summary_generic_scoring_token(normalized, cross_thread_rules):
+            continue
+        counts[normalized] += 1
+        if _has_cjk(normalized) and len(normalized) >= 4:
+            for size in (2, 3):
+                for index in range(0, len(normalized) - size + 1):
+                    ngram = normalized[index : index + size]
+                    if not _is_topic_summary_generic_scoring_token(
+                        ngram,
+                        cross_thread_rules,
+                    ):
+                        counts[ngram] += 1
+    return counts
 
 
 def _token_overlap_ratio(left: tuple[str, ...], right: tuple[str, ...]) -> float:
@@ -2075,6 +2104,18 @@ def _topic_summary_score_and_reasons(
         reason_codes.append("shared_keywords_high")
     elif len(signals.shared_keywords) == 1:
         reason_codes.append("shared_keywords_low")
+
+    distinctive_boost = _topic_summary_distinctive_token_boost(
+        source,
+        target,
+        cross_thread_rules=cross_thread_rules,
+    )
+    if distinctive_boost >= _TOPIC_SUMMARY_DISTINCTIVE_TOKEN_STRONG_SCORE:
+        score += distinctive_boost
+        reason_codes.append("topic_summary_distinctive_token_overlap_strong")
+    elif distinctive_boost > 0:
+        score += distinctive_boost
+        reason_codes.append("topic_summary_distinctive_token_overlap")
 
     if (
         signals.shared_dictionary_token_mass >= 1.5
@@ -2215,6 +2256,10 @@ def _admission_anchor_token_key(token: str) -> str:
     return re.sub(r"[^a-z0-9一-龯ぁ-んァ-ヶー]+", "", normalized)
 
 
+def _has_cjk(token: str) -> bool:
+    return bool(re.search(r"[一-龯ぁ-んァ-ヶー]", token))
+
+
 def _topic_summary_generic_admission_anchor_tokens(
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> tuple[str, ...]:
@@ -2279,9 +2324,106 @@ def _is_topic_summary_generic_scoring_token(
         return True
     if key in _TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS:
         return True
-    if len(key) <= 2 and key not in _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS:
+    if (
+        len(key) <= 2
+        and not _has_cjk(key)
+        and key not in _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS
+    ):
         return True
     return False
+
+
+def _is_topic_summary_distinctive_scoring_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    key = _admission_anchor_token_key(token)
+    if _is_topic_summary_generic_scoring_token(token, cross_thread_rules):
+        return False
+    if _has_cjk(key):
+        return len(key) >= 2
+    if key in _TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS:
+        return True
+    if any(char.isdigit() for char in key):
+        return len(key) >= 3
+    return len(key) >= 5
+
+
+def _topic_summary_token_profile(
+    unit: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> dict[str, dict[str, int]]:
+    profile: dict[str, dict[str, int]] = {}
+
+    def add(location: str, text: str) -> None:
+        for token, count in _topic_summary_semantic_token_counts(
+            text,
+            cross_thread_rules=cross_thread_rules,
+        ).items():
+            if not _is_topic_summary_distinctive_scoring_token(
+                token,
+                cross_thread_rules,
+            ):
+                continue
+            bucket = profile.setdefault(token, {})
+            bucket[location] = bucket.get(location, 0) + count
+
+    add("title", unit.topic_label or "")
+    add("summary", unit.summary_text or unit.excerpt)
+    for keyword in unit.keywords:
+        add("keyword", keyword)
+    return profile
+
+
+def _topic_summary_distinctive_token_boost(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> float:
+    source_profile = _topic_summary_token_profile(
+        source,
+        cross_thread_rules=cross_thread_rules,
+    )
+    target_profile = _topic_summary_token_profile(
+        target,
+        cross_thread_rules=cross_thread_rules,
+    )
+    shared_tokens = set(source_profile) & set(target_profile)
+    if not shared_tokens:
+        return 0.0
+
+    boost = 0.0
+    for token in shared_tokens:
+        source_locations = source_profile[token]
+        target_locations = target_profile[token]
+        location_score = 0.0
+        if "title" in source_locations and "title" in target_locations:
+            location_score += 0.04
+        if (
+            {"title", "summary"} <= set(source_locations)
+            or {"title", "summary"} <= set(target_locations)
+        ):
+            location_score += 0.03
+        if "summary" in source_locations and "summary" in target_locations:
+            location_score += 0.03
+        if "keyword" in source_locations and "keyword" in target_locations:
+            location_score += 0.03
+        total_count = sum(source_locations.values()) + sum(target_locations.values())
+        if total_count >= 4:
+            location_score += 0.03
+        elif total_count >= 3:
+            location_score += 0.015
+        if _has_cjk(token):
+            location_score += 0.02
+        boost += min(0.08, location_score)
+
+    if boost >= 0.14:
+        return _TOPIC_SUMMARY_DISTINCTIVE_TOKEN_STRONG_SCORE
+    if boost > 0:
+        return _TOPIC_SUMMARY_DISTINCTIVE_TOKEN_SCORE
+    return 0.0
 
 
 def _non_generic_strong_anchor_overlap(

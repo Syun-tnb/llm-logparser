@@ -3640,6 +3640,10 @@ def test_topic_summary_keyword_scoring_ignores_generic_overlap(
     assert row["score"] < 0.45
     assert "topic_summary_keyword_overlap_high" not in row["evidence"]["reason_codes"]
     assert "topic_summary_title_overlap_high" not in row["evidence"]["reason_codes"]
+    assert (
+        "topic_summary_distinctive_token_overlap_strong"
+        not in row["evidence"]["reason_codes"]
+    )
 
 
 def test_topic_summary_keyword_scoring_preserves_specific_overlap(
@@ -3686,6 +3690,54 @@ def test_topic_summary_keyword_scoring_preserves_specific_overlap(
     assert row["score"] >= 0.7
     assert "topic_summary_keyword_overlap_high" in row["evidence"]["reason_codes"]
     assert "topic_summary_title_overlap_high" in row["evidence"]["reason_codes"]
+
+
+def test_topic_summary_distinctive_cjk_token_boosts_motif_recurrence(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="miso-a",
+        segment_id="seg-miso-a",
+        title="AIが味噌になる話",
+        summary=(
+            "GPT-4oが論理的なAIから人間味のある味噌へ発酵していく、"
+            "味噌モチーフの会話。"
+        ),
+        keywords=["AI", "味噌", "発酵", "GPT-4o"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="miso-b",
+        segment_id="seg-miso-b",
+        title="AI型感染味噌の拡散",
+        summary=(
+            "AI型の高次元感染味噌がちゃぶ台から発酵して広がるという、"
+            "同じ味噌モチーフの冗談を続ける。"
+        ),
+        keywords=["AI", "味噌", "発酵", "感染"],
+        ts=200,
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    row = _row_for_topic_pair(
+        rows,
+        "miso-a:seg-miso-a",
+        "miso-b:seg-miso-b",
+    )
+
+    assert row["score"] >= 0.45
+    assert (
+        "topic_summary_distinctive_token_overlap_strong"
+        in row["evidence"]["reason_codes"]
+    )
 
 
 def test_cross_thread_candidate_auto_falls_back_to_semantic_topics_when_summaries_absent(
