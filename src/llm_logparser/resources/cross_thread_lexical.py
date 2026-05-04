@@ -73,9 +73,11 @@ class CrossThreadTopicSummaryScoringRules:
 @dataclass(frozen=True)
 class CrossThreadLexicalResourceLayer:
     kind: str
-    locale: str
+    locale: str | None
     path: str
     sha1: str
+    owner_scope: str | None = None
+    schema_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -185,6 +187,10 @@ def _read_payload(path: Path) -> dict[str, Any]:
     return payload
 
 
+class CrossThreadLexicalRulesError(RuntimeError):
+    pass
+
+
 def _resource_layer(locale: str, path: Path) -> CrossThreadLexicalResourceLayer:
     return CrossThreadLexicalResourceLayer(
         kind="built_in_resource",
@@ -192,6 +198,91 @@ def _resource_layer(locale: str, path: Path) -> CrossThreadLexicalResourceLayer:
         path=str(path.relative_to(_PACKAGE_DIR)),
         sha1=hashlib.sha1(path.read_bytes()).hexdigest(),
     )
+
+
+def _safe_external_path(path: Path) -> str:
+    resolved = path.expanduser().resolve()
+    try:
+        return str(resolved.relative_to(Path.cwd().resolve()))
+    except ValueError:
+        pass
+    try:
+        return str(resolved.relative_to(Path.home().resolve()))
+    except ValueError:
+        pass
+    return path.name
+
+
+def _reviewed_resource_layer(
+    *,
+    kind: str,
+    path: Path,
+    payload: dict[str, Any],
+) -> CrossThreadLexicalResourceLayer:
+    return CrossThreadLexicalResourceLayer(
+        kind=kind,
+        locale=None,
+        path=_safe_external_path(path),
+        sha1=hashlib.sha1(path.expanduser().read_bytes()).hexdigest(),
+        owner_scope=str(payload.get("owner_scope", "")),
+        schema_version=str(payload.get("schema_version", "")),
+    )
+
+
+def _read_reviewed_payload(
+    path: Path | str,
+    *,
+    expected_owner_scope: str,
+) -> dict[str, Any]:
+    resolved = Path(path).expanduser()
+    if not resolved.exists():
+        raise CrossThreadLexicalRulesError(
+            f"reviewed {expected_owner_scope} lexical rules file not found: {path}"
+        )
+    if not resolved.is_file():
+        raise CrossThreadLexicalRulesError(
+            f"reviewed {expected_owner_scope} lexical rules path is not a file: {path}"
+        )
+    payload = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise CrossThreadLexicalRulesError(
+            f"reviewed {expected_owner_scope} lexical rules must contain a mapping: {path}"
+        )
+    allowed_top_level = {"schema_version", "owner_scope", "rules"}
+    unknown_top_level = sorted(set(payload) - allowed_top_level)
+    if unknown_top_level:
+        raise CrossThreadLexicalRulesError(
+            "reviewed "
+            f"{expected_owner_scope} lexical rules contain unsupported top-level "
+            f"field(s): {', '.join(unknown_top_level)}"
+        )
+    schema_version = payload.get("schema_version")
+    if schema_version != "0.1":
+        raise CrossThreadLexicalRulesError(
+            f"reviewed {expected_owner_scope} lexical rules schema_version must be 0.1"
+        )
+    owner_scope = payload.get("owner_scope")
+    if owner_scope != expected_owner_scope:
+        raise CrossThreadLexicalRulesError(
+            "reviewed "
+            f"{expected_owner_scope} lexical rules owner_scope must be "
+            f"{expected_owner_scope!r}"
+        )
+    rules = payload.get("rules", {})
+    if not isinstance(rules, dict):
+        raise CrossThreadLexicalRulesError(
+            f"reviewed {expected_owner_scope} lexical rules 'rules' must be a mapping"
+        )
+    return payload
+
+
+def _reviewed_rules_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    rules = payload.get("rules", {})
+    if not isinstance(rules, dict):
+        return {}
+    if "cross_thread" in rules:
+        return rules
+    return {"cross_thread": rules}
 
 
 def _normalized_unique_sequence(values: list[str]) -> tuple[str, ...]:
@@ -222,14 +313,44 @@ def _merged_list(payloads: list[dict[str, Any]], *keys: str) -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=None)
-def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLexicalRules:
+def load_cross_thread_lexical_rules(
+    locale: str | None = None,
+    project_rules_path: Path | str | None = None,
+    user_rules_path: Path | str | None = None,
+) -> CrossThreadLexicalRules:
     locales = _locale_chain(locale)
     resource_paths = tuple(_RESOURCE_DIR / f"{resolved_locale}.yaml" for resolved_locale in locales)
     payloads = [_read_payload(path) for path in resource_paths]
-    layers = tuple(
+    layers: list[CrossThreadLexicalResourceLayer] = list(
         _resource_layer(resolved_locale, path)
         for resolved_locale, path in zip(locales, resource_paths)
     )
+    if project_rules_path is not None:
+        project_payload = _read_reviewed_payload(
+            project_rules_path,
+            expected_owner_scope="project",
+        )
+        payloads.append(_reviewed_rules_payload(project_payload))
+        layers.append(
+            _reviewed_resource_layer(
+                kind="reviewed_project_rules",
+                path=Path(project_rules_path),
+                payload=project_payload,
+            )
+        )
+    if user_rules_path is not None:
+        user_payload = _read_reviewed_payload(
+            user_rules_path,
+            expected_owner_scope="user",
+        )
+        payloads.append(_reviewed_rules_payload(user_payload))
+        layers.append(
+            _reviewed_resource_layer(
+                kind="reviewed_user_rules",
+                path=Path(user_rules_path),
+                payload=user_payload,
+            )
+        )
     prompt_exact_markers = _merged_list(payloads, "residue", "prompt_exact_markers")
     system_tool_exact_markers = _merged_list(payloads, "residue", "system_tool_exact_markers")
     exact_markers = _normalized_unique_sequence(
@@ -243,7 +364,7 @@ def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLex
             requested_locale=_normalize_locale(locale),
             resolved_locale=locales[0],
             locale_chain=locales,
-            layers=layers,
+            layers=tuple(layers),
         ),
         residue=CrossThreadResidueRules(
             prompt_exact_markers=prompt_exact_markers,
@@ -414,13 +535,49 @@ def cross_thread_lexical_rules_diagnostics(
         "layers": [
             {
                 "kind": layer.kind,
-                "locale": layer.locale,
                 "path": layer.path,
                 "sha1": layer.sha1,
+                **({"locale": layer.locale} if layer.locale is not None else {}),
+                **(
+                    {"owner_scope": layer.owner_scope}
+                    if layer.owner_scope is not None
+                    else {}
+                ),
+                **(
+                    {"schema_version": layer.schema_version}
+                    if layer.schema_version is not None
+                    else {}
+                ),
             }
             for layer in rules.provenance.layers
         ],
-        "project_rules": {"status": "not_implemented"},
-        "user_rules": {"status": "not_implemented"},
+        "project_rules": _reviewed_rules_status(
+            rules,
+            kind="reviewed_project_rules",
+        ),
+        "user_rules": _reviewed_rules_status(
+            rules,
+            kind="reviewed_user_rules",
+        ),
         "category_counts": category_counts,
+    }
+
+
+def _reviewed_rules_status(
+    rules: CrossThreadLexicalRules,
+    *,
+    kind: str,
+) -> dict[str, str]:
+    layer = next(
+        (item for item in rules.provenance.layers if item.kind == kind),
+        None,
+    )
+    if layer is None:
+        return {"status": "not_provided"}
+    return {
+        "status": "loaded",
+        "path": layer.path,
+        "sha1": layer.sha1,
+        "owner_scope": layer.owner_scope or "",
+        "schema_version": layer.schema_version or "",
     }

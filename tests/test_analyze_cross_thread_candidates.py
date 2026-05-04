@@ -7,6 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from llm_logparser.cli.cli import main
 from llm_logparser.core import analyzer_cross_thread_candidates as cross_thread_module
 from llm_logparser.core.analyzer_token_dictionary import (
@@ -27,6 +29,7 @@ from llm_logparser.core.schema_validation import (
 )
 from llm_logparser.resources.cross_thread_lexical import (
     DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    CrossThreadLexicalRulesError,
     CrossThreadTopicSummaryScoringRules,
     cross_thread_lexical_rules_diagnostics,
     load_cross_thread_lexical_rules,
@@ -43,6 +46,31 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _write_reviewed_lexical_rules(
+    path: Path,
+    *,
+    owner_scope: str,
+    scoring: dict[str, list[str]],
+) -> Path:
+    lines = [
+        'schema_version: "0.1"',
+        f'owner_scope: "{owner_scope}"',
+        "rules:",
+        "  topic_summary:",
+        "    scoring:",
+    ]
+    for key, values in scoring.items():
+        lines.append(f"      {key}:")
+        if values:
+            for value in values:
+                lines.append(f"        - {json.dumps(value, ensure_ascii=False)}")
+        else:
+            lines.append("        []")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def _representative_span(
@@ -1454,8 +1482,8 @@ def test_cross_thread_lexical_rule_diagnostics_are_summary_safe():
     assert diagnostics["requested_locale"] == "ja-Kansai"
     assert diagnostics["resolved_locale"] == "ja-Kansai"
     assert diagnostics["locale_chain"] == ["ja-Kansai", "ja-JP", "en-US"]
-    assert diagnostics["project_rules"] == {"status": "not_implemented"}
-    assert diagnostics["user_rules"] == {"status": "not_implemented"}
+    assert diagnostics["project_rules"] == {"status": "not_provided"}
+    assert diagnostics["user_rules"] == {"status": "not_provided"}
     assert diagnostics["layers"]
     for layer in diagnostics["layers"]:
         assert layer["kind"] == "built_in_resource"
@@ -1486,6 +1514,87 @@ def test_cross_thread_lexical_rule_diagnostics_are_summary_safe():
     assert "reina" not in serialized.casefold()
     assert "シュン" not in serialized
     assert "味噌" not in serialized
+
+
+def test_cross_thread_reviewed_lexical_rules_merge_above_built_ins(tmp_path: Path):
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={
+            "generic_tokens": ["projectnoise"],
+            "short_specific_tokens": ["xy"],
+        },
+    )
+    user_path = _write_reviewed_lexical_rules(
+        tmp_path / "user-rules.yaml",
+        owner_scope="user",
+        scoring={
+            "generic_tokens": ["usernoise", "projectnoise"],
+            "short_specific_tokens": ["zz"],
+            "persona_weak_tokens": ["TestPersona"],
+        },
+    )
+
+    rules = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        project_rules_path=project_path,
+        user_rules_path=user_path,
+    )
+
+    assert "link" in rules.topic_summary_scoring.generic_tokens
+    assert "projectnoise" in rules.topic_summary_scoring.generic_tokens
+    assert "usernoise" in rules.topic_summary_scoring.generic_tokens
+    assert rules.topic_summary_scoring.generic_tokens.count("projectnoise") == 1
+    assert "xy" in rules.topic_summary_scoring.short_specific_tokens
+    assert "zz" in rules.topic_summary_scoring.short_specific_tokens
+    assert "testpersona" in rules.topic_summary_scoring.persona_weak_tokens
+
+    diagnostics = cross_thread_lexical_rules_diagnostics(rules)
+    assert diagnostics["project_rules"]["status"] == "loaded"
+    assert diagnostics["project_rules"]["owner_scope"] == "project"
+    assert diagnostics["user_rules"]["status"] == "loaded"
+    assert diagnostics["user_rules"]["owner_scope"] == "user"
+    reviewed_layers = [
+        layer for layer in diagnostics["layers"] if layer["kind"].startswith("reviewed_")
+    ]
+    assert [layer["kind"] for layer in reviewed_layers] == [
+        "reviewed_project_rules",
+        "reviewed_user_rules",
+    ]
+    assert all(not Path(layer["path"]).is_absolute() for layer in reviewed_layers)
+    assert all(re.fullmatch(r"[0-9a-f]{40}", layer["sha1"]) for layer in reviewed_layers)
+    serialized = json.dumps(diagnostics, ensure_ascii=False)
+    assert "projectnoise" not in serialized
+    assert "usernoise" not in serialized
+    assert "TestPersona" not in serialized
+
+
+def test_cross_thread_reviewed_lexical_rule_validation_fails_clearly(tmp_path: Path):
+    missing = tmp_path / "missing.yaml"
+    with pytest.raises(CrossThreadLexicalRulesError, match="not found"):
+        load_cross_thread_lexical_rules(
+            DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+            project_rules_path=missing,
+        )
+
+    malformed = tmp_path / "malformed.yaml"
+    malformed.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(CrossThreadLexicalRulesError, match="must contain a mapping"):
+        load_cross_thread_lexical_rules(
+            DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+            project_rules_path=malformed,
+        )
+
+    wrong_scope = _write_reviewed_lexical_rules(
+        tmp_path / "wrong-scope.yaml",
+        owner_scope="user",
+        scoring={"generic_tokens": ["x"]},
+    )
+    with pytest.raises(CrossThreadLexicalRulesError, match="owner_scope"):
+        load_cross_thread_lexical_rules(
+            DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+            project_rules_path=wrong_scope,
+        )
 
 
 def test_topic_summary_generic_anchor_fallback_supports_legacy_rules():
@@ -3208,9 +3317,46 @@ def test_cross_thread_candidate_summary_reports_duplicate_pairs_removed(
     assert summary["duplicate_pairs_removed"] == 1
     assert "lexical_rules" in summary
     assert summary["lexical_rules"]["rule_family"] == "cross_thread"
-    assert summary["lexical_rules"]["project_rules"] == {"status": "not_implemented"}
-    assert summary["lexical_rules"]["user_rules"] == {"status": "not_implemented"}
+    assert summary["lexical_rules"]["project_rules"] == {"status": "not_provided"}
+    assert summary["lexical_rules"]["user_rules"] == {"status": "not_provided"}
     assert "lexical_rules" not in rows[0]
+
+
+def test_cross_thread_candidate_summary_reports_reviewed_lexical_rule_layers(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"generic_tokens": ["projectonly"]},
+    )
+    user_path = _write_reviewed_lexical_rules(
+        tmp_path / "user-rules.yaml",
+        owner_scope="user",
+        scoring={"generic_tokens": ["useronly"]},
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        project_lexical_rules=project_path,
+        user_lexical_rules=user_path,
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+    lexical = summary["lexical_rules"]
+
+    assert lexical["project_rules"]["status"] == "loaded"
+    assert lexical["user_rules"]["status"] == "loaded"
+    assert lexical["project_rules"]["owner_scope"] == "project"
+    assert lexical["user_rules"]["owner_scope"] == "user"
+    assert any(layer["kind"] == "reviewed_project_rules" for layer in lexical["layers"])
+    assert any(layer["kind"] == "reviewed_user_rules" for layer in lexical["layers"])
+    serialized = json.dumps(lexical, ensure_ascii=False)
+    assert "projectonly" not in serialized
+    assert "useronly" not in serialized
+    assert all("lexical_rules" not in row for row in rows)
 
 
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):
@@ -3765,6 +3911,36 @@ def test_topic_summary_scoring_uses_resource_loaded_generic_and_short_specific_t
     )
 
 
+def test_topic_summary_scoring_uses_reviewed_generic_and_short_specific_tokens(
+    tmp_path: Path,
+):
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={
+            "generic_tokens": ["rareprojectword"],
+            "short_specific_tokens": ["xy"],
+        },
+    )
+    rules = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        project_rules_path=project_path,
+    )
+
+    assert cross_thread_module._is_topic_summary_generic_scoring_token(
+        "rareprojectword",
+        rules,
+    )
+    assert not cross_thread_module._is_topic_summary_generic_scoring_token(
+        "xy",
+        rules,
+    )
+    assert cross_thread_module._is_topic_summary_distinctive_scoring_token(
+        "xy",
+        rules,
+    )
+
+
 def test_topic_summary_scoring_missing_resource_fields_use_fallbacks():
     rules = _rules_with_topic_summary_scoring(
         generic_tokens=(),
@@ -3957,13 +4133,17 @@ def test_topic_summary_distinctive_boost_ignores_conversational_address_overlap(
         confidence=0.3,
         ts=200,
     )
-    cross_thread_rules = _rules_with_topic_summary_scoring(
-        generic_tokens=(
-            "うん",
-            "わたし",
-            "これはね",
-        ),
-        persona_weak_tokens=("シュンさん",),
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={
+            "generic_tokens": ["うん", "わたし", "これはね"],
+            "persona_weak_tokens": ["シュンさん"],
+        },
+    )
+    cross_thread_rules = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        project_rules_path=project_path,
     )
     units, _stats = cross_thread_module._topic_summary_units(
         root,

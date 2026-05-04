@@ -164,6 +164,8 @@ def test_analyze_cross_thread_candidates_help_mentions_experimental_sidecar(caps
     assert "cross-thread" in help_text
     assert "representative span" in help_text
     assert "--input" in help_text
+    assert "--project-lexical-rules" in help_text
+    assert "--user-lexical-rules" in help_text
     assert "--min-score" in help_text
     assert "--top-per-source" in help_text
     assert "--embedding-model" in help_text
