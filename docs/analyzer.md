@@ -913,7 +913,11 @@ deterministic and model-derived capabilities.
   policy loaded from the built-in cross-thread lexical resources, not from
   `l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such
   as `cite` and `turn0search*` are treated as non-semantic markers and cannot
-  admit topic-summary candidates by themselves.
+  admit topic-summary candidates by themselves. `summary.json` records compact
+  lexical-rule diagnostics for the resolved built-in resource layers, including
+  locale chain, package-relative resource paths, resource SHA1 hashes, and
+  category counts. It does not emit full token lists. Full resolved-policy export
+  and reviewed project/user rule loading are deferred.
   Topic-summary mode also uses a separate semantic scoring profile after
   admission: title overlap, summary keyphrase overlap, cleaned keyword-field
   overlap, and local-LLM summary provenance are weighted more heavily, while

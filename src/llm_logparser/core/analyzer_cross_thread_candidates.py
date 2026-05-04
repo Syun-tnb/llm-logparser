@@ -27,6 +27,7 @@ from .embedding_backend import create_embedding_backend
 from llm_logparser.resources.cross_thread_lexical import (
     CrossThreadLexicalRules,
     DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+    cross_thread_lexical_rules_diagnostics,
     load_cross_thread_lexical_rules,
 )
 from .schema_validation import (
@@ -3664,6 +3665,7 @@ def _summary(
     filtered_low_value_pair_count: int = 0,
     duplicate_pairs_removed: int = 0,
     topic_summary_admission_stats: _TopicSummaryAdmissionStats | None = None,
+    lexical_rules_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     reason_counts: Counter[str] = Counter()
     score_bands: Counter[str] = Counter()
@@ -3704,6 +3706,8 @@ def _summary(
             for band in ("high", "medium", "low")
         },
     }
+    if lexical_rules_diagnostics is not None:
+        summary["lexical_rules"] = lexical_rules_diagnostics
     summary["topic_summary_units"] = {
         "files_found": topic_summary_stats.files_found,
         "units_loaded": topic_summary_stats.units_loaded,
@@ -3794,6 +3798,9 @@ def write_cross_thread_candidates_artifact(
             topic_summary_admission_stats
             if unit_load_result.unit_source == "topic-summaries"
             else None
+        ),
+        lexical_rules_diagnostics=cross_thread_lexical_rules_diagnostics(
+            load_cross_thread_lexical_rules(locale)
         ),
     )
     write_json_artifact(summary_path, summary)

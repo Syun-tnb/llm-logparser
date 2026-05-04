@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from llm_logparser.core.schema_validation import (
 from llm_logparser.resources.cross_thread_lexical import (
     DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
     CrossThreadTopicSummaryScoringRules,
+    cross_thread_lexical_rules_diagnostics,
     load_cross_thread_lexical_rules,
 )
 
@@ -1441,6 +1443,49 @@ def test_cross_thread_lexical_rules_expose_topic_summary_generic_anchors():
         for pattern in rules.topic_summary_admission_generic_anchor_patterns
     )
     assert "reina" not in rules.topic_summary_admission_generic_anchor_tokens
+
+
+def test_cross_thread_lexical_rule_diagnostics_are_summary_safe():
+    rules = load_cross_thread_lexical_rules("ja-Kansai")
+    diagnostics = cross_thread_lexical_rules_diagnostics(rules)
+
+    assert diagnostics["rule_family"] == "cross_thread"
+    assert diagnostics["schema_version"] == "0.1"
+    assert diagnostics["requested_locale"] == "ja-Kansai"
+    assert diagnostics["resolved_locale"] == "ja-Kansai"
+    assert diagnostics["locale_chain"] == ["ja-Kansai", "ja-JP", "en-US"]
+    assert diagnostics["project_rules"] == {"status": "not_implemented"}
+    assert diagnostics["user_rules"] == {"status": "not_implemented"}
+    assert diagnostics["layers"]
+    for layer in diagnostics["layers"]:
+        assert layer["kind"] == "built_in_resource"
+        assert not Path(layer["path"]).is_absolute()
+        assert layer["path"].startswith("resources/cross_thread/")
+        assert re.fullmatch(r"[0-9a-f]{40}", layer["sha1"])
+
+    category_counts = diagnostics["category_counts"]
+    expected_categories = {
+        "topic_summary_admission.generic_anchor_tokens",
+        "topic_summary_admission.generic_anchor_patterns",
+        "topic_summary_scoring.generic_tokens",
+        "topic_summary_scoring.generic_patterns",
+        "topic_summary_scoring.short_specific_tokens",
+        "topic_summary_scoring.distinctive_allow_tokens",
+        "topic_summary_scoring.distinctive_block_tokens",
+        "topic_summary_scoring.weak_distinctive_tokens",
+        "topic_summary_scoring.persona_weak_tokens",
+        "topic_summary_scoring.tool_residue_patterns",
+        "topic_summary_scoring.citation_residue_patterns",
+        "topic_summary_scoring.ritual_title_phrases",
+    }
+    assert expected_categories <= set(category_counts)
+    assert category_counts["topic_summary_scoring.distinctive_allow_tokens"] == 0
+    assert category_counts["topic_summary_scoring.persona_weak_tokens"] == 0
+
+    serialized = json.dumps(diagnostics, ensure_ascii=False)
+    assert "reina" not in serialized.casefold()
+    assert "シュン" not in serialized
+    assert "味噌" not in serialized
 
 
 def test_topic_summary_generic_anchor_fallback_supports_legacy_rules():
@@ -3161,6 +3206,11 @@ def test_cross_thread_candidate_summary_reports_duplicate_pairs_removed(
     assert len(rows) == 1
     assert summary["candidate_link_count"] == 1
     assert summary["duplicate_pairs_removed"] == 1
+    assert "lexical_rules" in summary
+    assert summary["lexical_rules"]["rule_family"] == "cross_thread"
+    assert summary["lexical_rules"]["project_rules"] == {"status": "not_implemented"}
+    assert summary["lexical_rules"]["user_rules"] == {"status": "not_implemented"}
+    assert "lexical_rules" not in rows[0]
 
 
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -11,6 +12,7 @@ from llm_logparser.core.analyzer_common import normalize_analysis_text
 
 DEFAULT_CROSS_THREAD_LEXICAL_LOCALE = "en-US"
 _RESOURCE_DIR = Path(__file__).resolve().parent / "cross_thread"
+_PACKAGE_DIR = Path(__file__).resolve().parents[1]
 _LANGUAGE_DEFAULT_LOCALES = {
     "en": "en-US",
     "ja": "ja-JP",
@@ -69,8 +71,27 @@ class CrossThreadTopicSummaryScoringRules:
 
 
 @dataclass(frozen=True)
+class CrossThreadLexicalResourceLayer:
+    kind: str
+    locale: str
+    path: str
+    sha1: str
+
+
+@dataclass(frozen=True)
+class CrossThreadLexicalProvenance:
+    rule_family: str
+    schema_version: str
+    requested_locale: str
+    resolved_locale: str
+    locale_chain: tuple[str, ...]
+    layers: tuple[CrossThreadLexicalResourceLayer, ...]
+
+
+@dataclass(frozen=True)
 class CrossThreadLexicalRules:
     locale: str
+    provenance: CrossThreadLexicalProvenance
     residue: CrossThreadResidueRules
     task: CrossThreadTaskRules
     reflective: CrossThreadReflectiveRules
@@ -164,6 +185,15 @@ def _read_payload(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _resource_layer(locale: str, path: Path) -> CrossThreadLexicalResourceLayer:
+    return CrossThreadLexicalResourceLayer(
+        kind="built_in_resource",
+        locale=locale,
+        path=str(path.relative_to(_PACKAGE_DIR)),
+        sha1=hashlib.sha1(path.read_bytes()).hexdigest(),
+    )
+
+
 def _normalized_unique_sequence(values: list[str]) -> tuple[str, ...]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -194,10 +224,12 @@ def _merged_list(payloads: list[dict[str, Any]], *keys: str) -> tuple[str, ...]:
 @lru_cache(maxsize=None)
 def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLexicalRules:
     locales = _locale_chain(locale)
-    payloads = [
-        _read_payload(_RESOURCE_DIR / f"{resolved_locale}.yaml")
-        for resolved_locale in locales
-    ]
+    resource_paths = tuple(_RESOURCE_DIR / f"{resolved_locale}.yaml" for resolved_locale in locales)
+    payloads = [_read_payload(path) for path in resource_paths]
+    layers = tuple(
+        _resource_layer(resolved_locale, path)
+        for resolved_locale, path in zip(locales, resource_paths)
+    )
     prompt_exact_markers = _merged_list(payloads, "residue", "prompt_exact_markers")
     system_tool_exact_markers = _merged_list(payloads, "residue", "system_tool_exact_markers")
     exact_markers = _normalized_unique_sequence(
@@ -205,6 +237,14 @@ def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLex
     )
     return CrossThreadLexicalRules(
         locale=locales[0],
+        provenance=CrossThreadLexicalProvenance(
+            rule_family="cross_thread",
+            schema_version="0.1",
+            requested_locale=_normalize_locale(locale),
+            resolved_locale=locales[0],
+            locale_chain=locales,
+            layers=layers,
+        ),
         residue=CrossThreadResidueRules(
             prompt_exact_markers=prompt_exact_markers,
             system_tool_exact_markers=system_tool_exact_markers,
@@ -316,3 +356,71 @@ def load_cross_thread_lexical_rules(locale: str | None = None) -> CrossThreadLex
             ),
         ),
     )
+
+
+def cross_thread_lexical_rules_diagnostics(
+    rules: CrossThreadLexicalRules,
+) -> dict[str, Any]:
+    """Return summary-safe diagnostics for resolved cross-thread lexical rules.
+
+    This intentionally reports provenance and category counts only. Full lexical
+    policy export is deferred until reviewed project/user rule layers exist.
+    """
+
+    category_counts = {
+        "topic_summary_admission.generic_anchor_tokens": len(
+            rules.topic_summary_admission.generic_anchor_tokens
+        ),
+        "topic_summary_admission.generic_anchor_patterns": len(
+            rules.topic_summary_admission.generic_anchor_patterns
+        ),
+        "topic_summary_scoring.generic_tokens": len(
+            rules.topic_summary_scoring.generic_tokens
+        ),
+        "topic_summary_scoring.generic_patterns": len(
+            rules.topic_summary_scoring.generic_patterns
+        ),
+        "topic_summary_scoring.short_specific_tokens": len(
+            rules.topic_summary_scoring.short_specific_tokens
+        ),
+        "topic_summary_scoring.distinctive_allow_tokens": len(
+            rules.topic_summary_scoring.distinctive_allow_tokens
+        ),
+        "topic_summary_scoring.distinctive_block_tokens": len(
+            rules.topic_summary_scoring.distinctive_block_tokens
+        ),
+        "topic_summary_scoring.weak_distinctive_tokens": len(
+            rules.topic_summary_scoring.weak_distinctive_tokens
+        ),
+        "topic_summary_scoring.persona_weak_tokens": len(
+            rules.topic_summary_scoring.persona_weak_tokens
+        ),
+        "topic_summary_scoring.tool_residue_patterns": len(
+            rules.topic_summary_scoring.tool_residue_patterns
+        ),
+        "topic_summary_scoring.citation_residue_patterns": len(
+            rules.topic_summary_scoring.citation_residue_patterns
+        ),
+        "topic_summary_scoring.ritual_title_phrases": len(
+            rules.topic_summary_scoring.ritual_title_phrases
+        ),
+    }
+    return {
+        "rule_family": rules.provenance.rule_family,
+        "schema_version": rules.provenance.schema_version,
+        "requested_locale": rules.provenance.requested_locale,
+        "resolved_locale": rules.provenance.resolved_locale,
+        "locale_chain": list(rules.provenance.locale_chain),
+        "layers": [
+            {
+                "kind": layer.kind,
+                "locale": layer.locale,
+                "path": layer.path,
+                "sha1": layer.sha1,
+            }
+            for layer in rules.provenance.layers
+        ],
+        "project_rules": {"status": "not_implemented"},
+        "user_rules": {"status": "not_implemented"},
+        "category_counts": category_counts,
+    }

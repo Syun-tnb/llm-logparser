@@ -802,6 +802,10 @@ Auxiliary L3 note:
   by token dictionary artifacts
 - reviewed project/user lexical rules are planned, but this artifact family does
   not implement them yet
+- cross-thread candidate `summary.json` records compact diagnostics for resolved
+  built-in lexical resources, including locale chain, package-relative resource
+  paths, resource SHA1 hashes, and category counts; it does not emit full token
+  lists, and full resolved-policy export is deferred
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence

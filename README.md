@@ -872,7 +872,9 @@ When token-dictionary artifacts are present, `dictionary.json` should be read as
 an observed token index / corpus token statistics artifact, and `bundles.json`
 as corpus-derived cooccurrence bundles. They are additive L3 signals only, not
 user-authored lexical rules. Reviewed project/user lexical rules are planned but
-are not part of the current implementation.
+are not part of the current implementation. `summary.json` records compact
+built-in lexical resource provenance and category counts for debugging, but does
+not emit full token lists; full resolved-policy export is deferred.
 
 Recommended comparison flow:
 
