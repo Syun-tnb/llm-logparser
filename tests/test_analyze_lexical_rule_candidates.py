@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -273,3 +274,15 @@ def test_lexical_rule_candidates_cli_writes_outputs(tmp_path: Path):
 
     assert lexical_rule_candidates_path(root).exists()
     assert lexical_rule_candidate_diagnostics_path(root).exists()
+
+
+def test_lexical_rule_candidates_cli_without_input_fails_clearly(capsys):
+    logging.getLogger("llm_logparser").handlers.clear()
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--non-interactive", "analyze", "lexical-rule-candidates"])
+
+    assert exc.value.code == 2
+    output = capsys.readouterr().out
+    assert "Missing required options for 'analyze lexical-rule-candidates'" in output
+    assert "--input" in output
