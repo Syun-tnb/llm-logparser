@@ -878,6 +878,20 @@ candidate generation, or promotion. `summary.json` records compact lexical
 resource provenance and category counts for debugging, but does not emit full
 token lists; full resolved-policy export is deferred.
 
+`analyze lexical-rule-candidates` adds a separate inactive diagnostic layer:
+
+```bash
+uv run llm-logparser analyze lexical-rule-candidates \
+  --input artifacts/openai \
+  --overwrite
+```
+
+Phase 1 only suggests `generic_scoring_token` candidates from
+`l3/token-dictionary/dictionary.json`. Candidate rows are always inactive and
+require manual review before use; the command does not write `reviewed.yaml`,
+does not modify reviewed project/user files, and does not promote anything
+automatically.
+
 Recommended comparison flow:
 
 1. Generate intra-thread topic summaries.

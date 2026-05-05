@@ -137,6 +137,9 @@ layers above the built-in resources; there is no automatic discovery or
 promotion. L3 cross-thread candidate selection may also consume
 `dictionary.json` and `bundles.json` when present as additive evidence only;
 missing token-dictionary artifacts fall back to the pre-existing candidate path.
+`analyze lexical-rule-candidates` reads `dictionary.json` as observed token
+statistics and writes inactive L3 suggestions under `l3/lexical-rules/`; it does
+not modify reviewed lexical rule files or promote candidates automatically.
 
 ## Analyze Pipeline
 
@@ -542,6 +545,7 @@ Possible modes:
 | semantic-span-proposals | L3 experimental span-derivation sidecar |
 | cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
 | token-dictionary | L3 auxiliary token/bundle signal sidecar |
+| lexical-rule-candidates | L3 inactive lexical-rule candidate diagnostics |
 | cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
 | cross-thread-memory-recall | L4 read-only memory recall presentation layer |
 | semantic-normalization | L3 sidecar batch job runner |
@@ -980,6 +984,19 @@ deterministic and model-derived capabilities.
   `specificity_score`, and `local_context_delta`. These fields are additive
   inspection metadata only: they do not replace the existing scoring model or
   silently change canonical/L1/L2 behavior.
+
+- `lexical-rule-candidates` is an inactive L3 diagnostic builder for Roadmap 6.
+  Phase 1 reads only `l3/token-dictionary/dictionary.json` and suggests
+  `generic_scoring_token` candidates from high-frequency / high-spread observed
+  token statistics. It writes `l3/lexical-rules/candidates.jsonl` and
+  `diagnostics.json`. Candidate rows always use `status: inactive` and
+  `activation_state: requires_review`; the command does not write
+  `reviewed.yaml`, does not modify reviewed project/user rule files, and does
+  not activate or promote anything automatically. Existing built-in and
+  explicitly provided reviewed project/user lexical rules are treated as already
+  active policy and are not re-suggested. `dictionary.json` remains an observed
+  token index / corpus token statistics artifact, and `bundles.json` remains
+  optional cooccurrence evidence only.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

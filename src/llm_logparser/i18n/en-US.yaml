@@ -142,6 +142,13 @@ messages:
   cli.analyze.cross_thread_candidates.opt.embedding_timeout_seconds.help: Timeout in seconds for optional local Ollama embedding requests
   cli.analyze.cross_thread_candidates.opt.project_lexical_rules.help: Explicit reviewed project lexical rules YAML to merge above built-in cross-thread resources
   cli.analyze.cross_thread_candidates.opt.user_lexical_rules.help: Explicit reviewed user lexical rules YAML to merge above built-in and project cross-thread resources
+  cli.analyze.lexical_rule_candidates.help: Generate inactive reviewed lexical-rule candidates from token dictionary statistics
+  cli.analyze.lexical_rule_candidates.opt.input.help: "Input: directory only; provider artifact root containing l3/token-dictionary/dictionary.json"
+  cli.analyze.lexical_rule_candidates.opt.project_lexical_rules.help: Explicit reviewed project lexical rules YAML to treat as already-active policy
+  cli.analyze.lexical_rule_candidates.opt.user_lexical_rules.help: Explicit reviewed user lexical rules YAML to treat as already-active policy
+  cli.analyze.lexical_rule_candidates.opt.max_candidates_per_type.help: Maximum inactive lexical-rule candidates to emit per candidate type
+  cli.analyze.lexical_rule_candidates.opt.sample_limit.help: Maximum sample references to attach to each inactive candidate
+  cli.analyze.lexical_rule_candidates.opt.overwrite.help: Replace existing l3/lexical-rules candidate artifacts
   cli.analyze.cross_thread_intent_eval.help: Evaluate whether existing cross-thread candidate pairs express the same underlying intent or task continuation and write an additive L4 sidecar
   cli.analyze.cross_thread_intent_eval.opt.input.help: "Input: directory only; provider artifact root containing l3/cross-thread-candidates/candidates.jsonl"
   cli.analyze.cross_thread_intent_eval.opt.model.help: Local Ollama model used to judge same-intent continuity for each emitted candidate pair

@@ -125,6 +125,33 @@ def run_analyze_token_dictionary(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_lexical_rule_candidates(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_lexical_rule_candidates import (
+        LexicalRuleCandidateError,
+        write_lexical_rule_candidate_artifacts,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_lexical_rule_candidate_artifacts(
+            input_root,
+            project_lexical_rules=args.project_lexical_rules,
+            user_lexical_rules=args.user_lexical_rules,
+            max_candidates_per_type=args.max_candidates_per_type,
+            sample_limit=args.sample_limit,
+            overwrite=args.overwrite,
+        )
+    except LexicalRuleCandidateError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "lexical rule candidates written: "
+        f"{result['candidate_count']} candidate(s) -> "
+        f"{format_display_path(result['candidates_path'])}"
+    )
+
+
 def run_analyze_stats(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_stats import (
         analyze_stats,

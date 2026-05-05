@@ -361,6 +361,52 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.opt.dry_run.help"),
     )
 
+    analyze_lexical_rule_candidates_cmd = analyze_subparsers.add_parser(
+        "lexical-rule-candidates",
+        help=_("cli.analyze.lexical_rule_candidates.help"),
+        description=_("cli.analyze.lexical_rule_candidates.help"),
+    )
+    analyze_lexical_rule_candidates_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.lexical_rule_candidates.opt.input.help"),
+    )
+    analyze_lexical_rule_candidates_cmd.add_argument(
+        "--project-lexical-rules",
+        dest="project_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.analyze.lexical_rule_candidates.opt.project_lexical_rules.help"),
+    )
+    analyze_lexical_rule_candidates_cmd.add_argument(
+        "--user-lexical-rules",
+        dest="user_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.analyze.lexical_rule_candidates.opt.user_lexical_rules.help"),
+    )
+    analyze_lexical_rule_candidates_cmd.add_argument(
+        "--max-candidates-per-type",
+        dest="max_candidates_per_type",
+        type=int,
+        default=100,
+        help=_("cli.analyze.lexical_rule_candidates.opt.max_candidates_per_type.help"),
+    )
+    analyze_lexical_rule_candidates_cmd.add_argument(
+        "--sample-limit",
+        dest="sample_limit",
+        type=int,
+        default=5,
+        help=_("cli.analyze.lexical_rule_candidates.opt.sample_limit.help"),
+    )
+    analyze_lexical_rule_candidates_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.lexical_rule_candidates.opt.overwrite.help"),
+    )
+
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
         help=_("cli.analyze.sqlite_build.help"),

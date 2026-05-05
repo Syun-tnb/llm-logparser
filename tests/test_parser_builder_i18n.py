@@ -171,6 +171,23 @@ def test_analyze_cross_thread_candidates_help_mentions_experimental_sidecar(caps
     assert "--embedding-model" in help_text
 
 
+def test_analyze_lexical_rule_candidates_help_mentions_inactive_candidates(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "lexical-rule-candidates", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "inactive" in help_text
+    assert "--input" in help_text
+    assert "--project-lexical-rules" in help_text
+    assert "--user-lexical-rules" in help_text
+    assert "--max-candidates-per-type" in help_text
+    assert "--sample-limit" in help_text
+
+
 def test_analyze_cross_thread_intent_eval_help_mentions_l4_same_intent_options(capsys):
     set_locale("en-US")
     parser = build_parser()
@@ -315,6 +332,10 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
         (
             ["analyze", "cross-thread-candidates", "--help"],
             "Input: directory only; provider artifact root containing l3/semantic-topics/topics.json",
+        ),
+        (
+            ["analyze", "lexical-rule-candidates", "--help"],
+            "Input: directory only; provider artifact root containing l3/token-dictionary/dictionary.json",
         ),
     ],
 )
