@@ -11,6 +11,7 @@ from llm_logparser.core.analyzer_lexical_rule_candidates import (
     LexicalRuleCandidateError,
     build_lexical_rule_candidate_rows,
     lexical_rule_candidate_diagnostics_path,
+    lexical_rule_candidate_review_path,
     lexical_rule_candidates_path,
     write_lexical_rule_candidate_artifacts,
 )
@@ -560,6 +561,7 @@ def test_lexical_rule_candidates_cli_writes_outputs(tmp_path: Path):
 
     assert lexical_rule_candidates_path(root).exists()
     assert lexical_rule_candidate_diagnostics_path(root).exists()
+    assert lexical_rule_candidate_review_path(root).exists()
 
 
 def test_lexical_rule_candidates_cli_without_input_fails_clearly(capsys):
@@ -572,3 +574,102 @@ def test_lexical_rule_candidates_cli_without_input_fails_clearly(capsys):
     output = capsys.readouterr().out
     assert "Missing required options for 'analyze lexical-rule-candidates'" in output
     assert "--input" in output
+
+
+def test_lexical_rule_candidates_review_markdown_is_generated(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    dictionary_path = _write_dictionary(
+        root,
+        [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "summary": "Broadnoise review evidence.",
+                "keywords": ["broadnoise"],
+            }
+        ],
+    )
+    before_dictionary = dictionary_path.read_text(encoding="utf-8")
+
+    result = write_lexical_rule_candidate_artifacts(root)
+
+    review_path = result["review_path"]
+    review = review_path.read_text(encoding="utf-8")
+    assert review_path == lexical_rule_candidate_review_path(root)
+    assert "# Lexical Rule Candidates Review" in review
+    assert "## Summary" in review
+    assert "- total candidates: 1" in review
+    assert "## generic_scoring_token" in review
+    assert "### broadnoise" in review
+    assert "- score:" in review
+    assert "topic_summary_total_count: 2" in review
+    assert "topic_summary.summary" in review
+    assert "Broadnoise review evidence." in review
+    assert "```yaml" in review
+    assert "topic_summary:" in review
+    assert "generic_tokens:" in review
+    assert '      - "broadnoise"' in review
+    assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()
+    assert dictionary_path.read_text(encoding="utf-8") == before_dictionary
+
+
+def test_lexical_rule_candidates_review_ordering_is_deterministic(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("aaatoken", count=100, conversation_count=10, topic_count=25),
+            _token_row("zzztoken", count=100, conversation_count=10, topic_count=25),
+        ],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "summary": "zzztoken appears in topic summary evidence.",
+            }
+        ],
+    )
+
+    result = write_lexical_rule_candidate_artifacts(root)
+
+    review = result["review_path"].read_text(encoding="utf-8")
+    assert review.index("### zzztoken") < review.index("### aaatoken")
+
+
+def test_lexical_rule_candidates_review_sample_refs_are_capped(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "title": "Broadnoise title",
+                "summary": "Broadnoise summary",
+                "keywords": ["broadnoise"],
+                "conclusion_text": "Broadnoise conclusion",
+            }
+        ],
+    )
+
+    result = write_lexical_rule_candidate_artifacts(root, sample_limit=2)
+
+    review = result["review_path"].read_text(encoding="utf-8")
+    assert "topic_summary.title" in review
+    assert "topic_summary.summary" in review
+    assert "topic_summary.keywords" not in review
+    assert "topic_summary.conclusion_text" not in review

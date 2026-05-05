@@ -99,6 +99,10 @@ def lexical_rule_candidate_diagnostics_path(input_root: Path) -> Path:
     return lexical_rule_candidates_dir(input_root) / "diagnostics.json"
 
 
+def lexical_rule_candidate_review_path(input_root: Path) -> Path:
+    return lexical_rule_candidates_dir(input_root) / "review.md"
+
+
 def _admission_key(value: str) -> str:
     normalized = normalize_analysis_text(value)
     return re.sub(r"[^a-z0-9一-龯ぁ-んァ-ヶー]+", "", normalized)
@@ -535,6 +539,16 @@ def _candidate_sort_key(row: dict[str, Any]) -> tuple[float, int, int, str]:
     )
 
 
+def _review_sort_key(row: dict[str, Any]) -> tuple[float, int, int, str]:
+    evidence = row.get("evidence", {})
+    return (
+        -float(evidence.get("score") or 0.0),
+        -int(evidence.get("topic_summary_total_count") or 0),
+        -int(evidence.get("conversation_count") or 0),
+        str(row.get("normalized_value") or ""),
+    )
+
+
 def build_lexical_rule_candidate_rows(
     provider_root: Path,
     *,
@@ -671,6 +685,177 @@ def _diagnostics(
     }
 
 
+def _load_candidate_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise LexicalRuleCandidateError(
+                    f"invalid JSON in {path}:{line_number}: {exc.msg}"
+                ) from exc
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
+def _load_diagnostics(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LexicalRuleCandidateError(f"invalid JSON in {path}: {exc.msg}") from exc
+    return payload if isinstance(payload, dict) else {}
+
+
+def _candidate_type_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        candidate_type = str(row.get("candidate_type") or "unknown")
+        counts[candidate_type] += 1
+    return dict(sorted(counts.items()))
+
+
+def _markdown_inline(value: Any) -> str:
+    text = str(value if value is not None else "")
+    return text.replace("\n", " ").strip()
+
+
+def _render_suggested_rule_yaml(normalized_value: str) -> str:
+    rendered_value = json.dumps(normalized_value, ensure_ascii=False)
+    return "\n".join(
+        [
+            "```yaml",
+            "topic_summary:",
+            "  scoring:",
+            "    generic_tokens:",
+            f"      - {rendered_value}",
+            "```",
+        ]
+    )
+
+
+def _render_review_markdown(
+    rows: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
+) -> str:
+    candidate_type_counts = diagnostics.get("candidate_type_counts")
+    if not isinstance(candidate_type_counts, dict):
+        candidate_type_counts = _candidate_type_counts(rows)
+
+    lines = [
+        "# Lexical Rule Candidates Review",
+        "",
+        "## Summary",
+        "",
+        f"- total candidates: {len(rows)}",
+        "- candidate types:",
+    ]
+    if candidate_type_counts:
+        for candidate_type, count in sorted(candidate_type_counts.items()):
+            lines.append(f"  - {candidate_type}: {count}")
+    else:
+        lines.append("  - none: 0")
+
+    generic_rows = [
+        row
+        for row in rows
+        if row.get("candidate_type") == "generic_scoring_token"
+    ]
+    generic_rows.sort(key=_review_sort_key)
+
+    lines.extend(["", "## generic_scoring_token", ""])
+    if not generic_rows:
+        lines.append("_No candidates._")
+        lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
+    for row in generic_rows:
+        normalized_value = _markdown_inline(row.get("normalized_value"))
+        evidence = row.get("evidence", {})
+        if not isinstance(evidence, dict):
+            evidence = {}
+        reason_codes = evidence.get("reason_codes", [])
+        if not isinstance(reason_codes, list):
+            reason_codes = []
+        sample_refs = row.get("sample_refs", [])
+        if not isinstance(sample_refs, list):
+            sample_refs = []
+
+        lines.extend(
+            [
+                f"### {normalized_value}",
+                "",
+                f"- score: {evidence.get('score', '')}",
+                "- counts:",
+                f"  - conversation_count: {evidence.get('conversation_count', 0)}",
+                f"  - document_count: {evidence.get('document_count', 0)}",
+                f"  - topic_count: {evidence.get('topic_count', 0)}",
+                "- evidence:",
+                "  - topic_summary_total_count: "
+                f"{evidence.get('topic_summary_total_count', 0)}",
+                f"  - bundle_count: {evidence.get('bundle_count', 0)}",
+                "- reason_codes:",
+            ]
+        )
+        if reason_codes:
+            for reason_code in reason_codes:
+                lines.append(f"  - {_markdown_inline(reason_code)}")
+        else:
+            lines.append("  - none")
+
+        lines.append("- sample_refs:")
+        if sample_refs:
+            for ref in sample_refs:
+                if not isinstance(ref, dict):
+                    continue
+                field = _markdown_inline(ref.get("field") or "unknown")
+                excerpt = _markdown_inline(ref.get("excerpt"))
+                conversation_id = _markdown_inline(ref.get("conversation_id"))
+                segment_id = _markdown_inline(ref.get("segment_id"))
+                location = conversation_id
+                if segment_id:
+                    location = f"{location} / {segment_id}" if location else segment_id
+                detail = f"{field}"
+                if location:
+                    detail = f"{detail} ({location})"
+                if excerpt:
+                    detail = f"{detail}: {excerpt}"
+                lines.append(f"  - {detail}")
+        else:
+            lines.append("  - none")
+
+        lines.extend(
+            [
+                "- suggested_rule:",
+                _render_suggested_rule_yaml(normalized_value),
+                "",
+            ]
+        )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _write_lexical_rule_candidate_review(
+    *,
+    candidates_path: Path,
+    diagnostics_path: Path,
+    review_path: Path,
+) -> Path:
+    rows = _load_candidate_jsonl(candidates_path)
+    diagnostics = _load_diagnostics(diagnostics_path)
+    rendered = _render_review_markdown(rows, diagnostics)
+    tmp_path = review_path.with_suffix(".tmp")
+    tmp_path.write_text(rendered, encoding="utf-8")
+    tmp_path.replace(review_path)
+    return review_path
+
+
 def write_lexical_rule_candidate_artifacts(
     input_root: Path,
     *,
@@ -686,7 +871,12 @@ def write_lexical_rule_candidate_artifacts(
     output_dir = lexical_rule_candidates_dir(provider_root)
     candidates_path = lexical_rule_candidates_path(provider_root)
     diagnostics_path = lexical_rule_candidate_diagnostics_path(provider_root)
-    existing = [path for path in (candidates_path, diagnostics_path) if path.exists()]
+    review_path = lexical_rule_candidate_review_path(provider_root)
+    existing = [
+        path
+        for path in (candidates_path, diagnostics_path, review_path)
+        if path.exists()
+    ]
     if existing and not overwrite:
         raise LexicalRuleCandidateError(
             "lexical-rule candidate artifacts already exist; use --overwrite to replace them"
@@ -705,8 +895,14 @@ def write_lexical_rule_candidate_artifacts(
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     tmp_candidates_path.replace(candidates_path)
     write_json_artifact(diagnostics_path, diagnostics)
+    _write_lexical_rule_candidate_review(
+        candidates_path=candidates_path,
+        diagnostics_path=diagnostics_path,
+        review_path=review_path,
+    )
     return {
         "candidate_count": len(rows),
         "candidates_path": candidates_path,
         "diagnostics_path": diagnostics_path,
+        "review_path": review_path,
     }

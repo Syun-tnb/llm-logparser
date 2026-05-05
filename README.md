@@ -893,8 +893,10 @@ low-review-value residue. When intra-thread topic summaries are present, they
 are used only as optional supporting evidence and capped sample references for
 human review; Latin token matching is boundary-aware, while CJK evidence uses
 substring matching. Candidate rows are always inactive and require manual review
-before use; the command does not write `reviewed.yaml`, does not modify reviewed
-project/user files, and does not promote anything automatically.
+before use. The command also writes `l3/lexical-rules/review.md` as a
+human-readable review aid with copyable YAML snippets, but it does not write
+`reviewed.yaml`, does not modify reviewed project/user files, and does not
+promote anything automatically.
 
 Recommended comparison flow:
 

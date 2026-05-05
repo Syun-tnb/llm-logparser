@@ -997,9 +997,12 @@ deterministic and model-derived capabilities.
   sample references to improve manual review. Latin token evidence matching is
   boundary-aware; CJK evidence remains substring-based. Missing topic summaries
   are not errors. Candidate rows always use `status: inactive` and
-  `activation_state: requires_review`; the command does not write
-  `reviewed.yaml`, does not modify reviewed project/user rule files, and does
-  not activate or promote anything automatically. Existing built-in and
+  `activation_state: requires_review`. The command also writes
+  `l3/lexical-rules/review.md` as a human-readable review aid with copyable YAML
+  snippets; users must manually copy accepted rules into reviewed lexical rule
+  files. It does not write `reviewed.yaml`, does not modify reviewed
+  project/user rule files, and does not activate or promote anything
+  automatically. Existing built-in and
   explicitly provided reviewed project/user lexical rules are treated as already
   active policy and are not re-suggested. `dictionary.json` remains an observed
   token index / corpus token statistics artifact, and `bundles.json` remains
