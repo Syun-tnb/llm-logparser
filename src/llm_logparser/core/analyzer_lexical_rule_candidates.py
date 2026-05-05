@@ -420,9 +420,10 @@ def _topic_summary_evidence_for_token(
         return counts, []
 
     refs: list[dict[str, Any]] = []
+    matches_topic_summary_text = _topic_summary_text_matcher(normalized_value)
     for record in topic_summary_records:
         normalized_text = str(record.get("normalized_text") or "")
-        if normalized_value not in normalized_text:
+        if not matches_topic_summary_text(normalized_text):
             continue
         category = str(record.get("category") or "")
         count_key = f"topic_summary_{category}_count"
@@ -442,6 +443,13 @@ def _topic_summary_evidence_for_token(
             ref["segment_id"] = segment_id
         refs.append(ref)
     return counts, refs
+
+
+def _topic_summary_text_matcher(normalized_value: str):
+    if re.fullmatch(r"[a-z0-9_]+", normalized_value):
+        pattern = re.compile(rf"\b{re.escape(normalized_value)}\b")
+        return lambda normalized_text: bool(pattern.search(normalized_text))
+    return lambda normalized_text: normalized_value in normalized_text
 
 
 def _candidate_for_token(

@@ -891,7 +891,8 @@ Phase 1 only suggests `generic_scoring_token` candidates from
 filtering to avoid URL/path fragments, IDs, date-like tokens, and other
 low-review-value residue. When intra-thread topic summaries are present, they
 are used only as optional supporting evidence and capped sample references for
-human review. Candidate rows are always inactive and require manual review
+human review; Latin token matching is boundary-aware, while CJK evidence uses
+substring matching. Candidate rows are always inactive and require manual review
 before use; the command does not write `reviewed.yaml`, does not modify reviewed
 project/user files, and does not promote anything automatically.
 

@@ -994,8 +994,9 @@ deterministic and model-derived capabilities.
   identifier-like tokens before emitting review candidates. When
   `thread-*/l3/intra-thread-topics/topic-summaries.jsonl` exists, the command
   adds optional title/summary/keyword/conclusion occurrence counts and short
-  sample references to improve manual review; missing topic summaries are not
-  errors. Candidate rows always use `status: inactive` and
+  sample references to improve manual review. Latin token evidence matching is
+  boundary-aware; CJK evidence remains substring-based. Missing topic summaries
+  are not errors. Candidate rows always use `status: inactive` and
   `activation_state: requires_review`; the command does not write
   `reviewed.yaml`, does not modify reviewed project/user rule files, and does
   not activate or promote anything automatically. Existing built-in and

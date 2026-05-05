@@ -370,6 +370,89 @@ def test_lexical_rule_candidates_malformed_topic_summary_rows_are_counted(
     assert path.read_text(encoding="utf-8") == before
 
 
+def test_lexical_rule_candidates_topic_summary_latin_match_is_boundary_aware(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("art", count=120, conversation_count=12, topic_count=30),
+            _token_row("token", count=120, conversation_count=12, topic_count=30),
+        ],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "title": "Artifact review",
+                "summary": "The token appears as a whole word.",
+                "keywords": ["artifact", "token"],
+            }
+        ],
+    )
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root)
+    by_token = {row["normalized_value"]: row for row in rows}
+
+    assert by_token["art"]["evidence"]["topic_summary_total_count"] == 0
+    assert by_token["token"]["evidence"]["topic_summary_total_count"] == 2
+    assert by_token["token"]["sample_refs"][0]["field"] == "topic_summary.summary"
+
+
+def test_lexical_rule_candidates_topic_summary_cjk_keeps_substring_matching(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("確認", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "summary": "再確認します。",
+            }
+        ],
+    )
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert rows[0]["evidence"]["topic_summary_summary_count"] == 1
+
+
+def test_lexical_rule_candidates_topic_summary_mixed_token_uses_substring_fallback(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("api確認", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "summary": "api確認フローを見直す。",
+            }
+        ],
+    )
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert rows[0]["evidence"]["topic_summary_summary_count"] == 1
+
+
 def test_lexical_rule_candidate_ids_and_sorting_are_deterministic(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     _write_dictionary(
