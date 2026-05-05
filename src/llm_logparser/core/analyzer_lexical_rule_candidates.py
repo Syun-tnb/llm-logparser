@@ -26,6 +26,60 @@ DEFAULT_LEXICAL_RULE_CANDIDATE_SAMPLE_LIMIT = 5
 GENERIC_MIN_CONVERSATION_COUNT = 8
 GENERIC_MIN_DOCUMENT_COUNT = 25
 _TOKEN_SYMBOL_RE = re.compile(r"[./_:-]")
+_URL_LIKE_RE = re.compile(r"(?:://|^www\.|^[a-z][a-z0-9+.-]*://)", re.IGNORECASE)
+_PATH_LIKE_RE = re.compile(r"(?:[/\\]|^\.\.?[/\\]|^~[/\\]|^[a-zA-Z]:[\\/])")
+_DATE_LIKE_RE = re.compile(
+    r"^(?:\d{4}[-_/年]\d{1,2}(?:[-_/月]\d{1,2}日?)?|\d{1,2}[-_/]\d{1,2}[-_/]\d{2,4})$"
+)
+_HASH_OR_ID_RE = re.compile(r"^(?:[a-f0-9]{12,}|[a-z]+[_-]?[a-f0-9]{8,})$", re.IGNORECASE)
+_FILE_EXTENSION_LIKE = {
+    "avi",
+    "bak",
+    "bin",
+    "bmp",
+    "bz2",
+    "cfg",
+    "class",
+    "conf",
+    "db",
+    "dll",
+    "doc",
+    "docx",
+    "dylib",
+    "exe",
+    "gif",
+    "gz",
+    "heic",
+    "ico",
+    "ini",
+    "jpeg",
+    "jpg",
+    "lock",
+    "log",
+    "md",
+    "mov",
+    "mp3",
+    "mp4",
+    "obj",
+    "png",
+    "ppt",
+    "pptx",
+    "pyc",
+    "rar",
+    "rtf",
+    "so",
+    "svg",
+    "tmp",
+    "toml",
+    "tsv",
+    "txt",
+    "wav",
+    "webp",
+    "xls",
+    "xlsx",
+    "xml",
+    "zip",
+}
 
 
 class LexicalRuleCandidateError(RuntimeError):
@@ -51,6 +105,14 @@ def _admission_key(value: str) -> str:
 
 def _has_cjk(value: str) -> bool:
     return bool(re.search(r"[一-龯ぁ-んァ-ヶー]", value))
+
+
+def _is_all_cjk(value: str) -> bool:
+    return bool(value) and all(re.fullmatch(r"[一-龯ぁ-んァ-ヶー]", char) for char in value)
+
+
+def _alnum_or_cjk_count(value: str) -> int:
+    return sum(1 for char in value if char.isalnum() or _has_cjk(char))
 
 
 def _load_dictionary_payload(provider_root: Path) -> dict[str, Any]:
@@ -121,7 +183,9 @@ def _is_active_token(
     active_patterns: tuple[str, ...],
 ) -> bool:
     key = _admission_key(normalized_value)
-    if not key or key in active_keys:
+    if not key:
+        return False
+    if key in active_keys:
         return True
     return any(re.fullmatch(pattern, key) for pattern in active_patterns)
 
@@ -151,6 +215,53 @@ def _low_specificity_shape(token: str) -> bool:
     if any(char.isdigit() for char in token):
         return False
     return len(token) <= 8
+
+
+def _shape_skip_reason(
+    token: str,
+    *,
+    count: int,
+    conversation_count: int,
+    document_count: int,
+) -> str | None:
+    stripped = token.strip()
+    if not stripped:
+        return "malformed_token"
+    if _URL_LIKE_RE.search(stripped):
+        return "shape_url_like"
+    if _PATH_LIKE_RE.search(stripped):
+        return "shape_path_like"
+    if _DATE_LIKE_RE.fullmatch(stripped):
+        return "shape_date_like"
+    if stripped.isdecimal():
+        return "shape_numeric"
+    if _alnum_or_cjk_count(stripped) * 2 < len(stripped):
+        return "shape_symbol_like"
+    if _HASH_OR_ID_RE.fullmatch(stripped):
+        return "shape_identifier_like"
+
+    has_cjk = _has_cjk(stripped)
+    latin_or_digit = bool(re.search(r"[a-z0-9]", stripped, re.IGNORECASE))
+    if not has_cjk and len(stripped) < 3:
+        return "shape_too_short"
+    if has_cjk:
+        if _is_all_cjk(stripped) and len(stripped) == 1:
+            if count < 500 or conversation_count < 50 or document_count < 100:
+                return "shape_too_short"
+        if _is_all_cjk(stripped) and len(stripped) == 2:
+            if count < 80 or conversation_count < 10:
+                return "below_threshold"
+        return None
+
+    if re.search(r"[a-z]", stripped, re.IGNORECASE) and re.search(r"\d", stripped):
+        return "shape_identifier_like"
+    if len(stripped) > 40:
+        return "shape_too_long"
+    if len(stripped) > 24 and re.fullmatch(r"[a-z][a-z0-9_-]+", stripped, re.IGNORECASE):
+        return "shape_identifier_like"
+    if latin_or_digit and stripped in _FILE_EXTENSION_LIKE:
+        return "shape_identifier_like"
+    return None
 
 
 def _candidate_score(
@@ -216,9 +327,12 @@ def _candidate_for_token(
         "high_conversation_spread",
         "high_document_spread",
         "high_frequency",
+        "broad_corpus_token",
     ]
     if low_specificity:
         reason_codes.append("low_specificity_shape")
+    if bundle_counts.get(normalized_value, 0) >= 5:
+        reason_codes.append("broad_bundle_spread")
     score = _candidate_score(
         count=count,
         conversation_count=conversation_count,
@@ -305,9 +419,9 @@ def build_lexical_rule_candidate_rows(
         if not normalized_value:
             skipped_counts["malformed_token"] += 1
             continue
-        if len(normalized_value) < 3 and not _has_cjk(normalized_value):
-            skipped_counts["below_threshold"] += 1
-            continue
+        count = _int_field(row, "count")
+        conversation_count = _int_field(row, "conversation_count")
+        document_count = _document_count(row)
         if _is_active_token(
             normalized_value,
             active_keys=active_keys,
@@ -315,9 +429,15 @@ def build_lexical_rule_candidate_rows(
         ):
             skipped_counts["already_active_policy"] += 1
             continue
-        count = _int_field(row, "count")
-        conversation_count = _int_field(row, "conversation_count")
-        document_count = _document_count(row)
+        shape_skip_reason = _shape_skip_reason(
+            normalized_value,
+            count=count,
+            conversation_count=conversation_count,
+            document_count=document_count,
+        )
+        if shape_skip_reason:
+            skipped_counts[shape_skip_reason] += 1
+            continue
         if (
             conversation_count < GENERIC_MIN_CONVERSATION_COUNT
             or document_count < GENERIC_MIN_DOCUMENT_COUNT
@@ -375,6 +495,10 @@ def _diagnostics(
             "generic_min_document_count": GENERIC_MIN_DOCUMENT_COUNT,
             "document_count_mapping": (
                 "dictionary document_count when present, otherwise max(conversation_count, topic_count)"
+            ),
+            "shape_filtering": (
+                "URL/path-like, numeric/date-like, hash/ID-like, symbol-heavy, overly short, "
+                "and overly long identifier-like tokens are skipped before candidate emission"
             ),
             "max_candidates_per_type": max_candidates_per_type,
             "sample_limit": sample_limit,

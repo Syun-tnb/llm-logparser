@@ -170,6 +170,74 @@ def test_lexical_rule_candidates_generate_inactive_generic_candidate(tmp_path: P
     assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()
 
 
+def test_lexical_rule_candidates_skip_noisy_token_shapes(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("http://example.com", count=300, conversation_count=30, topic_count=80),
+            _token_row("src/main.py", count=300, conversation_count=30, topic_count=80),
+            _token_row("2026-05-05", count=300, conversation_count=30, topic_count=80),
+            _token_row("123456", count=300, conversation_count=30, topic_count=80),
+            _token_row("abc123def", count=300, conversation_count=30, topic_count=80),
+            _token_row(
+                "thisisaverylongidentifierliketokenthatshouldskip",
+                count=300,
+                conversation_count=30,
+                topic_count=80,
+            ),
+            _token_row("!!!", count=300, conversation_count=30, topic_count=80),
+            _token_row("broadnoise", count=120, conversation_count=12, topic_count=30),
+        ],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert [row["normalized_value"] for row in rows] == ["broadnoise"]
+    skipped = diagnostics["skipped_counts"]
+    assert skipped["shape_url_like"] == 1
+    assert skipped["shape_path_like"] == 1
+    assert skipped["shape_date_like"] == 1
+    assert skipped["shape_numeric"] == 1
+    assert skipped["shape_identifier_like"] == 1
+    assert skipped["shape_too_long"] == 1
+    assert skipped["shape_symbol_like"] == 1
+
+
+def test_lexical_rule_candidates_short_cjk_filtering_is_conservative(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("語", count=300, conversation_count=30, topic_count=80),
+            _token_row("確認", count=120, conversation_count=12, topic_count=30),
+        ],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert [row["normalized_value"] for row in rows] == ["確認"]
+    assert diagnostics["skipped_counts"]["shape_too_short"] == 1
+
+
+def test_lexical_rule_candidate_reason_codes_stay_review_oriented(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_bundles(root)
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert rows[0]["evidence"]["reason_codes"] == [
+        "high_conversation_spread",
+        "high_document_spread",
+        "high_frequency",
+        "broad_corpus_token",
+    ]
+
+
 def test_lexical_rule_candidate_ids_and_sorting_are_deterministic(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     _write_dictionary(
@@ -220,6 +288,9 @@ def test_lexical_rule_candidates_skip_reviewed_active_policy(tmp_path: Path):
     assert diagnostics["active_policy"]["project_rules"]["status"] == "loaded"
     assert diagnostics["active_policy"]["user_rules"]["status"] == "loaded"
     assert diagnostics["skipped_counts"]["already_active_policy"] == 2
+    serialized = json.dumps(diagnostics, ensure_ascii=False)
+    assert "projectactive" not in serialized
+    assert "useractive" not in serialized
 
 
 def test_lexical_rule_candidates_existing_outputs_require_overwrite(tmp_path: Path):

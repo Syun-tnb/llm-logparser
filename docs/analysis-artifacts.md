@@ -806,7 +806,8 @@ Auxiliary L3 note:
 - `analyze lexical-rule-candidates` writes inactive diagnostic suggestions under
   `<provider-root>/l3/lexical-rules/`; Phase 1 only suggests
   `generic_scoring_token` candidates from high-spread `dictionary.json` rows and
-  never writes reviewed rule files
+  uses conservative token-shape filtering before review; it never writes
+  reviewed rule files
 - cross-thread candidate `summary.json` records compact diagnostics for resolved
   built-in and reviewed lexical resources, including locale chain, safe resource
   paths, resource SHA1 hashes, owner scope, schema version, and category counts;
