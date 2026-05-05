@@ -312,9 +312,30 @@ def _merged_list(payloads: list[dict[str, Any]], *keys: str) -> tuple[str, ...]:
     return _normalized_unique_sequence(merged)
 
 
-@lru_cache(maxsize=None)
 def load_cross_thread_lexical_rules(
     locale: str | None = None,
+    project_rules_path: Path | str | None = None,
+    user_rules_path: Path | str | None = None,
+) -> CrossThreadLexicalRules:
+    if project_rules_path is None and user_rules_path is None:
+        return _load_builtin_cross_thread_lexical_rules(locale)
+    return _load_cross_thread_lexical_rules_uncached(
+        locale,
+        project_rules_path=project_rules_path,
+        user_rules_path=user_rules_path,
+    )
+
+
+@lru_cache(maxsize=None)
+def _load_builtin_cross_thread_lexical_rules(
+    locale: str | None = None,
+) -> CrossThreadLexicalRules:
+    return _load_cross_thread_lexical_rules_uncached(locale)
+
+
+def _load_cross_thread_lexical_rules_uncached(
+    locale: str | None = None,
+    *,
     project_rules_path: Path | str | None = None,
     user_rules_path: Path | str | None = None,
 ) -> CrossThreadLexicalRules:

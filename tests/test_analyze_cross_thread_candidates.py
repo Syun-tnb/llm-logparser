@@ -1569,6 +1569,75 @@ def test_cross_thread_reviewed_lexical_rules_merge_above_built_ins(tmp_path: Pat
     assert "TestPersona" not in serialized
 
 
+def test_cross_thread_builtin_only_lexical_rules_remain_cached():
+    first = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+    second = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
+
+    assert first is second
+
+
+def test_cross_thread_reviewed_project_rules_reload_after_file_edit(tmp_path: Path):
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"generic_tokens": ["firstprojecttoken"]},
+    )
+    first = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        project_rules_path=project_path,
+    )
+    first_diagnostics = cross_thread_lexical_rules_diagnostics(first)
+
+    project_path = _write_reviewed_lexical_rules(
+        project_path,
+        owner_scope="project",
+        scoring={"generic_tokens": ["secondprojecttoken"]},
+    )
+    second = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        project_rules_path=project_path,
+    )
+    second_diagnostics = cross_thread_lexical_rules_diagnostics(second)
+
+    assert first is not second
+    assert "firstprojecttoken" in first.topic_summary_scoring.generic_tokens
+    assert "secondprojecttoken" not in first.topic_summary_scoring.generic_tokens
+    assert "secondprojecttoken" in second.topic_summary_scoring.generic_tokens
+    assert "firstprojecttoken" not in second.topic_summary_scoring.generic_tokens
+    assert (
+        first_diagnostics["project_rules"]["sha1"]
+        != second_diagnostics["project_rules"]["sha1"]
+    )
+
+
+def test_cross_thread_reviewed_user_rules_reload_after_file_edit(tmp_path: Path):
+    user_path = _write_reviewed_lexical_rules(
+        tmp_path / "user-rules.yaml",
+        owner_scope="user",
+        scoring={"short_specific_tokens": ["aa"]},
+    )
+    first = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        user_rules_path=user_path,
+    )
+
+    user_path = _write_reviewed_lexical_rules(
+        user_path,
+        owner_scope="user",
+        scoring={"short_specific_tokens": ["bb"]},
+    )
+    second = load_cross_thread_lexical_rules(
+        DEFAULT_CROSS_THREAD_LEXICAL_LOCALE,
+        user_rules_path=user_path,
+    )
+
+    assert first is not second
+    assert "aa" in first.topic_summary_scoring.short_specific_tokens
+    assert "bb" not in first.topic_summary_scoring.short_specific_tokens
+    assert "bb" in second.topic_summary_scoring.short_specific_tokens
+    assert "aa" not in second.topic_summary_scoring.short_specific_tokens
+
+
 def test_cross_thread_reviewed_lexical_rule_validation_fails_clearly(tmp_path: Path):
     missing = tmp_path / "missing.yaml"
     with pytest.raises(CrossThreadLexicalRulesError, match="not found"):
@@ -3357,6 +3426,56 @@ def test_cross_thread_candidate_summary_reports_reviewed_lexical_rule_layers(
     assert "projectonly" not in serialized
     assert "useronly" not in serialized
     assert all("lexical_rules" not in row for row in rows)
+
+
+def test_cross_thread_candidate_summary_reflects_reviewed_rule_file_edits(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"generic_tokens": ["firstsummarytoken"]},
+    )
+
+    first_result = write_cross_thread_candidates_artifact(
+        root,
+        project_lexical_rules=project_path,
+    )
+    first_summary = json.loads(
+        first_result["summary_path"].read_text(encoding="utf-8")
+    )
+
+    project_path = _write_reviewed_lexical_rules(
+        project_path,
+        owner_scope="project",
+        scoring={"generic_tokens": ["secondsummarytoken", "thirdsummarytoken"]},
+    )
+    second_result = write_cross_thread_candidates_artifact(
+        root,
+        project_lexical_rules=project_path,
+    )
+    second_summary = json.loads(
+        second_result["summary_path"].read_text(encoding="utf-8")
+    )
+
+    assert (
+        first_summary["lexical_rules"]["project_rules"]["sha1"]
+        != second_summary["lexical_rules"]["project_rules"]["sha1"]
+    )
+    assert (
+        second_summary["lexical_rules"]["category_counts"][
+            "topic_summary_scoring.generic_tokens"
+        ]
+        == first_summary["lexical_rules"]["category_counts"][
+            "topic_summary_scoring.generic_tokens"
+        ]
+        + 1
+    )
+    serialized = json.dumps(second_summary["lexical_rules"], ensure_ascii=False)
+    assert "secondsummarytoken" not in serialized
+    assert "thirdsummarytoken" not in serialized
 
 
 def test_cross_thread_candidate_rows_are_schema_valid(tmp_path: Path):
