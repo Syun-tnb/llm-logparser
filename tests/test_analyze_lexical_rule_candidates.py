@@ -101,6 +101,19 @@ def _write_bundles(root: Path) -> Path:
     return path
 
 
+def _write_topic_summaries(root: Path, thread_id: str, lines: list[dict | str]) -> Path:
+    path = root / thread_id / "l3" / "intra-thread-topics" / "topic-summaries.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rendered: list[str] = []
+    for line in lines:
+        if isinstance(line, str):
+            rendered.append(line)
+        else:
+            rendered.append(json.dumps(line, ensure_ascii=False))
+    path.write_text("\n".join(rendered) + "\n", encoding="utf-8")
+    return path
+
+
 def _write_reviewed_lexical_rules(
     path: Path,
     *,
@@ -164,6 +177,7 @@ def test_lexical_rule_candidates_generate_inactive_generic_candidate(tmp_path: P
     assert diagnostics["candidate_count"] == 1
     assert diagnostics["candidate_type_counts"] == {"generic_scoring_token": 1}
     assert diagnostics["thresholds"]["generic_min_conversation_count"] == 8
+    assert diagnostics["topic_summaries"]["status"] == "not_found"
     assert diagnostics["active_policy"]["rule_family"] == "cross_thread"
     serialized = json.dumps(diagnostics, ensure_ascii=False)
     assert "broadnoise" not in serialized
@@ -236,6 +250,124 @@ def test_lexical_rule_candidate_reason_codes_stay_review_oriented(tmp_path: Path
         "high_frequency",
         "broad_corpus_token",
     ]
+
+
+def test_lexical_rule_candidates_add_topic_summary_evidence(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "title": "Broadnoise review",
+                "summary": "The broadnoise token is recurring in generated summaries.",
+                "keywords": ["broadnoise", "other"],
+                "conclusion_text": "Treat broadnoise as review evidence.",
+            },
+            {
+                "conversation_id": "conv-b",
+                "segment_id": "seg-b",
+                "title": "Other topic",
+                "summary": "No candidate token here.",
+                "keywords": ["other"],
+                "conclusion_text": None,
+            },
+        ],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+
+    row = rows[0]
+    assert row["evidence"]["topic_summary_title_count"] == 1
+    assert row["evidence"]["topic_summary_summary_count"] == 1
+    assert row["evidence"]["topic_summary_keyword_count"] == 1
+    assert row["evidence"]["topic_summary_conclusion_count"] == 1
+    assert row["evidence"]["topic_summary_total_count"] == 4
+    assert row["sample_refs"][0] == {
+        "conversation_id": "conv-a",
+        "field": "topic_summary.title",
+        "excerpt": "Broadnoise review",
+        "segment_id": "seg-a",
+    }
+    assert diagnostics["topic_summaries"]["status"] == "loaded"
+    assert diagnostics["topic_summaries"]["files_found"] == 1
+    assert diagnostics["topic_summaries"]["rows_loaded"] == 2
+    assert diagnostics["topic_summaries"]["rows_malformed"] == 0
+    assert diagnostics["topic_summaries"]["fields_indexed"]["topic_summary.title"] == 2
+    assert "thread-*/l3/intra-thread-topics/topic-summaries.jsonl" in diagnostics[
+        "generated_from"
+    ]
+
+
+def test_lexical_rule_candidates_topic_summary_sample_refs_are_capped(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "title": "Broadnoise title",
+                "summary": "Broadnoise summary",
+                "keywords": ["broadnoise"],
+                "conclusion_text": "Broadnoise conclusion",
+            }
+        ],
+    )
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root, sample_limit=2)
+
+    assert len(rows[0]["sample_refs"]) == 2
+    assert [ref["field"] for ref in rows[0]["sample_refs"]] == [
+        "topic_summary.title",
+        "topic_summary.summary",
+    ]
+
+
+def test_lexical_rule_candidates_malformed_topic_summary_rows_are_counted(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)],
+    )
+    path = _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            "{not-json",
+            [],
+            {"conversation_id": "conv-a", "segment_id": "seg-a"},
+            {
+                "conversation_id": "conv-b",
+                "segment_id": "seg-b",
+                "summary": "Broadnoise summary",
+            },
+        ],
+    )
+    before = path.read_text(encoding="utf-8")
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert rows[0]["evidence"]["topic_summary_summary_count"] == 1
+    assert diagnostics["topic_summaries"]["status"] == "loaded"
+    assert diagnostics["topic_summaries"]["rows_loaded"] == 1
+    assert diagnostics["topic_summaries"]["rows_malformed"] == 3
+    assert path.read_text(encoding="utf-8") == before
 
 
 def test_lexical_rule_candidate_ids_and_sorting_are_deterministic(tmp_path: Path):

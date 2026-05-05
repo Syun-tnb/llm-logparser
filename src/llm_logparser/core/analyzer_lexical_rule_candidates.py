@@ -25,6 +25,7 @@ DEFAULT_LEXICAL_RULE_CANDIDATE_MAX_PER_TYPE = 100
 DEFAULT_LEXICAL_RULE_CANDIDATE_SAMPLE_LIMIT = 5
 GENERIC_MIN_CONVERSATION_COUNT = 8
 GENERIC_MIN_DOCUMENT_COUNT = 25
+TOPIC_SUMMARY_EXCERPT_MAX_CHARS = 240
 _TOKEN_SYMBOL_RE = re.compile(r"[./_:-]")
 _URL_LIKE_RE = re.compile(r"(?:://|^www\.|^[a-z][a-z0-9+.-]*://)", re.IGNORECASE)
 _PATH_LIKE_RE = re.compile(r"(?:[/\\]|^\.\.?[/\\]|^~[/\\]|^[a-zA-Z]:[\\/])")
@@ -153,6 +154,99 @@ def _load_token_bundle_counts(provider_root: Path) -> tuple[dict[str, int], bool
             if isinstance(token, str) and token.strip():
                 counts[normalize_analysis_text(token)] += 1
     return dict(counts), True
+
+
+def _topic_summary_paths(provider_root: Path) -> list[Path]:
+    return sorted(
+        provider_root.glob("thread-*/l3/intra-thread-topics/topic-summaries.jsonl")
+    )
+
+
+def _short_excerpt(value: str, *, max_chars: int = TOPIC_SUMMARY_EXCERPT_MAX_CHARS) -> str:
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[: max_chars - 3].rstrip()}..."
+
+
+def _string_values(value: Any) -> list[str]:
+    if isinstance(value, str) and value.strip():
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def _topic_summary_field_values(row: dict[str, Any]) -> list[tuple[str, str, str]]:
+    fields: list[tuple[str, str, str]] = []
+    for value in _string_values(row.get("title")):
+        fields.append(("title", "topic_summary.title", value))
+    for value in _string_values(row.get("summary")):
+        fields.append(("summary", "topic_summary.summary", value))
+    for key in ("keywords", "keyphrases"):
+        for value in _string_values(row.get(key)):
+            fields.append(("keyword", f"topic_summary.{key}", value))
+    for key in ("conclusion_text", "conclusion"):
+        for value in _string_values(row.get(key)):
+            fields.append(("conclusion", f"topic_summary.{key}", value))
+    for key in ("topic_label", "label"):
+        for value in _string_values(row.get(key)):
+            fields.append(("title", f"topic_summary.{key}", value))
+    return fields
+
+
+def _load_topic_summary_evidence(
+    provider_root: Path,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    paths = _topic_summary_paths(provider_root)
+    diagnostics: dict[str, Any] = {
+        "status": "not_found",
+        "files_found": len(paths),
+        "rows_loaded": 0,
+        "rows_malformed": 0,
+        "fields_indexed": {},
+    }
+    if not paths:
+        return [], diagnostics
+
+    records: list[dict[str, Any]] = []
+    field_counts: Counter[str] = Counter()
+    for path in paths:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError:
+                    diagnostics["rows_malformed"] += 1
+                    continue
+                if not isinstance(row, dict):
+                    diagnostics["rows_malformed"] += 1
+                    continue
+                fields = _topic_summary_field_values(row)
+                if not fields:
+                    diagnostics["rows_malformed"] += 1
+                    continue
+                diagnostics["rows_loaded"] += 1
+                conversation_id = str(row.get("conversation_id") or "")
+                segment_id = str(row.get("segment_id") or "")
+                for category, field_name, value in fields:
+                    field_counts[field_name] += 1
+                    records.append(
+                        {
+                            "conversation_id": conversation_id,
+                            "segment_id": segment_id,
+                            "category": category,
+                            "field": field_name,
+                            "text": value,
+                            "normalized_text": normalize_analysis_text(value),
+                        }
+                    )
+    diagnostics["status"] = "loaded"
+    diagnostics["fields_indexed"] = dict(sorted(field_counts.items()))
+    return records, diagnostics
 
 
 def _active_token_keys(cross_thread_rules: CrossThreadLexicalRules) -> set[str]:
@@ -309,11 +403,53 @@ def _sample_refs(row: dict[str, Any], *, sample_limit: int) -> list[dict[str, An
     return refs
 
 
+def _topic_summary_evidence_for_token(
+    normalized_value: str,
+    *,
+    topic_summary_records: list[dict[str, Any]],
+    sample_limit: int,
+) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    counts = {
+        "topic_summary_title_count": 0,
+        "topic_summary_summary_count": 0,
+        "topic_summary_keyword_count": 0,
+        "topic_summary_conclusion_count": 0,
+        "topic_summary_total_count": 0,
+    }
+    if not topic_summary_records:
+        return counts, []
+
+    refs: list[dict[str, Any]] = []
+    for record in topic_summary_records:
+        normalized_text = str(record.get("normalized_text") or "")
+        if normalized_value not in normalized_text:
+            continue
+        category = str(record.get("category") or "")
+        count_key = f"topic_summary_{category}_count"
+        if count_key not in counts:
+            continue
+        counts[count_key] += 1
+        counts["topic_summary_total_count"] += 1
+        if len(refs) >= sample_limit:
+            continue
+        ref: dict[str, Any] = {
+            "conversation_id": str(record.get("conversation_id") or ""),
+            "field": str(record.get("field") or "topic_summary"),
+            "excerpt": _short_excerpt(str(record.get("text") or "")),
+        }
+        segment_id = str(record.get("segment_id") or "")
+        if segment_id:
+            ref["segment_id"] = segment_id
+        refs.append(ref)
+    return counts, refs
+
+
 def _candidate_for_token(
     *,
     provider_id: str,
     row: dict[str, Any],
     bundle_counts: dict[str, int],
+    topic_summary_records: list[dict[str, Any]],
     sample_limit: int,
 ) -> dict[str, Any]:
     token = str(row.get("token") or row.get("normalized") or "")
@@ -333,6 +469,11 @@ def _candidate_for_token(
         reason_codes.append("low_specificity_shape")
     if bundle_counts.get(normalized_value, 0) >= 5:
         reason_codes.append("broad_bundle_spread")
+    topic_summary_counts, topic_summary_refs = _topic_summary_evidence_for_token(
+        normalized_value,
+        topic_summary_records=topic_summary_records,
+        sample_limit=sample_limit,
+    )
     score = _candidate_score(
         count=count,
         conversation_count=conversation_count,
@@ -362,10 +503,12 @@ def _candidate_for_token(
             "conversation_count": conversation_count,
             "topic_count": topic_count,
             "bundle_count": bundle_counts.get(normalized_value, 0),
+            **topic_summary_counts,
             "score": score,
             "reason_codes": reason_codes,
         },
-        "sample_refs": _sample_refs(row, sample_limit=sample_limit),
+        "sample_refs": topic_summary_refs
+        or _sample_refs(row, sample_limit=sample_limit),
         "already_active": False,
         "review": {
             "recommendation": "consider",
@@ -398,6 +541,9 @@ def build_lexical_rule_candidate_rows(
         raise LexicalRuleCandidateError("sample_limit must be at least 0")
     dictionary_payload = _load_dictionary_payload(provider_root)
     bundle_counts, bundles_present = _load_token_bundle_counts(provider_root)
+    topic_summary_records, topic_summary_diagnostics = _load_topic_summary_evidence(
+        provider_root
+    )
     try:
         cross_thread_rules = load_cross_thread_lexical_rules(
             project_rules_path=project_lexical_rules,
@@ -449,6 +595,7 @@ def build_lexical_rule_candidate_rows(
                 provider_id=provider_id,
                 row=row,
                 bundle_counts=bundle_counts,
+                topic_summary_records=topic_summary_records,
                 sample_limit=sample_limit,
             )
         )
@@ -459,6 +606,7 @@ def build_lexical_rule_candidate_rows(
         candidate_count=len(candidates),
         skipped_counts=skipped_counts,
         bundles_present=bundles_present,
+        topic_summary_diagnostics=topic_summary_diagnostics,
         cross_thread_rules=cross_thread_rules,
         max_candidates_per_type=max_candidates_per_type,
         sample_limit=sample_limit,
@@ -472,6 +620,7 @@ def _diagnostics(
     candidate_count: int,
     skipped_counts: Counter[str],
     bundles_present: bool,
+    topic_summary_diagnostics: dict[str, Any],
     cross_thread_rules: CrossThreadLexicalRules,
     max_candidates_per_type: int,
     sample_limit: int,
@@ -479,6 +628,8 @@ def _diagnostics(
     generated_from = ["l3/token-dictionary/dictionary.json"]
     if bundles_present:
         generated_from.append("l3/token-dictionary/bundles.json")
+    if topic_summary_diagnostics.get("status") == "loaded":
+        generated_from.append("thread-*/l3/intra-thread-topics/topic-summaries.jsonl")
     return {
         "artifact_type": LEXICAL_RULE_CANDIDATE_DIAGNOSTICS_ARTIFACT_TYPE,
         "schema_version": LEXICAL_RULE_CANDIDATE_SCHEMA_VERSION,
@@ -489,6 +640,7 @@ def _diagnostics(
             "generic_scoring_token": candidate_count,
         },
         "skipped_counts": dict(sorted(skipped_counts.items())),
+        "topic_summaries": topic_summary_diagnostics,
         "active_policy": cross_thread_lexical_rules_diagnostics(cross_thread_rules),
         "thresholds": {
             "generic_min_conversation_count": GENERIC_MIN_CONVERSATION_COUNT,

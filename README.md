@@ -889,9 +889,11 @@ uv run llm-logparser analyze lexical-rule-candidates \
 Phase 1 only suggests `generic_scoring_token` candidates from
 `l3/token-dictionary/dictionary.json`. It uses conservative token-shape
 filtering to avoid URL/path fragments, IDs, date-like tokens, and other
-low-review-value residue. Candidate rows are always inactive and require manual
-review before use; the command does not write `reviewed.yaml`, does not modify
-reviewed project/user files, and does not promote anything automatically.
+low-review-value residue. When intra-thread topic summaries are present, they
+are used only as optional supporting evidence and capped sample references for
+human review. Candidate rows are always inactive and require manual review
+before use; the command does not write `reviewed.yaml`, does not modify reviewed
+project/user files, and does not promote anything automatically.
 
 Recommended comparison flow:
 

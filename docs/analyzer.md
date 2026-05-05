@@ -991,9 +991,12 @@ deterministic and model-derived capabilities.
   token statistics. It writes `l3/lexical-rules/candidates.jsonl` and
   `diagnostics.json`. Phase 1 applies conservative token-shape filtering for
   URL/path-like tokens, numeric/date-like residue, hashes/IDs, and overly long
-  identifier-like tokens before emitting review candidates. Candidate rows
-  always use `status: inactive` and `activation_state: requires_review`; the
-  command does not write
+  identifier-like tokens before emitting review candidates. When
+  `thread-*/l3/intra-thread-topics/topic-summaries.jsonl` exists, the command
+  adds optional title/summary/keyword/conclusion occurrence counts and short
+  sample references to improve manual review; missing topic summaries are not
+  errors. Candidate rows always use `status: inactive` and
+  `activation_state: requires_review`; the command does not write
   `reviewed.yaml`, does not modify reviewed project/user rule files, and does
   not activate or promote anything automatically. Existing built-in and
   explicitly provided reviewed project/user lexical rules are treated as already
