@@ -4624,12 +4624,28 @@ def test_cross_thread_candidate_narrative_is_deterministic_and_read_only(
     assert result["summary_path"].read_text(encoding="utf-8") == summary_before
 
 
-def test_cross_thread_candidate_narrative_groups_low_confidence_and_caps_excerpts(
+def test_cross_thread_candidate_narrative_details_small_low_confidence_sets(
     tmp_path: Path,
 ):
     root = tmp_path / "artifacts" / "openai"
     output_dir = root / "l3" / "cross-thread-candidates"
     long_excerpt = "alpha " * 200
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="low-a",
+        segment_id="seg-a",
+        title="Low source topic",
+        summary="Low source topic mentions alpha and beta overlap.",
+        keywords=["alpha", "beta"],
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="low-b",
+        segment_id="seg-b",
+        title="Low target topic",
+        summary="Low target topic mentions alpha and beta overlap.",
+        keywords=["alpha", "beta"],
+    )
     _write_jsonl(
         output_dir / "candidates.jsonl",
         [
@@ -4641,7 +4657,13 @@ def test_cross_thread_candidate_narrative_groups_low_confidence_and_caps_excerpt
                 "target_segment_id": "seg-b",
                 "source_excerpt": long_excerpt,
                 "target_excerpt": long_excerpt,
-                "evidence": {"reason_codes": ["shared_keywords_low"]},
+                "evidence": {
+                    "reason_codes": [
+                        "shared_keywords_low",
+                        "topic_summary_distinctive_token_overlap",
+                    ],
+                    "shared_keywords": ["alpha", "beta"],
+                },
             }
         ],
     )
@@ -4657,7 +4679,55 @@ def test_cross_thread_candidate_narrative_groups_low_confidence_and_caps_excerpt
 
     narrative = narrative_path.read_text(encoding="utf-8")
     assert "## Low-confidence candidates" in narrative
+    assert "### Candidate:" in narrative
+    assert "- score: 0.2" in narrative
+    assert "#### Representative excerpts" in narrative
+    assert "#### Topic summaries" in narrative
+    assert "source title: Low source topic" in narrative
+    assert "target title: Low target topic" in narrative
+    assert "#### Diagnostics" in narrative
+    assert "Shared keywords: alpha, beta." in narrative
+    assert "Distinctive overlap token hints (derived):" in narrative
+    assert "alpha " * 100 not in narrative
+
+
+def test_cross_thread_candidate_narrative_keeps_large_low_confidence_sets_compact(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    rows = [
+        {
+            "score": 0.2,
+            "source_conversation_id": f"low-a-{index}",
+            "target_conversation_id": f"low-b-{index}",
+            "source_segment_id": "seg-a",
+            "target_segment_id": "seg-b",
+            "source_excerpt": "alpha " * 200,
+            "target_excerpt": "alpha " * 200,
+            "evidence": {
+                "reason_codes": ["shared_keywords_low", "timestamp_distance_high"]
+            },
+        }
+        for index in range(4)
+    ]
+    _write_jsonl(output_dir / "candidates.jsonl", rows)
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 0, "medium": 0, "low": 4},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+
+    narrative = narrative_path.read_text(encoding="utf-8")
+    assert "## Low-confidence candidates (compact)" in narrative
     assert "score=0.2" in narrative
+    assert "reasons=shared_keywords_low, timestamp_distance_high" in narrative
+    assert "### Candidate:" not in narrative
+    assert "#### Representative excerpts" not in narrative
     assert "alpha " * 100 not in narrative
 
 

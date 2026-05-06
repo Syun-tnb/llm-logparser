@@ -206,6 +206,9 @@ _TOPIC_SUMMARY_RITUAL_TITLE_PHRASES = (
     "daily check-in",
 )
 _NARRATIVE_TOKEN_HINT_LIMIT = 8
+# Keep small low-confidence sets inspectable while avoiding report expansion when
+# a noisy run emits many low-scoring links.
+_NARRATIVE_LOW_DETAIL_THRESHOLD = 3
 _NARRATIVE_CONVERSATIONAL_OVERLAP_TOKENS = frozenset(
     {
         "うん",
@@ -4083,6 +4086,13 @@ def _candidate_narrative_sort_key(
     return (-score, band_rank.get(band, 9), _narrative_candidate_id(row))
 
 
+def _narrative_compact_reason_summary(row: dict[str, Any]) -> str:
+    reason_codes = _narrative_reason_codes(row)
+    if not reason_codes:
+        return "none"
+    return ", ".join(reason_codes[:3])
+
+
 def _render_candidate_detail(
     row: dict[str, Any],
     *,
@@ -4207,15 +4217,29 @@ def _render_cross_thread_narrative(
     low_rows = [
         row for row in sorted_rows if _score_band(float(row.get("score") or 0.0), unit_source=unit_source) == "low"
     ]
-    lines.extend(["", "## Low-confidence candidates", ""])
+    low_heading = "Low-confidence candidates"
+    if len(low_rows) > _NARRATIVE_LOW_DETAIL_THRESHOLD:
+        low_heading += " (compact)"
+    lines.extend(["", f"## {low_heading}", ""])
     if low_rows:
-        for row in low_rows:
-            lines.append(
-                "- "
-                f"{_narrative_candidate_id(row)}: score={round(float(row.get('score') or 0.0), 4)}, "
-                f"source={row.get('source_conversation_id')}/{row.get('source_segment_id') or row.get('source_span_id')}, "
-                f"target={row.get('target_conversation_id')}/{row.get('target_segment_id') or row.get('target_span_id')}"
-            )
+        if len(low_rows) <= _NARRATIVE_LOW_DETAIL_THRESHOLD:
+            for row in low_rows:
+                lines.extend(
+                    _render_candidate_detail(
+                        row,
+                        unit_source=unit_source,
+                        topic_summary_index=topic_summary_index,
+                    )
+                )
+        else:
+            for row in low_rows:
+                lines.append(
+                    "- "
+                    f"{_narrative_candidate_id(row)}: score={round(float(row.get('score') or 0.0), 4)}, "
+                    f"reasons={_narrative_compact_reason_summary(row)}, "
+                    f"source={row.get('source_conversation_id')}/{row.get('source_segment_id') or row.get('source_span_id')}, "
+                    f"target={row.get('target_conversation_id')}/{row.get('target_segment_id') or row.get('target_span_id')}"
+                )
     else:
         lines.append("_No candidates._")
     return "\n".join(lines).rstrip() + "\n"

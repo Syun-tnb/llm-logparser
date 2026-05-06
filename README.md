@@ -885,7 +885,9 @@ when available. It is only a human-readable inspection layer; it does not change
 candidate scoring, lexical rules, or semantic decisions. Its diagnostics may
 include capped token-level overlap hints, such as shared keywords and
 display-derived distinctive/persona/address-like tokens, to make manual review
-of noisy matches easier.
+of noisy matches easier. Low-confidence candidates render with full detail when
+there are only a few of them, and switch to compact bullets for larger low-score
+sets to keep reports readable.
 
 `analyze lexical-rule-candidates` adds a separate inactive diagnostic layer:
 

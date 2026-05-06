@@ -819,7 +819,9 @@ Auxiliary L3 note:
   topic summaries when available; it does not change scoring or semantic
   interpretation. Its diagnostics may include capped token-level hints derived
   from candidate evidence and topic-summary display fields, for example shared
-  keywords and possible persona/address/generic overlap tokens
+  keywords and possible persona/address/generic overlap tokens. Low-confidence
+  candidates are detailed only when the low-confidence set is small; larger
+  low-confidence sets remain compact
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence
