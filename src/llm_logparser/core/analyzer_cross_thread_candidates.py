@@ -205,6 +205,23 @@ _TOPIC_SUMMARY_RITUAL_TITLE_PHRASES = (
     "morning check-in",
     "daily check-in",
 )
+_NARRATIVE_TOKEN_HINT_LIMIT = 8
+_NARRATIVE_CONVERSATIONAL_OVERLAP_TOKENS = frozenset(
+    {
+        "うん",
+        "ううん",
+        "はい",
+        "そう",
+        "結論",
+        "まとめ",
+    }
+)
+_NARRATIVE_ADDRESS_SUFFIXES = (
+    "さん",
+    "ちゃん",
+    "くん",
+    "君",
+)
 _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
     {
         "ai",
@@ -3847,7 +3864,126 @@ def _narrative_shared_keywords(row: dict[str, Any]) -> list[str]:
     values = evidence.get("shared_keywords")
     if not isinstance(values, list):
         return []
-    return [str(value) for value in values[:8] if str(value)]
+    return [str(value) for value in values[:_NARRATIVE_TOKEN_HINT_LIMIT] if str(value)]
+
+
+def _narrative_token_key(token: str) -> str:
+    return _admission_anchor_token_key(token)
+
+
+def _narrative_token_sort_key(token: str) -> tuple[int, str]:
+    normalized = _narrative_token_key(token)
+    return (-len(normalized), normalized, token)
+
+
+def _narrative_compact_token_list(tokens: list[str] | tuple[str, ...]) -> list[str]:
+    seen: set[str] = set()
+    compact: list[str] = []
+    values = (str(value) for value in tokens if str(value))
+    for token in sorted(values, key=_narrative_token_sort_key):
+        key = _narrative_token_key(token)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        compact.append(token)
+        if len(compact) >= _NARRATIVE_TOKEN_HINT_LIMIT:
+            break
+    return compact
+
+
+def _narrative_topic_summary_text_parts(
+    summary_row: dict[str, Any] | None,
+) -> list[str]:
+    if not summary_row:
+        return []
+    parts: list[str] = []
+    for field_name in ("title", "summary", "conclusion_text"):
+        value = summary_row.get(field_name)
+        if isinstance(value, str) and value.strip():
+            parts.append(value)
+    keywords = summary_row.get("keywords")
+    if isinstance(keywords, list):
+        parts.extend(str(keyword) for keyword in keywords if str(keyword).strip())
+    return parts
+
+
+def _narrative_token_candidates_from_parts(parts: list[str]) -> dict[str, str]:
+    tokens: dict[str, str] = {}
+    for part in parts:
+        for token in _SPECIFICITY_TOKEN_RE.findall(normalize_analysis_text(part)):
+            key = _narrative_token_key(token)
+            if not key or key in tokens:
+                continue
+            tokens[key] = token
+    return tokens
+
+
+def _narrative_overlap_token_hints(
+    row: dict[str, Any],
+    *,
+    source_summary: dict[str, Any] | None,
+    target_summary: dict[str, Any] | None,
+) -> list[str]:
+    """Return display-only overlap hints derived from row evidence and summaries.
+
+    Candidate rows do not currently store the exact internal distinctive-token
+    scorer inputs. These hints are therefore intentionally derived from exposed
+    evidence, topic-summary fields, and representative excerpts for review only.
+    """
+
+    shared_keywords = _narrative_shared_keywords(row)
+    overlap: dict[str, str] = {
+        _narrative_token_key(token): token
+        for token in shared_keywords
+        if _narrative_token_key(token)
+    }
+    source_parts = _narrative_topic_summary_text_parts(source_summary) or [
+        str(row.get("source_topic_label") or ""),
+        str(row.get("source_excerpt") or ""),
+    ]
+    target_parts = _narrative_topic_summary_text_parts(target_summary) or [
+        str(row.get("target_topic_label") or ""),
+        str(row.get("target_excerpt") or ""),
+    ]
+    source_tokens = _narrative_token_candidates_from_parts(source_parts)
+    target_tokens = _narrative_token_candidates_from_parts(target_parts)
+    for key in sorted(set(source_tokens) & set(target_tokens)):
+        overlap.setdefault(key, source_tokens[key])
+    return _narrative_compact_token_list(tuple(overlap.values()))
+
+
+def _narrative_is_broad_conversational_token(token: str) -> bool:
+    key = _narrative_token_key(token)
+    return key in {
+        _narrative_token_key(value)
+        for value in _NARRATIVE_CONVERSATIONAL_OVERLAP_TOKENS
+    }
+
+
+def _narrative_is_address_like_token(token: str) -> bool:
+    return any(str(token).endswith(suffix) for suffix in _NARRATIVE_ADDRESS_SUFFIXES)
+
+
+def _narrative_is_persona_like_token(token: str) -> bool:
+    key = _narrative_token_key(token)
+    return key in {"persona", "ペルソナ"} or _narrative_is_address_like_token(token)
+
+
+def _narrative_suspicious_overlap_tokens(tokens: list[str]) -> list[str]:
+    return _narrative_compact_token_list(
+        [
+            token
+            for token in tokens
+            if _narrative_is_persona_like_token(token)
+            or _narrative_is_broad_conversational_token(token)
+        ]
+    )
+
+
+def _narrative_broad_conversational_tokens(tokens: list[str]) -> list[str]:
+    return _narrative_compact_token_list(
+        [token for token in tokens if _narrative_is_broad_conversational_token(token)]
+    )
 
 
 def _narrative_explanation(row: dict[str, Any]) -> list[str]:
@@ -3879,9 +4015,45 @@ def _narrative_explanation(row: dict[str, Any]) -> list[str]:
     return bullets or ["Candidate was emitted by deterministic cross-thread evidence."]
 
 
-def _narrative_diagnostics(row: dict[str, Any]) -> list[str]:
+def _narrative_diagnostics(
+    row: dict[str, Any],
+    *,
+    source_summary: dict[str, Any] | None = None,
+    target_summary: dict[str, Any] | None = None,
+) -> list[str]:
     reason_codes = set(_narrative_reason_codes(row))
     diagnostics: list[str] = []
+    shared_keywords = _narrative_shared_keywords(row)
+    overlap_hints = _narrative_overlap_token_hints(
+        row,
+        source_summary=source_summary,
+        target_summary=target_summary,
+    )
+    suspicious_tokens = _narrative_suspicious_overlap_tokens(overlap_hints)
+    conversational_tokens = _narrative_broad_conversational_tokens(overlap_hints)
+    if shared_keywords:
+        diagnostics.append(f"Shared keywords: {', '.join(shared_keywords)}.")
+    if (
+        any(code.startswith("topic_summary_distinctive_token") for code in reason_codes)
+        and overlap_hints
+    ):
+        diagnostics.append(
+            "Distinctive overlap token hints (derived): "
+            f"{', '.join(overlap_hints)}."
+        )
+    if suspicious_tokens:
+        diagnostics.append(
+            "Generic/persona/address-like overlap tokens: "
+            f"{', '.join(suspicious_tokens)}."
+        )
+        diagnostics.append(
+            "Possible persona/address/generic overlap detected; inspect manually."
+        )
+    if conversational_tokens:
+        diagnostics.append(
+            "Broad conversational overlap tokens: "
+            f"{', '.join(conversational_tokens)}."
+        )
     if any("residue" in code for code in reason_codes):
         diagnostics.append("Residue-related lexical filtering appears in evidence.")
     if any("generic" in code for code in reason_codes):
@@ -3892,6 +4064,11 @@ def _narrative_diagnostics(row: dict[str, Any]) -> list[str]:
         diagnostics.append("Distinctive-token overlap is present; inspect for true motif overlap.")
     if "summary_source_heuristic_penalty" in reason_codes:
         diagnostics.append("Heuristic summary source penalty is present.")
+        if any(code.startswith("topic_summary_title_overlap") for code in reason_codes):
+            diagnostics.append(
+                "Heuristic title overlap is present; title-derived evidence may be "
+                "boilerplate or conversational residue."
+            )
     return diagnostics
 
 
@@ -3964,7 +4141,11 @@ def _render_candidate_detail(
             lines.append(f"- {label} summary: {summary_text}")
     else:
         lines.append("- topic summaries: not available")
-    diagnostics = _narrative_diagnostics(row)
+    diagnostics = _narrative_diagnostics(
+        row,
+        source_summary=source_summary,
+        target_summary=target_summary,
+    )
     lines.extend(["", "#### Diagnostics", ""])
     lines.extend(f"- {item}" for item in diagnostics) if diagnostics else lines.append("- none")
     lines.append("")

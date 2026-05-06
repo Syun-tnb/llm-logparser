@@ -4566,6 +4566,8 @@ def test_cross_thread_candidate_narrative_renders_topic_summary_details(tmp_path
     assert "source title: DALL-E image workflow" in narrative
     assert "target title: DALL-E prompt workflow follow-up" in narrative
     assert "#### Diagnostics" in narrative
+    assert "Shared keywords: dall-e, prompt workflow." in narrative
+    assert "Distinctive overlap token hints (derived):" in narrative
 
 
 def test_cross_thread_candidate_narrative_degrades_without_topic_summaries(
@@ -4657,6 +4659,150 @@ def test_cross_thread_candidate_narrative_groups_low_confidence_and_caps_excerpt
     assert "## Low-confidence candidates" in narrative
     assert "score=0.2" in narrative
     assert "alpha " * 100 not in narrative
+
+
+def test_cross_thread_candidate_narrative_warns_for_suspicious_overlap_tokens(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "warn-a",
+        "target_conversation_id": "warn-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "ううん、シュンさん。結論として別件を説明する。",
+        "target_excerpt": (
+            "ううん、シュンさん。結論として違う相談を説明する。"
+        ),
+        "evidence": {
+            "reason_codes": [
+                "topic_summary_title_overlap_high",
+                "shared_keywords_high",
+                "topic_summary_distinctive_token_overlap_strong",
+                "summary_source_heuristic_penalty",
+            ],
+            "shared_keywords": ["ううん", "シュンさん", "結論"],
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    assert "Shared keywords: ううん, シュンさん, 結論." in narrative
+    assert "Distinctive overlap token hints (derived):" in narrative
+    assert "Generic/persona/address-like overlap tokens:" in narrative
+    assert "シュンさん" in narrative
+    assert "Possible persona/address/generic overlap detected; inspect manually." in narrative
+    assert "Broad conversational overlap tokens:" in narrative
+    assert "ううん" in narrative
+    assert "結論" in narrative
+    assert (
+        "Heuristic title overlap is present; title-derived evidence may be "
+        "boilerplate or conversational residue."
+    ) in narrative
+
+
+def test_cross_thread_candidate_narrative_caps_token_hints_and_degrades_gracefully(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    keywords = [f"keyword-{index}" for index in range(12)]
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "cap-a",
+        "target_conversation_id": "cap-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": " ".join(keywords),
+        "target_excerpt": " ".join(keywords),
+        "evidence": {
+            "reason_codes": ["topic_summary_distinctive_token_overlap_strong"],
+            "shared_keywords": keywords,
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    hint_line = next(
+        line
+        for line in narrative.splitlines()
+        if "Distinctive overlap token hints (derived):" in line
+    )
+    hinted_values = hint_line.split(": ", 1)[1].rstrip(".").split(", ")
+    assert len(hinted_values) == 8
+    assert "keyword-0" in hint_line
+    assert "keyword-9" not in hint_line
+    assert "#### Diagnostics" in narrative
+    assert "Distinctive overlap token hints (derived):" in narrative
+
+
+def test_cross_thread_candidate_narrative_diagnostics_are_deterministic_and_read_only(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "stable-a",
+        "target_conversation_id": "stable-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "はい token overlap",
+        "target_excerpt": "はい token overlap",
+        "evidence": {
+            "reason_codes": [
+                "shared_keywords_low",
+                "topic_summary_distinctive_token_overlap",
+            ],
+            "shared_keywords": ["はい", "token"],
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+    candidates_before = (output_dir / "candidates.jsonl").read_text(encoding="utf-8")
+    summary_before = (output_dir / "summary.json").read_text(encoding="utf-8")
+
+    first = write_cross_thread_candidate_narrative_artifact(root).read_text(
+        encoding="utf-8"
+    )
+    second = write_cross_thread_candidate_narrative_artifact(root).read_text(
+        encoding="utf-8"
+    )
+
+    assert first == second
+    assert (
+        (output_dir / "candidates.jsonl").read_text(encoding="utf-8")
+        == candidates_before
+    )
+    assert (output_dir / "summary.json").read_text(encoding="utf-8") == summary_before
+    loaded = _read_jsonl(output_dir / "candidates.jsonl")
+    assert loaded == [row]
 
 
 def test_cross_thread_candidates_do_not_modify_topics_json(tmp_path: Path):

@@ -932,6 +932,9 @@ deterministic and model-derived capabilities.
   deterministic Markdown review artifact rendered from existing candidates,
   `summary.json`, and topic summaries when available. It is a review/debug
   layer only and does not change scoring, lexical policy, or semantic decisions.
+  Candidate diagnostics include capped token-level hints when available, such as
+  shared keywords and display-derived distinctive/persona/address-like overlap
+  tokens. These hints are for manual inspection only.
   Topic-summary mode also uses a separate semantic scoring profile after
   admission: title overlap, summary keyphrase overlap, cleaned keyword-field
   overlap, and local-LLM summary provenance are weighted more heavily, while
