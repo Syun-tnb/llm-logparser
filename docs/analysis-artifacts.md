@@ -814,6 +814,10 @@ Auxiliary L3 note:
   built-in and reviewed lexical resources, including locale chain, safe resource
   paths, resource SHA1 hashes, owner scope, schema version, and category counts;
   it does not emit full token lists, and full resolved-policy export is deferred
+- cross-thread candidates also write `narrative.md`, a deterministic Markdown
+  review/debug artifact derived from existing candidates, summary metadata, and
+  topic summaries when available; it does not change scoring or semantic
+  interpretation
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence

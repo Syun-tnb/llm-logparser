@@ -928,6 +928,10 @@ deterministic and model-derived capabilities.
   Reviewed rule files are YAML with `schema_version: "0.1"`,
   `owner_scope: "project"` or `"user"`, and additive lists under
   `rules.topic_summary.scoring`.
+  The analyzer also writes `l3/cross-thread-candidates/narrative.md`, a
+  deterministic Markdown review artifact rendered from existing candidates,
+  `summary.json`, and topic summaries when available. It is a review/debug
+  layer only and does not change scoring, lexical policy, or semantic decisions.
   Topic-summary mode also uses a separate semantic scoring profile after
   admission: title overlap, summary keyphrase overlap, cleaned keyword-field
   overlap, and local-LLM summary provenance are weighted more heavily, while

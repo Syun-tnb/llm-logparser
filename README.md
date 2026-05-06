@@ -878,6 +878,12 @@ candidate generation, or promotion. `summary.json` records compact lexical
 resource provenance and category counts for debugging, but does not emit full
 token lists; full resolved-policy export is deferred.
 
+`cross-thread-candidates` also writes
+`l3/cross-thread-candidates/narrative.md`, a deterministic Markdown review
+artifact derived from the generated candidates, summary, and topic summaries
+when available. It is only a human-readable inspection layer; it does not change
+candidate scoring, lexical rules, or semantic decisions.
+
 `analyze lexical-rule-candidates` adds a separate inactive diagnostic layer:
 
 ```bash

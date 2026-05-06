@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bisect
+import hashlib
 import json
 import math
 import re
@@ -387,6 +388,14 @@ class _ScoredFragment:
 
 def cross_thread_candidates_path(input_root: Path) -> Path:
     return input_root / "l3" / "cross-thread-candidates" / "candidates.jsonl"
+
+
+def cross_thread_candidate_summary_path(input_root: Path) -> Path:
+    return input_root / "l3" / "cross-thread-candidates" / "summary.json"
+
+
+def cross_thread_candidate_narrative_path(input_root: Path) -> Path:
+    return input_root / "l3" / "cross-thread-candidates" / "narrative.md"
 
 
 def _load_topics_artifact(input_root: Path) -> dict[str, Any]:
@@ -3746,6 +3755,306 @@ def _summary(
     return summary
 
 
+def _load_cross_thread_candidate_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not path.exists():
+        raise CrossThreadCandidateError(f"cross-thread candidates not found: {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise CrossThreadCandidateError(
+                    f"invalid JSON in {path}:{line_number}: {exc.msg}"
+                ) from exc
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
+def _load_cross_thread_summary(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CrossThreadCandidateError(f"invalid JSON in {path}: {exc.msg}") from exc
+    return payload if isinstance(payload, dict) else {}
+
+
+def _topic_summary_review_index(provider_root: Path) -> dict[tuple[str, str], dict[str, Any]]:
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    paths = sorted(
+        provider_root.glob("thread-*/l3/intra-thread-topics/topic-summaries.jsonl")
+    )
+    for path in paths:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                conversation_id = row.get("conversation_id")
+                segment_id = row.get("segment_id")
+                if isinstance(conversation_id, str) and isinstance(segment_id, str):
+                    index[(conversation_id, segment_id)] = row
+    return index
+
+
+def _narrative_candidate_id(row: dict[str, Any]) -> str:
+    explicit = row.get("candidate_id")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    parts = (
+        str(row.get("source_conversation_id") or ""),
+        str(row.get("source_segment_id") or row.get("source_span_id") or ""),
+        str(row.get("target_conversation_id") or ""),
+        str(row.get("target_segment_id") or row.get("target_span_id") or ""),
+    )
+    digest = json.dumps(parts, ensure_ascii=False).encode("utf-8")
+    return f"candidate_{hashlib.sha1(digest).hexdigest()[:12]}"
+
+
+def _narrative_truncate(value: Any, *, max_chars: int = 360) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 3].rstrip()}..."
+
+
+def _narrative_reason_codes(row: dict[str, Any]) -> list[str]:
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict):
+        return []
+    reason_codes = evidence.get("reason_codes")
+    if not isinstance(reason_codes, list):
+        return []
+    return [str(code) for code in reason_codes if str(code)]
+
+
+def _narrative_shared_keywords(row: dict[str, Any]) -> list[str]:
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict):
+        return []
+    values = evidence.get("shared_keywords")
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values[:8] if str(value)]
+
+
+def _narrative_explanation(row: dict[str, Any]) -> list[str]:
+    reason_codes = set(_narrative_reason_codes(row))
+    shared_keywords = _narrative_shared_keywords(row)
+    bullets: list[str] = []
+    if shared_keywords:
+        bullets.append(f"Shared keywords: {', '.join(shared_keywords)}.")
+    if any(code.startswith("topic_summary_title_overlap") for code in reason_codes):
+        bullets.append("Topic-summary titles overlap.")
+    if any(code.startswith("topic_summary_keyphrase_overlap") for code in reason_codes):
+        bullets.append("Summary keyphrases overlap.")
+    if any(code.startswith("topic_summary_keyword_overlap") for code in reason_codes):
+        bullets.append("Topic-summary keyword fields overlap.")
+    if any(code.startswith("topic_summary_distinctive_token") for code in reason_codes):
+        bullets.append("Distinctive topic-summary token overlap contributed evidence.")
+    if "explicit_conclusion_overlap" in reason_codes:
+        bullets.append("Explicit conclusion text overlaps.")
+    if any(code.startswith("anchor_overlap") for code in reason_codes):
+        bullets.append("Anchor-token overlap contributed supporting evidence.")
+    if any(code.startswith("dictionary_token_overlap") for code in reason_codes):
+        bullets.append("Observed token dictionary overlap contributed supporting evidence.")
+    if any(code.startswith("bundle_overlap") for code in reason_codes):
+        bullets.append("Corpus cooccurrence bundle overlap contributed supporting evidence.")
+    if "summary_source_local_llm_pair" in reason_codes:
+        bullets.append("Both sides use local-LLM topic summaries.")
+    if "summary_source_heuristic_penalty" in reason_codes:
+        bullets.append("At least one side uses heuristic summary evidence, so treat cautiously.")
+    return bullets or ["Candidate was emitted by deterministic cross-thread evidence."]
+
+
+def _narrative_diagnostics(row: dict[str, Any]) -> list[str]:
+    reason_codes = set(_narrative_reason_codes(row))
+    diagnostics: list[str] = []
+    if any("residue" in code for code in reason_codes):
+        diagnostics.append("Residue-related lexical filtering appears in evidence.")
+    if any("generic" in code for code in reason_codes):
+        diagnostics.append("Generic overlap suppression/filtering affected this candidate.")
+    if any(code.startswith("topic_summary_") for code in reason_codes):
+        diagnostics.append("Topic-summary semantic evidence is present.")
+    if any(code.startswith("topic_summary_distinctive_token") for code in reason_codes):
+        diagnostics.append("Distinctive-token overlap is present; inspect for true motif overlap.")
+    if "summary_source_heuristic_penalty" in reason_codes:
+        diagnostics.append("Heuristic summary source penalty is present.")
+    return diagnostics
+
+
+def _candidate_narrative_sort_key(
+    row: dict[str, Any],
+    *,
+    unit_source: str,
+) -> tuple[float, int, str]:
+    band_rank = {"high": 0, "medium": 1, "low": 2}
+    score = float(row.get("score") or 0.0)
+    band = _score_band(score, unit_source=unit_source)
+    return (-score, band_rank.get(band, 9), _narrative_candidate_id(row))
+
+
+def _render_candidate_detail(
+    row: dict[str, Any],
+    *,
+    unit_source: str,
+    topic_summary_index: dict[tuple[str, str], dict[str, Any]],
+) -> list[str]:
+    candidate_id = _narrative_candidate_id(row)
+    score = float(row.get("score") or 0.0)
+    score_band = _score_band(score, unit_source=unit_source)
+    reason_codes = _narrative_reason_codes(row)
+    source_conversation_id = str(row.get("source_conversation_id") or "")
+    target_conversation_id = str(row.get("target_conversation_id") or "")
+    source_segment_id = str(row.get("source_segment_id") or row.get("source_span_id") or "")
+    target_segment_id = str(row.get("target_segment_id") or row.get("target_span_id") or "")
+    source_summary = topic_summary_index.get((source_conversation_id, source_segment_id))
+    target_summary = topic_summary_index.get((target_conversation_id, target_segment_id))
+    lines = [
+        f"### Candidate: {candidate_id}",
+        "",
+        f"- score: {round(score, 4)}",
+        f"- score_band: {score_band}",
+        "- reason_codes:",
+    ]
+    lines.extend([f"  - {code}" for code in reason_codes] or ["  - none"])
+    lines.extend(
+        [
+            "- conversations:",
+            f"  - source: {source_conversation_id} / {source_segment_id}",
+            f"  - target: {target_conversation_id} / {target_segment_id}",
+            "",
+            "#### Why this link exists",
+            "",
+        ]
+    )
+    lines.extend(f"- {bullet}" for bullet in _narrative_explanation(row))
+    lines.extend(
+        [
+            "",
+            "#### Representative excerpts",
+            "",
+            f"- source: {_narrative_truncate(row.get('source_excerpt'))}",
+            f"- target: {_narrative_truncate(row.get('target_excerpt'))}",
+            "",
+            "#### Topic summaries",
+            "",
+        ]
+    )
+    if source_summary or target_summary:
+        for label, summary_row in (("source", source_summary), ("target", target_summary)):
+            if not summary_row:
+                lines.append(f"- {label}: not available")
+                continue
+            title = _narrative_truncate(summary_row.get("title"), max_chars=160)
+            summary_text = _narrative_truncate(summary_row.get("summary"), max_chars=320)
+            lines.append(f"- {label} title: {title}")
+            lines.append(f"- {label} summary: {summary_text}")
+    else:
+        lines.append("- topic summaries: not available")
+    diagnostics = _narrative_diagnostics(row)
+    lines.extend(["", "#### Diagnostics", ""])
+    lines.extend(f"- {item}" for item in diagnostics) if diagnostics else lines.append("- none")
+    lines.append("")
+    return lines
+
+
+def _render_cross_thread_narrative(
+    rows: list[dict[str, Any]],
+    summary: dict[str, Any],
+    topic_summary_index: dict[tuple[str, str], dict[str, Any]],
+) -> str:
+    unit_source = str(summary.get("unit_source") or DEFAULT_CROSS_THREAD_UNIT_SOURCE)
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: _candidate_narrative_sort_key(row, unit_source=unit_source),
+    )
+    score_band_counts = summary.get("score_band_counts")
+    lexical_rules = summary.get("lexical_rules") if isinstance(summary, dict) else None
+    lines = [
+        "# Cross-Thread Candidate Narrative",
+        "",
+        "## Summary",
+        "",
+        f"- candidate count: {len(rows)}",
+        f"- unit source: {unit_source}",
+        f"- score bands: {json.dumps(score_band_counts or {}, ensure_ascii=False, sort_keys=True)}",
+    ]
+    if isinstance(lexical_rules, dict):
+        project_rules = lexical_rules.get("project_rules")
+        user_rules = lexical_rules.get("user_rules")
+        lines.extend(
+            [
+                "- lexical diagnostics:",
+                f"  - resolved_locale: {lexical_rules.get('resolved_locale', '')}",
+                f"  - project_rules: {project_rules.get('status') if isinstance(project_rules, dict) else 'unknown'}",
+                f"  - user_rules: {user_rules.get('status') if isinstance(user_rules, dict) else 'unknown'}",
+            ]
+        )
+    sections = (
+        ("High-confidence candidates", "high"),
+        ("Medium-confidence candidates", "medium"),
+    )
+    for title, band in sections:
+        section_rows = [
+            row for row in sorted_rows if _score_band(float(row.get("score") or 0.0), unit_source=unit_source) == band
+        ]
+        lines.extend(["", f"## {title}", ""])
+        if not section_rows:
+            lines.append("_No candidates._")
+            continue
+        for row in section_rows:
+            lines.extend(
+                _render_candidate_detail(
+                    row,
+                    unit_source=unit_source,
+                    topic_summary_index=topic_summary_index,
+                )
+            )
+    low_rows = [
+        row for row in sorted_rows if _score_band(float(row.get("score") or 0.0), unit_source=unit_source) == "low"
+    ]
+    lines.extend(["", "## Low-confidence candidates", ""])
+    if low_rows:
+        for row in low_rows:
+            lines.append(
+                "- "
+                f"{_narrative_candidate_id(row)}: score={round(float(row.get('score') or 0.0), 4)}, "
+                f"source={row.get('source_conversation_id')}/{row.get('source_segment_id') or row.get('source_span_id')}, "
+                f"target={row.get('target_conversation_id')}/{row.get('target_segment_id') or row.get('target_span_id')}"
+            )
+    else:
+        lines.append("_No candidates._")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_cross_thread_candidate_narrative_artifact(input_root: Path) -> Path:
+    provider_root = input_root.expanduser()
+    candidates_path = cross_thread_candidates_path(provider_root)
+    summary_path = cross_thread_candidate_summary_path(provider_root)
+    narrative_path = cross_thread_candidate_narrative_path(provider_root)
+    rows = _load_cross_thread_candidate_jsonl(candidates_path)
+    summary = _load_cross_thread_summary(summary_path)
+    topic_summary_index = _topic_summary_review_index(provider_root)
+    rendered = _render_cross_thread_narrative(rows, summary, topic_summary_index)
+    tmp_path = narrative_path.with_suffix(".tmp")
+    tmp_path.write_text(rendered, encoding="utf-8")
+    tmp_path.replace(narrative_path)
+    return narrative_path
+
+
 def write_cross_thread_candidates_artifact(
     input_root: Path,
     *,
@@ -3786,6 +4095,7 @@ def write_cross_thread_candidates_artifact(
     output_dir.mkdir(parents=True, exist_ok=True)
     candidates_path = output_dir / "candidates.jsonl"
     summary_path = output_dir / "summary.json"
+    narrative_path = output_dir / "narrative.md"
 
     tmp_candidates_path = candidates_path.with_suffix(".tmp")
     with tmp_candidates_path.open("w", encoding="utf-8") as handle:
@@ -3826,6 +4136,7 @@ def write_cross_thread_candidates_artifact(
         ),
     )
     write_json_artifact(summary_path, summary)
+    write_cross_thread_candidate_narrative_artifact(provider_root)
 
     return {
         "candidate_count": len(rows),
@@ -3833,4 +4144,5 @@ def write_cross_thread_candidates_artifact(
         "unit_source": unit_load_result.unit_source,
         "candidates_path": candidates_path,
         "summary_path": summary_path,
+        "narrative_path": narrative_path,
     }

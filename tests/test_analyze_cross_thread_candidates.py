@@ -19,7 +19,9 @@ from llm_logparser.core.analyzer_token_dictionary import (
 )
 from llm_logparser.core.analyzer_cross_thread_candidates import (
     build_cross_thread_candidate_rows,
+    cross_thread_candidate_narrative_path,
     cross_thread_candidates_path,
+    write_cross_thread_candidate_narrative_artifact,
     write_cross_thread_candidates_artifact,
 )
 from llm_logparser.core.analyzer_semantic_prototype import derive_semantic_span_id
@@ -4521,6 +4523,140 @@ def test_cli_analyze_cross_thread_candidates_writes_artifact(tmp_path: Path):
 
     assert cross_thread_candidates_path(root).exists()
     assert (root / "l3" / "cross-thread-candidates" / "summary.json").exists()
+    assert cross_thread_candidate_narrative_path(root).exists()
+
+
+def test_cross_thread_candidate_narrative_renders_topic_summary_details(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="good-a",
+        segment_id="seg-a",
+        title="DALL-E image workflow",
+        summary="Planning DALL-E prompt workflow and image iteration details.",
+        keywords=["DALL-E", "prompt workflow"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="good-b",
+        segment_id="seg-b",
+        title="DALL-E prompt workflow follow-up",
+        summary="Follow-up discussion about DALL-E prompt workflow improvements.",
+        keywords=["DALL-E", "prompt workflow"],
+        ts=100 + (8 * 24 * 60 * 60 * 1000),
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+
+    narrative = result["narrative_path"].read_text(encoding="utf-8")
+    assert result["narrative_path"] == cross_thread_candidate_narrative_path(root)
+    assert "# Cross-Thread Candidate Narrative" in narrative
+    assert "## Summary" in narrative
+    assert "## High-confidence candidates" in narrative
+    assert "Candidate:" in narrative
+    assert "#### Why this link exists" in narrative
+    assert "Shared keywords:" in narrative
+    assert "#### Representative excerpts" in narrative
+    assert "#### Topic summaries" in narrative
+    assert "source title: DALL-E image workflow" in narrative
+    assert "target title: DALL-E prompt workflow follow-up" in narrative
+    assert "#### Diagnostics" in narrative
+
+
+def test_cross_thread_candidate_narrative_degrades_without_topic_summaries(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topics_fixture(root)
+
+    result = write_cross_thread_candidates_artifact(root)
+
+    narrative = result["narrative_path"].read_text(encoding="utf-8")
+    assert "# Cross-Thread Candidate Narrative" in narrative
+    assert "topic summaries: not available" in narrative
+
+
+def test_cross_thread_candidate_narrative_is_deterministic_and_read_only(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="det-a",
+        segment_id="seg-a",
+        title="Investment strategy",
+        summary="ETF investment strategy and allocation discussion.",
+        keywords=["ETF", "investment"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="det-b",
+        segment_id="seg-b",
+        title="ETF investment strategy",
+        summary="ETF investment strategy follow-up with allocation notes.",
+        keywords=["ETF", "investment"],
+        ts=100 + (8 * 24 * 60 * 60 * 1000),
+    )
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    candidates_before = result["candidates_path"].read_text(encoding="utf-8")
+    summary_before = result["summary_path"].read_text(encoding="utf-8")
+
+    first_path = write_cross_thread_candidate_narrative_artifact(root)
+    first = first_path.read_text(encoding="utf-8")
+    second_path = write_cross_thread_candidate_narrative_artifact(root)
+    second = second_path.read_text(encoding="utf-8")
+
+    assert first_path == second_path
+    assert first == second
+    assert result["candidates_path"].read_text(encoding="utf-8") == candidates_before
+    assert result["summary_path"].read_text(encoding="utf-8") == summary_before
+
+
+def test_cross_thread_candidate_narrative_groups_low_confidence_and_caps_excerpts(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    long_excerpt = "alpha " * 200
+    _write_jsonl(
+        output_dir / "candidates.jsonl",
+        [
+            {
+                "score": 0.2,
+                "source_conversation_id": "low-a",
+                "target_conversation_id": "low-b",
+                "source_segment_id": "seg-a",
+                "target_segment_id": "seg-b",
+                "source_excerpt": long_excerpt,
+                "target_excerpt": long_excerpt,
+                "evidence": {"reason_codes": ["shared_keywords_low"]},
+            }
+        ],
+    )
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 0, "medium": 0, "low": 1},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+
+    narrative = narrative_path.read_text(encoding="utf-8")
+    assert "## Low-confidence candidates" in narrative
+    assert "score=0.2" in narrative
+    assert "alpha " * 100 not in narrative
 
 
 def test_cross_thread_candidates_do_not_modify_topics_json(tmp_path: Path):
