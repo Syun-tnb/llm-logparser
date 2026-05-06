@@ -896,8 +896,11 @@ substring matching. Candidate scores are normalized review-priority scores for
 this inactive artifact only; they do not affect cross-thread scoring directly.
 Candidate rows are always inactive and require manual review before use. The
 command also writes `l3/lexical-rules/review.md` as a human-readable review aid
-with copyable YAML snippets, but it does not write `reviewed.yaml`, does not
-modify reviewed project/user files, and does not promote anything automatically.
+with copyable YAML snippets. The review warns that names/personas should
+generally be copied to reviewed project/user `persona_weak_tokens`, not promoted
+as generic tokens; generating `persona_weak_token` candidates is not implemented
+yet. The command does not write `reviewed.yaml`, does not modify reviewed
+project/user files, and does not promote anything automatically.
 
 Recommended comparison flow:
 

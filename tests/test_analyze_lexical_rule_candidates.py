@@ -682,6 +682,8 @@ def test_lexical_rule_candidates_review_markdown_is_generated(tmp_path: Path):
     assert "## Summary" in review
     assert "- total candidates: 1" in review
     assert "## generic_scoring_token" in review
+    assert "Do not promote personal names" in review
+    assert "topic_summary.scoring.persona_weak_tokens" in review
     assert "### broadnoise" in review
     assert "- score:" in review
     assert "- score_components:" in review
@@ -695,6 +697,57 @@ def test_lexical_rule_candidates_review_markdown_is_generated(tmp_path: Path):
     assert '      - "broadnoise"' in review
     assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()
     assert dictionary_path.read_text(encoding="utf-8") == before_dictionary
+
+
+def test_lexical_rule_candidates_review_warns_on_name_like_latin_candidate(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("TestPersona", count=120, conversation_count=12, topic_count=30)],
+    )
+
+    result = write_lexical_rule_candidate_artifacts(root)
+
+    rows = _read_jsonl(result["candidates_path"])
+    review = result["review_path"].read_text(encoding="utf-8")
+    assert rows[0]["status"] == "inactive"
+    assert rows[0]["activation_state"] == "requires_review"
+    assert "review_note" not in rows[0]
+    assert "alternative_rule" not in rows[0]
+    assert "### testpersona" in review
+    assert "review_note: This value looks like a possible name/persona/project identity term" in review
+    assert "persona_weak_tokens:" in review
+    assert '      - "testpersona"' in review
+    assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()
+
+
+def test_lexical_rule_candidates_review_warns_on_honorific_candidate(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("テストさん", count=120, conversation_count=12, topic_count=30)],
+    )
+
+    result = write_lexical_rule_candidate_artifacts(root)
+
+    review = result["review_path"].read_text(encoding="utf-8")
+    assert "### テストさん" in review
+    assert "persona_weak_tokens:" in review
+    assert '      - "テストさん"' in review
+
+
+def test_lexical_rule_candidate_name_like_detection_has_no_builtin_name_list():
+    resource_dir = Path("src/llm_logparser/resources/cross_thread")
+    serialized_resources = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(resource_dir.glob("*.yaml"))
+    ).casefold()
+    forbidden_fixture_names = {"testpersona", "reyna", "shigure", "shizuku"}
+
+    assert all(name not in serialized_resources for name in forbidden_fixture_names)
 
 
 def test_lexical_rule_candidates_review_ordering_is_deterministic(tmp_path: Path):

@@ -763,6 +763,30 @@ def _render_suggested_rule_yaml(normalized_value: str) -> str:
     )
 
 
+def _render_persona_weak_rule_yaml(normalized_value: str) -> str:
+    rendered_value = json.dumps(normalized_value, ensure_ascii=False)
+    return "\n".join(
+        [
+            "```yaml",
+            "topic_summary:",
+            "  scoring:",
+            "    persona_weak_tokens:",
+            f"      - {rendered_value}",
+            "```",
+        ]
+    )
+
+
+def _looks_name_or_persona_like(row: dict[str, Any]) -> bool:
+    value = str(row.get("value") or "")
+    normalized_value = str(row.get("normalized_value") or "")
+    if not value and not normalized_value:
+        return False
+    if re.fullmatch(r"[A-Z][A-Za-z_-]{2,}", value):
+        return True
+    return bool(re.search(r"(?:さん|ちゃん|くん|君)$", value or normalized_value))
+
+
 def _render_review_markdown(
     rows: list[dict[str, Any]],
     diagnostics: dict[str, Any],
@@ -792,7 +816,19 @@ def _render_review_markdown(
     ]
     generic_rows.sort(key=_review_sort_key)
 
-    lines.extend(["", "## generic_scoring_token", ""])
+    lines.extend(
+        [
+            "",
+            "## generic_scoring_token",
+            "",
+            "> Note: Do not promote personal names, character names, "
+            "assistant/persona names, or project-specific identity terms as "
+            "generic scoring tokens. Prefer reviewed project/user "
+            "`topic_summary.scoring.persona_weak_tokens` for terms whose "
+            "standalone overlap should remain weak.",
+            "",
+        ]
+    )
     if not generic_rows:
         lines.append("_No candidates._")
         lines.append("")
@@ -809,6 +845,7 @@ def _render_review_markdown(
         sample_refs = row.get("sample_refs", [])
         if not isinstance(sample_refs, list):
             sample_refs = []
+        looks_name_like = _looks_name_or_persona_like(row)
 
         lines.extend(
             [
@@ -835,6 +872,15 @@ def _render_review_markdown(
                 "- reason_codes:",
             ]
         )
+        if looks_name_like:
+            lines.extend(
+                [
+                    "- review_note: This value looks like a possible "
+                    "name/persona/project identity term. Consider "
+                    "`topic_summary.scoring.persona_weak_tokens` instead of "
+                    "`generic_tokens`.",
+                ]
+            )
         if reason_codes:
             for reason_code in reason_codes:
                 lines.append(f"  - {_markdown_inline(reason_code)}")
@@ -866,9 +912,16 @@ def _render_review_markdown(
             [
                 "- suggested_rule:",
                 _render_suggested_rule_yaml(normalized_value),
-                "",
             ]
         )
+        if looks_name_like:
+            lines.extend(
+                [
+                    "- alternative_rule:",
+                    _render_persona_weak_rule_yaml(normalized_value),
+                ]
+            )
+        lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
 
