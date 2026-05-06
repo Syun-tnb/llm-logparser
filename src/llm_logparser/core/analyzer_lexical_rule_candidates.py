@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -367,13 +368,33 @@ def _candidate_score(
     count: int,
     conversation_count: int,
     document_count: int,
+    topic_summary_total_count: int,
     low_specificity: bool,
-) -> float:
-    spread = min(0.45, conversation_count / max(1, GENERIC_MIN_CONVERSATION_COUNT) * 0.25)
-    document = min(0.35, document_count / max(1, GENERIC_MIN_DOCUMENT_COUNT) * 0.25)
-    frequency = min(0.15, count / 100.0)
-    shape = 0.05 if low_specificity else 0.0
-    return round(min(1.0, spread + document + frequency + shape), 4)
+) -> tuple[float, dict[str, float]]:
+    conversation_score = min(1.0, math.log1p(conversation_count) / math.log1p(80))
+    document_score = min(1.0, math.log1p(document_count) / math.log1p(200))
+    frequency_score = min(1.0, math.log1p(count) / math.log1p(2000))
+    topic_summary_score = min(
+        1.0,
+        math.log1p(topic_summary_total_count) / math.log1p(50),
+    )
+    shape_score = 1.0 if low_specificity else 0.5
+    spread_score = 0.6 * conversation_score + 0.4 * document_score
+    score = (
+        0.45 * spread_score
+        + 0.30 * frequency_score
+        + 0.15 * topic_summary_score
+        + 0.10 * shape_score
+    )
+    components = {
+        "conversation_score": round(conversation_score, 4),
+        "document_score": round(document_score, 4),
+        "frequency_score": round(frequency_score, 4),
+        "topic_summary_score": round(topic_summary_score, 4),
+        "shape_score": round(shape_score, 4),
+        "spread_score": round(spread_score, 4),
+    }
+    return round(min(1.0, score), 4), components
 
 
 def _candidate_id(provider_id: str, normalized_value: str) -> str:
@@ -486,10 +507,11 @@ def _candidate_for_token(
         topic_summary_records=topic_summary_records,
         sample_limit=sample_limit,
     )
-    score = _candidate_score(
+    score, score_components = _candidate_score(
         count=count,
         conversation_count=conversation_count,
         document_count=document_count,
+        topic_summary_total_count=topic_summary_counts["topic_summary_total_count"],
         low_specificity=low_specificity,
     )
     return {
@@ -517,6 +539,7 @@ def _candidate_for_token(
             "bundle_count": bundle_counts.get(normalized_value, 0),
             **topic_summary_counts,
             "score": score,
+            "score_components": score_components,
             "reason_codes": reason_codes,
         },
         "sample_refs": topic_summary_refs
@@ -792,6 +815,15 @@ def _render_review_markdown(
                 f"### {normalized_value}",
                 "",
                 f"- score: {evidence.get('score', '')}",
+                "- score_components:",
+                "  - spread_score: "
+                f"{(evidence.get('score_components') or {}).get('spread_score', '')}",
+                "  - frequency_score: "
+                f"{(evidence.get('score_components') or {}).get('frequency_score', '')}",
+                "  - topic_summary_score: "
+                f"{(evidence.get('score_components') or {}).get('topic_summary_score', '')}",
+                "  - shape_score: "
+                f"{(evidence.get('score_components') or {}).get('shape_score', '')}",
                 "- counts:",
                 f"  - conversation_count: {evidence.get('conversation_count', 0)}",
                 f"  - document_count: {evidence.get('document_count', 0)}",

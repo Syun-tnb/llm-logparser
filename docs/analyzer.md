@@ -996,7 +996,9 @@ deterministic and model-derived capabilities.
   adds optional title/summary/keyword/conclusion occurrence counts and short
   sample references to improve manual review. Latin token evidence matching is
   boundary-aware; CJK evidence remains substring-based. Missing topic summaries
-  are not errors. Candidate rows always use `status: inactive` and
+  are not errors. Candidate scores are normalized review-priority scores for
+  this inactive diagnostic artifact only; they do not affect cross-thread
+  candidate scoring directly. Candidate rows always use `status: inactive` and
   `activation_state: requires_review`. The command also writes
   `l3/lexical-rules/review.md` as a human-readable review aid with copyable YAML
   snippets; users must manually copy accepted rules into reviewed lexical rule

@@ -174,6 +174,15 @@ def test_lexical_rule_candidates_generate_inactive_generic_candidate(tmp_path: P
     assert row["already_active"] is False
     assert row["source"]["method"] == "token_dictionary_spread_v0"
     assert row["evidence"]["bundle_count"] == 1
+    assert 0.0 < row["evidence"]["score"] < 1.0
+    assert set(row["evidence"]["score_components"]) == {
+        "conversation_score",
+        "document_score",
+        "frequency_score",
+        "topic_summary_score",
+        "shape_score",
+        "spread_score",
+    }
     assert row["sample_refs"]
     assert diagnostics["candidate_count"] == 1
     assert diagnostics["candidate_type_counts"] == {"generic_scoring_token": 1}
@@ -251,6 +260,74 @@ def test_lexical_rule_candidate_reason_codes_stay_review_oriented(tmp_path: Path
         "high_frequency",
         "broad_corpus_token",
     ]
+
+
+def test_lexical_rule_candidate_scores_use_normalized_components(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("hightoken", count=5000, conversation_count=80, topic_count=200),
+            _token_row("mediumtoken", count=500, conversation_count=10, topic_count=25),
+        ],
+    )
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root)
+    by_token = {row["normalized_value"]: row for row in rows}
+
+    assert by_token["hightoken"]["evidence"]["score"] > by_token["mediumtoken"][
+        "evidence"
+    ]["score"]
+    assert by_token["hightoken"]["evidence"]["score"] < 1.0
+    assert by_token["mediumtoken"]["evidence"]["score_components"]["spread_score"] < 1.0
+
+
+def test_lexical_rule_candidate_score_does_not_saturate_for_realistic_high_counts(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("styleword", count=5000, conversation_count=245, topic_count=245),
+            _token_row("anotherstyle", count=2500, conversation_count=160, topic_count=160),
+        ],
+    )
+
+    rows, _diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert {row["normalized_value"] for row in rows} == {"styleword", "anotherstyle"}
+    assert {row["evidence"]["score"] for row in rows} != {1.0}
+    assert all(row["evidence"]["score"] < 1.0 for row in rows)
+
+
+def test_lexical_rule_candidate_ids_do_not_depend_on_score_inputs(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("stabletoken", count=120, conversation_count=12, topic_count=30)],
+    )
+
+    rows_without_evidence, _diagnostics = build_lexical_rule_candidate_rows(root)
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "summary": "stabletoken appears as topic-summary evidence.",
+            }
+        ],
+    )
+    rows_with_evidence, _diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert rows_without_evidence[0]["candidate_id"] == rows_with_evidence[0][
+        "candidate_id"
+    ]
+    assert rows_without_evidence[0]["evidence"]["score"] != rows_with_evidence[0][
+        "evidence"
+    ]["score"]
 
 
 def test_lexical_rule_candidates_add_topic_summary_evidence(tmp_path: Path):
@@ -607,6 +684,8 @@ def test_lexical_rule_candidates_review_markdown_is_generated(tmp_path: Path):
     assert "## generic_scoring_token" in review
     assert "### broadnoise" in review
     assert "- score:" in review
+    assert "- score_components:" in review
+    assert "spread_score:" in review
     assert "topic_summary_total_count: 2" in review
     assert "topic_summary.summary" in review
     assert "Broadnoise review evidence." in review
