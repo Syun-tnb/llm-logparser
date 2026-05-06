@@ -4557,6 +4557,8 @@ def test_cross_thread_candidate_narrative_renders_topic_summary_details(tmp_path
     assert result["narrative_path"] == cross_thread_candidate_narrative_path(root)
     assert "# Cross-Thread Candidate Narrative" in narrative
     assert "## Summary" in narrative
+    assert "## Candidate index" in narrative
+    assert "| candidate_id | score | band | source | target | hints |" in narrative
     assert "## High-confidence candidates" in narrative
     assert "Candidate:" in narrative
     assert "#### Why this link exists" in narrative
@@ -4568,6 +4570,8 @@ def test_cross_thread_candidate_narrative_renders_topic_summary_details(tmp_path
     assert "#### Diagnostics" in narrative
     assert "Shared keywords: dall-e, prompt workflow." in narrative
     assert "Distinctive overlap token hints (derived):" in narrative
+    assert "DALL-E image workflow" in narrative
+    assert "DALL-E prompt workflow follow-up" in narrative
 
 
 def test_cross_thread_candidate_narrative_degrades_without_topic_summaries(
@@ -4580,6 +4584,8 @@ def test_cross_thread_candidate_narrative_degrades_without_topic_summaries(
 
     narrative = result["narrative_path"].read_text(encoding="utf-8")
     assert "# Cross-Thread Candidate Narrative" in narrative
+    assert "## Candidate index" in narrative
+    assert "conv-" in narrative
     assert "topic summaries: not available" in narrative
 
 
@@ -4622,6 +4628,100 @@ def test_cross_thread_candidate_narrative_is_deterministic_and_read_only(
     assert first == second
     assert result["candidates_path"].read_text(encoding="utf-8") == candidates_before
     assert result["summary_path"].read_text(encoding="utf-8") == summary_before
+
+
+def test_cross_thread_candidate_narrative_index_is_ordered_and_compact(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    long_title = "Long source topic label with pipe | and many extra words for truncation"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="idx-a",
+        segment_id="seg-a",
+        title=long_title,
+        summary="Index source summary.",
+        keywords=["alpha"],
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="idx-b",
+        segment_id="seg-b",
+        title="Target topic",
+        summary="Index target summary.",
+        keywords=["alpha"],
+    )
+    rows = [
+        {
+            "score": 0.2,
+            "source_conversation_id": "idx-low-a",
+            "target_conversation_id": "idx-low-b",
+            "source_segment_id": "seg-a",
+            "target_segment_id": "seg-b",
+            "evidence": {
+                "reason_codes": ["shared_keywords_low"],
+                "shared_keywords": ["alpha"],
+            },
+        },
+        {
+            "score": 0.8,
+            "source_conversation_id": "idx-a",
+            "target_conversation_id": "idx-b",
+            "source_segment_id": "seg-a",
+            "target_segment_id": "seg-b",
+            "evidence": {
+                "reason_codes": [
+                    "topic_summary_title_overlap_high",
+                    "topic_summary_distinctive_token_overlap_strong",
+                    "summary_source_heuristic_penalty",
+                ],
+                "shared_keywords": ["alpha"],
+            },
+        },
+        {
+            "score": 0.5,
+            "source_conversation_id": "idx-mid-a",
+            "target_conversation_id": "idx-mid-b",
+            "source_segment_id": "seg-a",
+            "target_segment_id": "seg-b",
+            "evidence": {
+                "reason_codes": ["generic_shared_keywords_only", "residue_marker"],
+                "shared_keywords": ["beta"],
+            },
+        },
+    ]
+    _write_jsonl(output_dir / "candidates.jsonl", rows)
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 1, "low": 1},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+    index_start = narrative.index("## Candidate index")
+    high_start = narrative.index("## High-confidence candidates")
+    index = narrative[index_start:high_start]
+
+    index_rows = [
+        line
+        for line in index.splitlines()
+        if line.startswith("| candidate_") and not line.startswith("| candidate_id")
+    ]
+    assert len(index_rows) == 3
+    first_row = index_rows[0]
+    assert "| 0.8 | high |" in first_row
+    assert "Long source topic label with pipe \\| and many..." in first_row
+    assert "heuristic title" in first_row
+    assert "distinctive overlap" in first_row
+    assert "idx-mid-a/seg-a" in index
+    assert "generic overlap" in index
+    assert "residue suppression" in index
+    assert index.find("| 0.8 | high |") < index.find("| 0.5 | medium |")
+    assert index.find("| 0.5 | medium |") < index.find("| 0.2 | low |")
 
 
 def test_cross_thread_candidate_narrative_details_small_low_confidence_sets(

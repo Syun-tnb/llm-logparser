@@ -932,6 +932,7 @@ deterministic and model-derived capabilities.
   deterministic Markdown review artifact rendered from existing candidates,
   `summary.json`, and topic summaries when available. It is a review/debug
   layer only and does not change scoring, lexical policy, or semantic decisions.
+  A compact candidate index table appears near the top for fast scanning.
   Candidate diagnostics include capped token-level hints when available, such as
   shared keywords and display-derived distinctive/persona/address-like overlap
   tokens. These hints are for manual inspection only. Low-confidence candidates

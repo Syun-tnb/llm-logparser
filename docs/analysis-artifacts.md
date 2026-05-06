@@ -817,11 +817,12 @@ Auxiliary L3 note:
 - cross-thread candidates also write `narrative.md`, a deterministic Markdown
   review/debug artifact derived from existing candidates, summary metadata, and
   topic summaries when available; it does not change scoring or semantic
-  interpretation. Its diagnostics may include capped token-level hints derived
-  from candidate evidence and topic-summary display fields, for example shared
-  keywords and possible persona/address/generic overlap tokens. Low-confidence
-  candidates are detailed only when the low-confidence set is small; larger
-  low-confidence sets remain compact
+  interpretation. It includes a compact candidate index table, and its
+  diagnostics may include capped token-level hints derived from candidate
+  evidence and topic-summary display fields, for example shared keywords and
+  possible persona/address/generic overlap tokens. Low-confidence candidates are
+  detailed only when the low-confidence set is small; larger low-confidence sets
+  remain compact
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence

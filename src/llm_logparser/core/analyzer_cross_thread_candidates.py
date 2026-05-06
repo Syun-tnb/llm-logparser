@@ -206,6 +206,8 @@ _TOPIC_SUMMARY_RITUAL_TITLE_PHRASES = (
     "daily check-in",
 )
 _NARRATIVE_TOKEN_HINT_LIMIT = 8
+_NARRATIVE_INDEX_LABEL_MAX_CHARS = 48
+_NARRATIVE_INDEX_HINT_LIMIT = 4
 # Keep small low-confidence sets inspectable while avoiding report expansion when
 # a noisy run emits many low-scoring links.
 _NARRATIVE_LOW_DETAIL_THRESHOLD = 3
@@ -3850,6 +3852,11 @@ def _narrative_truncate(value: Any, *, max_chars: int = 360) -> str:
     return f"{text[: max_chars - 3].rstrip()}..."
 
 
+def _narrative_table_cell(value: Any, *, max_chars: int) -> str:
+    text = _narrative_truncate(value, max_chars=max_chars)
+    return text.replace("|", "\\|") or "-"
+
+
 def _narrative_reason_codes(row: dict[str, Any]) -> list[str]:
     evidence = row.get("evidence")
     if not isinstance(evidence, dict):
@@ -3987,6 +3994,116 @@ def _narrative_broad_conversational_tokens(tokens: list[str]) -> list[str]:
     return _narrative_compact_token_list(
         [token for token in tokens if _narrative_is_broad_conversational_token(token)]
     )
+
+
+def _narrative_summary_for_row(
+    row: dict[str, Any],
+    *,
+    topic_summary_index: dict[tuple[str, str], dict[str, Any]],
+    side: str,
+) -> dict[str, Any] | None:
+    conversation_id = str(row.get(f"{side}_conversation_id") or "")
+    segment_id = str(row.get(f"{side}_segment_id") or row.get(f"{side}_span_id") or "")
+    return topic_summary_index.get((conversation_id, segment_id))
+
+
+def _narrative_index_label(
+    row: dict[str, Any],
+    *,
+    topic_summary_index: dict[tuple[str, str], dict[str, Any]],
+    side: str,
+) -> str:
+    summary_row = _narrative_summary_for_row(
+        row,
+        topic_summary_index=topic_summary_index,
+        side=side,
+    )
+    if summary_row:
+        title = summary_row.get("title")
+        if isinstance(title, str) and title.strip():
+            return _narrative_table_cell(
+                title,
+                max_chars=_NARRATIVE_INDEX_LABEL_MAX_CHARS,
+            )
+    conversation_id = str(row.get(f"{side}_conversation_id") or "")
+    segment_id = str(row.get(f"{side}_segment_id") or row.get(f"{side}_span_id") or "")
+    return _narrative_table_cell(
+        f"{conversation_id}/{segment_id}",
+        max_chars=_NARRATIVE_INDEX_LABEL_MAX_CHARS,
+    )
+
+
+def _narrative_index_hints(
+    row: dict[str, Any],
+    *,
+    source_summary: dict[str, Any] | None,
+    target_summary: dict[str, Any] | None,
+) -> list[str]:
+    reason_codes = set(_narrative_reason_codes(row))
+    overlap_hints = _narrative_overlap_token_hints(
+        row,
+        source_summary=source_summary,
+        target_summary=target_summary,
+    )
+    hints: list[str] = []
+    if _narrative_suspicious_overlap_tokens(overlap_hints):
+        hints.append("persona overlap")
+    if "summary_source_heuristic_penalty" in reason_codes and any(
+        code.startswith("topic_summary_title_overlap") for code in reason_codes
+    ):
+        hints.append("heuristic title")
+    if any("generic" in code for code in reason_codes):
+        hints.append("generic overlap")
+    if any("residue" in code for code in reason_codes):
+        hints.append("residue suppression")
+    if any(code.startswith("topic_summary_distinctive_token") for code in reason_codes):
+        hints.append("distinctive overlap")
+    return hints[:_NARRATIVE_INDEX_HINT_LIMIT]
+
+
+def _render_candidate_index(
+    rows: list[dict[str, Any]],
+    *,
+    unit_source: str,
+    topic_summary_index: dict[tuple[str, str], dict[str, Any]],
+) -> list[str]:
+    lines = [
+        "",
+        "## Candidate index",
+        "",
+        "| candidate_id | score | band | source | target | hints |",
+        "|---|---:|---|---|---|---|",
+    ]
+    if not rows:
+        lines.append("| - | - | - | - | - | - |")
+        return lines
+    for row in rows:
+        score = float(row.get("score") or 0.0)
+        source_summary = _narrative_summary_for_row(
+            row,
+            topic_summary_index=topic_summary_index,
+            side="source",
+        )
+        target_summary = _narrative_summary_for_row(
+            row,
+            topic_summary_index=topic_summary_index,
+            side="target",
+        )
+        hints = _narrative_index_hints(
+            row,
+            source_summary=source_summary,
+            target_summary=target_summary,
+        )
+        lines.append(
+            "| "
+            f"{_narrative_candidate_id(row)} | "
+            f"{round(score, 4)} | "
+            f"{_score_band(score, unit_source=unit_source)} | "
+            f"{_narrative_index_label(row, topic_summary_index=topic_summary_index, side='source')} | "
+            f"{_narrative_index_label(row, topic_summary_index=topic_summary_index, side='target')} | "
+            f"{', '.join(hints) if hints else '-'} |"
+        )
+    return lines
 
 
 def _narrative_explanation(row: dict[str, Any]) -> list[str]:
@@ -4194,6 +4311,13 @@ def _render_cross_thread_narrative(
                 f"  - user_rules: {user_rules.get('status') if isinstance(user_rules, dict) else 'unknown'}",
             ]
         )
+    lines.extend(
+        _render_candidate_index(
+            sorted_rows,
+            unit_source=unit_source,
+            topic_summary_index=topic_summary_index,
+        )
+    )
     sections = (
         ("High-confidence candidates", "high"),
         ("Medium-confidence candidates", "medium"),

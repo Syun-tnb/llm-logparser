@@ -882,7 +882,8 @@ token lists; full resolved-policy export is deferred.
 `l3/cross-thread-candidates/narrative.md`, a deterministic Markdown review
 artifact derived from the generated candidates, summary, and topic summaries
 when available. It is only a human-readable inspection layer; it does not change
-candidate scoring, lexical rules, or semantic decisions. Its diagnostics may
+candidate scoring, lexical rules, or semantic decisions. It includes a compact
+candidate index table derived from existing artifacts, and its diagnostics may
 include capped token-level overlap hints, such as shared keywords and
 display-derived distinctive/persona/address-like tokens, to make manual review
 of noisy matches easier. Low-confidence candidates render with full detail when
