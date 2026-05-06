@@ -4062,6 +4062,164 @@ def test_topic_summary_scoring_uses_reviewed_generic_and_short_specific_tokens(
     )
 
 
+def test_topic_summary_persona_weak_tokens_apply_conservative_penalty(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="persona-a",
+        segment_id="seg-persona-a",
+        title="Reina Kitagawa planning",
+        summary="Reina Kitagawa is discussed as the likely choice.",
+        keywords=["Reina", "Kitagawa"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="persona-b",
+        segment_id="seg-persona-b",
+        title="Reina Kitagawa choice",
+        summary="Reina Kitagawa is again mentioned as the preferred option.",
+        keywords=["Reina", "Kitagawa"],
+        ts=200,
+    )
+
+    baseline = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    baseline_row = _row_for_topic_pair(
+        _read_jsonl(baseline["candidates_path"]),
+        "persona-a:seg-persona-a",
+        "persona-b:seg-persona-b",
+    )
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"persona_weak_tokens": ["Reina", "Kitagawa"]},
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+        project_lexical_rules=project_path,
+    )
+    rows = _read_jsonl(result["candidates_path"])
+    row = _row_for_topic_pair(
+        rows,
+        "persona-a:seg-persona-a",
+        "persona-b:seg-persona-b",
+    )
+    summary = json.loads(result["summary_path"].read_text(encoding="utf-8"))
+    errors = list(load_cross_thread_candidate_validator().iter_errors(row))
+
+    assert not errors
+    assert row["score"] <= baseline_row["score"] - 0.05
+    assert row["score"] > 0
+    assert "persona_weak_token_overlap" in row["evidence"]["reason_codes"]
+    assert "persona_weak_token_penalty" in row["evidence"]["reason_codes"]
+    assert summary["reason_counts"]["persona_weak_token_overlap"] == 1
+    assert summary["reason_counts"]["persona_weak_token_penalty"] == 1
+    assert "Reina" not in json.dumps(summary, ensure_ascii=False)
+
+
+def test_topic_summary_persona_weak_tokens_do_not_penalize_strong_non_persona_overlap(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="strong-a",
+        segment_id="seg-strong-a",
+        title="Reina DALL-E prompt workflow",
+        summary="Reina reviews DALL-E prompt workflow and image iteration.",
+        keywords=["Reina", "DALL-E", "prompt workflow"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="strong-b",
+        segment_id="seg-strong-b",
+        title="Reina DALL-E prompt workflow follow-up",
+        summary="Follow-up on DALL-E prompt workflow and image iteration details.",
+        keywords=["Reina", "DALL-E", "prompt workflow"],
+        ts=200,
+    )
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"persona_weak_tokens": ["Reina"]},
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+        project_lexical_rules=project_path,
+    )
+    row = _row_for_topic_pair(
+        _read_jsonl(result["candidates_path"]),
+        "strong-a:seg-strong-a",
+        "strong-b:seg-strong-b",
+    )
+
+    assert row["score"] >= 0.7
+    assert "topic_summary_keyword_overlap_high" in row["evidence"]["reason_codes"]
+    assert "persona_weak_token_penalty" not in row["evidence"]["reason_codes"]
+
+
+def test_topic_summary_persona_weak_tokens_from_user_rules_affect_scoring(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="user-persona-a",
+        segment_id="seg-user-persona-a",
+        title="Shigure PersonaName reminder",
+        summary="Shigure PersonaName is mentioned again in a short character note.",
+        keywords=["Shigure", "PersonaName"],
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="user-persona-b",
+        segment_id="seg-user-persona-b",
+        title="Shigure PersonaName note",
+        summary="Shigure PersonaName appears as the only repeated topic.",
+        keywords=["Shigure", "PersonaName"],
+        ts=200,
+    )
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"persona_weak_tokens": ["Reina"]},
+    )
+    user_path = _write_reviewed_lexical_rules(
+        tmp_path / "user-rules.yaml",
+        owner_scope="user",
+        scoring={"persona_weak_tokens": ["Shigure", "PersonaName"]},
+    )
+
+    result = write_cross_thread_candidates_artifact(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+        project_lexical_rules=project_path,
+        user_lexical_rules=user_path,
+    )
+    row = _row_for_topic_pair(
+        _read_jsonl(result["candidates_path"]),
+        "user-persona-a:seg-user-persona-a",
+        "user-persona-b:seg-user-persona-b",
+    )
+
+    assert "persona_weak_token_penalty" in row["evidence"]["reason_codes"]
+
+
 def test_topic_summary_scoring_missing_resource_fields_use_fallbacks():
     rules = _rules_with_topic_summary_scoring(
         generic_tokens=(),

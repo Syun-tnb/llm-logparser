@@ -802,7 +802,9 @@ Auxiliary L3 note:
   by token dictionary artifacts
 - explicitly provided reviewed project/user lexical rule files can be merged as
   additive policy layers above the built-in resources; no automatic discovery or
-  promotion is implemented
+  promotion is implemented. Reviewed `persona_weak_tokens` are not OSS common
+  defaults; when explicitly provided, they weaken topic-summary score inflation
+  from standalone persona/name overlap without hard-suppressing candidate links
 - `analyze lexical-rule-candidates` writes inactive diagnostic suggestions under
   `<provider-root>/l3/lexical-rules/`; Phase 1 only suggests
   `generic_scoring_token` candidates from high-spread `dictionary.json` rows and

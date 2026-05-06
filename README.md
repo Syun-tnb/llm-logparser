@@ -874,9 +874,12 @@ as corpus-derived cooccurrence bundles. They are additive L3 signals only, not
 user-authored lexical rules. Reviewed project/user lexical rule files can be
 provided explicitly with `--project-lexical-rules` and `--user-lexical-rules`;
 they are additive layers above built-in resources, with no automatic discovery,
-candidate generation, or promotion. `summary.json` records compact lexical
-resource provenance and category counts for debugging, but does not emit full
-token lists; full resolved-policy export is deferred.
+candidate generation, or promotion. Reviewed `persona_weak_tokens` are not OSS
+defaults; when provided, they apply a small topic-summary scoring penalty to
+overlap dominated by standalone persona/name terms without hard-suppressing
+candidate links. `summary.json` records compact lexical resource provenance and
+category counts for debugging, but does not emit full token lists; full
+resolved-policy export is deferred.
 
 `cross-thread-candidates` also writes
 `l3/cross-thread-candidates/narrative.md`, a deterministic Markdown review

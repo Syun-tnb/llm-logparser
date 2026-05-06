@@ -105,6 +105,7 @@ _TOPIC_SUMMARY_DISTINCTIVE_TOKEN_SCORE = 0.08
 _TOPIC_SUMMARY_DISTINCTIVE_TOKEN_STRONG_SCORE = 0.14
 _TOPIC_SUMMARY_LOCAL_LLM_PAIR_SCORE = 0.08
 _TOPIC_SUMMARY_HEURISTIC_PENALTY = 0.04
+_TOPIC_SUMMARY_PERSONA_WEAK_TOKEN_PENALTY = 0.08
 _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_HIGH_SCORE = 0.03
 _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.015
 _TOPIC_SUMMARY_ANCHOR_OVERLAP_SCORE = 0.02
@@ -2402,6 +2403,15 @@ def _topic_summary_score_and_reasons(
         score -= _TOPIC_SUMMARY_HEURISTIC_PENALTY
         reason_codes.append("summary_source_heuristic_penalty")
 
+    if _topic_summary_persona_weak_overlap_is_dominant(
+        source,
+        target,
+        cross_thread_rules=cross_thread_rules,
+    ):
+        score -= _TOPIC_SUMMARY_PERSONA_WEAK_TOKEN_PENALTY
+        reason_codes.append("persona_weak_token_overlap")
+        reason_codes.append("persona_weak_token_penalty")
+
     if signals.timestamp_delta_ms is not None:
         if signals.timestamp_delta_ms >= _TIMESTAMP_DISTANCE_HIGH_THRESHOLD_MS:
             score += _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_HIGH_SCORE
@@ -2431,7 +2441,7 @@ def _topic_summary_score_and_reasons(
             "explicit_conclusion_overlap",
         )
     ) or len(signals.shared_keywords) >= 1
-    return score, _dedupe_reason_codes(reason_codes), has_strong_signal
+    return max(0.0, score), _dedupe_reason_codes(reason_codes), has_strong_signal
 
 
 def _structural_signal_score_and_reasons(
@@ -2586,6 +2596,26 @@ def _is_topic_summary_persona_distinctive_token(
     cross_thread_rules: CrossThreadLexicalRules,
 ) -> bool:
     return _is_topic_summary_weak_distinctive_token(token, cross_thread_rules)
+
+
+def _topic_summary_persona_weak_token_keys(
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> set[str]:
+    return _topic_summary_scoring_token_keys(
+        cross_thread_rules,
+        "topic_summary_scoring_persona_weak_tokens",
+        _TOPIC_SUMMARY_PERSONA_WEAK_TOKENS,
+    )
+
+
+def _is_topic_summary_persona_weak_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    key = _admission_anchor_token_key(token)
+    return bool(key) and key in _topic_summary_persona_weak_token_keys(
+        cross_thread_rules
+    )
 
 
 def _topic_summary_generic_admission_anchor_tokens(
@@ -2887,6 +2917,80 @@ def _specific_shared_scoring_keywords(
                 )
             )
         )
+    )
+
+
+def _topic_summary_shared_scoring_tokens(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    shared_tokens = (
+        set(
+            _topic_summary_title_tokens_for_unit(
+                source,
+                cross_thread_rules=cross_thread_rules,
+            )
+        )
+        & set(
+            _topic_summary_title_tokens_for_unit(
+                target,
+                cross_thread_rules=cross_thread_rules,
+            )
+        )
+    ) | (
+        set(
+            _topic_summary_keyphrases_for_unit(
+                source,
+                cross_thread_rules=cross_thread_rules,
+            )
+        )
+        & set(
+            _topic_summary_keyphrases_for_unit(
+                target,
+                cross_thread_rules=cross_thread_rules,
+            )
+        )
+    ) | set(
+        _specific_shared_scoring_keywords(
+            source,
+            target,
+            cross_thread_rules=cross_thread_rules,
+        )
+    )
+    return tuple(sorted(shared_tokens))
+
+
+def _topic_summary_persona_weak_overlap_is_dominant(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    if not _topic_summary_persona_weak_token_keys(cross_thread_rules):
+        return False
+    shared_tokens = _topic_summary_shared_scoring_tokens(
+        source,
+        target,
+        cross_thread_rules=cross_thread_rules,
+    )
+    if not shared_tokens:
+        return False
+    persona_tokens = [
+        token
+        for token in shared_tokens
+        if _is_topic_summary_persona_weak_token(token, cross_thread_rules)
+    ]
+    if not persona_tokens:
+        return False
+    non_persona_tokens = [
+        token
+        for token in shared_tokens
+        if not _is_topic_summary_persona_weak_token(token, cross_thread_rules)
+    ]
+    return not non_persona_tokens or (
+        len(persona_tokens) >= 2 and len(non_persona_tokens) <= 1
     )
 
 

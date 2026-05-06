@@ -927,7 +927,10 @@ deterministic and model-derived capabilities.
   does not emit full token lists, and full resolved-policy export is deferred.
   Reviewed rule files are YAML with `schema_version: "0.1"`,
   `owner_scope: "project"` or `"user"`, and additive lists under
-  `rules.topic_summary.scoring`.
+  `rules.topic_summary.scoring`. Reviewed `persona_weak_tokens` are project/user
+  policy, not OSS common defaults; when explicitly provided, they apply a small
+  topic-summary scoring penalty to overlap dominated by standalone persona/name
+  terms without hard-suppressing candidate links.
   The analyzer also writes `l3/cross-thread-candidates/narrative.md`, a
   deterministic Markdown review artifact rendered from existing candidates,
   `summary.json`, and topic summaries when available. It is a review/debug
