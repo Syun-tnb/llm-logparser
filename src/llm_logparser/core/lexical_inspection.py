@@ -39,10 +39,21 @@ def _read_json(path: Path, *, label: str) -> dict[str, Any]:
 
 
 def _short(value: str, *, limit: int = 120) -> str:
-    normalized = " ".join(value.split())
-    if len(normalized) <= limit:
-        return normalized
-    return f"{normalized[: limit - 3].rstrip()}..."
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 3].rstrip()}..."
+
+
+def _escape_markdown_table_cell(value: Any) -> str:
+    """Escape compact Markdown table/list cell text without changing JSON data."""
+
+    return (
+        str(value)
+        .replace("|", r"\|")
+        .replace("\r\n", "<br>")
+        .replace("\n", "<br>")
+        .replace("\r", "<br>")
+    )
 
 
 def _token_key(value: str) -> str:
@@ -390,7 +401,11 @@ def render_observed_token_list_text(payload: dict[str, Any]) -> str:
     ]
     for row in payload["tokens"]:
         lines.append(
-            f"| {row['token']} | {row['count']} | {row['conversation_count']} | {row['topic_count']} |"
+            "| "
+            f"{_escape_markdown_table_cell(row['token'])} | "
+            f"{_escape_markdown_table_cell(row['count'])} | "
+            f"{_escape_markdown_table_cell(row['conversation_count'])} | "
+            f"{_escape_markdown_table_cell(row['topic_count'])} |"
         )
     return "\n".join(lines)
 
@@ -398,31 +413,34 @@ def render_observed_token_list_text(payload: dict[str, Any]) -> str:
 def render_observed_token_inspection_text(payload: dict[str, Any]) -> str:
     lines = [
         "Observed token inspection",
-        f"- token: {payload['token']}",
-        f"- normalized: {payload['normalized']}",
+        f"- token: {_escape_markdown_table_cell(payload['token'])}",
+        f"- normalized: {_escape_markdown_table_cell(payload['normalized'])}",
         f"- count: {payload['count']}",
         f"- conversation_count: {payload['conversation_count']}",
         f"- topic_count: {payload['topic_count']}",
-        f"- source: {payload['observed_tokens_source']}",
+        f"- source: {_escape_markdown_table_cell(payload['observed_tokens_source'])}",
         "- cooccurrence:",
     ]
     cooccurrence = payload.get("cooccurrence", [])
-    lines.extend(f"  - {item}" for item in cooccurrence[:10])
+    lines.extend(f"  - {_escape_markdown_table_cell(item)}" for item in cooccurrence[:10])
     if not cooccurrence:
         lines.append("  - none")
     lines.append("- bundle_evidence:")
     bundles = payload.get("bundle_evidence", [])
     for bundle in bundles[:10]:
         lines.append(
-            f"  - {bundle['bundle_id']}: {', '.join(bundle['tokens'])} "
-            f"(weight={bundle['weight']})"
+            f"  - {_escape_markdown_table_cell(bundle['bundle_id'])}: "
+            f"{_escape_markdown_table_cell(', '.join(bundle['tokens']))} "
+            f"(weight={_escape_markdown_table_cell(bundle['weight'])})"
         )
     if not bundles:
         lines.append("  - none")
     provenance = payload.get("provenance_summary", {})
     lines.append("- provenance:")
-    lines.append(f"  - source_inputs: {', '.join(provenance.get('source_inputs', []))}")
-    lines.append(f"  - created_at: {provenance.get('created_at')}")
+    lines.append(
+        f"  - source_inputs: {_escape_markdown_table_cell(', '.join(provenance.get('source_inputs', [])))}"
+    )
+    lines.append(f"  - created_at: {_escape_markdown_table_cell(provenance.get('created_at'))}")
     return "\n".join(lines)
 
 
@@ -439,13 +457,13 @@ def render_lexical_candidate_list_text(payload: dict[str, Any]) -> str:
     for row in payload["candidates"]:
         lines.append(
             "| "
-            f"{row['candidate_id']} | "
-            f"{row['candidate_type']} | "
-            f"{row['value']} | "
-            f"{row['suggested_rule_path']} | "
-            f"{row['score']} | "
-            f"{row['status']} | "
-            f"{row['already_active']} |"
+            f"{_escape_markdown_table_cell(row['candidate_id'])} | "
+            f"{_escape_markdown_table_cell(row['candidate_type'])} | "
+            f"{_escape_markdown_table_cell(row['value'])} | "
+            f"{_escape_markdown_table_cell(row['suggested_rule_path'])} | "
+            f"{_escape_markdown_table_cell(row['score'])} | "
+            f"{_escape_markdown_table_cell(row['status'])} | "
+            f"{_escape_markdown_table_cell(row['already_active'])} |"
         )
     return "\n".join(lines)
 
@@ -455,19 +473,19 @@ def render_lexical_candidate_inspection_text(payload: dict[str, Any]) -> str:
     evidence = payload.get("evidence", {})
     lines = [
         "Lexical-rule candidate inspection",
-        f"- candidate_id: {payload['candidate_id']}",
-        f"- candidate_type: {payload['candidate_type']}",
-        f"- value: {payload['value']}",
-        f"- normalized_value: {payload['normalized_value']}",
-        f"- suggested_rule_path: {payload['suggested_rule_path']}",
-        f"- status: {payload['status']}",
-        f"- activation_state: {payload['activation_state']}",
-        f"- already_active: {payload['already_active']}",
-        f"- score: {review.get('score')}",
+        f"- candidate_id: {_escape_markdown_table_cell(payload['candidate_id'])}",
+        f"- candidate_type: {_escape_markdown_table_cell(payload['candidate_type'])}",
+        f"- value: {_escape_markdown_table_cell(payload['value'])}",
+        f"- normalized_value: {_escape_markdown_table_cell(payload['normalized_value'])}",
+        f"- suggested_rule_path: {_escape_markdown_table_cell(payload['suggested_rule_path'])}",
+        f"- status: {_escape_markdown_table_cell(payload['status'])}",
+        f"- activation_state: {_escape_markdown_table_cell(payload['activation_state'])}",
+        f"- already_active: {_escape_markdown_table_cell(payload['already_active'])}",
+        f"- score: {_escape_markdown_table_cell(review.get('score'))}",
         "- reason_codes:",
     ]
     reason_codes = review.get("reason_codes", [])
-    lines.extend(f"  - {item}" for item in reason_codes)
+    lines.extend(f"  - {_escape_markdown_table_cell(item)}" for item in reason_codes)
     if not reason_codes:
         lines.append("  - none")
     lines.append("- evidence:")
@@ -480,13 +498,19 @@ def render_lexical_candidate_inspection_text(payload: dict[str, Any]) -> str:
         "topic_summary_total_count",
     ):
         if key in evidence:
-            lines.append(f"  - {key}: {evidence[key]}")
+            lines.append(
+                f"  - {_escape_markdown_table_cell(key)}: "
+                f"{_escape_markdown_table_cell(evidence[key])}"
+            )
     sample_refs = payload.get("sample_refs", [])
     lines.append("- sample_refs:")
     for ref in sample_refs[:5]:
         field = ref.get("field", "sample")
         excerpt = _short(str(ref.get("excerpt", "")))
-        lines.append(f"  - {field}: {excerpt}")
+        lines.append(
+            f"  - {_escape_markdown_table_cell(field)}: "
+            f"{_escape_markdown_table_cell(excerpt)}"
+        )
     if not sample_refs:
         lines.append("  - none")
     return "\n".join(lines)

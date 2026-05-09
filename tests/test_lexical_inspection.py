@@ -25,6 +25,11 @@ from llm_logparser.core.lexical_inspection import (
     list_observed_tokens,
     load_lexical_candidate_artifacts,
     load_observed_token_artifacts,
+    render_lexical_candidate_inspection_text,
+    render_lexical_candidate_list_text,
+    render_lexical_inspection_json,
+    render_observed_token_inspection_text,
+    render_observed_token_list_text,
 )
 
 
@@ -331,3 +336,122 @@ def test_inspect_lexical_candidate_missing_id_fails(tmp_path: Path):
 
     with pytest.raises(LexicalInspectionError, match="lexical-rule candidate not found"):
         inspect_lexical_candidate(root, candidate_id="missing")
+
+
+def test_observed_token_list_escapes_markdown_table_cells():
+    payload = {
+        "provider_id": "openai",
+        "token_count": 1,
+        "returned_count": 1,
+        "observed_tokens_source": "observed_tokens",
+        "tokens": [
+            {
+                "token": "foo|bar\nbaz",
+                "count": 1,
+                "conversation_count": 1,
+                "topic_count": 0,
+            }
+        ],
+    }
+
+    rendered = render_observed_token_list_text(payload)
+
+    assert "foo\\|bar<br>baz" in rendered
+    assert "foo|bar\nbaz" not in rendered
+
+
+def test_observed_token_inspect_escapes_bundle_and_cooccurrence_text():
+    payload = {
+        "token": "DALL|E",
+        "normalized": "dall|e",
+        "count": 3,
+        "conversation_count": 2,
+        "topic_count": 1,
+        "observed_tokens_source": "observed_tokens",
+        "cooccurrence": ["pipe|token", "multi\nline"],
+        "bundle_evidence": [
+            {
+                "bundle_id": "bundle|001",
+                "tokens": ["DALL|E", "multi\nbundle"],
+                "weight": 0.5,
+            }
+        ],
+        "provenance_summary": {
+            "source_inputs": ["parsed|jsonl"],
+            "created_at": "2026-05-09\n00:00",
+        },
+    }
+
+    rendered = render_observed_token_inspection_text(payload)
+
+    assert "DALL\\|E" in rendered
+    assert "pipe\\|token" in rendered
+    assert "multi<br>line" in rendered
+    assert "bundle\\|001" in rendered
+    assert "multi<br>bundle" in rendered
+    assert "parsed\\|jsonl" in rendered
+
+
+def test_lexical_candidate_list_escapes_phrase_table_cells():
+    payload = {
+        "provider_id": "openai",
+        "candidate_count": 1,
+        "returned_count": 1,
+        "candidates": [
+            {
+                "candidate_id": "candidate|x",
+                "candidate_type": "generic_scoring_token",
+                "value": "phrase|with\nnewline",
+                "suggested_rule_path": "topic_summary.scoring.generic_tokens",
+                "score": 0.5,
+                "status": "inactive",
+                "already_active": False,
+            }
+        ],
+    }
+
+    rendered = render_lexical_candidate_list_text(payload)
+
+    assert "candidate\\|x" in rendered
+    assert "phrase\\|with<br>newline" in rendered
+    assert "phrase|with\nnewline" not in rendered
+
+
+def test_lexical_candidate_inspect_escapes_multiline_diagnostic_snippets():
+    payload = {
+        "candidate_id": "candidate|x",
+        "candidate_type": "generic_scoring_token",
+        "value": "phrase|value",
+        "normalized_value": "phrase|value",
+        "suggested_rule_path": "topic_summary.scoring.generic_tokens",
+        "status": "inactive",
+        "activation_state": "requires_review",
+        "already_active": False,
+        "review": {
+            "score": 0.5,
+            "reason_codes": ["reason|one", "multi\nreason"],
+        },
+        "evidence": {
+            "token_count": 10,
+            "topic_summary_total_count": "line|one\nline two",
+        },
+        "sample_refs": [
+            {
+                "field": "topic_summary.summary|field",
+                "excerpt": "first line\nsecond | line",
+            }
+        ],
+    }
+
+    rendered = render_lexical_candidate_inspection_text(payload)
+    rendered_json = render_lexical_inspection_json(payload)
+
+    assert "candidate\\|x" in rendered
+    assert "reason\\|one" in rendered
+    assert "multi<br>reason" in rendered
+    assert "line\\|one<br>line two" in rendered
+    assert "topic_summary.summary\\|field" in rendered
+    assert "first line<br>second \\| line" in rendered
+    assert json.loads(rendered_json)["sample_refs"][0]["excerpt"] == (
+        "first line\nsecond | line"
+    )
