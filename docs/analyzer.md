@@ -1046,8 +1046,11 @@ deterministic and model-derived capabilities.
   boundary-aware; CJK evidence remains substring-based. Missing topic summaries
   are not errors. Candidate scores are normalized review-priority scores for
   this inactive diagnostic artifact only; they do not affect cross-thread
-  candidate scoring directly. Candidate rows always use `status: inactive` and
-  `activation_state: requires_review`. The command also writes
+  candidate scoring directly. Candidate-generation heuristics are loaded from a
+  built-in, versioned resource and summarized in `diagnostics.json`; no
+  project/user override for candidate generation exists yet. Candidate rows
+  always use `status: inactive` and `activation_state: requires_review`. The
+  command also writes
   `l3/lexical-rules/review.md` as a human-readable review aid with copyable YAML
   snippets; users must manually copy accepted rules into reviewed lexical rule
   files. The review warns that names/personas should generally become reviewed

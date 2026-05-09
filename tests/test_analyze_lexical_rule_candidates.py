@@ -204,6 +204,15 @@ def test_lexical_rule_candidates_generate_inactive_generic_candidate(tmp_path: P
     assert diagnostics["thresholds"]["generic_min_conversation_count"] == 8
     assert diagnostics["topic_summaries"]["status"] == "not_found"
     assert diagnostics["active_policy"]["rule_family"] == "cross_thread"
+    config_diagnostics = diagnostics["candidate_generation_config"]
+    assert config_diagnostics["rule_family"] == "lexical_rule_candidates"
+    assert config_diagnostics["schema_version"] == "0.1"
+    assert config_diagnostics["layers"][0]["path"] == (
+        "resources/lexical_rule_candidates/default.yaml"
+    )
+    assert "generic_scoring_token" in config_diagnostics["enabled_candidate_type_names"]
+    assert config_diagnostics["domain_term_counts"]["distinctive_allow_token"] > 0
+    assert config_diagnostics["locale_signal_counts"]["ja"]["honorific_suffixes"] == 4
     serialized = json.dumps(diagnostics, ensure_ascii=False)
     assert "broadnoise" not in serialized
     assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()

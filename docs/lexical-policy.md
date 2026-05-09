@@ -39,6 +39,8 @@ changing analyzer behavior.
 - generated from observed corpus facts and optional supporting evidence
 - currently includes `generic_scoring_token`, `persona_weak_token`, and
   `distinctive_allow_token` review candidates
+- candidate-generation heuristics are loaded from a built-in, versioned
+  resource and are suggestion-only
 - requires human review before use
 - never activates rules automatically
 

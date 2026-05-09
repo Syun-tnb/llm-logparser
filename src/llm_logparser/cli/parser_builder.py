@@ -5,6 +5,9 @@ from pathlib import Path
 
 from llm_logparser.core.embedding_backend import SUPPORTED_EMBEDDING_BACKENDS
 from llm_logparser.core.i18n import _
+from llm_logparser.resources.lexical_rule_candidate_config import (
+    load_lexical_rule_candidate_config,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -390,14 +393,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-candidates-per-type",
         dest="max_candidates_per_type",
         type=int,
-        default=100,
+        default=load_lexical_rule_candidate_config().output.max_candidates_per_type,
         help=_("cli.analyze.lexical_rule_candidates.opt.max_candidates_per_type.help"),
     )
     analyze_lexical_rule_candidates_cmd.add_argument(
         "--sample-limit",
         dest="sample_limit",
         type=int,
-        default=5,
+        default=load_lexical_rule_candidate_config().output.sample_limit,
         help=_("cli.analyze.lexical_rule_candidates.opt.sample_limit.help"),
     )
     analyze_lexical_rule_candidates_cmd.add_argument(

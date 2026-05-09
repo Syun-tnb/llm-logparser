@@ -816,7 +816,9 @@ Auxiliary L3 note:
   conservative token-shape filtering before review; optional topic-summary
   evidence adds compact counts and capped sample references when available, and
   `review.md` provides copyable manual-review snippets; the command never writes
-  reviewed rule files
+  reviewed rule files. Candidate-generation heuristics are loaded from a
+  built-in, versioned resource and summarized compactly in `diagnostics.json`;
+  no project/user override for candidate generation exists yet
 - cross-thread candidate `summary.json` records compact diagnostics for resolved
   built-in and reviewed lexical resources, including locale chain, safe resource
   paths, resource SHA1 hashes, owner scope, schema version, and category counts;

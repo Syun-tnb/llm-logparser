@@ -1,0 +1,196 @@
+schema_version: "0.1"
+rule_family: "lexical_rule_candidates"
+
+output:
+  max_candidates_per_type: 100
+  sample_limit: 5
+  topic_summary_excerpt_max_chars: 240
+
+candidate_types:
+  persona_weak_token:
+    enabled: true
+    method: "token_dictionary_persona_spread_v0"
+    suggested_rule_path: "topic_summary.scoring.persona_weak_tokens"
+    min_conversation_count: 8
+    min_document_count: 25
+    precedence: 10
+    strong_reason_codes:
+      - address_or_honorific_suffix
+      - latin_name_like_shape
+      - topic_summary_capitalized_name_usage
+      - short_cjk_recurring_name_like_token
+    thresholds:
+      short_cjk_min_count: 100
+      short_cjk_min_conversation_count: 20
+      short_cjk_min_bundle_count: 5
+      short_cjk_min_keyword_count: 1
+      strong_conversational_bundle_count: 20
+      recurring_topic_summary_total_count: 10
+
+  distinctive_allow_token:
+    enabled: true
+    method: "token_dictionary_distinctive_allow_v0"
+    suggested_rule_path: "topic_summary.scoring.distinctive_allow_tokens"
+    min_conversation_count: 4
+    min_document_count: 8
+    precedence: 20
+    strong_reason_codes:
+      - distinctive_acronym_or_layer_shape
+      - domain_compound_shape
+      - project_domain_vocabulary
+    supporting_evidence:
+      min_bundle_count: 3
+      min_topic_summary_total_count: 1
+      allow_acronym_without_support: true
+    thresholds:
+      recurring_topic_summary_total_count: 3
+      bundle_cohesion_count: 3
+    domain_terms:
+      - adapter
+      - analyzer
+      - artifact
+      - canonical
+      - candidate
+      - cluster
+      - cross
+      - dictionary
+      - heuristic
+      - lexical
+      - normalization
+      - parsed
+      - policy
+      - roadmap
+      - schema
+      - segment
+      - semantic
+      - summary
+      - thread
+      - token
+      - topic
+      - window
+
+  generic_scoring_token:
+    enabled: true
+    method: "token_dictionary_spread_v0"
+    suggested_rule_path: "topic_summary.scoring.generic_tokens"
+    min_conversation_count: 8
+    min_document_count: 25
+    precedence: 30
+    thresholds:
+      bundle_reason_min_count: 5
+
+shape_filtering:
+  hard_skip_reasons:
+    - malformed_token
+    - shape_url_like
+    - shape_path_like
+    - shape_date_like
+    - shape_numeric
+    - shape_symbol_like
+    - shape_identifier_like
+    - shape_too_long
+  distinctive_bypass:
+    shape_identifier_like: true
+  token_symbol_pattern: "[./_:-]"
+  patterns:
+    url_like: "(?:://|^www\\.|^[a-z][a-z0-9+.-]*://)"
+    path_like: "(?:[/\\\\]|^\\.\\.?[/\\\\]|^~[/\\\\]|^[a-zA-Z]:[\\\\/])"
+    date_like: "^(?:\\d{4}[-_/年]\\d{1,2}(?:[-_/月]\\d{1,2}日?)?|\\d{1,2}[-_/]\\d{1,2}[-_/]\\d{2,4})$"
+    hash_or_id_like: "^(?:[a-f0-9]{12,}|[a-z]+[_-]?[a-f0-9]{8,})$"
+  latin:
+    min_length: 3
+    max_length: 40
+    identifier_like_min_length: 25
+    reject_mixed_letters_digits: true
+  cjk:
+    one_char:
+      min_count: 500
+      min_conversation_count: 50
+      min_document_count: 100
+    two_char:
+      min_count: 80
+      min_conversation_count: 10
+  file_extension_like:
+    - avi
+    - bak
+    - bin
+    - bmp
+    - bz2
+    - cfg
+    - class
+    - conf
+    - db
+    - dll
+    - doc
+    - docx
+    - dylib
+    - exe
+    - gif
+    - gz
+    - heic
+    - ico
+    - ini
+    - jpeg
+    - jpg
+    - lock
+    - log
+    - md
+    - mov
+    - mp3
+    - mp4
+    - obj
+    - png
+    - ppt
+    - pptx
+    - pyc
+    - rar
+    - rtf
+    - so
+    - svg
+    - tmp
+    - toml
+    - tsv
+    - txt
+    - wav
+    - webp
+    - xls
+    - xlsx
+    - xml
+    - zip
+
+scoring:
+  normalizers:
+    conversation_count: 80
+    document_count: 200
+    token_count: 2000
+    topic_summary_total_count: 50
+  weights:
+    spread_score: 0.45
+    frequency_score: 0.30
+    topic_summary_score: 0.15
+    shape_score: 0.10
+  spread_weights:
+    conversation_score: 0.60
+    document_score: 0.40
+  shape_score_values:
+    low_specificity: 1.0
+    other: 0.5
+  rounding_digits: 4
+
+locale_signals:
+  ja:
+    honorific_suffixes:
+      - さん
+      - ちゃん
+      - くん
+      - 君
+
+review_rendering:
+  section_order:
+    - persona_weak_token
+    - distinctive_allow_token
+    - generic_scoring_token
+  labels:
+    persona_weak_token: "persona_weak_token"
+    distinctive_allow_token: "distinctive_allow_token"
+    generic_scoring_token: "generic_scoring_token"

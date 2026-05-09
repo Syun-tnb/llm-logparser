@@ -907,11 +907,14 @@ Phase 1 suggests inactive `generic_scoring_token` candidates from
 `l3/token-dictionary/observed_tokens.json` (or legacy `dictionary.json`). It
 uses conservative token-shape filtering to avoid URL/path fragments, IDs,
 date-like tokens, and other low-review-value residue. When intra-thread topic
-summaries are present, they
-are used only as optional supporting evidence and capped sample references for
-human review; Latin token matching is boundary-aware, while CJK evidence uses
-substring matching. Candidate scores are normalized review-priority scores for
-this inactive artifact only; they do not affect cross-thread scoring directly.
+summaries are present, they are used only as optional supporting evidence and
+capped sample references for human review; Latin token matching is
+boundary-aware, while CJK evidence uses substring matching. Candidate scores are
+normalized review-priority scores for this inactive artifact only; they do not
+affect cross-thread scoring directly. The candidate-generation heuristics are
+loaded from a built-in, versioned resource and recorded compactly in
+`diagnostics.json`; no project/user override for candidate generation exists
+yet.
 The command can also emit inactive `persona_weak_token` suggestions for
 review-only weakening of recurring persona/name/address-like overlap, and
 inactive `distinctive_allow_token` suggestions for domain/project/topic tokens
