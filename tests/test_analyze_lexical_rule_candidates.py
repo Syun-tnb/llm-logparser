@@ -137,10 +137,10 @@ def _write_reviewed_lexical_rules(
     if persona_weak_tokens is not None:
         sections["persona_weak_tokens"] = persona_weak_tokens
     for section, tokens in sections.items():
-        lines.append(f"      {section}:")
         if not tokens:
-            lines.append("        []")
+            lines.append(f"      {section}: []")
             continue
+        lines.append(f"      {section}:")
         for token in tokens:
             lines.append(f"        - {json.dumps(token)}")
     path.parent.mkdir(parents=True, exist_ok=True)

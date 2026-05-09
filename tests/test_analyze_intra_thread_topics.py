@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -2488,6 +2489,7 @@ def test_intra_thread_report_includes_segment_merge_diagnostics(tmp_path):
 
 
 def test_analyze_intra_thread_topics_cli_wires_new_command(tmp_path, capsys):
+    logging.getLogger("llm_logparser").handlers.clear()
     parsed_path = tmp_path / "openai" / "thread-conv-a" / "parsed.jsonl"
     _write_parsed_jsonl(
         parsed_path,
