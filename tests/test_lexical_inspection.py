@@ -147,6 +147,8 @@ def _candidate_row(candidate_id: str, value: str, *, score: float) -> dict:
             "topic_count": 12,
             "bundle_count": 1,
             "topic_summary_total_count": 3,
+            "score": score,
+            "reason_codes": ["high_conversation_spread"],
         },
         "sample_refs": [
             {
@@ -268,6 +270,54 @@ def test_load_lexical_candidate_artifacts_and_list(tmp_path: Path):
     }
     serialized = json.dumps(payload, ensure_ascii=False)
     assert "full token list" not in serialized
+
+
+def test_lexical_candidate_list_uses_legacy_evidence_score_and_reasons(
+    tmp_path: Path,
+):
+    root = tmp_path / "openai"
+    _write_jsonl(
+        lexical_rule_candidates_path(root),
+        [
+            {
+                **_candidate_row("candidate_old_low", "oldlow", score=0.1),
+                "review": {"recommendation": "consider"},
+            },
+            {
+                **_candidate_row("candidate_old_high", "oldhigh", score=0.9),
+                "review": {"recommendation": "consider"},
+            },
+        ],
+    )
+
+    payload = list_lexical_candidates(root)
+    inspected = inspect_lexical_candidate(root, candidate_id="candidate_old_high")
+
+    assert [row["candidate_id"] for row in payload["candidates"]] == [
+        "candidate_old_high",
+        "candidate_old_low",
+    ]
+    assert payload["candidates"][0]["score"] == 0.9
+    assert payload["candidates"][0]["reason_codes"] == ["high_conversation_spread"]
+    assert inspected["review"]["score"] == 0.9
+    assert inspected["review"]["reason_codes"] == ["high_conversation_spread"]
+
+
+def test_lexical_candidate_list_prefers_review_score_over_evidence_score(
+    tmp_path: Path,
+):
+    root = tmp_path / "openai"
+    high_review = _candidate_row("candidate_new_high", "newhigh", score=0.1)
+    high_review["review"]["score"] = 0.95
+    high_review["review"]["reason_codes"] = ["review_reason"]
+    low_review = _candidate_row("candidate_old_high", "oldhigh", score=0.9)
+    _write_jsonl(lexical_rule_candidates_path(root), [low_review, high_review])
+
+    payload = list_lexical_candidates(root)
+
+    assert payload["candidates"][0]["candidate_id"] == "candidate_new_high"
+    assert payload["candidates"][0]["score"] == 0.95
+    assert payload["candidates"][0]["reason_codes"] == ["review_reason"]
 
 
 def test_lexical_candidate_cli_list_and_inspect_text(tmp_path: Path, capsys):

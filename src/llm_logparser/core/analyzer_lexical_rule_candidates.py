@@ -27,10 +27,13 @@ LEXICAL_RULE_CANDIDATE_SCHEMA_VERSION = "0.1"
 LEXICAL_RULE_CANDIDATE_RECORD_TYPE = "lexical_rule_candidate"
 LEXICAL_RULE_CANDIDATE_DIAGNOSTICS_ARTIFACT_TYPE = "lexical_rule_candidates_diagnostics"
 LEXICAL_RULE_CANDIDATE_METHOD = "token_dictionary_spread_v0"
+PERSONA_WEAK_TOKEN_CANDIDATE_METHOD = "token_dictionary_persona_spread_v0"
 DEFAULT_LEXICAL_RULE_CANDIDATE_MAX_PER_TYPE = 100
 DEFAULT_LEXICAL_RULE_CANDIDATE_SAMPLE_LIMIT = 5
 GENERIC_MIN_CONVERSATION_COUNT = 8
 GENERIC_MIN_DOCUMENT_COUNT = 25
+PERSONA_MIN_CONVERSATION_COUNT = 8
+PERSONA_MIN_DOCUMENT_COUNT = 25
 TOPIC_SUMMARY_EXCERPT_MAX_CHARS = 240
 _TOKEN_SYMBOL_RE = re.compile(r"[./_:-]")
 _URL_LIKE_RE = re.compile(r"(?:://|^www\.|^[a-z][a-z0-9+.-]*://)", re.IGNORECASE)
@@ -406,14 +409,20 @@ def _candidate_score(
     return round(min(1.0, score), 4), components
 
 
-def _candidate_id(provider_id: str, normalized_value: str) -> str:
+def _candidate_id(
+    provider_id: str,
+    normalized_value: str,
+    *,
+    candidate_type: str = "generic_scoring_token",
+    method: str = LEXICAL_RULE_CANDIDATE_METHOD,
+) -> str:
     digest = hashlib.sha1(
         "|".join(
             (
                 provider_id,
-                "generic_scoring_token",
+                candidate_type,
                 normalized_value,
-                LEXICAL_RULE_CANDIDATE_METHOD,
+                method,
             )
         ).encode("utf-8")
     ).hexdigest()[:16]
@@ -484,6 +493,102 @@ def _topic_summary_text_matcher(normalized_value: str):
         pattern = re.compile(rf"\b{re.escape(normalized_value)}\b")
         return lambda normalized_text: bool(pattern.search(normalized_text))
     return lambda normalized_text: normalized_value in normalized_text
+
+
+def _topic_summary_contains_uppercase_latin_name(
+    normalized_value: str,
+    *,
+    topic_summary_records: list[dict[str, Any]],
+) -> bool:
+    if not re.fullmatch(r"[a-z][a-z_-]{2,}", normalized_value):
+        return False
+    pattern = re.compile(rf"\b{re.escape(normalized_value)}\b", re.IGNORECASE)
+    for record in topic_summary_records:
+        # Sentence-initial title/summary capitalization is too noisy for persona
+        # review candidates. Keyword casing is the safer review signal here.
+        if record.get("category") != "keyword":
+            continue
+        text = str(record.get("text") or "")
+        match = pattern.search(text)
+        if match and any(char.isupper() for char in match.group(0)):
+            return True
+    return False
+
+
+def _persona_reason_codes(
+    *,
+    token: str,
+    normalized_value: str,
+    count: int,
+    conversation_count: int,
+    document_count: int,
+    bundle_count: int,
+    topic_summary_counts: dict[str, int],
+    topic_summary_records: list[dict[str, Any]],
+) -> list[str]:
+    reasons: list[str] = []
+    if re.search(r"(?:さん|ちゃん|くん|君)$", token or normalized_value):
+        reasons.append("address_or_honorific_suffix")
+    if re.fullmatch(r"[A-Z][A-Za-z_-]{2,}", token):
+        reasons.append("latin_name_like_shape")
+    if _topic_summary_contains_uppercase_latin_name(
+        normalized_value,
+        topic_summary_records=topic_summary_records,
+    ):
+        reasons.append("topic_summary_capitalized_name_usage")
+    if (
+        _is_all_cjk(normalized_value)
+        and 2 <= len(normalized_value) <= 4
+        and count >= 100
+        and conversation_count >= 20
+        and (bundle_count >= 5 or topic_summary_counts["topic_summary_keyword_count"] >= 1)
+    ):
+        reasons.append("short_cjk_recurring_name_like_token")
+    if bundle_count >= 20:
+        reasons.append("strong_conversational_bundle_spread")
+    if topic_summary_counts["topic_summary_total_count"] >= 10:
+        reasons.append("recurring_topic_summary_usage")
+
+    if conversation_count >= PERSONA_MIN_CONVERSATION_COUNT:
+        reasons.append("high_conversation_spread")
+    if document_count >= PERSONA_MIN_DOCUMENT_COUNT:
+        reasons.append("high_document_spread")
+    return reasons
+
+
+def _is_persona_weak_candidate(
+    *,
+    token: str,
+    normalized_value: str,
+    count: int,
+    conversation_count: int,
+    document_count: int,
+    bundle_count: int,
+    topic_summary_counts: dict[str, int],
+    topic_summary_records: list[dict[str, Any]],
+) -> tuple[bool, list[str]]:
+    reasons = _persona_reason_codes(
+        token=token,
+        normalized_value=normalized_value,
+        count=count,
+        conversation_count=conversation_count,
+        document_count=document_count,
+        bundle_count=bundle_count,
+        topic_summary_counts=topic_summary_counts,
+        topic_summary_records=topic_summary_records,
+    )
+    strong_reasons = {
+        "address_or_honorific_suffix",
+        "latin_name_like_shape",
+        "topic_summary_capitalized_name_usage",
+        "short_cjk_recurring_name_like_token",
+    }
+    has_strong_persona_signal = bool(strong_reasons.intersection(reasons))
+    has_spread = (
+        conversation_count >= PERSONA_MIN_CONVERSATION_COUNT
+        and document_count >= PERSONA_MIN_DOCUMENT_COUNT
+    )
+    return has_strong_persona_signal and has_spread, reasons
 
 
 def _candidate_for_token(
@@ -561,9 +666,81 @@ def _candidate_for_token(
     }
 
 
-def _candidate_sort_key(row: dict[str, Any]) -> tuple[float, int, int, str]:
+def _persona_candidate_for_token(
+    *,
+    provider_id: str,
+    row: dict[str, Any],
+    bundle_counts: dict[str, int],
+    topic_summary_records: list[dict[str, Any]],
+    sample_limit: int,
+    reason_codes: list[str],
+) -> dict[str, Any]:
+    token = str(row.get("token") or row.get("normalized") or "")
+    normalized_value = normalize_analysis_text(str(row.get("normalized") or token))
+    count = _int_field(row, "count")
+    conversation_count = _int_field(row, "conversation_count")
+    topic_count = _int_field(row, "topic_count")
+    document_count = _document_count(row)
+    topic_summary_counts, topic_summary_refs = _topic_summary_evidence_for_token(
+        normalized_value,
+        topic_summary_records=topic_summary_records,
+        sample_limit=sample_limit,
+    )
+    score, score_components = _candidate_score(
+        count=count,
+        conversation_count=conversation_count,
+        document_count=document_count,
+        topic_summary_total_count=topic_summary_counts["topic_summary_total_count"],
+        low_specificity=True,
+    )
+    return {
+        "record_type": LEXICAL_RULE_CANDIDATE_RECORD_TYPE,
+        "schema_version": LEXICAL_RULE_CANDIDATE_SCHEMA_VERSION,
+        "provider_id": provider_id,
+        "candidate_id": _candidate_id(
+            provider_id,
+            normalized_value,
+            candidate_type="persona_weak_token",
+            method=PERSONA_WEAK_TOKEN_CANDIDATE_METHOD,
+        ),
+        "candidate_type": "persona_weak_token",
+        "suggested_scope": "project",
+        "suggested_rule_path": "topic_summary.scoring.persona_weak_tokens",
+        "value": token,
+        "value_kind": "token",
+        "normalized_value": normalized_value,
+        "status": "inactive",
+        "activation_state": "requires_review",
+        "source": {
+            "method": PERSONA_WEAK_TOKEN_CANDIDATE_METHOD,
+            "inputs": ["l3/token-dictionary/observed_tokens.json"],
+        },
+        "evidence": {
+            "token_count": count,
+            "document_count": document_count,
+            "conversation_count": conversation_count,
+            "topic_count": topic_count,
+            "bundle_count": bundle_counts.get(normalized_value, 0),
+            **topic_summary_counts,
+            "score": score,
+            "score_components": score_components,
+            "reason_codes": reason_codes,
+        },
+        "sample_refs": topic_summary_refs
+        or _sample_refs(row, sample_limit=sample_limit),
+        "already_active": False,
+        "review": {
+            "recommendation": "consider",
+            "notes": "Consider weakening standalone persona/name/address overlap.",
+        },
+    }
+
+
+def _candidate_sort_key(row: dict[str, Any]) -> tuple[int, float, int, int, str]:
     evidence = row["evidence"]
+    type_rank = 0 if row.get("candidate_type") == "persona_weak_token" else 1
     return (
+        type_rank,
         -float(evidence["score"]),
         -int(evidence["conversation_count"]),
         -int(evidence["token_count"]),
@@ -609,7 +786,10 @@ def build_lexical_rule_candidate_rows(
     active_patterns = _active_patterns(cross_thread_rules)
     provider_id = str(dictionary_payload.get("provider_id") or "unknown")
     skipped_counts: Counter[str] = Counter()
-    candidates: list[dict[str, Any]] = []
+    candidates_by_type: dict[str, list[dict[str, Any]]] = {
+        "persona_weak_token": [],
+        "generic_scoring_token": [],
+    }
     for row in dictionary_payload.get("tokens", []):
         if not isinstance(row, dict):
             continue
@@ -644,7 +824,35 @@ def build_lexical_rule_candidate_rows(
         ):
             skipped_counts["below_threshold"] += 1
             continue
-        candidates.append(
+        topic_summary_counts, _topic_refs = _topic_summary_evidence_for_token(
+            normalized_value,
+            topic_summary_records=topic_summary_records,
+            sample_limit=0,
+        )
+        persona_candidate, persona_reasons = _is_persona_weak_candidate(
+            token=str(row.get("token") or row.get("normalized") or ""),
+            normalized_value=normalized_value,
+            count=count,
+            conversation_count=conversation_count,
+            document_count=document_count,
+            bundle_count=bundle_counts.get(normalized_value, 0),
+            topic_summary_counts=topic_summary_counts,
+            topic_summary_records=topic_summary_records,
+        )
+        if persona_candidate:
+            candidates_by_type["persona_weak_token"].append(
+                _persona_candidate_for_token(
+                    provider_id=provider_id,
+                    row=row,
+                    bundle_counts=bundle_counts,
+                    topic_summary_records=topic_summary_records,
+                    sample_limit=sample_limit,
+                    reason_codes=persona_reasons,
+                )
+            )
+            skipped_counts["generic_suppressed_by_persona_candidate"] += 1
+            continue
+        candidates_by_type["generic_scoring_token"].append(
             _candidate_for_token(
                 provider_id=provider_id,
                 row=row,
@@ -653,11 +861,16 @@ def build_lexical_rule_candidate_rows(
                 sample_limit=sample_limit,
             )
         )
+    candidates: list[dict[str, Any]] = []
+    for candidate_type in ("persona_weak_token", "generic_scoring_token"):
+        rows = candidates_by_type[candidate_type]
+        rows.sort(key=_candidate_sort_key)
+        candidates.extend(rows[:max_candidates_per_type])
     candidates.sort(key=_candidate_sort_key)
-    candidates = candidates[:max_candidates_per_type]
     diagnostics = _diagnostics(
         dictionary_payload=dictionary_payload,
         candidate_count=len(candidates),
+        candidate_type_counts=_candidate_type_counts(candidates),
         skipped_counts=skipped_counts,
         bundles_present=bundles_present,
         topic_summary_diagnostics=topic_summary_diagnostics,
@@ -672,6 +885,7 @@ def _diagnostics(
     *,
     dictionary_payload: dict[str, Any],
     candidate_count: int,
+    candidate_type_counts: dict[str, int],
     skipped_counts: Counter[str],
     bundles_present: bool,
     topic_summary_diagnostics: dict[str, Any],
@@ -690,9 +904,7 @@ def _diagnostics(
         "provider_id": str(dictionary_payload.get("provider_id") or "unknown"),
         "generated_from": generated_from,
         "candidate_count": candidate_count,
-        "candidate_type_counts": {
-            "generic_scoring_token": candidate_count,
-        },
+        "candidate_type_counts": candidate_type_counts,
         "skipped_counts": dict(sorted(skipped_counts.items())),
         "topic_summaries": topic_summary_diagnostics,
         "active_policy": cross_thread_lexical_rules_diagnostics(cross_thread_rules),
@@ -825,6 +1037,35 @@ def _render_review_markdown(
         if row.get("candidate_type") == "generic_scoring_token"
     ]
     generic_rows.sort(key=_review_sort_key)
+    persona_rows = [
+        row
+        for row in rows
+        if row.get("candidate_type") == "persona_weak_token"
+    ]
+    persona_rows.sort(key=_review_sort_key)
+
+    lines.extend(
+        [
+            "",
+            "## persona_weak_token",
+            "",
+            "> Note: These candidates are review-only suggestions for terms "
+            "whose standalone persona/name/address overlap should remain weak. "
+            "They are not activated automatically.",
+            "",
+        ]
+    )
+    if persona_rows:
+        for row in persona_rows:
+            _append_candidate_review_section(
+                lines,
+                row,
+                suggested_rule_renderer=_render_persona_weak_rule_yaml,
+                include_name_like_warning=False,
+            )
+    else:
+        lines.append("_No candidates._")
+        lines.append("")
 
     lines.extend(
         [
@@ -845,95 +1086,110 @@ def _render_review_markdown(
         return "\n".join(lines).rstrip() + "\n"
 
     for row in generic_rows:
-        normalized_value = _markdown_inline(row.get("normalized_value"))
-        evidence = row.get("evidence", {})
-        if not isinstance(evidence, dict):
-            evidence = {}
-        reason_codes = evidence.get("reason_codes", [])
-        if not isinstance(reason_codes, list):
-            reason_codes = []
-        sample_refs = row.get("sample_refs", [])
-        if not isinstance(sample_refs, list):
-            sample_refs = []
-        looks_name_like = _looks_name_or_persona_like(row)
-
-        lines.extend(
-            [
-                f"### {normalized_value}",
-                "",
-                f"- score: {evidence.get('score', '')}",
-                "- score_components:",
-                "  - spread_score: "
-                f"{(evidence.get('score_components') or {}).get('spread_score', '')}",
-                "  - frequency_score: "
-                f"{(evidence.get('score_components') or {}).get('frequency_score', '')}",
-                "  - topic_summary_score: "
-                f"{(evidence.get('score_components') or {}).get('topic_summary_score', '')}",
-                "  - shape_score: "
-                f"{(evidence.get('score_components') or {}).get('shape_score', '')}",
-                "- counts:",
-                f"  - conversation_count: {evidence.get('conversation_count', 0)}",
-                f"  - document_count: {evidence.get('document_count', 0)}",
-                f"  - topic_count: {evidence.get('topic_count', 0)}",
-                "- evidence:",
-                "  - topic_summary_total_count: "
-                f"{evidence.get('topic_summary_total_count', 0)}",
-                f"  - bundle_count: {evidence.get('bundle_count', 0)}",
-                "- reason_codes:",
-            ]
+        _append_candidate_review_section(
+            lines,
+            row,
+            suggested_rule_renderer=_render_suggested_rule_yaml,
+            include_name_like_warning=True,
         )
-        if looks_name_like:
-            lines.extend(
-                [
-                    "- review_note: This value looks like a possible "
-                    "name/persona/project identity term. Consider "
-                    "`topic_summary.scoring.persona_weak_tokens` instead of "
-                    "`generic_tokens`.",
-                ]
-            )
-        if reason_codes:
-            for reason_code in reason_codes:
-                lines.append(f"  - {_markdown_inline(reason_code)}")
-        else:
-            lines.append("  - none")
-
-        lines.append("- sample_refs:")
-        if sample_refs:
-            for ref in sample_refs:
-                if not isinstance(ref, dict):
-                    continue
-                field = _markdown_inline(ref.get("field") or "unknown")
-                excerpt = _markdown_inline(ref.get("excerpt"))
-                conversation_id = _markdown_inline(ref.get("conversation_id"))
-                segment_id = _markdown_inline(ref.get("segment_id"))
-                location = conversation_id
-                if segment_id:
-                    location = f"{location} / {segment_id}" if location else segment_id
-                detail = f"{field}"
-                if location:
-                    detail = f"{detail} ({location})"
-                if excerpt:
-                    detail = f"{detail}: {excerpt}"
-                lines.append(f"  - {detail}")
-        else:
-            lines.append("  - none")
-
-        lines.extend(
-            [
-                "- suggested_rule:",
-                _render_suggested_rule_yaml(normalized_value),
-            ]
-        )
-        if looks_name_like:
-            lines.extend(
-                [
-                    "- alternative_rule:",
-                    _render_persona_weak_rule_yaml(normalized_value),
-                ]
-            )
-        lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _append_candidate_review_section(
+    lines: list[str],
+    row: dict[str, Any],
+    *,
+    suggested_rule_renderer,
+    include_name_like_warning: bool,
+) -> None:
+    normalized_value = _markdown_inline(row.get("normalized_value"))
+    evidence = row.get("evidence", {})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    reason_codes = evidence.get("reason_codes", [])
+    if not isinstance(reason_codes, list):
+        reason_codes = []
+    sample_refs = row.get("sample_refs", [])
+    if not isinstance(sample_refs, list):
+        sample_refs = []
+    looks_name_like = include_name_like_warning and _looks_name_or_persona_like(row)
+
+    lines.extend(
+        [
+            f"### {normalized_value}",
+            "",
+            f"- score: {evidence.get('score', '')}",
+            "- score_components:",
+            "  - spread_score: "
+            f"{(evidence.get('score_components') or {}).get('spread_score', '')}",
+            "  - frequency_score: "
+            f"{(evidence.get('score_components') or {}).get('frequency_score', '')}",
+            "  - topic_summary_score: "
+            f"{(evidence.get('score_components') or {}).get('topic_summary_score', '')}",
+            "  - shape_score: "
+            f"{(evidence.get('score_components') or {}).get('shape_score', '')}",
+            "- counts:",
+            f"  - conversation_count: {evidence.get('conversation_count', 0)}",
+            f"  - document_count: {evidence.get('document_count', 0)}",
+            f"  - topic_count: {evidence.get('topic_count', 0)}",
+            "- evidence:",
+            "  - topic_summary_total_count: "
+            f"{evidence.get('topic_summary_total_count', 0)}",
+            f"  - bundle_count: {evidence.get('bundle_count', 0)}",
+            "- reason_codes:",
+        ]
+    )
+    if looks_name_like:
+        lines.extend(
+            [
+                "- review_note: This value looks like a possible "
+                "name/persona/project identity term. Consider "
+                "`topic_summary.scoring.persona_weak_tokens` instead of "
+                "`generic_tokens`.",
+            ]
+        )
+    if reason_codes:
+        for reason_code in reason_codes:
+            lines.append(f"  - {_markdown_inline(reason_code)}")
+    else:
+        lines.append("  - none")
+
+    lines.append("- sample_refs:")
+    if sample_refs:
+        for ref in sample_refs:
+            if not isinstance(ref, dict):
+                continue
+            field = _markdown_inline(ref.get("field") or "unknown")
+            excerpt = _markdown_inline(ref.get("excerpt"))
+            conversation_id = _markdown_inline(ref.get("conversation_id"))
+            segment_id = _markdown_inline(ref.get("segment_id"))
+            location = conversation_id
+            if segment_id:
+                location = f"{location} / {segment_id}" if location else segment_id
+            detail = f"{field}"
+            if location:
+                detail = f"{detail} ({location})"
+            if excerpt:
+                detail = f"{detail}: {excerpt}"
+            lines.append(f"  - {detail}")
+    else:
+        lines.append("  - none")
+
+    lines.extend(
+        [
+            "- suggested_rule:",
+            suggested_rule_renderer(normalized_value),
+        ]
+    )
+    if looks_name_like:
+        lines.extend(
+            [
+                "- alternative_rule:",
+                _render_persona_weak_rule_yaml(normalized_value),
+            ]
+        )
+    lines.append("")
 
 
 def _write_lexical_rule_candidate_review(

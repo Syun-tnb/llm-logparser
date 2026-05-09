@@ -807,13 +807,14 @@ Auxiliary L3 note:
   defaults; when explicitly provided, they weaken topic-summary score inflation
   from standalone persona/name overlap without hard-suppressing candidate links
 - `analyze lexical-rule-candidates` writes inactive diagnostic suggestions under
-  `<provider-root>/l3/lexical-rules/`; Phase 1 only suggests
+  `<provider-root>/l3/lexical-rules/`; Phase 1 suggests
   `generic_scoring_token` candidates from high-spread `observed_tokens.json`
-  rows, with fallback reading for legacy `dictionary.json`, and
-  uses conservative token-shape filtering before review; optional topic-summary
-  evidence adds compact counts and capped sample references when available, and
-  `review.md` provides copyable manual-review snippets; the command never writes
-  reviewed rule files
+  rows and `persona_weak_token` candidates for recurring
+  persona/name/address-like overlap, with fallback reading for legacy
+  `dictionary.json`, and uses conservative token-shape filtering before review;
+  optional topic-summary evidence adds compact counts and capped sample
+  references when available, and `review.md` provides copyable manual-review
+  snippets; the command never writes reviewed rule files
 - cross-thread candidate `summary.json` records compact diagnostics for resolved
   built-in and reviewed lexical resources, including locale chain, safe resource
   paths, resource SHA1 hashes, owner scope, schema version, and category counts;

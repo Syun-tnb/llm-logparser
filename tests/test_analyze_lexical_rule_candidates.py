@@ -124,6 +124,7 @@ def _write_reviewed_lexical_rules(
     *,
     owner_scope: str,
     generic_tokens: list[str],
+    persona_weak_tokens: list[str] | None = None,
 ) -> Path:
     lines = [
         'schema_version: "0.1"',
@@ -131,10 +132,17 @@ def _write_reviewed_lexical_rules(
         "rules:",
         "  topic_summary:",
         "    scoring:",
-        "      generic_tokens:",
     ]
-    for token in generic_tokens:
-        lines.append(f"        - {json.dumps(token)}")
+    sections = {"generic_tokens": generic_tokens}
+    if persona_weak_tokens is not None:
+        sections["persona_weak_tokens"] = persona_weak_tokens
+    for section, tokens in sections.items():
+        lines.append(f"      {section}:")
+        if not tokens:
+            lines.append("        []")
+            continue
+        for token in tokens:
+            lines.append(f"        - {json.dumps(token)}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -212,6 +220,80 @@ def test_lexical_rule_candidates_read_legacy_dictionary_alias(tmp_path: Path):
     assert [row["normalized_value"] for row in rows] == ["broadnoise"]
     assert diagnostics["generated_from"][0] == "l3/token-dictionary/observed_tokens.json"
     assert "dictionary.json remains readable" in " ".join(diagnostics["notes"])
+
+
+def test_lexical_rule_candidates_generate_inactive_persona_candidates(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("シュンさん", count=500, conversation_count=50, topic_count=80),
+            _token_row("シグレ", count=300, conversation_count=40, topic_count=60),
+            _token_row("reyna", count=300, conversation_count=40, topic_count=60),
+            _token_row("broadnoise", count=120, conversation_count=12, topic_count=30),
+        ],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "summary": "Reyna and シグレ discuss the same persona scene.",
+                "keywords": ["Reyna", "シグレ"],
+            }
+        ],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+    by_value = {row["normalized_value"]: row for row in rows}
+
+    assert by_value["シュンさん"]["candidate_type"] == "persona_weak_token"
+    assert by_value["シグレ"]["candidate_type"] == "persona_weak_token"
+    assert by_value["reyna"]["candidate_type"] == "persona_weak_token"
+    assert by_value["broadnoise"]["candidate_type"] == "generic_scoring_token"
+    assert by_value["reyna"]["suggested_rule_path"] == (
+        "topic_summary.scoring.persona_weak_tokens"
+    )
+    assert by_value["reyna"]["status"] == "inactive"
+    assert by_value["reyna"]["activation_state"] == "requires_review"
+    assert "topic_summary_capitalized_name_usage" in by_value["reyna"]["evidence"][
+        "reason_codes"
+    ]
+    assert diagnostics["candidate_type_counts"] == {
+        "generic_scoring_token": 1,
+        "persona_weak_token": 3,
+    }
+    assert diagnostics["skipped_counts"]["generic_suppressed_by_persona_candidate"] == 3
+
+
+def test_lexical_rule_candidates_skip_active_persona_weak_policy(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("TestPersona", count=120, conversation_count=12, topic_count=30),
+            _token_row("OtherPersona", count=120, conversation_count=12, topic_count=30),
+        ],
+    )
+    project_rules = _write_reviewed_lexical_rules(
+        tmp_path / "project.yaml",
+        owner_scope="project",
+        generic_tokens=[],
+        persona_weak_tokens=["TestPersona"],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(
+        root,
+        project_lexical_rules=project_rules,
+    )
+
+    assert [row["normalized_value"] for row in rows] == ["otherpersona"]
+    assert rows[0]["candidate_type"] == "persona_weak_token"
+    assert diagnostics["skipped_counts"]["already_active_policy"] == 1
 
 
 def test_lexical_rule_candidates_skip_noisy_token_shapes(tmp_path: Path):
@@ -734,10 +816,11 @@ def test_lexical_rule_candidates_review_warns_on_name_like_latin_candidate(
     review = result["review_path"].read_text(encoding="utf-8")
     assert rows[0]["status"] == "inactive"
     assert rows[0]["activation_state"] == "requires_review"
+    assert rows[0]["candidate_type"] == "persona_weak_token"
     assert "review_note" not in rows[0]
     assert "alternative_rule" not in rows[0]
+    assert "## persona_weak_token" in review
     assert "### testpersona" in review
-    assert "review_note: This value looks like a possible name/persona/project identity term" in review
     assert "persona_weak_tokens:" in review
     assert '      - "testpersona"' in review
     assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()
@@ -754,7 +837,9 @@ def test_lexical_rule_candidates_review_warns_on_honorific_candidate(
 
     result = write_lexical_rule_candidate_artifacts(root)
 
+    rows = _read_jsonl(result["candidates_path"])
     review = result["review_path"].read_text(encoding="utf-8")
+    assert rows[0]["candidate_type"] == "persona_weak_token"
     assert "### テストさん" in review
     assert "persona_weak_tokens:" in review
     assert '      - "テストさん"' in review

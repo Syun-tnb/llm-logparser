@@ -903,7 +903,7 @@ uv run llm-logparser analyze lexical-rule-candidates \
   --overwrite
 ```
 
-Phase 1 only suggests `generic_scoring_token` candidates from
+Phase 1 suggests inactive `generic_scoring_token` candidates from
 `l3/token-dictionary/observed_tokens.json` (or legacy `dictionary.json`). It
 uses conservative token-shape filtering to avoid URL/path fragments, IDs,
 date-like tokens, and other low-review-value residue. When intra-thread topic
@@ -912,13 +912,14 @@ are used only as optional supporting evidence and capped sample references for
 human review; Latin token matching is boundary-aware, while CJK evidence uses
 substring matching. Candidate scores are normalized review-priority scores for
 this inactive artifact only; they do not affect cross-thread scoring directly.
+The command can also emit inactive `persona_weak_token` suggestions for
+review-only weakening of recurring persona/name/address-like overlap.
 Candidate rows are always inactive and require manual review before use. The
 command also writes `l3/lexical-rules/review.md` as a human-readable review aid
 with copyable YAML snippets. The review warns that names/personas should
-generally be copied to reviewed project/user `persona_weak_tokens`, not promoted
-as generic tokens; generating `persona_weak_token` candidates is not implemented
-yet. The command does not write `reviewed.yaml`, does not modify reviewed
-project/user files, and does not promote anything automatically.
+generally be copied to reviewed project/user `persona_weak_tokens`, not
+promoted as generic tokens. The command does not write `reviewed.yaml`, does not
+modify reviewed project/user files, and does not promote anything automatically.
 
 Observed lexical support data and reviewed lexical policy can be inspected
 without running analyzers:

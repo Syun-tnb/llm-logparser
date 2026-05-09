@@ -286,7 +286,7 @@ def list_lexical_candidates(
     rows = sorted(
         artifacts["candidates"],
         key=lambda row: (
-            -float(row.get("review", {}).get("score", row.get("score", 0)) or 0),
+            -float(_candidate_review_score(row) or 0),
             str(row.get("candidate_type", "")),
             str(row.get("normalized_value", row.get("value", ""))),
             str(row.get("candidate_id", "")),
@@ -302,8 +302,8 @@ def list_lexical_candidates(
             "status": row.get("status"),
             "activation_state": row.get("activation_state"),
             "already_active": row.get("already_active"),
-            "score": row.get("review", {}).get("score", row.get("score")),
-            "reason_codes": row.get("review", {}).get("reason_codes", []),
+            "score": _candidate_review_score(row),
+            "reason_codes": _candidate_reason_codes(row),
         }
         for row in rows[: max(0, limit)]
     ]
@@ -337,6 +337,12 @@ def inspect_lexical_candidate(
     if row is None:
         raise LexicalInspectionError(f"lexical-rule candidate not found: {candidate_id}")
     diagnostics = artifacts.get("diagnostics") or {}
+    review = row.get("review", {})
+    if not isinstance(review, dict):
+        review = {}
+    review = dict(review)
+    review.setdefault("score", _candidate_review_score(row))
+    review.setdefault("reason_codes", _candidate_reason_codes(row))
     return {
         "artifact_type": "lexical_rule_candidate_inspection",
         "schema_version": "0.1",
@@ -353,13 +359,33 @@ def inspect_lexical_candidate(
         "source": row.get("source", {}),
         "evidence": row.get("evidence", {}),
         "sample_refs": row.get("sample_refs", []),
-        "review": row.get("review", {}),
+        "review": review,
         "diagnostics_summary": _candidate_diagnostics_summary(diagnostics),
         "notes": [
             "Lexical-rule candidates are inactive suggestions only.",
             "This inspection does not promote, reject, or modify reviewed policy.",
         ],
     }
+
+
+def _candidate_review_score(row: dict[str, Any]) -> Any:
+    review = row.get("review", {})
+    if isinstance(review, dict) and review.get("score") is not None:
+        return review.get("score")
+    evidence = row.get("evidence", {})
+    if isinstance(evidence, dict):
+        return evidence.get("score")
+    return row.get("score")
+
+
+def _candidate_reason_codes(row: dict[str, Any]) -> list[Any]:
+    review = row.get("review", {})
+    if isinstance(review, dict) and isinstance(review.get("reason_codes"), list):
+        return review["reason_codes"]
+    evidence = row.get("evidence", {})
+    if isinstance(evidence, dict) and isinstance(evidence.get("reason_codes"), list):
+        return evidence["reason_codes"]
+    return []
 
 
 def _candidate_diagnostics_summary(diagnostics: dict[str, Any]) -> dict[str, Any]:

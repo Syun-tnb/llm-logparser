@@ -1030,9 +1030,11 @@ deterministic and model-derived capabilities.
 
 - `lexical-rule-candidates` is an inactive L3 diagnostic builder for Roadmap 6.
   Phase 1 reads `l3/token-dictionary/observed_tokens.json` (or legacy
-  `dictionary.json`) and suggests
-  `generic_scoring_token` candidates from high-frequency / high-spread observed
-  token statistics. It writes `l3/lexical-rules/candidates.jsonl` and
+  `dictionary.json`) and suggests inactive `generic_scoring_token` candidates
+  from high-frequency / high-spread observed token statistics. It also suggests
+  inactive `persona_weak_token` candidates for recurring
+  persona/name/address-like overlap that should be reviewed separately from
+  generic scoring tokens. It writes `l3/lexical-rules/candidates.jsonl` and
   `diagnostics.json`. Phase 1 applies conservative token-shape filtering for
   URL/path-like tokens, numeric/date-like residue, hashes/IDs, and overly long
   identifier-like tokens before emitting review candidates. When
@@ -1047,8 +1049,7 @@ deterministic and model-derived capabilities.
   `l3/lexical-rules/review.md` as a human-readable review aid with copyable YAML
   snippets; users must manually copy accepted rules into reviewed lexical rule
   files. The review warns that names/personas should generally become reviewed
-  project/user `persona_weak_tokens`, not generic tokens; `persona_weak_token`
-  candidate generation is not implemented yet. It does not write
+  project/user `persona_weak_tokens`, not generic tokens. It does not write
   `reviewed.yaml`, does not modify reviewed project/user rule files, and does
   not activate or promote anything automatically. Existing built-in and
   explicitly provided reviewed project/user lexical rules are treated as already
