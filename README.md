@@ -917,6 +917,24 @@ as generic tokens; generating `persona_weak_token` candidates is not implemented
 yet. The command does not write `reviewed.yaml`, does not modify reviewed
 project/user files, and does not promote anything automatically.
 
+Reviewed lexical policy can be inspected without running analyzers:
+
+```bash
+uv run llm-logparser lexical policy validate \
+  --project-lexical-rules project_lexical_rules.yaml
+
+uv run llm-logparser lexical policy resolve \
+  --locale en-US \
+  --project-lexical-rules project_lexical_rules.yaml \
+  --json
+```
+
+These commands are read-only. Reviewed project/user YAML is the active editable
+policy surface. `dictionary.json` and `bundles.json` remain observed corpus
+facts, `candidates.jsonl` remains inactive suggestion output, and
+`l3/token-dictionary/lexical_rules.json` is generated seed / legacy policy-like
+data rather than reviewed policy.
+
 Recommended comparison flow:
 
 1. Generate intra-thread topic summaries.

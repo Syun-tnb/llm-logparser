@@ -1384,4 +1384,91 @@ def build_parser() -> argparse.ArgumentParser:
     config_subparsers.add_parser("show", help=_("cli.config.show.help"))
     config_subparsers.add_parser("validate", help=_("cli.config.validate.help"))
 
+    lexical_cmd = subparsers.add_parser(
+        "lexical",
+        help=_("cli.lexical.help"),
+        description=_("cli.lexical.help"),
+    )
+    lexical_subparsers = lexical_cmd.add_subparsers(
+        dest="lexical_command",
+        required=True,
+    )
+    lexical_policy_cmd = lexical_subparsers.add_parser(
+        "policy",
+        help=_("cli.lexical.policy.help"),
+        description=_("cli.lexical.policy.help"),
+    )
+    lexical_policy_subparsers = lexical_policy_cmd.add_subparsers(
+        dest="lexical_policy_command",
+        required=True,
+    )
+    lexical_policy_validate_cmd = lexical_policy_subparsers.add_parser(
+        "validate",
+        help=_("cli.lexical.policy.validate.help"),
+        description=_("cli.lexical.policy.validate.help"),
+    )
+    lexical_policy_validate_cmd.add_argument(
+        "--project-lexical-rules",
+        dest="project_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.lexical.policy.opt.project_lexical_rules.help"),
+    )
+    lexical_policy_validate_cmd.add_argument(
+        "--user-lexical-rules",
+        dest="user_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.lexical.policy.opt.user_lexical_rules.help"),
+    )
+    lexical_policy_validate_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    lexical_policy_validate_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
+    lexical_policy_resolve_cmd = lexical_policy_subparsers.add_parser(
+        "resolve",
+        help=_("cli.lexical.policy.resolve.help"),
+        description=_("cli.lexical.policy.resolve.help"),
+    )
+    lexical_policy_resolve_cmd.add_argument(
+        "--locale",
+        dest="policy_locale",
+        default=None,
+        help=_("cli.lexical.policy.opt.locale.help"),
+    )
+    lexical_policy_resolve_cmd.add_argument(
+        "--project-lexical-rules",
+        dest="project_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.lexical.policy.opt.project_lexical_rules.help"),
+    )
+    lexical_policy_resolve_cmd.add_argument(
+        "--user-lexical-rules",
+        dest="user_lexical_rules",
+        type=Path,
+        default=None,
+        help=_("cli.lexical.policy.opt.user_lexical_rules.help"),
+    )
+    lexical_policy_resolve_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    lexical_policy_resolve_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
+
     return parser

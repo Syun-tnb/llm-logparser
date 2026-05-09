@@ -816,6 +816,12 @@ Auxiliary L3 note:
   built-in and reviewed lexical resources, including locale chain, safe resource
   paths, resource SHA1 hashes, owner scope, schema version, and category counts;
   it does not emit full token lists, and full resolved-policy export is deferred
+- `lexical policy validate` and `lexical policy resolve` provide the same
+  reviewed-policy validation and compact resolved-policy diagnostics without
+  running candidate generation. They are read-only: reviewed project/user YAML
+  remains the active editable policy surface, while
+  `l3/token-dictionary/lexical_rules.json` is generated seed / legacy
+  policy-like data rather than reviewed policy
 - cross-thread candidates also write `narrative.md`, a deterministic Markdown
   review/debug artifact derived from existing candidates, summary metadata, and
   topic summaries when available; it does not change scoring or semantic

@@ -24,6 +24,7 @@ from .chain import run_chain
 from .config import run_config_command
 from .export import run_export
 from .extract import run_extract
+from .lexical import run_lexical_policy
 from .parse import run_parse
 
 __all__ = [
@@ -51,5 +52,6 @@ __all__ = [
     "run_config_command",
     "run_export",
     "run_extract",
+    "run_lexical_policy",
     "run_parse",
 ]

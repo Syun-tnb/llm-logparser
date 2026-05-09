@@ -16,6 +16,13 @@ messages:
   cli.chain.help: Parse raw export and export all threads to Markdown in one shot
   cli.viewer.help: (placeholder) Run lightweight HTML viewer
   cli.config.help: Inspect and validate runtime configuration
+  cli.lexical.help: Inspect read-only lexical policy and dictionary support data
+  cli.lexical.policy.help: Validate and resolve reviewed lexical policy without modifying files
+  cli.lexical.policy.validate.help: Validate explicitly provided reviewed lexical rule YAML files
+  cli.lexical.policy.resolve.help: Resolve active lexical policy layers and print compact diagnostics
+  cli.lexical.policy.opt.locale.help: Locale tag for built-in cross-thread lexical resources
+  cli.lexical.policy.opt.project_lexical_rules.help: Explicit reviewed project lexical rules YAML
+  cli.lexical.policy.opt.user_lexical_rules.help: Explicit reviewed user lexical rules YAML
   cli.config.path.help: Show the resolved config file path
   cli.config.show.help: Print the normalized config or selected profile
   cli.config.validate.help: Validate the current config and exit

@@ -43,6 +43,7 @@ from llm_logparser.cli.handlers import (
     run_config_command,
     run_export,
     run_extract,
+    run_lexical_policy,
     run_parse,
 )
 from llm_logparser.cli.config_model import AppConfig, ConfigProfile
@@ -299,6 +300,9 @@ def _dispatch(args, logger) -> None:
         logger.warning(_("runtime.viewer.todo"))
     elif args.command == "config":
         run_config_command(args, logger)
+    elif args.command == "lexical":
+        if args.lexical_command == "policy":
+            run_lexical_policy(args, logger)
 
 
 def main(argv: list[str] | None = None):

@@ -141,6 +141,22 @@ missing token-dictionary artifacts fall back to the pre-existing candidate path.
 statistics and writes inactive L3 suggestions under `l3/lexical-rules/`; it does
 not modify reviewed lexical rule files or promote candidates automatically.
 
+Read-only lexical policy operations are also available outside `analyze`:
+
+```bash
+llm-logparser lexical policy validate \
+  --project-lexical-rules project_lexical_rules.yaml
+
+llm-logparser lexical policy resolve \
+  --locale en-US \
+  --project-lexical-rules project_lexical_rules.yaml \
+  --json
+```
+
+These commands validate explicitly reviewed project/user YAML and resolve the
+active built-in + reviewed policy layers into compact diagnostics. They do not
+write reviewed rules, promote candidates, or change analyzer behavior.
+
 ## Analyze Pipeline
 
 The analyze subcommands sit on top of canonical `parsed.jsonl`:
@@ -1024,6 +1040,14 @@ deterministic and model-derived capabilities.
   active policy and are not re-suggested. `dictionary.json` remains an observed
   token index / corpus token statistics artifact, and `bundles.json` remains
   optional cooccurrence evidence only.
+
+- `lexical policy validate` and `lexical policy resolve` are read-only policy
+  inspection commands. Reviewed project/user YAML is the active editable policy
+  surface, while `l3/token-dictionary/lexical_rules.json` remains generated
+  seed / legacy policy-like data and should not be edited or treated as
+  reviewed policy. The resolve command emits compact provenance, source
+  paths/hashes, locale chain, and category counts; it does not emit full token
+  lists.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

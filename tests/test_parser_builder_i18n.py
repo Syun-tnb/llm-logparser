@@ -188,6 +188,23 @@ def test_analyze_lexical_rule_candidates_help_mentions_inactive_candidates(capsy
     assert "--sample-limit" in help_text
 
 
+def test_lexical_policy_resolve_help_mentions_reviewed_rule_paths(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["lexical", "policy", "resolve", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Resolve active lexical policy" in help_text
+    assert "--locale" in help_text
+    assert "--project-lexical-rules" in help_text
+    assert "--user-lexical-rules" in help_text
+    assert "--json" in help_text
+    assert "--out" in help_text
+
+
 def test_analyze_cross_thread_intent_eval_help_mentions_l4_same_intent_options(capsys):
     set_locale("en-US")
     parser = build_parser()
