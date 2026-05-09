@@ -43,6 +43,8 @@ from llm_logparser.cli.handlers import (
     run_config_command,
     run_export,
     run_extract,
+    run_lexical_candidates,
+    run_lexical_observed,
     run_lexical_policy,
     run_parse,
 )
@@ -301,7 +303,11 @@ def _dispatch(args, logger) -> None:
     elif args.command == "config":
         run_config_command(args, logger)
     elif args.command == "lexical":
-        if args.lexical_command == "policy":
+        if args.lexical_command == "observed":
+            run_lexical_observed(args, logger)
+        elif args.lexical_command == "candidates":
+            run_lexical_candidates(args, logger)
+        elif args.lexical_command == "policy":
             run_lexical_policy(args, logger)
 
 

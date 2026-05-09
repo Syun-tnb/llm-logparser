@@ -5,6 +5,18 @@ import logging
 from yaml import YAMLError
 
 from llm_logparser.cli.common import write_or_print
+from llm_logparser.core.lexical_inspection import (
+    LexicalInspectionError,
+    inspect_lexical_candidate,
+    inspect_observed_token,
+    list_lexical_candidates,
+    list_observed_tokens,
+    render_lexical_candidate_inspection_text,
+    render_lexical_candidate_list_text,
+    render_lexical_inspection_json,
+    render_observed_token_inspection_text,
+    render_observed_token_list_text,
+)
 from llm_logparser.core.lexical_policy import (
     render_lexical_policy_json,
     render_lexical_policy_resolution_text,
@@ -14,6 +26,61 @@ from llm_logparser.core.lexical_policy import (
     validate_reviewed_lexical_rule_file,
 )
 from llm_logparser.resources.cross_thread_lexical import CrossThreadLexicalRulesError
+
+
+def run_lexical_observed(args, logger: logging.Logger) -> None:
+    del logger
+    try:
+        if args.lexical_observed_command == "list":
+            payload = list_observed_tokens(args.input, limit=args.limit)
+            rendered = (
+                render_lexical_inspection_json(payload)
+                if args.json_output
+                else render_observed_token_list_text(payload)
+            )
+            write_or_print(rendered, args.out)
+            return
+        if args.lexical_observed_command == "inspect":
+            payload = inspect_observed_token(args.input, token=args.token)
+            rendered = (
+                render_lexical_inspection_json(payload)
+                if args.json_output
+                else render_observed_token_inspection_text(payload)
+            )
+            write_or_print(rendered, args.out)
+            return
+    except LexicalInspectionError as exc:
+        raise SystemExit(str(exc)) from None
+    raise SystemExit(f"unsupported lexical observed command: {args.lexical_observed_command}")
+
+
+def run_lexical_candidates(args, logger: logging.Logger) -> None:
+    del logger
+    try:
+        if args.lexical_candidates_command == "list":
+            payload = list_lexical_candidates(args.input, limit=args.limit)
+            rendered = (
+                render_lexical_inspection_json(payload)
+                if args.json_output
+                else render_lexical_candidate_list_text(payload)
+            )
+            write_or_print(rendered, args.out)
+            return
+        if args.lexical_candidates_command == "inspect":
+            payload = inspect_lexical_candidate(
+                args.input,
+                candidate_id=args.candidate_id,
+            )
+            rendered = (
+                render_lexical_inspection_json(payload)
+                if args.json_output
+                else render_lexical_candidate_inspection_text(payload)
+            )
+            write_or_print(rendered, args.out)
+            return
+    except LexicalInspectionError as exc:
+        raise SystemExit(str(exc)) from None
+    raise SystemExit(f"unsupported lexical candidates command: {args.lexical_candidates_command}")
 
 
 def run_lexical_policy(args, logger: logging.Logger) -> None:

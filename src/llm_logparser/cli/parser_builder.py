@@ -1393,6 +1393,138 @@ def build_parser() -> argparse.ArgumentParser:
         dest="lexical_command",
         required=True,
     )
+    lexical_observed_cmd = lexical_subparsers.add_parser(
+        "observed",
+        help=_("cli.lexical.observed.help"),
+        description=_("cli.lexical.observed.help"),
+    )
+    lexical_observed_subparsers = lexical_observed_cmd.add_subparsers(
+        dest="lexical_observed_command",
+        required=True,
+    )
+    lexical_observed_list_cmd = lexical_observed_subparsers.add_parser(
+        "list",
+        help=_("cli.lexical.observed.list.help"),
+        description=_("cli.lexical.observed.list.help"),
+    )
+    lexical_observed_list_cmd.add_argument(
+        "--input",
+        required=True,
+        type=Path,
+        help=_("cli.lexical.observed.opt.input.help"),
+    )
+    lexical_observed_list_cmd.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help=_("cli.lexical.opt.limit.help"),
+    )
+    lexical_observed_list_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    lexical_observed_list_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
+    lexical_observed_inspect_cmd = lexical_observed_subparsers.add_parser(
+        "inspect",
+        help=_("cli.lexical.observed.inspect.help"),
+        description=_("cli.lexical.observed.inspect.help"),
+    )
+    lexical_observed_inspect_cmd.add_argument(
+        "--input",
+        required=True,
+        type=Path,
+        help=_("cli.lexical.observed.opt.input.help"),
+    )
+    lexical_observed_inspect_cmd.add_argument(
+        "--token",
+        required=True,
+        help=_("cli.lexical.observed.opt.token.help"),
+    )
+    lexical_observed_inspect_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    lexical_observed_inspect_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
+    lexical_candidates_cmd = lexical_subparsers.add_parser(
+        "candidates",
+        help=_("cli.lexical.candidates.help"),
+        description=_("cli.lexical.candidates.help"),
+    )
+    lexical_candidates_subparsers = lexical_candidates_cmd.add_subparsers(
+        dest="lexical_candidates_command",
+        required=True,
+    )
+    lexical_candidates_list_cmd = lexical_candidates_subparsers.add_parser(
+        "list",
+        help=_("cli.lexical.candidates.list.help"),
+        description=_("cli.lexical.candidates.list.help"),
+    )
+    lexical_candidates_list_cmd.add_argument(
+        "--input",
+        required=True,
+        type=Path,
+        help=_("cli.lexical.candidates.opt.input.help"),
+    )
+    lexical_candidates_list_cmd.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help=_("cli.lexical.opt.limit.help"),
+    )
+    lexical_candidates_list_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    lexical_candidates_list_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
+    lexical_candidates_inspect_cmd = lexical_candidates_subparsers.add_parser(
+        "inspect",
+        help=_("cli.lexical.candidates.inspect.help"),
+        description=_("cli.lexical.candidates.inspect.help"),
+    )
+    lexical_candidates_inspect_cmd.add_argument(
+        "--input",
+        required=True,
+        type=Path,
+        help=_("cli.lexical.candidates.opt.input.help"),
+    )
+    lexical_candidates_inspect_cmd.add_argument(
+        "--candidate-id",
+        required=True,
+        help=_("cli.lexical.candidates.opt.candidate_id.help"),
+    )
+    lexical_candidates_inspect_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    lexical_candidates_inspect_cmd.add_argument(
+        "--out",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.opt.out.help"),
+    )
     lexical_policy_cmd = lexical_subparsers.add_parser(
         "policy",
         help=_("cli.lexical.policy.help"),

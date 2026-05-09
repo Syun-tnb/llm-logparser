@@ -824,6 +824,13 @@ Auxiliary L3 note:
   remains the active editable policy surface, while
   `l3/token-dictionary/lexical_rules.json` is generated seed / legacy
   policy-like data rather than reviewed policy
+- `lexical observed list` / `inspect` provide read-only views of
+  `observed_tokens.json`, optional `bundles.json`, and optional provenance
+  metadata. They display observed corpus facts only and do not classify, score,
+  or activate tokens.
+- `lexical candidates list` / `inspect` provide read-only views of inactive
+  `l3/lexical-rules/candidates.jsonl` rows and compact diagnostics. They do not
+  promote, reject, edit, or activate reviewed lexical policy.
 - `user_lexical_profile` is reserved as a future provider-crossing user-level
   lexical memory contract. It is not implemented or wired into scoring; reviewed
   project/user lexical YAML remains the active human-reviewed policy surface

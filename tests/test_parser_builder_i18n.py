@@ -205,6 +205,36 @@ def test_lexical_policy_resolve_help_mentions_reviewed_rule_paths(capsys):
     assert "--out" in help_text
 
 
+def test_lexical_observed_help_mentions_read_only_inspection(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["lexical", "observed", "inspect", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Inspect one observed token" in help_text
+    assert "--input" in help_text
+    assert "--token" in help_text
+    assert "--json" in help_text
+
+
+def test_lexical_candidates_help_mentions_inactive_inspection(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["lexical", "candidates", "inspect", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Inspect one inactive lexical-rule candidate" in help_text
+    assert "--input" in help_text
+    assert "--candidate-id" in help_text
+    assert "--json" in help_text
+
+
 def test_analyze_cross_thread_intent_eval_help_mentions_l4_same_intent_options(capsys):
     set_locale("en-US")
     parser = build_parser()

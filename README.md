@@ -920,9 +920,16 @@ as generic tokens; generating `persona_weak_token` candidates is not implemented
 yet. The command does not write `reviewed.yaml`, does not modify reviewed
 project/user files, and does not promote anything automatically.
 
-Reviewed lexical policy can be inspected without running analyzers:
+Observed lexical support data and reviewed lexical policy can be inspected
+without running analyzers:
 
 ```bash
+uv run llm-logparser lexical observed list --input artifacts/openai
+uv run llm-logparser lexical observed inspect --input artifacts/openai --token "DALL-E"
+
+uv run llm-logparser lexical candidates list --input artifacts/openai
+uv run llm-logparser lexical candidates inspect --input artifacts/openai --candidate-id candidate_xxx
+
 uv run llm-logparser lexical policy validate \
   --project-lexical-rules project_lexical_rules.yaml
 
@@ -932,10 +939,12 @@ uv run llm-logparser lexical policy resolve \
   --json
 ```
 
-These commands are read-only. Reviewed project/user YAML is the active editable
-policy surface. `observed_tokens.json` and `bundles.json` remain observed corpus
-facts, legacy `dictionary.json` remains readable for compatibility,
-`candidates.jsonl` remains inactive suggestion output, and
+These commands are read-only. `lexical observed` displays corpus facts and
+bundle/provenance summaries only. `lexical candidates` displays inactive
+candidate suggestions and diagnostics only. Reviewed project/user YAML is the
+active editable policy surface. `observed_tokens.json` and `bundles.json` remain
+observed corpus facts, legacy `dictionary.json` remains readable for
+compatibility, `candidates.jsonl` remains inactive suggestion output, and
 `l3/token-dictionary/lexical_rules.json` is generated seed / legacy policy-like
 data rather than reviewed policy.
 

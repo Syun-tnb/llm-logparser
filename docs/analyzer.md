@@ -147,6 +147,12 @@ not modify reviewed lexical rule files or promote candidates automatically.
 Read-only lexical policy operations are also available outside `analyze`:
 
 ```bash
+llm-logparser lexical observed list --input artifacts/openai
+llm-logparser lexical observed inspect --input artifacts/openai --token "DALL-E"
+
+llm-logparser lexical candidates list --input artifacts/openai
+llm-logparser lexical candidates inspect --input artifacts/openai --candidate-id candidate_xxx
+
 llm-logparser lexical policy validate \
   --project-lexical-rules project_lexical_rules.yaml
 
@@ -156,9 +162,13 @@ llm-logparser lexical policy resolve \
   --json
 ```
 
-These commands validate explicitly reviewed project/user YAML and resolve the
-active built-in + reviewed policy layers into compact diagnostics. They do not
-write reviewed rules, promote candidates, or change analyzer behavior.
+These commands are read-only. Observed-token commands show corpus facts from
+`observed_tokens.json`, `bundles.json`, and provenance metadata. Candidate
+commands show inactive `candidates.jsonl` suggestions and diagnostics. Policy
+commands validate explicitly reviewed project/user YAML and resolve the active
+built-in + reviewed policy layers into compact diagnostics. They do not write
+reviewed rules, promote candidates, classify observed tokens, or change analyzer
+behavior.
 
 ## Analyze Pipeline
 
@@ -1046,6 +1056,17 @@ deterministic and model-derived capabilities.
   observed token index / corpus token statistics artifact, legacy
   `dictionary.json` remains readable for compatibility, and `bundles.json`
   remains optional cooccurrence evidence only.
+
+- `lexical observed list` and `lexical observed inspect` are read-only views of
+  observed corpus facts. They can use `observed_tokens.json`, `bundles.json`,
+  and `provenance.json`, with compatibility fallback to legacy
+  `dictionary.json`. They do not classify tokens or apply active lexical policy.
+
+- `lexical candidates list` and `lexical candidates inspect` are read-only
+  views of inactive lexical-rule candidate artifacts. They expose candidate
+  type, suggested rule path, review score, evidence summaries, and compact
+  diagnostics for human review only. They do not promote, reject, edit, or
+  activate rules.
 
 - `lexical policy validate` and `lexical policy resolve` are read-only policy
   inspection commands. Reviewed project/user YAML is the active editable policy

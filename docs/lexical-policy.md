@@ -40,6 +40,33 @@ changing analyzer behavior.
 - requires human review before use
 - never activates rules automatically
 
+## Read-Only Inspection Commands
+
+Observed token facts can be listed and inspected without applying policy:
+
+```bash
+llm-logparser lexical observed list --input artifacts/openai
+llm-logparser lexical observed inspect --input artifacts/openai --token "DALL-E"
+```
+
+These commands read `observed_tokens.json`, `bundles.json`, and
+`provenance.json` when available. They fall back to legacy `dictionary.json` for
+older artifact sets. Output is corpus-fact oriented: counts, conversation spread,
+cooccurrence bundle evidence, and provenance/source summaries. It does not
+classify, score, activate, or promote tokens.
+
+Inactive lexical-rule candidates can also be listed and inspected:
+
+```bash
+llm-logparser lexical candidates list --input artifacts/openai
+llm-logparser lexical candidates inspect --input artifacts/openai --candidate-id candidate_xxx
+```
+
+These commands read `l3/lexical-rules/candidates.jsonl` plus compact diagnostics
+when present. They show candidate type, value, suggested rule path, review score,
+evidence summary, and diagnostics context. They do not promote, reject, edit, or
+write reviewed policy.
+
 Reviewed project/user lexical YAML
 
 - active editable lexical policy surface

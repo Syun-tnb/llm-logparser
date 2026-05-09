@@ -16,6 +16,24 @@ messages:
   cli.chain.help: 生エクスポートを解析し、全スレッドをMarkdownに出力する
   cli.viewer.help: （プレースホルダ）簡易HTMLビューアを起動する
   cli.config.help: ランタイム設定を確認・検証する
+  cli.lexical.help: 読み取り専用の lexical policy と dictionary 補助データを確認する
+  cli.lexical.observed.help: policy を適用せず観測 token 事実を確認する
+  cli.lexical.observed.list.help: 高頻度の観測 corpus token を一覧表示する
+  cli.lexical.observed.inspect.help: 1 つの観測 token と corpus evidence を確認する
+  cli.lexical.observed.opt.input.help: "入力: l3/token-dictionary/observed_tokens.json を含む provider artifact root"
+  cli.lexical.observed.opt.token.help: 確認する観測 token
+  cli.lexical.candidates.help: inactive な lexical-rule candidates を確認する
+  cli.lexical.candidates.list.help: inactive な lexical-rule candidates を一覧表示する
+  cli.lexical.candidates.inspect.help: 1 つの inactive lexical-rule candidate を確認する
+  cli.lexical.candidates.opt.input.help: "入力: l3/lexical-rules/candidates.jsonl を含む provider artifact root"
+  cli.lexical.candidates.opt.candidate_id.help: 確認する lexical-rule candidate ID
+  cli.lexical.opt.limit.help: 表示する最大行数
+  cli.lexical.policy.help: reviewed lexical policy をファイル変更なしで検証・解決する
+  cli.lexical.policy.validate.help: 明示指定された reviewed lexical rule YAML を検証する
+  cli.lexical.policy.resolve.help: active lexical policy layer を解決し、簡潔な diagnostics を出力する
+  cli.lexical.policy.opt.locale.help: built-in cross-thread lexical resource の locale tag
+  cli.lexical.policy.opt.project_lexical_rules.help: 明示指定する reviewed project lexical rules YAML
+  cli.lexical.policy.opt.user_lexical_rules.help: 明示指定する reviewed user lexical rules YAML
   cli.config.path.help: 解決された設定ファイルのパスを表示する
   cli.config.show.help: 正規化済み設定または選択したプロファイルを表示する
   cli.config.validate.help: 現在の設定を検証して終了する

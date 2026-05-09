@@ -17,6 +17,17 @@ messages:
   cli.viewer.help: (placeholder) Run lightweight HTML viewer
   cli.config.help: Inspect and validate runtime configuration
   cli.lexical.help: Inspect read-only lexical policy and dictionary support data
+  cli.lexical.observed.help: Inspect observed token facts without applying policy
+  cli.lexical.observed.list.help: List high-frequency observed corpus tokens
+  cli.lexical.observed.inspect.help: Inspect one observed token and its corpus evidence
+  cli.lexical.observed.opt.input.help: "Input: provider artifact root containing l3/token-dictionary/observed_tokens.json"
+  cli.lexical.observed.opt.token.help: Observed token to inspect
+  cli.lexical.candidates.help: Inspect inactive lexical-rule candidates
+  cli.lexical.candidates.list.help: List inactive lexical-rule candidates
+  cli.lexical.candidates.inspect.help: Inspect one inactive lexical-rule candidate
+  cli.lexical.candidates.opt.input.help: "Input: provider artifact root containing l3/lexical-rules/candidates.jsonl"
+  cli.lexical.candidates.opt.candidate_id.help: Lexical-rule candidate ID to inspect
+  cli.lexical.opt.limit.help: Maximum rows to display
   cli.lexical.policy.help: Validate and resolve reviewed lexical policy without modifying files
   cli.lexical.policy.validate.help: Validate explicitly provided reviewed lexical rule YAML files
   cli.lexical.policy.resolve.help: Resolve active lexical policy layers and print compact diagnostics
