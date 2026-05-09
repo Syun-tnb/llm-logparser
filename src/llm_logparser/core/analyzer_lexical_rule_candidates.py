@@ -28,12 +28,15 @@ LEXICAL_RULE_CANDIDATE_RECORD_TYPE = "lexical_rule_candidate"
 LEXICAL_RULE_CANDIDATE_DIAGNOSTICS_ARTIFACT_TYPE = "lexical_rule_candidates_diagnostics"
 LEXICAL_RULE_CANDIDATE_METHOD = "token_dictionary_spread_v0"
 PERSONA_WEAK_TOKEN_CANDIDATE_METHOD = "token_dictionary_persona_spread_v0"
+DISTINCTIVE_ALLOW_TOKEN_CANDIDATE_METHOD = "token_dictionary_distinctive_allow_v0"
 DEFAULT_LEXICAL_RULE_CANDIDATE_MAX_PER_TYPE = 100
 DEFAULT_LEXICAL_RULE_CANDIDATE_SAMPLE_LIMIT = 5
 GENERIC_MIN_CONVERSATION_COUNT = 8
 GENERIC_MIN_DOCUMENT_COUNT = 25
 PERSONA_MIN_CONVERSATION_COUNT = 8
 PERSONA_MIN_DOCUMENT_COUNT = 25
+DISTINCTIVE_MIN_CONVERSATION_COUNT = 4
+DISTINCTIVE_MIN_DOCUMENT_COUNT = 8
 TOPIC_SUMMARY_EXCERPT_MAX_CHARS = 240
 _TOKEN_SYMBOL_RE = re.compile(r"[./_:-]")
 _URL_LIKE_RE = re.compile(r"(?:://|^www\.|^[a-z][a-z0-9+.-]*://)", re.IGNORECASE)
@@ -89,6 +92,40 @@ _FILE_EXTENSION_LIKE = {
     "xlsx",
     "xml",
     "zip",
+}
+_DISTINCTIVE_DOMAIN_TERMS = {
+    "adapter",
+    "analyzer",
+    "artifact",
+    "canonical",
+    "candidate",
+    "cluster",
+    "cross",
+    "dictionary",
+    "heuristic",
+    "lexical",
+    "normalization",
+    "parsed",
+    "policy",
+    "roadmap",
+    "schema",
+    "segment",
+    "semantic",
+    "summary",
+    "thread",
+    "token",
+    "topic",
+    "window",
+}
+_HARD_SHAPE_SKIP_REASONS = {
+    "malformed_token",
+    "shape_url_like",
+    "shape_path_like",
+    "shape_date_like",
+    "shape_numeric",
+    "shape_symbol_like",
+    "shape_identifier_like",
+    "shape_too_long",
 }
 
 
@@ -591,6 +628,77 @@ def _is_persona_weak_candidate(
     return has_strong_persona_signal and has_spread, reasons
 
 
+def _distinctive_reason_codes(
+    *,
+    token: str,
+    normalized_value: str,
+    conversation_count: int,
+    document_count: int,
+    bundle_count: int,
+    topic_summary_counts: dict[str, int],
+) -> list[str]:
+    reasons: list[str] = []
+    parts = {
+        part
+        for part in re.split(r"[^a-z0-9一-龯ぁ-んァ-ヶー]+", normalized_value)
+        if part
+    }
+    if re.fullmatch(r"[A-Z]{1,6}\d{1,3}", token) or re.fullmatch(r"[A-Z]{2,8}", token):
+        reasons.append("distinctive_acronym_or_layer_shape")
+    if "-" in token and parts.intersection(_DISTINCTIVE_DOMAIN_TERMS):
+        reasons.append("domain_compound_shape")
+    if parts.intersection(_DISTINCTIVE_DOMAIN_TERMS):
+        reasons.append("project_domain_vocabulary")
+    if topic_summary_counts["topic_summary_keyword_count"] >= 1:
+        reasons.append("topic_summary_keyword_usage")
+    if topic_summary_counts["topic_summary_title_count"] >= 1:
+        reasons.append("topic_summary_title_usage")
+    if topic_summary_counts["topic_summary_total_count"] >= 3:
+        reasons.append("recurring_topic_summary_usage")
+    if bundle_count >= 3:
+        reasons.append("bundle_cohesion")
+    if conversation_count >= DISTINCTIVE_MIN_CONVERSATION_COUNT:
+        reasons.append("stable_conversation_spread")
+    if document_count >= DISTINCTIVE_MIN_DOCUMENT_COUNT:
+        reasons.append("stable_document_spread")
+    return reasons
+
+
+def _is_distinctive_allow_candidate(
+    *,
+    token: str,
+    normalized_value: str,
+    conversation_count: int,
+    document_count: int,
+    bundle_count: int,
+    topic_summary_counts: dict[str, int],
+) -> tuple[bool, list[str]]:
+    reasons = _distinctive_reason_codes(
+        token=token,
+        normalized_value=normalized_value,
+        conversation_count=conversation_count,
+        document_count=document_count,
+        bundle_count=bundle_count,
+        topic_summary_counts=topic_summary_counts,
+    )
+    strong_reasons = {
+        "distinctive_acronym_or_layer_shape",
+        "domain_compound_shape",
+        "project_domain_vocabulary",
+    }
+    has_strong_distinctive_signal = bool(strong_reasons.intersection(reasons))
+    has_stable_spread = (
+        conversation_count >= DISTINCTIVE_MIN_CONVERSATION_COUNT
+        and document_count >= DISTINCTIVE_MIN_DOCUMENT_COUNT
+    )
+    has_supporting_evidence = (
+        bundle_count >= 3
+        or topic_summary_counts["topic_summary_total_count"] >= 1
+        or "distinctive_acronym_or_layer_shape" in reasons
+    )
+    return has_strong_distinctive_signal and has_stable_spread and has_supporting_evidence, reasons
+
+
 def _candidate_for_token(
     *,
     provider_id: str,
@@ -736,9 +844,83 @@ def _persona_candidate_for_token(
     }
 
 
+def _distinctive_allow_candidate_for_token(
+    *,
+    provider_id: str,
+    row: dict[str, Any],
+    bundle_counts: dict[str, int],
+    topic_summary_records: list[dict[str, Any]],
+    sample_limit: int,
+    reason_codes: list[str],
+) -> dict[str, Any]:
+    token = str(row.get("token") or row.get("normalized") or "")
+    normalized_value = normalize_analysis_text(str(row.get("normalized") or token))
+    count = _int_field(row, "count")
+    conversation_count = _int_field(row, "conversation_count")
+    topic_count = _int_field(row, "topic_count")
+    document_count = _document_count(row)
+    topic_summary_counts, topic_summary_refs = _topic_summary_evidence_for_token(
+        normalized_value,
+        topic_summary_records=topic_summary_records,
+        sample_limit=sample_limit,
+    )
+    score, score_components = _candidate_score(
+        count=count,
+        conversation_count=conversation_count,
+        document_count=document_count,
+        topic_summary_total_count=topic_summary_counts["topic_summary_total_count"],
+        low_specificity=False,
+    )
+    return {
+        "record_type": LEXICAL_RULE_CANDIDATE_RECORD_TYPE,
+        "schema_version": LEXICAL_RULE_CANDIDATE_SCHEMA_VERSION,
+        "provider_id": provider_id,
+        "candidate_id": _candidate_id(
+            provider_id,
+            normalized_value,
+            candidate_type="distinctive_allow_token",
+            method=DISTINCTIVE_ALLOW_TOKEN_CANDIDATE_METHOD,
+        ),
+        "candidate_type": "distinctive_allow_token",
+        "suggested_scope": "project",
+        "suggested_rule_path": "topic_summary.scoring.distinctive_allow_tokens",
+        "value": token,
+        "value_kind": "token",
+        "normalized_value": normalized_value,
+        "status": "inactive",
+        "activation_state": "requires_review",
+        "source": {
+            "method": DISTINCTIVE_ALLOW_TOKEN_CANDIDATE_METHOD,
+            "inputs": ["l3/token-dictionary/observed_tokens.json"],
+        },
+        "evidence": {
+            "token_count": count,
+            "document_count": document_count,
+            "conversation_count": conversation_count,
+            "topic_count": topic_count,
+            "bundle_count": bundle_counts.get(normalized_value, 0),
+            **topic_summary_counts,
+            "score": score,
+            "score_components": score_components,
+            "reason_codes": reason_codes,
+        },
+        "sample_refs": topic_summary_refs
+        or _sample_refs(row, sample_limit=sample_limit),
+        "already_active": False,
+        "review": {
+            "recommendation": "consider",
+            "notes": "Consider protecting this distinctive domain/project token.",
+        },
+    }
+
+
 def _candidate_sort_key(row: dict[str, Any]) -> tuple[int, float, int, int, str]:
     evidence = row["evidence"]
-    type_rank = 0 if row.get("candidate_type") == "persona_weak_token" else 1
+    type_rank = {
+        "persona_weak_token": 0,
+        "distinctive_allow_token": 1,
+        "generic_scoring_token": 2,
+    }.get(str(row.get("candidate_type")), 9)
     return (
         type_rank,
         -float(evidence["score"]),
@@ -788,6 +970,7 @@ def build_lexical_rule_candidate_rows(
     skipped_counts: Counter[str] = Counter()
     candidates_by_type: dict[str, list[dict[str, Any]]] = {
         "persona_weak_token": [],
+        "distinctive_allow_token": [],
         "generic_scoring_token": [],
     }
     for row in dictionary_payload.get("tokens", []):
@@ -808,21 +991,6 @@ def build_lexical_rule_candidate_rows(
             active_patterns=active_patterns,
         ):
             skipped_counts["already_active_policy"] += 1
-            continue
-        shape_skip_reason = _shape_skip_reason(
-            normalized_value,
-            count=count,
-            conversation_count=conversation_count,
-            document_count=document_count,
-        )
-        if shape_skip_reason:
-            skipped_counts[shape_skip_reason] += 1
-            continue
-        if (
-            conversation_count < GENERIC_MIN_CONVERSATION_COUNT
-            or document_count < GENERIC_MIN_DOCUMENT_COUNT
-        ):
-            skipped_counts["below_threshold"] += 1
             continue
         topic_summary_counts, _topic_refs = _topic_summary_evidence_for_token(
             normalized_value,
@@ -852,6 +1020,47 @@ def build_lexical_rule_candidate_rows(
             )
             skipped_counts["generic_suppressed_by_persona_candidate"] += 1
             continue
+        shape_skip_reason = _shape_skip_reason(
+            normalized_value,
+            count=count,
+            conversation_count=conversation_count,
+            document_count=document_count,
+        )
+        distinctive_candidate, distinctive_reasons = _is_distinctive_allow_candidate(
+            token=str(row.get("token") or row.get("normalized") or ""),
+            normalized_value=normalized_value,
+            conversation_count=conversation_count,
+            document_count=document_count,
+            bundle_count=bundle_counts.get(normalized_value, 0),
+            topic_summary_counts=topic_summary_counts,
+        )
+        if shape_skip_reason in _HARD_SHAPE_SKIP_REASONS and not (
+            shape_skip_reason == "shape_identifier_like" and distinctive_candidate
+        ):
+            skipped_counts[shape_skip_reason] += 1
+            continue
+        if distinctive_candidate:
+            candidates_by_type["distinctive_allow_token"].append(
+                _distinctive_allow_candidate_for_token(
+                    provider_id=provider_id,
+                    row=row,
+                    bundle_counts=bundle_counts,
+                    topic_summary_records=topic_summary_records,
+                    sample_limit=sample_limit,
+                    reason_codes=distinctive_reasons,
+                )
+            )
+            skipped_counts["generic_suppressed_by_distinctive_allow_candidate"] += 1
+            continue
+        if shape_skip_reason:
+            skipped_counts[shape_skip_reason] += 1
+            continue
+        if (
+            conversation_count < GENERIC_MIN_CONVERSATION_COUNT
+            or document_count < GENERIC_MIN_DOCUMENT_COUNT
+        ):
+            skipped_counts["below_threshold"] += 1
+            continue
         candidates_by_type["generic_scoring_token"].append(
             _candidate_for_token(
                 provider_id=provider_id,
@@ -862,7 +1071,11 @@ def build_lexical_rule_candidate_rows(
             )
         )
     candidates: list[dict[str, Any]] = []
-    for candidate_type in ("persona_weak_token", "generic_scoring_token"):
+    for candidate_type in (
+        "persona_weak_token",
+        "distinctive_allow_token",
+        "generic_scoring_token",
+    ):
         rows = candidates_by_type[candidate_type]
         rows.sort(key=_candidate_sort_key)
         candidates.extend(rows[:max_candidates_per_type])
@@ -911,6 +1124,8 @@ def _diagnostics(
         "thresholds": {
             "generic_min_conversation_count": GENERIC_MIN_CONVERSATION_COUNT,
             "generic_min_document_count": GENERIC_MIN_DOCUMENT_COUNT,
+            "distinctive_min_conversation_count": DISTINCTIVE_MIN_CONVERSATION_COUNT,
+            "distinctive_min_document_count": DISTINCTIVE_MIN_DOCUMENT_COUNT,
             "document_count_mapping": (
                 "dictionary document_count when present, otherwise max(conversation_count, topic_count)"
             ),
@@ -999,6 +1214,20 @@ def _render_persona_weak_rule_yaml(normalized_value: str) -> str:
     )
 
 
+def _render_distinctive_allow_rule_yaml(normalized_value: str) -> str:
+    rendered_value = json.dumps(normalized_value, ensure_ascii=False)
+    return "\n".join(
+        [
+            "```yaml",
+            "topic_summary:",
+            "  scoring:",
+            "    distinctive_allow_tokens:",
+            f"      - {rendered_value}",
+            "```",
+        ]
+    )
+
+
 def _looks_name_or_persona_like(row: dict[str, Any]) -> bool:
     value = str(row.get("value") or "")
     normalized_value = str(row.get("normalized_value") or "")
@@ -1043,6 +1272,12 @@ def _render_review_markdown(
         if row.get("candidate_type") == "persona_weak_token"
     ]
     persona_rows.sort(key=_review_sort_key)
+    distinctive_rows = [
+        row
+        for row in rows
+        if row.get("candidate_type") == "distinctive_allow_token"
+    ]
+    distinctive_rows.sort(key=_review_sort_key)
 
     lines.extend(
         [
@@ -1061,6 +1296,29 @@ def _render_review_markdown(
                 lines,
                 row,
                 suggested_rule_renderer=_render_persona_weak_rule_yaml,
+                include_name_like_warning=False,
+            )
+    else:
+        lines.append("_No candidates._")
+        lines.append("")
+
+    lines.extend(
+        [
+            "",
+            "## distinctive_allow_token",
+            "",
+            "> Note: These candidates are review-only suggestions for "
+            "high-value domain/project/topic tokens that should be protected "
+            "from generic weakening. They are not activated automatically.",
+            "",
+        ]
+    )
+    if distinctive_rows:
+        for row in distinctive_rows:
+            _append_candidate_review_section(
+                lines,
+                row,
+                suggested_rule_renderer=_render_distinctive_allow_rule_yaml,
                 include_name_like_warning=False,
             )
     else:

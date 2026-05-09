@@ -372,6 +372,27 @@ def test_lexical_candidate_cli_inspect_json(tmp_path: Path, capsys):
     assert payload["review"]["score"] == 0.9
 
 
+def test_lexical_candidate_inspection_displays_distinctive_allow_candidate(
+    tmp_path: Path,
+):
+    root = tmp_path / "openai"
+    row = _candidate_row("candidate_distinctive", "L3", score=0.8)
+    row["candidate_type"] = "distinctive_allow_token"
+    row["suggested_rule_path"] = "topic_summary.scoring.distinctive_allow_tokens"
+    _write_jsonl(lexical_rule_candidates_path(root), [row])
+
+    payload = list_lexical_candidates(root)
+    inspected = inspect_lexical_candidate(root, candidate_id="candidate_distinctive")
+    rendered = render_lexical_candidate_inspection_text(inspected)
+
+    assert payload["candidates"][0]["candidate_type"] == "distinctive_allow_token"
+    assert inspected["suggested_rule_path"] == (
+        "topic_summary.scoring.distinctive_allow_tokens"
+    )
+    assert "distinctive_allow_token" in rendered
+    assert "topic_summary.scoring.distinctive_allow_tokens" in rendered
+
+
 def test_lexical_candidate_missing_artifact_fails(tmp_path: Path):
     root = tmp_path / "openai"
     root.mkdir()

@@ -1034,7 +1034,9 @@ deterministic and model-derived capabilities.
   from high-frequency / high-spread observed token statistics. It also suggests
   inactive `persona_weak_token` candidates for recurring
   persona/name/address-like overlap that should be reviewed separately from
-  generic scoring tokens. It writes `l3/lexical-rules/candidates.jsonl` and
+  generic scoring tokens, and inactive `distinctive_allow_token` candidates for
+  domain/project/topic tokens that should be protected from generic weakening.
+  It writes `l3/lexical-rules/candidates.jsonl` and
   `diagnostics.json`. Phase 1 applies conservative token-shape filtering for
   URL/path-like tokens, numeric/date-like residue, hashes/IDs, and overly long
   identifier-like tokens before emitting review candidates. When

@@ -913,7 +913,9 @@ human review; Latin token matching is boundary-aware, while CJK evidence uses
 substring matching. Candidate scores are normalized review-priority scores for
 this inactive artifact only; they do not affect cross-thread scoring directly.
 The command can also emit inactive `persona_weak_token` suggestions for
-review-only weakening of recurring persona/name/address-like overlap.
+review-only weakening of recurring persona/name/address-like overlap, and
+inactive `distinctive_allow_token` suggestions for domain/project/topic tokens
+that should be protected from generic weakening.
 Candidate rows are always inactive and require manual review before use. The
 command also writes `l3/lexical-rules/review.md` as a human-readable review aid
 with copyable YAML snippets. The review warns that names/personas should

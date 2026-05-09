@@ -37,7 +37,8 @@ changing analyzer behavior.
 
 - inactive lexical-rule suggestions
 - generated from observed corpus facts and optional supporting evidence
-- currently includes `generic_scoring_token` and `persona_weak_token` review candidates
+- currently includes `generic_scoring_token`, `persona_weak_token`, and
+  `distinctive_allow_token` review candidates
 - requires human review before use
 - never activates rules automatically
 

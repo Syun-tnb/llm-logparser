@@ -125,6 +125,7 @@ def _write_reviewed_lexical_rules(
     owner_scope: str,
     generic_tokens: list[str],
     persona_weak_tokens: list[str] | None = None,
+    distinctive_allow_tokens: list[str] | None = None,
 ) -> Path:
     lines = [
         'schema_version: "0.1"',
@@ -134,6 +135,8 @@ def _write_reviewed_lexical_rules(
         "    scoring:",
     ]
     sections = {"generic_tokens": generic_tokens}
+    if distinctive_allow_tokens is not None:
+        sections["distinctive_allow_tokens"] = distinctive_allow_tokens
     if persona_weak_tokens is not None:
         sections["persona_weak_tokens"] = persona_weak_tokens
     for section, tokens in sections.items():
@@ -294,6 +297,110 @@ def test_lexical_rule_candidates_skip_active_persona_weak_policy(tmp_path: Path)
     assert [row["normalized_value"] for row in rows] == ["otherpersona"]
     assert rows[0]["candidate_type"] == "persona_weak_token"
     assert diagnostics["skipped_counts"]["already_active_policy"] == 1
+
+
+def test_lexical_rule_candidates_generate_inactive_distinctive_allow_candidates(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("L3", count=80, conversation_count=12, topic_count=20),
+            _token_row("cross-thread", count=90, conversation_count=10, topic_count=20),
+            _token_row("analyzer", count=100, conversation_count=9, topic_count=25),
+            _token_row("broadnoise", count=120, conversation_count=12, topic_count=30),
+        ],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "title": "L3 cross-thread analyzer design",
+                "summary": "The analyzer links cross-thread topic summaries.",
+                "keywords": ["L3", "cross-thread", "analyzer"],
+            }
+        ],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+    by_value = {row["normalized_value"]: row for row in rows}
+
+    assert by_value["l3"]["candidate_type"] == "distinctive_allow_token"
+    assert by_value["cross-thread"]["candidate_type"] == "distinctive_allow_token"
+    assert by_value["analyzer"]["candidate_type"] == "distinctive_allow_token"
+    assert by_value["broadnoise"]["candidate_type"] == "generic_scoring_token"
+    assert by_value["l3"]["suggested_rule_path"] == (
+        "topic_summary.scoring.distinctive_allow_tokens"
+    )
+    assert by_value["l3"]["status"] == "inactive"
+    assert by_value["l3"]["activation_state"] == "requires_review"
+    assert "distinctive_acronym_or_layer_shape" in by_value["l3"]["evidence"][
+        "reason_codes"
+    ]
+    assert diagnostics["candidate_type_counts"] == {
+        "distinctive_allow_token": 3,
+        "generic_scoring_token": 1,
+    }
+    assert diagnostics["skipped_counts"]["generic_suppressed_by_distinctive_allow_candidate"] == 3
+
+
+def test_lexical_rule_candidates_skip_active_distinctive_allow_policy(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [
+            _token_row("L3", count=80, conversation_count=12, topic_count=20),
+            _token_row("L4", count=80, conversation_count=12, topic_count=20),
+        ],
+    )
+    project_rules = _write_reviewed_lexical_rules(
+        tmp_path / "project.yaml",
+        owner_scope="project",
+        generic_tokens=[],
+        distinctive_allow_tokens=["L3"],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(
+        root,
+        project_lexical_rules=project_rules,
+    )
+
+    assert [row["normalized_value"] for row in rows] == ["l4"]
+    assert rows[0]["candidate_type"] == "distinctive_allow_token"
+    assert diagnostics["skipped_counts"]["already_active_policy"] == 1
+
+
+def test_lexical_rule_candidates_persona_precedence_over_distinctive(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("Analyzerさん", count=120, conversation_count=12, topic_count=30)],
+    )
+    _write_topic_summaries(
+        root,
+        "thread-a",
+        [
+            {
+                "conversation_id": "conv-a",
+                "segment_id": "seg-a",
+                "keywords": ["Analyzerさん"],
+            }
+        ],
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert [row["candidate_type"] for row in rows] == ["persona_weak_token"]
+    assert diagnostics["skipped_counts"]["generic_suppressed_by_persona_candidate"] == 1
+    assert "generic_suppressed_by_distinctive_allow_candidate" not in diagnostics[
+        "skipped_counts"
+    ]
 
 
 def test_lexical_rule_candidates_skip_noisy_token_shapes(tmp_path: Path):
@@ -843,6 +950,30 @@ def test_lexical_rule_candidates_review_warns_on_honorific_candidate(
     assert "### テストさん" in review
     assert "persona_weak_tokens:" in review
     assert '      - "テストさん"' in review
+
+
+def test_lexical_rule_candidates_review_renders_distinctive_allow_section(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_dictionary(
+        root,
+        [_token_row("L3", count=80, conversation_count=12, topic_count=20)],
+    )
+
+    result = write_lexical_rule_candidate_artifacts(root)
+
+    rows = _read_jsonl(result["candidates_path"])
+    review = result["review_path"].read_text(encoding="utf-8")
+    assert rows[0]["candidate_type"] == "distinctive_allow_token"
+    assert rows[0]["suggested_rule_path"] == (
+        "topic_summary.scoring.distinctive_allow_tokens"
+    )
+    assert "## distinctive_allow_token" in review
+    assert "high-value domain/project/topic tokens" in review
+    assert "### l3" in review
+    assert "distinctive_allow_tokens:" in review
+    assert '      - "l3"' in review
 
 
 def test_lexical_rule_candidate_name_like_detection_has_no_builtin_name_list():
