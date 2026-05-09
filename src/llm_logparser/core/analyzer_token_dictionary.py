@@ -30,6 +30,8 @@ TOKEN_BUNDLES_ARTIFACT_TYPE = "token_bundles"
 TOKEN_DICTIONARY_PROVENANCE_ARTIFACT_TYPE = "token_dictionary_provenance"
 TOKEN_DICTIONARY_LEXICAL_RULES_ARTIFACT_TYPE = "token_dictionary_lexical_rules"
 TOKEN_DICTIONARY_DIRNAME = "token-dictionary"
+OBSERVED_TOKENS_FILENAME = "observed_tokens.json"
+LEGACY_TOKEN_DICTIONARY_FILENAME = "dictionary.json"
 _TOKEN_RE = re.compile(r"[a-z0-9_./:-]{2,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
 _DEFAULT_SOFT_STOPWORDS = frozenset(
     {
@@ -352,7 +354,29 @@ def token_dictionary_dir(input_root: Path) -> Path:
 
 
 def token_dictionary_path(input_root: Path) -> Path:
-    return token_dictionary_dir(input_root) / "dictionary.json"
+    """Return the primary observed-token artifact path.
+
+    The helper keeps its historical name for API compatibility, but the primary
+    artifact is now `observed_tokens.json`. Use
+    `legacy_token_dictionary_path()` only for compatibility reads.
+    """
+
+    return observed_tokens_path(input_root)
+
+
+def observed_tokens_path(input_root: Path) -> Path:
+    return token_dictionary_dir(input_root) / OBSERVED_TOKENS_FILENAME
+
+
+def legacy_token_dictionary_path(input_root: Path) -> Path:
+    return token_dictionary_dir(input_root) / LEGACY_TOKEN_DICTIONARY_FILENAME
+
+
+def resolve_existing_token_dictionary_path(input_root: Path) -> Path:
+    observed_path = observed_tokens_path(input_root)
+    if observed_path.exists():
+        return observed_path
+    return legacy_token_dictionary_path(input_root)
 
 
 def token_bundles_path(input_root: Path) -> Path:
@@ -452,7 +476,7 @@ def load_token_dictionary_signals(input_root: Path | None) -> TokenDictionarySig
     dictionary_payload: dict[str, Any] | None = None
     bundles_payload: dict[str, Any] | None = None
 
-    dictionary_path = token_dictionary_path(input_root)
+    dictionary_path = resolve_existing_token_dictionary_path(input_root)
     if dictionary_path.exists():
         try:
             dictionary_payload = json.loads(dictionary_path.read_text(encoding="utf-8"))

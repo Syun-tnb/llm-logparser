@@ -852,7 +852,8 @@ signals but are not sufficient admission evidence by themselves. Heuristic
 summary rows and inferred conclusions are weak evidence. Generic admission
 anchors and topic-summary scoring token policy used by this mode are lexical
 policy loaded from the built-in cross-thread lexical resources, not corpus facts from
-`l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such as
+`l3/token-dictionary/observed_tokens.json` (legacy `dictionary.json` is still
+readable). Citation and tool residue tokens such as
 `cite` and `turn0search*` are treated as non-semantic admission anchors, so they
 cannot admit topic-summary candidates by themselves.
 
@@ -868,8 +869,9 @@ rank bands by themselves. Topic-summary score bands are calibrated separately
 from the default semantic-topics path: low `<0.45`, medium `0.45-0.7`, high
 `>=0.7`.
 
-When token-dictionary artifacts are present, `dictionary.json` should be read as
-an observed token index / corpus token statistics artifact, and `bundles.json`
+When token-dictionary artifacts are present, `observed_tokens.json` should be
+read as an observed token index / corpus token statistics artifact, and
+`bundles.json`
 as corpus-derived cooccurrence bundles. They are additive L3 signals only, not
 user-authored lexical rules. Reviewed project/user lexical rule files can be
 provided explicitly with `--project-lexical-rules` and `--user-lexical-rules`;
@@ -902,9 +904,10 @@ uv run llm-logparser analyze lexical-rule-candidates \
 ```
 
 Phase 1 only suggests `generic_scoring_token` candidates from
-`l3/token-dictionary/dictionary.json`. It uses conservative token-shape
-filtering to avoid URL/path fragments, IDs, date-like tokens, and other
-low-review-value residue. When intra-thread topic summaries are present, they
+`l3/token-dictionary/observed_tokens.json` (or legacy `dictionary.json`). It
+uses conservative token-shape filtering to avoid URL/path fragments, IDs,
+date-like tokens, and other low-review-value residue. When intra-thread topic
+summaries are present, they
 are used only as optional supporting evidence and capped sample references for
 human review; Latin token matching is boundary-aware, while CJK evidence uses
 substring matching. Candidate scores are normalized review-priority scores for
@@ -930,10 +933,16 @@ uv run llm-logparser lexical policy resolve \
 ```
 
 These commands are read-only. Reviewed project/user YAML is the active editable
-policy surface. `dictionary.json` and `bundles.json` remain observed corpus
-facts, `candidates.jsonl` remains inactive suggestion output, and
+policy surface. `observed_tokens.json` and `bundles.json` remain observed corpus
+facts, legacy `dictionary.json` remains readable for compatibility,
+`candidates.jsonl` remains inactive suggestion output, and
 `l3/token-dictionary/lexical_rules.json` is generated seed / legacy policy-like
 data rather than reviewed policy.
+
+`user_lexical_profile` is reserved as a future provider-crossing user-level
+lexical memory contract. It is documented as a stub only and is not wired into
+scoring; reviewed project/user lexical YAML remains the active human-reviewed
+policy surface today.
 
 Recommended comparison flow:
 

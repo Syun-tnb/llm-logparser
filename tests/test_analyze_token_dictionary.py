@@ -6,7 +6,10 @@ from pathlib import Path
 from llm_logparser.cli.cli import main
 from llm_logparser.core import analyzer_token_dictionary
 from llm_logparser.core.analyzer_token_dictionary import (
+    legacy_token_dictionary_path,
     load_token_dictionary_lexical_rules,
+    load_token_dictionary_signals,
+    observed_tokens_path,
     token_bundles_path,
     token_dictionary_path,
     token_dictionary_lexical_rules_path,
@@ -238,7 +241,9 @@ def test_write_token_dictionary_artifacts_writes_schema_valid_outputs(tmp_path: 
     result = write_token_dictionary_artifacts(root)
 
     assert result["token_count"] is not None
+    assert token_dictionary_path(root) == observed_tokens_path(root)
     assert token_dictionary_path(root).exists()
+    assert not legacy_token_dictionary_path(root).exists()
     assert token_bundles_path(root).exists()
     assert token_dictionary_provenance_path(root).exists()
     assert token_dictionary_lexical_rules_path(root).exists()
@@ -262,6 +267,44 @@ def test_write_token_dictionary_artifacts_writes_schema_valid_outputs(tmp_path: 
     assert "reflective_tokens" in lexical_rules["seeded_rules"]
     loaded_rules = load_token_dictionary_lexical_rules(root)
     assert "memory" in loaded_rules.reflective_tokens
+
+
+def test_token_dictionary_signals_fall_back_to_legacy_dictionary_json(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    legacy_path = legacy_token_dictionary_path(root)
+    _write_json(
+        legacy_path,
+        {
+            "artifact_type": "token_dictionary",
+            "schema_version": "0.1",
+            "producer_layer": "L3",
+            "provider_id": "openai",
+            "created_at": "2026-05-05T00:00:00Z",
+            "source_inputs": ["parsed.jsonl"],
+            "reproducibility_note": "test",
+            "token_count": 1,
+            "tokens": [
+                {
+                    "token": "legacytoken",
+                    "normalized": "legacytoken",
+                    "count": 3,
+                    "first_seen": 1,
+                    "last_seen": 2,
+                    "conversations": ["conv-a"],
+                    "topics": [],
+                    "role_hints": {"user": 3},
+                    "cooccurrence": [],
+                    "conversation_count": 1,
+                    "topic_count": 0,
+                }
+            ],
+        },
+    )
+
+    signals = load_token_dictionary_signals(root)
+
+    assert signals is not None
+    assert "legacytoken" in signals.token_rows
 def test_token_dictionary_accept_token_filters_universal_noise():
     assert not analyzer_token_dictionary._accept_token("---")
     assert not analyzer_token_dictionary._accept_token("...")

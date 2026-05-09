@@ -123,21 +123,24 @@ Current Layer 1 implementations include:
 
 `analyze token-dictionary` writes additive L3 auxiliary artifacts under
 `l3/token-dictionary/` from canonical `parsed.jsonl` plus optional
-`token_stats.json` and `l3/semantic-topics/topics.json`. Despite the historical
-name, `dictionary.json` is an observed token index / corpus token statistics
-artifact, and `bundles.json` records corpus-derived cooccurrence bundles. These
-token/bundle artifacts are rebuildable higher-layer signals only; they do not
+`token_stats.json` and `l3/semantic-topics/topics.json`. The primary output is
+now `observed_tokens.json`, an observed token index / corpus token statistics
+artifact. Legacy `dictionary.json` files remain readable as a backward-compatible
+alias. `bundles.json` records corpus-derived cooccurrence bundles. These
+token/bundle artifacts are rebuildable higher-layer facts only; they do not
 replace canonical or L1 outputs. Seeded `lexical_rules.json` remains a generated
-L3 lexical sidecar for task / reflective / specificity token groups. Cross-thread
+legacy policy-like sidecar for task / reflective / specificity token groups, not
+reviewed policy. Cross-thread
 generic admission anchors and topic-summary scoring token policy are lexical
 policy, not corpus token facts, and are owned by the cross-thread lexical
 resources instead of token dictionary artifacts. Explicit reviewed project/user
 lexical rule files may be provided to `cross-thread-candidates` as additive
 layers above the built-in resources; there is no automatic discovery or
 promotion. L3 cross-thread candidate selection may also consume
-`dictionary.json` and `bundles.json` when present as additive evidence only;
-missing token-dictionary artifacts fall back to the pre-existing candidate path.
-`analyze lexical-rule-candidates` reads `dictionary.json` as observed token
+`observed_tokens.json` / legacy `dictionary.json` and `bundles.json` when
+present as additive evidence only; missing token-dictionary artifacts fall back
+to the pre-existing candidate path. `analyze lexical-rule-candidates` reads
+`observed_tokens.json` as observed token
 statistics and writes inactive L3 suggestions under `l3/lexical-rules/`; it does
 not modify reviewed lexical rule files or promote candidates automatically.
 
@@ -932,7 +935,8 @@ deterministic and model-derived capabilities.
   diagnostics/ranking signals, but they are not sufficient on their own.
   Generic admission anchors and topic-summary scoring token policy are lexical
   policy loaded from the built-in cross-thread lexical resources, not from
-  `l3/token-dictionary/dictionary.json`. Citation and tool residue tokens such
+  observed token artifacts such as `l3/token-dictionary/observed_tokens.json`.
+  Citation and tool residue tokens such
   as `cite` and `turn0search*` are treated as non-semantic markers and cannot
   admit topic-summary candidates by themselves. `summary.json` records compact
   lexical-rule diagnostics for the resolved built-in resource layers, including
@@ -1015,7 +1019,8 @@ deterministic and model-derived capabilities.
   silently change canonical/L1/L2 behavior.
 
 - `lexical-rule-candidates` is an inactive L3 diagnostic builder for Roadmap 6.
-  Phase 1 reads only `l3/token-dictionary/dictionary.json` and suggests
+  Phase 1 reads `l3/token-dictionary/observed_tokens.json` (or legacy
+  `dictionary.json`) and suggests
   `generic_scoring_token` candidates from high-frequency / high-spread observed
   token statistics. It writes `l3/lexical-rules/candidates.jsonl` and
   `diagnostics.json`. Phase 1 applies conservative token-shape filtering for
@@ -1037,9 +1042,10 @@ deterministic and model-derived capabilities.
   `reviewed.yaml`, does not modify reviewed project/user rule files, and does
   not activate or promote anything automatically. Existing built-in and
   explicitly provided reviewed project/user lexical rules are treated as already
-  active policy and are not re-suggested. `dictionary.json` remains an observed
-  token index / corpus token statistics artifact, and `bundles.json` remains
-  optional cooccurrence evidence only.
+  active policy and are not re-suggested. `observed_tokens.json` is the primary
+  observed token index / corpus token statistics artifact, legacy
+  `dictionary.json` remains readable for compatibility, and `bundles.json`
+  remains optional cooccurrence evidence only.
 
 - `lexical policy validate` and `lexical policy resolve` are read-only policy
   inspection commands. Reviewed project/user YAML is the active editable policy
@@ -1048,6 +1054,11 @@ deterministic and model-derived capabilities.
   reviewed policy. The resolve command emits compact provenance, source
   paths/hashes, locale chain, and category counts; it does not emit full token
   lists.
+
+- `user_lexical_profile` is reserved for a future provider-crossing user-level
+  lexical memory contract. It is documented as a stub only and is not wired into
+  scoring. Reviewed project/user lexical YAML remains the active editable policy
+  surface today.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

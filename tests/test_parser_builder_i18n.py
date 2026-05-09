@@ -352,7 +352,7 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
         ),
         (
             ["analyze", "lexical-rule-candidates", "--help"],
-            "Input: directory only; provider artifact root containing l3/token-dictionary/dictionary.json",
+            "Input: directory only; provider artifact root containing l3/token-dictionary/observed_tokens.json",
         ),
     ],
 )

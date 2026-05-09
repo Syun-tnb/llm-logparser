@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from .analyzer_common import normalize_analysis_text, write_json_artifact
-from .analyzer_token_dictionary import token_bundles_path, token_dictionary_path
+from .analyzer_token_dictionary import (
+    legacy_token_dictionary_path,
+    observed_tokens_path,
+    resolve_existing_token_dictionary_path,
+    token_bundles_path,
+)
 from .schema_validation import load_token_bundles_validator, load_token_dictionary_validator
 from llm_logparser.resources.cross_thread_lexical import (
     CrossThreadLexicalRules,
@@ -122,9 +127,13 @@ def _alnum_or_cjk_count(value: str) -> int:
 
 
 def _load_dictionary_payload(provider_root: Path) -> dict[str, Any]:
-    path = token_dictionary_path(provider_root)
+    path = resolve_existing_token_dictionary_path(provider_root)
     if not path.exists():
-        raise LexicalRuleCandidateError(f"token dictionary not found: {path}")
+        raise LexicalRuleCandidateError(
+            "observed token artifact not found: "
+            f"{observed_tokens_path(provider_root)} "
+            f"(legacy alias: {legacy_token_dictionary_path(provider_root)})"
+        )
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -529,7 +538,7 @@ def _candidate_for_token(
         "activation_state": "requires_review",
         "source": {
             "method": LEXICAL_RULE_CANDIDATE_METHOD,
-            "inputs": ["l3/token-dictionary/dictionary.json"],
+            "inputs": ["l3/token-dictionary/observed_tokens.json"],
         },
         "evidence": {
             "token_count": count,
@@ -670,7 +679,7 @@ def _diagnostics(
     max_candidates_per_type: int,
     sample_limit: int,
 ) -> dict[str, Any]:
-    generated_from = ["l3/token-dictionary/dictionary.json"]
+    generated_from = ["l3/token-dictionary/observed_tokens.json"]
     if bundles_present:
         generated_from.append("l3/token-dictionary/bundles.json")
     if topic_summary_diagnostics.get("status") == "loaded":
@@ -702,7 +711,8 @@ def _diagnostics(
         },
         "notes": [
             "Candidates are inactive and require review before use.",
-            "dictionary.json is treated as observed token index / corpus token statistics only.",
+            "observed_tokens.json is treated as observed token index / corpus token statistics only.",
+            "dictionary.json remains readable as a legacy alias.",
             "No reviewed lexical rule files are written or modified.",
         ],
     }

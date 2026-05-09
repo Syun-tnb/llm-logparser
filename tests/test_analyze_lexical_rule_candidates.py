@@ -15,7 +15,11 @@ from llm_logparser.core.analyzer_lexical_rule_candidates import (
     lexical_rule_candidates_path,
     write_lexical_rule_candidate_artifacts,
 )
-from llm_logparser.core.analyzer_token_dictionary import token_bundles_path, token_dictionary_path
+from llm_logparser.core.analyzer_token_dictionary import (
+    legacy_token_dictionary_path,
+    token_bundles_path,
+    token_dictionary_path,
+)
 
 
 def _write_json(path: Path, obj: dict) -> None:
@@ -145,7 +149,7 @@ def test_lexical_rule_candidates_missing_dictionary_fails(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     root.mkdir(parents=True)
 
-    with pytest.raises(LexicalRuleCandidateError, match="token dictionary not found"):
+    with pytest.raises(LexicalRuleCandidateError, match="observed token artifact not found"):
         write_lexical_rule_candidate_artifacts(root)
 
 
@@ -192,6 +196,22 @@ def test_lexical_rule_candidates_generate_inactive_generic_candidate(tmp_path: P
     serialized = json.dumps(diagnostics, ensure_ascii=False)
     assert "broadnoise" not in serialized
     assert not (root / "l3" / "lexical-rules" / "reviewed.yaml").exists()
+
+
+def test_lexical_rule_candidates_read_legacy_dictionary_alias(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_json(
+        legacy_token_dictionary_path(root),
+        _dictionary_artifact(
+            [_token_row("broadnoise", count=120, conversation_count=12, topic_count=30)]
+        ),
+    )
+
+    rows, diagnostics = build_lexical_rule_candidate_rows(root)
+
+    assert [row["normalized_value"] for row in rows] == ["broadnoise"]
+    assert diagnostics["generated_from"][0] == "l3/token-dictionary/observed_tokens.json"
+    assert "dictionary.json remains readable" in " ".join(diagnostics["notes"])
 
 
 def test_lexical_rule_candidates_skip_noisy_token_shapes(tmp_path: Path):

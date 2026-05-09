@@ -788,11 +788,12 @@ Auxiliary L3 note:
 
 - `analyze token-dictionary` writes rebuildable auxiliary artifacts under
   `<provider-root>/l3/token-dictionary/`
-- it currently emits `dictionary.json`, `bundles.json`, `provenance.json`, and
-  `lexical_rules.json`
-- despite the historical name, `dictionary.json` is an observed token index /
-  corpus token statistics artifact, while `bundles.json` records corpus-derived
-  cooccurrence bundles
+- it currently emits `observed_tokens.json`, `bundles.json`, `provenance.json`,
+  and `lexical_rules.json`
+- `observed_tokens.json` is an observed token index / corpus token statistics
+  artifact. Legacy `dictionary.json` files remain readable as a
+  backward-compatible alias. `bundles.json` records corpus-derived cooccurrence
+  bundles
 - these artifacts are derived from canonical `parsed.jsonl` plus optional
   `token_stats.json` and `topics.json`
 - they are signal sources for later L3/L4 analysis only; they do not redefine
@@ -807,7 +808,8 @@ Auxiliary L3 note:
   from standalone persona/name overlap without hard-suppressing candidate links
 - `analyze lexical-rule-candidates` writes inactive diagnostic suggestions under
   `<provider-root>/l3/lexical-rules/`; Phase 1 only suggests
-  `generic_scoring_token` candidates from high-spread `dictionary.json` rows and
+  `generic_scoring_token` candidates from high-spread `observed_tokens.json`
+  rows, with fallback reading for legacy `dictionary.json`, and
   uses conservative token-shape filtering before review; optional topic-summary
   evidence adds compact counts and capped sample references when available, and
   `review.md` provides copyable manual-review snippets; the command never writes
@@ -822,6 +824,9 @@ Auxiliary L3 note:
   remains the active editable policy surface, while
   `l3/token-dictionary/lexical_rules.json` is generated seed / legacy
   policy-like data rather than reviewed policy
+- `user_lexical_profile` is reserved as a future provider-crossing user-level
+  lexical memory contract. It is not implemented or wired into scoring; reviewed
+  project/user lexical YAML remains the active human-reviewed policy surface
 - cross-thread candidates also write `narrative.md`, a deterministic Markdown
   review/debug artifact derived from existing candidates, summary metadata, and
   topic summaries when available; it does not change scoring or semantic

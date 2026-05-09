@@ -55,7 +55,7 @@ messages:
   cli.analyze.metrics.help: parsed.jsonl と token_stats.json から決定的な metrics.json を生成する。先に `analyze tokens` を実行する。既存サイドカーは既定で再生成して上書きする。
   cli.analyze.token_dictionary.help: canonical parsed.jsonl と任意の token_stats.json / topics.json を入力に、加算的な L3 token-dictionary sidecar を構築する。
   cli.analyze.token_dictionary.opt.input.help: "入力: ディレクトリのみ。parsed.jsonl thread と任意の l3/semantic-topics/topics.json を含む provider 成果物ルート"
-  cli.analyze.token_dictionary.opt.overwrite.help: dictionary.json / bundles.json / provenance.json を再構築して上書きする（既定でも再構築されます）
+  cli.analyze.token_dictionary.opt.overwrite.help: observed_tokens.json / bundles.json / provenance.json を再構築して上書きする（既定でも再構築されます）
   cli.analyze.sqlite_build.help: 正規化済みスレッド成果物から任意の SQLite アクセラレータを構築する
   cli.analyze.sqlite_build.opt.input.help: "入力: ディレクトリのみ。provider ごとの成果物ディレクトリを含むルート"
   cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"
@@ -147,7 +147,7 @@ messages:
   cli.analyze.cross_thread_candidates.opt.project_lexical_rules.help: built-in cross-thread resource の上に merge する明示的な reviewed project lexical rules YAML
   cli.analyze.cross_thread_candidates.opt.user_lexical_rules.help: built-in/project cross-thread resource の上に merge する明示的な reviewed user lexical rules YAML
   cli.analyze.lexical_rule_candidates.help: token dictionary 統計から inactive な reviewed lexical-rule candidate を生成する
-  cli.analyze.lexical_rule_candidates.opt.input.help: "入力: ディレクトリのみ。l3/token-dictionary/dictionary.json を含む provider 成果物ルート"
+  cli.analyze.lexical_rule_candidates.opt.input.help: "入力: ディレクトリのみ。l3/token-dictionary/observed_tokens.json を含む provider 成果物ルート（dictionary.json は互換用の旧名）"
   cli.analyze.lexical_rule_candidates.opt.project_lexical_rules.help: 既に active な policy として扱う明示的な reviewed project lexical rules YAML
   cli.analyze.lexical_rule_candidates.opt.user_lexical_rules.help: 既に active な policy として扱う明示的な reviewed user lexical rules YAML
   cli.analyze.lexical_rule_candidates.opt.max_candidates_per_type.help: candidate type ごとに出力する inactive lexical-rule candidate の最大数

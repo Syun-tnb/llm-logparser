@@ -58,7 +58,7 @@ messages:
   cli.analyze.metrics.help: Build deterministic metrics.json sidecars from parsed.jsonl plus token_stats.json. Run `analyze tokens` first. Existing sidecars are rebuilt by default.
   cli.analyze.token_dictionary.help: Build an additive L3 token-dictionary sidecar from canonical parsed.jsonl plus optional token_stats.json and topics.json inputs.
   cli.analyze.token_dictionary.opt.input.help: "Input: directory only; provider artifact root containing parsed.jsonl threads and optional l3/semantic-topics/topics.json"
-  cli.analyze.token_dictionary.opt.overwrite.help: Rebuild dictionary.json, bundles.json, and provenance.json even when they already exist (default behavior already rebuilds).
+  cli.analyze.token_dictionary.opt.overwrite.help: Rebuild observed_tokens.json, bundles.json, and provenance.json even when they already exist (default behavior already rebuilds).
   cli.analyze.sqlite_build.help: Build an optional SQLite accelerator from canonical thread artifacts
   cli.analyze.sqlite_build.opt.input.help: "Input: directory only; root containing per-provider artifact directories"
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
@@ -150,7 +150,7 @@ messages:
   cli.analyze.cross_thread_candidates.opt.project_lexical_rules.help: Explicit reviewed project lexical rules YAML to merge above built-in cross-thread resources
   cli.analyze.cross_thread_candidates.opt.user_lexical_rules.help: Explicit reviewed user lexical rules YAML to merge above built-in and project cross-thread resources
   cli.analyze.lexical_rule_candidates.help: Generate inactive reviewed lexical-rule candidates from token dictionary statistics
-  cli.analyze.lexical_rule_candidates.opt.input.help: "Input: directory only; provider artifact root containing l3/token-dictionary/dictionary.json"
+  cli.analyze.lexical_rule_candidates.opt.input.help: "Input: directory only; provider artifact root containing l3/token-dictionary/observed_tokens.json (dictionary.json is a legacy alias)"
   cli.analyze.lexical_rule_candidates.opt.project_lexical_rules.help: Explicit reviewed project lexical rules YAML to treat as already-active policy
   cli.analyze.lexical_rule_candidates.opt.user_lexical_rules.help: Explicit reviewed user lexical rules YAML to treat as already-active policy
   cli.analyze.lexical_rule_candidates.opt.max_candidates_per_type.help: Maximum inactive lexical-rule candidates to emit per candidate type
