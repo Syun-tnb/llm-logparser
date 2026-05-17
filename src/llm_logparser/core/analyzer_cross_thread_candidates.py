@@ -2867,6 +2867,102 @@ def _topic_summary_shared_scoring_tokens(
     return tuple(sorted(shared_tokens))
 
 
+def _topic_summary_diagnostic_tokens_for_unit(
+    unit: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> tuple[str, ...]:
+    tokens: set[str] = set()
+    for token in _token_list(unit.topic_label or ""):
+        normalized = _normalize_anchor_token(token)
+        if _admission_anchor_token_key(normalized):
+            tokens.add(normalized)
+    tokens.update(
+        _topic_summary_keyphrases_for_unit(
+            unit,
+            cross_thread_rules=cross_thread_rules,
+        )
+    )
+    for keyword in _normalized_keywords(unit.keywords):
+        if _admission_anchor_token_key(keyword):
+            tokens.add(keyword)
+    return tuple(sorted(tokens))
+
+
+def _is_topic_summary_residue_scoring_token(
+    token: str,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> bool:
+    key = _admission_anchor_token_key(token)
+    if not key:
+        return False
+    residue_patterns = _topic_summary_scoring_patterns(
+        cross_thread_rules,
+        "topic_summary_scoring_tool_residue_patterns",
+        _TOPIC_SUMMARY_TOOL_RESIDUE_PATTERNS,
+    ) + _topic_summary_scoring_patterns(
+        cross_thread_rules,
+        "topic_summary_scoring_citation_residue_patterns",
+        _TOPIC_SUMMARY_CITATION_RESIDUE_PATTERNS,
+    )
+    return any(re.fullmatch(pattern, key) for pattern in residue_patterns)
+
+
+def _topic_summary_overlap_diagnostics(
+    source: _RepresentativeSpanUnit,
+    target: _RepresentativeSpanUnit,
+    *,
+    cross_thread_rules: CrossThreadLexicalRules,
+) -> dict[str, Any]:
+    shared_tokens = tuple(
+        sorted(
+            set(
+                _topic_summary_diagnostic_tokens_for_unit(
+                    source,
+                    cross_thread_rules=cross_thread_rules,
+                )
+            )
+            & set(
+                _topic_summary_diagnostic_tokens_for_unit(
+                    target,
+                    cross_thread_rules=cross_thread_rules,
+                )
+            )
+        )
+    )
+    generic_tokens: list[str] = []
+    persona_weak_tokens: list[str] = []
+    residue_tokens: list[str] = []
+    specific_tokens: list[str] = []
+    for token in shared_tokens:
+        if _is_topic_summary_residue_scoring_token(token, cross_thread_rules):
+            residue_tokens.append(token)
+        elif _is_topic_summary_generic_scoring_token(token, cross_thread_rules):
+            generic_tokens.append(token)
+        elif _is_topic_summary_persona_weak_token(token, cross_thread_rules):
+            persona_weak_tokens.append(token)
+        else:
+            specific_tokens.append(token)
+    denominator = len(shared_tokens)
+
+    def ratio(values: list[str]) -> float:
+        if denominator == 0:
+            return 0.0
+        return round(len(values) / denominator, 4)
+
+    return {
+        "shared_scoring_tokens": list(shared_tokens),
+        "generic_overlap_tokens": generic_tokens,
+        "persona_weak_overlap_tokens": persona_weak_tokens,
+        "residue_overlap_tokens": residue_tokens,
+        "specific_overlap_tokens": specific_tokens,
+        "generic_overlap_ratio": ratio(generic_tokens),
+        "persona_weak_overlap_ratio": ratio(persona_weak_tokens),
+        "residue_overlap_ratio": ratio(residue_tokens),
+        "specific_overlap_ratio": ratio(specific_tokens),
+    }
+
+
 def _topic_summary_persona_weak_overlap_is_dominant(
     source: _RepresentativeSpanUnit,
     target: _RepresentativeSpanUnit,
@@ -3134,6 +3230,7 @@ def _candidate_row(
     target: _RepresentativeSpanUnit,
     evidence: _Evidence,
     rank: int,
+    cross_thread_rules: CrossThreadLexicalRules,
     embedding_similarity: float | None = None,
 ) -> dict[str, Any]:
     row = {
@@ -3181,6 +3278,12 @@ def _candidate_row(
             "local_context_delta": evidence.local_context_delta,
         },
     }
+    if _topic_summary_pair(source, target):
+        row["evidence"]["overlap_diagnostics"] = _topic_summary_overlap_diagnostics(
+            source,
+            target,
+            cross_thread_rules=cross_thread_rules,
+        )
     if embedding_similarity is not None:
         row["embedding_similarity"] = embedding_similarity
     if source.unit_kind != "semantic_topic_span" or target.unit_kind != "semantic_topic_span":
@@ -3631,6 +3734,7 @@ def _build_cross_thread_candidate_rows_with_stats(
                     target=target,
                     evidence=evidence,
                     rank=rank,
+                    cross_thread_rules=cross_thread_rules,
                     embedding_similarity=embedding_similarity,
                 )
             )

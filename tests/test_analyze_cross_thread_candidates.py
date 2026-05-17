@@ -3646,6 +3646,82 @@ def test_topic_summary_candidates_filter_citation_residue_keyword_overlap(
     }
 
 
+def test_topic_summary_overlap_diagnostics_classify_residue_without_residue_admission(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="residue-diagnostic-a",
+        segment_id="seg-residue-diagnostic-a",
+        title="Research handoff",
+        summary="Review the cited result before writing notes.",
+        keywords=["cite", "turn0search10"],
+        conclusion_status="explicit",
+        conclusion_text="Keep this pair for diagnostics.",
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="residue-diagnostic-b",
+        segment_id="seg-residue-diagnostic-b",
+        title="Market handoff",
+        summary="Review a separate cited result before writing notes.",
+        keywords=["cite", "turn0search10"],
+        conclusion_status="explicit",
+        conclusion_text="Keep this pair for diagnostics.",
+        ts=200,
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    )
+    row = _row_for_topic_pair(
+        rows,
+        "residue-diagnostic-a:seg-residue-diagnostic-a",
+        "residue-diagnostic-b:seg-residue-diagnostic-b",
+    )
+    diagnostics = row["evidence"]["overlap_diagnostics"]
+    errors = list(load_cross_thread_candidate_validator().iter_errors(row))
+
+    assert not errors
+    assert diagnostics["residue_overlap_tokens"] == ["cite", "turn0search10"]
+    assert diagnostics["residue_overlap_ratio"] > 0.0
+    assert "explicit_conclusion_overlap" in row["evidence"]["reason_codes"]
+
+    residue_only_root = tmp_path / "artifacts-residue-only" / "openai"
+    _write_topic_summary_fixture(
+        residue_only_root,
+        conversation_id="residue-only-a",
+        segment_id="seg-residue-only-a",
+        title="Research handoff",
+        summary="Review a cited result.",
+        keywords=["cite", "turn0search10"],
+        source="heuristic",
+        confidence=0.3,
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        residue_only_root,
+        conversation_id="residue-only-b",
+        segment_id="seg-residue-only-b",
+        title="Market handoff",
+        summary="Review another cited result.",
+        keywords=["cite", "turn0search10"],
+        source="heuristic",
+        confidence=0.3,
+        ts=200,
+    )
+
+    assert build_cross_thread_candidate_rows(
+        residue_only_root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+    ) == []
+
+
 def test_cross_thread_candidate_rows_can_use_topic_summaries_from_multiple_threads(
     tmp_path: Path,
 ):
@@ -4010,6 +4086,60 @@ def test_topic_summary_keyword_scoring_ignores_generic_overlap(
     )
 
 
+def test_topic_summary_overlap_diagnostics_report_generic_dominance_without_scoring_change(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="generic-diagnostic-a",
+        segment_id="seg-generic-diagnostic-a",
+        title="Projectnoise link request",
+        summary="Alpha setup describes opening.",
+        keywords=["projectnoise", "link", "request"],
+        conclusion_status="explicit",
+        conclusion_text="Keep this pair for diagnostics.",
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="generic-diagnostic-b",
+        segment_id="seg-generic-diagnostic-b",
+        title="Projectnoise link request",
+        summary="Beta memo covers viewing.",
+        keywords=["projectnoise", "link", "request"],
+        conclusion_status="explicit",
+        conclusion_text="Keep this pair for diagnostics.",
+        ts=200,
+    )
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"generic_tokens": ["projectnoise"]},
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+        project_lexical_rules=project_path,
+    )
+    row = _row_for_topic_pair(
+        rows,
+        "generic-diagnostic-a:seg-generic-diagnostic-a",
+        "generic-diagnostic-b:seg-generic-diagnostic-b",
+    )
+    diagnostics = row["evidence"]["overlap_diagnostics"]
+    errors = list(load_cross_thread_candidate_validator().iter_errors(row))
+
+    assert not errors
+    assert diagnostics["generic_overlap_ratio"] == 1.0
+    assert diagnostics["specific_overlap_ratio"] == 0.0
+    assert diagnostics["generic_overlap_tokens"] == ["link", "projectnoise", "request"]
+    assert "topic_summary_keyword_overlap_high" not in row["evidence"]["reason_codes"]
+    assert "explicit_conclusion_overlap" in row["evidence"]["reason_codes"]
+
+
 def test_topic_summary_scoring_uses_resource_loaded_generic_and_short_specific_tokens():
     rules = load_cross_thread_lexical_rules(DEFAULT_CROSS_THREAD_LEXICAL_LOCALE)
 
@@ -4123,6 +4253,60 @@ def test_topic_summary_persona_weak_tokens_apply_conservative_penalty(
     assert summary["reason_counts"]["persona_weak_token_overlap"] == 1
     assert summary["reason_counts"]["persona_weak_token_penalty"] == 1
     assert "Reina" not in json.dumps(summary, ensure_ascii=False)
+
+
+def test_topic_summary_overlap_diagnostics_report_persona_dominance_without_admission_filter(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="persona-diagnostic-a",
+        segment_id="seg-persona-diagnostic-a",
+        title="Reina Kitagawa",
+        summary="Reina Kitagawa alpha continuity.",
+        keywords=["Reina", "Kitagawa"],
+        conclusion_status="explicit",
+        conclusion_text="Keep this pair for diagnostics.",
+        ts=100,
+    )
+    _write_topic_summary_fixture(
+        root,
+        conversation_id="persona-diagnostic-b",
+        segment_id="seg-persona-diagnostic-b",
+        title="Reina Kitagawa",
+        summary="Reina Kitagawa beta storyline.",
+        keywords=["Reina", "Kitagawa"],
+        conclusion_status="explicit",
+        conclusion_text="Keep this pair for diagnostics.",
+        ts=200,
+    )
+    project_path = _write_reviewed_lexical_rules(
+        tmp_path / "project-rules.yaml",
+        owner_scope="project",
+        scoring={"persona_weak_tokens": ["Reina", "Kitagawa"]},
+    )
+
+    rows = build_cross_thread_candidate_rows(
+        root,
+        min_score=0.0,
+        unit_source="topic-summaries",
+        project_lexical_rules=project_path,
+    )
+    row = _row_for_topic_pair(
+        rows,
+        "persona-diagnostic-a:seg-persona-diagnostic-a",
+        "persona-diagnostic-b:seg-persona-diagnostic-b",
+    )
+    diagnostics = row["evidence"]["overlap_diagnostics"]
+    errors = list(load_cross_thread_candidate_validator().iter_errors(row))
+
+    assert not errors
+    assert diagnostics["persona_weak_overlap_ratio"] == 1.0
+    assert diagnostics["persona_weak_overlap_tokens"] == ["kitagawa", "reina"]
+    assert diagnostics["specific_overlap_tokens"] == []
+    assert "persona_weak_token_penalty" in row["evidence"]["reason_codes"]
+    assert "explicit_conclusion_overlap" in row["evidence"]["reason_codes"]
 
 
 def test_topic_summary_persona_weak_tokens_do_not_penalize_strong_non_persona_overlap(
@@ -4336,6 +4520,13 @@ def test_topic_summary_keyword_scoring_preserves_specific_overlap(
     assert row["score"] >= 0.7
     assert "topic_summary_keyword_overlap_high" in row["evidence"]["reason_codes"]
     assert "topic_summary_title_overlap_high" in row["evidence"]["reason_codes"]
+    diagnostics = row["evidence"]["overlap_diagnostics"]
+    errors = list(load_cross_thread_candidate_validator().iter_errors(row))
+
+    assert not errors
+    assert diagnostics["specific_overlap_ratio"] > 0.0
+    assert "etf" in diagnostics["specific_overlap_tokens"]
+    assert diagnostics["generic_overlap_ratio"] < diagnostics["specific_overlap_ratio"]
 
 
 def test_topic_summary_distinctive_cjk_token_boosts_motif_recurrence(

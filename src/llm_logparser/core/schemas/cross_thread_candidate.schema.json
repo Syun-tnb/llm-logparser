@@ -185,6 +185,63 @@
           "type": ["number", "null"],
           "minimum": 0,
           "maximum": 1
+        },
+        "overlap_diagnostics": {
+          "type": "object",
+          "required": [
+            "shared_scoring_tokens",
+            "generic_overlap_tokens",
+            "persona_weak_overlap_tokens",
+            "residue_overlap_tokens",
+            "specific_overlap_tokens",
+            "generic_overlap_ratio",
+            "persona_weak_overlap_ratio",
+            "residue_overlap_ratio",
+            "specific_overlap_ratio"
+          ],
+          "properties": {
+            "shared_scoring_tokens": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "generic_overlap_tokens": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "persona_weak_overlap_tokens": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "residue_overlap_tokens": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "specific_overlap_tokens": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "generic_overlap_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "persona_weak_overlap_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "residue_overlap_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "specific_overlap_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
