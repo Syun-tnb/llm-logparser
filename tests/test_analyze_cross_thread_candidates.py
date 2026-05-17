@@ -1676,8 +1676,7 @@ def test_topic_summary_generic_anchor_fallback_supports_legacy_rules():
         LegacyRules()
     )
 
-    assert "gpt-4o" in tokens
-    assert "prompt" in tokens
+    assert tokens == ()
     assert cross_thread_module._is_topic_summary_generic_admission_anchor(
         "turn0search10",
         LegacyRules(),
@@ -4220,7 +4219,7 @@ def test_topic_summary_persona_weak_tokens_from_user_rules_affect_scoring(
     assert "persona_weak_token_penalty" in row["evidence"]["reason_codes"]
 
 
-def test_topic_summary_scoring_missing_resource_fields_use_fallbacks():
+def test_topic_summary_scoring_missing_resource_fields_uses_minimal_compatibility_fallbacks():
     rules = _rules_with_topic_summary_scoring(
         generic_tokens=(),
         generic_patterns=(),
@@ -4234,16 +4233,19 @@ def test_topic_summary_scoring_missing_resource_fields_use_fallbacks():
         ritual_title_phrases=(),
     )
 
-    assert cross_thread_module._is_topic_summary_generic_scoring_token(
-        "link",
-        rules,
-    )
+    assert not cross_thread_module._is_topic_summary_generic_scoring_token("link", rules)
+    assert cross_thread_module._is_topic_summary_generic_scoring_token("ui", rules)
+    assert cross_thread_module._is_topic_summary_generic_scoring_token("turn0search1", rules)
     assert not cross_thread_module._is_topic_summary_generic_scoring_token(
         "api",
         rules,
     )
-    assert cross_thread_module._is_topic_summary_distinctive_scoring_token(
+    assert not cross_thread_module._is_topic_summary_distinctive_scoring_token(
         "api",
+        rules,
+    )
+    assert cross_thread_module._is_topic_summary_distinctive_scoring_token(
+        "deployment",
         rules,
     )
 

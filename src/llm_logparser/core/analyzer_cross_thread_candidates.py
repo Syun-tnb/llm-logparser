@@ -111,101 +111,19 @@ _TOPIC_SUMMARY_TIMESTAMP_DISTANCE_MEDIUM_SCORE = 0.015
 _TOPIC_SUMMARY_ANCHOR_OVERLAP_SCORE = 0.02
 _TOPIC_SUMMARY_ANCHOR_OVERLAP_STRONG_SCORE = 0.04
 _ANCHOR_TOKEN_SYMBOLS = frozenset("/._:-")
-_TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset(
-    {
-        "ai",
-        "chat",
-        "check",
-        "company",
-        "conversation",
-        "data",
-        "daily",
-        "date",
-        "day",
-        "entity",
-        "error",
-        "greeting",
-        "link",
-        "model",
-        "models",
-        "month",
-        "noting",
-        "open",
-        "page",
-        "request",
-        "search",
-        "shared",
-        "speaker",
-        "speakers",
-        "suggests",
-        "system",
-        "time",
-        "view",
-        "viewing",
-        "web",
-        "while",
-        "year",
-        "www",
-        "w",
-        "これは",
-        "これはね",
-        "さん",
-        "して",
-        "その",
-        "って",
-        "うん",
-        "わたし",
-        "あはは",
-        "あはははは",
-        "おはようございます",
-        "こんにちは",
-        "こんばんは",
-        "笑",
-        "年",
-        "月",
-        "日",
-    }
-)
-_TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS = frozenset(
-    {
-        "api",
-        "btc",
-        "cpu",
-        "css",
-        "csv",
-        "dca",
-        "dns",
-        "etl",
-        "etf",
-        "gpu",
-        "json",
-        "llm",
-        "pdf",
-        "pr",
-        "sql",
-        "ui",
-        "ux",
-        "yaml",
-    }
-)
+# Topic-summary lexical policy is loaded from resources/cross_thread/*.yaml.
+# These minimal constants exist only for compatibility with legacy in-memory
+# rule objects that predate the resource-backed attributes.
+_TOPIC_SUMMARY_GENERIC_SCORING_KEYWORDS = frozenset[str]()
+_TOPIC_SUMMARY_SHORT_SPECIFIC_SCORING_KEYWORDS = frozenset[str]()
 _TOPIC_SUMMARY_DISTINCTIVE_ALLOW_TOKENS = frozenset[str]()
 _TOPIC_SUMMARY_DISTINCTIVE_BLOCK_TOKENS = frozenset[str]()
 _TOPIC_SUMMARY_WEAK_DISTINCTIVE_TOKENS = frozenset[str]()
 _TOPIC_SUMMARY_PERSONA_WEAK_TOKENS = frozenset[str]()
-_TOPIC_SUMMARY_GENERIC_SCORING_PATTERNS = (
-    r"^turn\d+search\d*$",
-    r"^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$",
-    r"^websearch\d*$",
-)
-_TOPIC_SUMMARY_TOOL_RESIDUE_PATTERNS = _TOPIC_SUMMARY_GENERIC_SCORING_PATTERNS
-_TOPIC_SUMMARY_CITATION_RESIDUE_PATTERNS = (
-    r"^cite$",
-    r"^search$",
-)
-_TOPIC_SUMMARY_RITUAL_TITLE_PHRASES = (
-    "morning check-in",
-    "daily check-in",
-)
+_TOPIC_SUMMARY_GENERIC_SCORING_PATTERNS: tuple[str, ...] = ()
+_TOPIC_SUMMARY_TOOL_RESIDUE_PATTERNS: tuple[str, ...] = ()
+_TOPIC_SUMMARY_CITATION_RESIDUE_PATTERNS: tuple[str, ...] = ()
+_TOPIC_SUMMARY_RITUAL_TITLE_PHRASES: tuple[str, ...] = ()
 _NARRATIVE_TOKEN_HINT_LIMIT = 8
 _NARRATIVE_INDEX_LABEL_MAX_CHARS = 48
 _NARRATIVE_INDEX_HINT_LIMIT = 4
@@ -228,23 +146,10 @@ _NARRATIVE_ADDRESS_SUFFIXES = (
     "くん",
     "君",
 )
-_FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset(
-    {
-        "ai",
-        "gpt",
-        "gpt-4o",
-        "gpt4o",
-        "gpt-5",
-        "gpt5",
-        "human-like",
-        "humanlike",
-        "philosophy",
-        "long-term",
-        "longterm",
-        "prompt",
-        "プロンプト",
-    }
-)
+# Compatibility-only fallback for legacy rule objects. Full admission-anchor
+# policy lives in resources/cross_thread/*.yaml and should be resolved through
+# CrossThreadLexicalRules.
+_FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHORS = frozenset[str]()
 _FALLBACK_TOPIC_SUMMARY_GENERIC_ADMISSION_ANCHOR_PATTERNS = (
     r"^turn\d+search\d*$",
     r"^turn\d+(?:fetch|open|view|news|finance|weather|sports)\d*$",

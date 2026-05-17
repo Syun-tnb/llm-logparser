@@ -5,8 +5,11 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from .analyzer_common import (
     detect_header_metadata,
@@ -32,6 +35,12 @@ TOKEN_DICTIONARY_LEXICAL_RULES_ARTIFACT_TYPE = "token_dictionary_lexical_rules"
 TOKEN_DICTIONARY_DIRNAME = "token-dictionary"
 OBSERVED_TOKENS_FILENAME = "observed_tokens.json"
 LEGACY_TOKEN_DICTIONARY_FILENAME = "dictionary.json"
+_TOKEN_DICTIONARY_LEXICAL_RULE_RESOURCE = (
+    Path(__file__).resolve().parents[1]
+    / "resources"
+    / "token_dictionary_lexical_rules"
+    / "default.yaml"
+)
 _TOKEN_RE = re.compile(r"[a-z0-9_./:-]{2,}|[一-龯ぁ-んァ-ヶー]{2,}", re.IGNORECASE)
 _DEFAULT_SOFT_STOPWORDS = frozenset(
     {
@@ -142,177 +151,16 @@ _OVERDISTRIBUTED_LOW_VALUE_TOKENS = frozenset(
         "これ",
     }
 )
-_DEFAULT_SEEDED_LEXICAL_RULES = {
-    "specificity_generic_tokens": [
-        "this",
-        "that",
-        "with",
-        "from",
-        "about",
-        "there",
-        "their",
-        "your",
-        "please",
-        "thank",
-        "thanks",
-        "think",
-        "really",
-        "maybe",
-        "would",
-        "could",
-        "should",
-        "hello",
-        "today",
-        "thing",
-        "stuff",
-        "okay",
-        "おはよう",
-        "こんにちは",
-        "こんばんは",
-        "ありがとう",
-        "了解",
-        "はい",
-        "うん",
-        "それ",
-        "これ",
-        "あれ",
-        "ここ",
-        "そこ",
-        "やね",
-        "やで",
-        "ほんま",
-        "なるほど",
-        "感じ"
-    ],
-    "reflective_tokens": [
-        "feel",
-        "feels",
-        "felt",
-        "think",
-        "thought",
-        "maybe",
-        "probably",
-        "honestly",
-        "emotion",
-        "vibe",
-        "relationship",
-        "memory",
-        "remember",
-        "reflection",
-        "気持ち",
-        "感覚",
-        "記憶",
-        "思い出",
-        "雰囲気",
-        "ノリ",
-        "心地",
-        "自然"
-    ],
-    "task_fragment_action_tokens": [
-        "add",
-        "adjust",
-        "apply",
-        "build",
-        "change",
-        "check",
-        "configure",
-        "debug",
-        "deploy",
-        "edit",
-        "enable",
-        "disable",
-        "fail",
-        "failure",
-        "fix",
-        "investigate",
-        "rerun",
-        "resume",
-        "retry",
-        "restore",
-        "review",
-        "run",
-        "update",
-        "validate",
-        "verify",
-        "修正",
-        "更新",
-        "確認",
-        "検証",
-        "再実行",
-        "再開",
-        "再試行",
-        "再確認",
-        "失敗",
-        "対応",
-        "調査",
-        "修復",
-        "確認する",
-        "見直す",
-        "直す",
-        "試す"
-    ],
-    "task_fragment_state_tokens": [
-        "after",
-        "before",
-        "blocked",
-        "constraint",
-        "error",
-        "issue",
-        "problem",
-        "retry",
-        "rollback",
-        "timeout",
-        "warning",
-        "while",
-        "条件",
-        "制約",
-        "問題",
-        "原因",
-        "対処",
-        "復旧",
-        "失敗",
-        "エラー",
-        "警告",
-        "再開",
-        "再試行"
-    ],
-    "task_fragment_explanatory_tokens": [
-        "because",
-        "benefit",
-        "benefits",
-        "compare",
-        "comparison",
-        "difference",
-        "differences",
-        "explain",
-        "explanation",
-        "explains",
-        "explainer",
-        "example",
-        "examples",
-        "meaning",
-        "overview",
-        "style",
-        "useful",
-        "versus",
-        "why",
-        "とは",
-        "なぜ",
-        "違い",
-        "比較",
-        "整理",
-        "説明",
-        "解説",
-        "意味",
-        "便利",
-        "使い所",
-        "向いてる"
-    ],
-    "task_fragment_noise_markers": [
-        "the output of this plugin was redacted",
-        "according to the search results",
-        "based on the search results"
-    ]
+# Policy-like seed data is loaded from resources/token_dictionary_lexical_rules/default.yaml.
+# This minimal shim is used only if the packaged resource is unavailable or invalid,
+# keeping fallback behavior deterministic without duplicating the full policy in Python.
+_COMPATIBILITY_SEEDED_LEXICAL_RULES = {
+    "specificity_generic_tokens": [],
+    "reflective_tokens": [],
+    "task_fragment_action_tokens": [],
+    "task_fragment_state_tokens": [],
+    "task_fragment_explanatory_tokens": [],
+    "task_fragment_noise_markers": [],
 }
 
 
@@ -423,8 +271,35 @@ def _coerce_seeded_lexical_rules(raw_rules: dict[str, Any]) -> TokenDictionaryLe
     )
 
 
+@lru_cache(maxsize=1)
+def _default_seeded_lexical_rules_payload() -> dict[str, Any]:
+    """Load built-in token-dictionary seed rules from the packaged resource.
+
+    The token-dictionary seed rules are policy-like defaults consumed by later
+    analyzers. They live in a resource file so the Python module only owns the
+    implementation contract and a minimal deterministic compatibility shim.
+    """
+
+    try:
+        payload = yaml.safe_load(
+            _TOKEN_DICTIONARY_LEXICAL_RULE_RESOURCE.read_text(encoding="utf-8")
+        )
+    except (OSError, yaml.YAMLError):
+        return _COMPATIBILITY_SEEDED_LEXICAL_RULES
+    if not isinstance(payload, dict):
+        return _COMPATIBILITY_SEEDED_LEXICAL_RULES
+    if payload.get("schema_version") != TOKEN_DICTIONARY_SCHEMA_VERSION:
+        return _COMPATIBILITY_SEEDED_LEXICAL_RULES
+    if payload.get("rule_family") != "token_dictionary_lexical_rules":
+        return _COMPATIBILITY_SEEDED_LEXICAL_RULES
+    seeded_rules = payload.get("seeded_rules")
+    if not isinstance(seeded_rules, dict):
+        return _COMPATIBILITY_SEEDED_LEXICAL_RULES
+    return seeded_rules
+
+
 def default_token_dictionary_lexical_rules() -> TokenDictionaryLexicalRules:
-    return _coerce_seeded_lexical_rules(_DEFAULT_SEEDED_LEXICAL_RULES)
+    return _coerce_seeded_lexical_rules(_default_seeded_lexical_rules_payload())
 
 
 def build_token_dictionary_lexical_rules_artifact(
@@ -440,7 +315,7 @@ def build_token_dictionary_lexical_rules_artifact(
         "created_at": created_at,
         "source_inputs": ["seeded_lexical_rules"],
         "reproducibility_note": "Rebuildable from seeded lexical resources bundled with this build",
-        "seeded_rules": _DEFAULT_SEEDED_LEXICAL_RULES,
+        "seeded_rules": _default_seeded_lexical_rules_payload(),
     }
 
 

@@ -38,6 +38,7 @@ llm_logparser = [
   "core/schemas/*.json",
   "resources/cross_thread/*.yaml",
   "resources/lexical_rule_candidates/*.yaml",
+  "resources/token_dictionary_lexical_rules/*.yaml",
   "resources/semantic_state/*.yaml",
   "resources/semantic_normalization_prompts/*.txt",
 ]

@@ -269,6 +269,36 @@ def test_write_token_dictionary_artifacts_writes_schema_valid_outputs(tmp_path: 
     assert "memory" in loaded_rules.reflective_tokens
 
 
+def test_default_token_dictionary_lexical_rules_are_resource_backed():
+    analyzer_token_dictionary._default_seeded_lexical_rules_payload.cache_clear()
+
+    payload = analyzer_token_dictionary._default_seeded_lexical_rules_payload()
+    loaded_rules = analyzer_token_dictionary.default_token_dictionary_lexical_rules()
+
+    assert payload["reflective_tokens"]
+    assert "memory" in loaded_rules.reflective_tokens
+    assert "fix" in loaded_rules.task_fragment_action_tokens
+
+
+def test_default_token_dictionary_lexical_rules_use_minimal_deterministic_fallback(
+    tmp_path: Path,
+    monkeypatch,
+):
+    analyzer_token_dictionary._default_seeded_lexical_rules_payload.cache_clear()
+    monkeypatch.setattr(
+        analyzer_token_dictionary,
+        "_TOKEN_DICTIONARY_LEXICAL_RULE_RESOURCE",
+        tmp_path / "missing.yaml",
+    )
+    try:
+        loaded_rules = analyzer_token_dictionary.default_token_dictionary_lexical_rules()
+    finally:
+        analyzer_token_dictionary._default_seeded_lexical_rules_payload.cache_clear()
+
+    assert loaded_rules.reflective_tokens == frozenset()
+    assert loaded_rules.task_fragment_action_tokens == frozenset()
+
+
 def test_token_dictionary_signals_fall_back_to_legacy_dictionary_json(tmp_path: Path):
     root = tmp_path / "artifacts" / "openai"
     legacy_path = legacy_token_dictionary_path(root)
