@@ -72,6 +72,15 @@ def _message_texts_for_window(*, roles: list[str], text: str) -> list[str]:
     raise ValueError("window test fixture text must align with roles")
 
 
+def _model_topic_output() -> dict:
+    return {
+        "topic_label": "Deployment readiness",
+        "summary": "Deployment readiness checks and rollout controls.",
+        "keywords": ["deployment", "rollout", "readiness"],
+        "confidence": 0.82,
+    }
+
+
 def _message_window_row(
     conversation_id: str,
     window_id: str,
@@ -1658,21 +1667,27 @@ def test_semantic_topics_inline_normalization_attaches_successfully(tmp_path):
     )
     representative_spans = baseline_artifact["topics"][0]["representative_spans"]
 
-    with patch(
-        "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span",
-        side_effect=[
-            _inline_normalization_result(
-                conversation_id=span["conversation_id"],
-                span_id=span["span_id"],
-                window_id=span["window_id"],
-                message_ids=list(span["message_ids"]),
-                raw_label=f"label_{index}",
-                normalized_label="decision" if index == 1 else "request",
-                mapping_status="mapped",
-            )
-            for index, span in enumerate(representative_spans, start=1)
-        ],
-    ) as normalize_mock:
+    with (
+        patch(
+            "llm_logparser.core.analyzer_semantic_topics._generate_topic_output",
+            return_value=_model_topic_output(),
+        ) as model_mock,
+        patch(
+            "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span",
+            side_effect=[
+                _inline_normalization_result(
+                    conversation_id=span["conversation_id"],
+                    span_id=span["span_id"],
+                    window_id=span["window_id"],
+                    message_ids=list(span["message_ids"]),
+                    raw_label=f"label_{index}",
+                    normalized_label="decision" if index == 1 else "request",
+                    mapping_status="mapped",
+                )
+                for index, span in enumerate(representative_spans, start=1)
+            ],
+        ) as normalize_mock,
+    ):
         artifact, _membership_rows = build_semantic_topics_artifact(
             root,
             cluster_id="cluster_000001",
@@ -1681,7 +1696,14 @@ def test_semantic_topics_inline_normalization_attaches_successfully(tmp_path):
         )
 
     output_spans = artifact["topics"][0]["representative_spans"]
+    model_mock.assert_called_once()
     assert normalize_mock.call_count == len(representative_spans)
+    assert artifact["topics"][0]["label"] == "Deployment readiness"
+    assert artifact["topics"][0]["keywords"] == [
+        "deployment",
+        "rollout",
+        "readiness",
+    ]
     assert all("semantic_normalization" in span for span in output_spans)
     assert output_spans[0]["semantic_normalization"]["unit_kind"] == "representative_span"
     assert output_spans[0]["semantic_normalization"]["normalized_label"] == "decision"
@@ -1710,16 +1732,24 @@ def test_semantic_topics_model_alone_does_not_enable_inline_normalization(tmp_pa
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)
 
-    with patch(
-        "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span"
-    ) as normalize_mock:
+    with (
+        patch(
+            "llm_logparser.core.analyzer_semantic_topics._generate_topic_output",
+            return_value=_model_topic_output(),
+        ) as model_mock,
+        patch(
+            "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span"
+        ) as normalize_mock,
+    ):
         artifact, _membership_rows = build_semantic_topics_artifact(
             root,
             cluster_id="cluster_000001",
             model="llama3.1:latest",
         )
 
+    model_mock.assert_called_once()
     normalize_mock.assert_not_called()
+    assert artifact["topics"][0]["label"] == "Deployment readiness"
     assert all(
         "semantic_normalization" not in span
         for span in artifact["topics"][0]["representative_spans"]
@@ -2009,9 +2039,15 @@ def test_analyze_semantic_topics_cli_model_alone_does_not_enable_inline_normaliz
     root = tmp_path / "artifacts" / "output" / "openai"
     _write_topics_fixture(root)
 
-    with patch(
-        "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span"
-    ) as normalize_mock:
+    with (
+        patch(
+            "llm_logparser.core.analyzer_semantic_topics._generate_topic_output",
+            return_value=_model_topic_output(),
+        ) as model_mock,
+        patch(
+            "llm_logparser.core.analyzer_semantic_topics.normalize_representative_span"
+        ) as normalize_mock,
+    ):
         main(
             [
                 "--locale",
@@ -2027,6 +2063,7 @@ def test_analyze_semantic_topics_cli_model_alone_does_not_enable_inline_normaliz
             ]
         )
 
+    model_mock.assert_called_once()
     normalize_mock.assert_not_called()
 
 
