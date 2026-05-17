@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [v1.4.0] - 2026-05-17
+
 ### Changed
 
 * Refined L3 lexical-policy and cross-thread candidate diagnostics:
