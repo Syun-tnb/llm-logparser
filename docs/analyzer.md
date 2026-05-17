@@ -130,10 +130,12 @@ alias. `bundles.json` records corpus-derived cooccurrence bundles. These
 token/bundle artifacts are rebuildable higher-layer facts only; they do not
 replace canonical or L1 outputs. Seeded `lexical_rules.json` remains a generated
 legacy policy-like sidecar for task / reflective / specificity token groups, not
-reviewed policy. Cross-thread
+reviewed policy; its built-in seed groups are packaged resource-backed defaults,
+not Python-owned reviewed policy. Cross-thread
 generic admission anchors and topic-summary scoring token policy are lexical
 policy, not corpus token facts, and are owned by the cross-thread lexical
-resources instead of token dictionary artifacts. Explicit reviewed project/user
+resources instead of token dictionary artifacts. Python fallback lists for these
+policies are intentionally minimal compatibility shims. Explicit reviewed project/user
 lexical rule files may be provided to `cross-thread-candidates` as additive
 layers above the built-in resources; there is no automatic discovery or
 promotion. L3 cross-thread candidate selection may also consume
@@ -961,6 +963,11 @@ deterministic and model-derived capabilities.
   policy, not OSS common defaults; when explicitly provided, they apply a small
   topic-summary scoring penalty to overlap dominated by standalone persona/name
   terms without hard-suppressing candidate links.
+  Topic-summary candidate rows include diagnostic-only
+  `evidence.overlap_diagnostics`, which classifies shared overlap into generic,
+  persona weak, residue, and specific buckets. These fields are for review only:
+  they do not affect candidate admission, score values, thresholds, or
+  reason-code generation.
   The analyzer also writes `l3/cross-thread-candidates/narrative.md`, a
   deterministic Markdown review artifact rendered from existing candidates,
   `summary.json`, and topic summaries when available. It is a review/debug
@@ -968,9 +975,11 @@ deterministic and model-derived capabilities.
   A compact candidate index table appears near the top for fast scanning.
   Candidate diagnostics include capped token-level hints when available, such as
   shared keywords and display-derived distinctive/persona/address-like overlap
-  tokens. These hints are for manual inspection only. Low-confidence candidates
-  are rendered in detail when the low-confidence set is small, otherwise they
-  remain compact to avoid noisy reports.
+  tokens. Suspicious/high-ratio `overlap_diagnostics` buckets are rendered only
+  inside candidate-detail `#### Diagnostics`, never in the candidate index. These
+  hints are for manual inspection only. Low-confidence candidates are rendered in
+  detail when the low-confidence set is small, otherwise they remain compact to
+  avoid noisy reports.
   Topic-summary mode also uses a separate semantic scoring profile after
   admission: title overlap, summary keyphrase overlap, cleaned keyword-field
   overlap, and local-LLM summary provenance are weighted more heavily, while

@@ -30,8 +30,11 @@ changing analyzer behavior.
 `l3/token-dictionary/lexical_rules.json`
 
 - generated seed / legacy policy-like sidecar
+- emitted from packaged resource-backed seed defaults
 - not reviewed user/project policy
 - should not be edited as the active policy surface
+- compatibility/inspection output only; reviewed YAML remains the active policy
+  surface
 
 `l3/lexical-rules/candidates.jsonl`
 
@@ -77,6 +80,17 @@ Reviewed project/user lexical YAML
 - loaded only when explicitly supplied
 - human-reviewed and additive above built-in resources
 - not generated or promoted automatically
+
+Built-in lexical resources
+
+- cross-thread topic-summary admission and scoring policy is loaded from
+  packaged cross-thread lexical resources under normal operation
+- token-dictionary task / reflective / specificity seed groups are loaded from
+  packaged token-dictionary lexical-rule resources and then emitted into
+  `l3/token-dictionary/lexical_rules.json`
+- Python fallbacks for these policies are minimal deterministic compatibility
+  shims, not the primary source of policy
+- built-in seed resources are defaults, not reviewed project/user policy
 
 ## Future Contract Stub: `user_lexical_profile`
 

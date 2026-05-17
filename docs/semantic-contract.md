@@ -208,7 +208,10 @@ The current contract is:
 - cross-thread candidate generation emits source-span to target-span pairs
 - candidate rows may also carry deterministic recurrence-oriented inspection
   signals such as dormancy, specificity, continuity masking, and local-context
-  delta; these are additive instrumentation fields, not semantic identity
+  delta; topic-summary candidate rows may additionally carry
+  `evidence.overlap_diagnostics` for generic/persona/residue/specific overlap
+  review. These are additive instrumentation fields, not semantic identity, and
+  they do not define scoring or admission behavior.
 - L4 evaluates whether those two spans express the same underlying intent,
   event, or task continuation
 

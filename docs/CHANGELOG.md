@@ -4,6 +4,11 @@
 
 ### Changed
 
+* Refined L3 lexical-policy and cross-thread candidate diagnostics:
+  * cross-thread topic-summary lexical policy now resolves from packaged resources under normal operation, with Python fallbacks reduced to minimal deterministic compatibility shims
+  * token-dictionary seeded lexical rule groups now live in packaged resource defaults and are emitted into `l3/token-dictionary/lexical_rules.json` as compatibility/inspection data, not reviewed active policy
+  * topic-summary cross-thread candidate rows now include diagnostic-only `evidence.overlap_diagnostics` buckets for generic, persona weak, residue, and specific shared overlap
+  * `l3/cross-thread-candidates/narrative.md` renders compact overlap diagnostics only for suspicious/high-ratio candidate details; the candidate index, scoring, admission, thresholds, and reason-code generation are unchanged
 * Hardened parse-time L1 artifact contracts:
   * `thread_stats.json` now emits `schema_version: "1.0"`
   * `message_windows.jsonl` rows now emit `schema_version: "3.0"`

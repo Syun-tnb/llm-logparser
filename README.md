@@ -853,7 +853,9 @@ summary rows and inferred conclusions are weak evidence. Generic admission
 anchors and topic-summary scoring token policy used by this mode are lexical
 policy loaded from the built-in cross-thread lexical resources, not corpus facts from
 `l3/token-dictionary/observed_tokens.json` (legacy `dictionary.json` is still
-readable). Citation and tool residue tokens such as
+readable). Python-side lexical fallbacks are intentionally minimal compatibility
+shims; normal packaged-resource operation should resolve policy from resource
+files. Citation and tool residue tokens such as
 `cite` and `turn0search*` are treated as non-semantic admission anchors, so they
 cannot admit topic-summary candidates by themselves.
 
@@ -881,7 +883,9 @@ defaults; when provided, they apply a small topic-summary scoring penalty to
 overlap dominated by standalone persona/name terms without hard-suppressing
 candidate links. `summary.json` records compact lexical resource provenance and
 category counts for debugging, but does not emit full token lists; full
-resolved-policy export is deferred.
+resolved-policy export is deferred. Token-dictionary seeded lexical groups are
+packaged resource-backed defaults and generated into `lexical_rules.json` for
+compatibility/inspection; they are not reviewed active project or user policy.
 
 `cross-thread-candidates` also writes
 `l3/cross-thread-candidates/narrative.md`, a deterministic Markdown review
@@ -891,9 +895,15 @@ candidate scoring, lexical rules, or semantic decisions. It includes a compact
 candidate index table derived from existing artifacts, and its diagnostics may
 include capped token-level overlap hints, such as shared keywords and
 display-derived distinctive/persona/address-like tokens, to make manual review
-of noisy matches easier. Low-confidence candidates render with full detail when
-there are only a few of them, and switch to compact bullets for larger low-score
-sets to keep reports readable.
+of noisy matches easier. Topic-summary candidate rows also carry diagnostic-only
+`evidence.overlap_diagnostics` buckets for generic, persona weak, residue, and
+specific shared overlap; these diagnostics do not affect scores, admission,
+thresholds, or reason codes. `narrative.md` renders a compact ratio line and
+suspicious bucket tokens only inside candidate-detail `#### Diagnostics` when
+generic/persona/residue overlap is high enough to review; the candidate index
+does not render those fields. Low-confidence candidates render with full detail
+when there are only a few of them, and switch to compact bullets for larger
+low-score sets to keep reports readable.
 
 `analyze lexical-rule-candidates` adds a separate inactive diagnostic layer:
 
@@ -951,8 +961,8 @@ candidate suggestions and diagnostics only. Reviewed project/user YAML is the
 active editable policy surface. `observed_tokens.json` and `bundles.json` remain
 observed corpus facts, legacy `dictionary.json` remains readable for
 compatibility, `candidates.jsonl` remains inactive suggestion output, and
-`l3/token-dictionary/lexical_rules.json` is generated seed / legacy policy-like
-data rather than reviewed policy.
+`l3/token-dictionary/lexical_rules.json` is generated from packaged seed-rule
+resources as legacy policy-like data rather than reviewed policy.
 
 `user_lexical_profile` is reserved as a future provider-crossing user-level
 lexical memory contract. It is documented as a stub only and is not wired into

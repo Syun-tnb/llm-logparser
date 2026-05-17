@@ -798,9 +798,12 @@ Auxiliary L3 note:
   `token_stats.json` and `topics.json`
 - they are signal sources for later L3/L4 analysis only; they do not redefine
   canonical text, L1 sidecars, or SQLite state
+- `lexical_rules.json` is generated from packaged token-dictionary seed-rule
+  resources for compatibility/inspection. It is not reviewed active policy.
 - cross-thread generic admission anchors and topic-summary scoring token policy
   are lexical policy owned by the built-in cross-thread lexical resources, not
-  by token dictionary artifacts
+  by token dictionary artifacts; Python fallback lists are minimal deterministic
+  compatibility shims rather than the normal policy source
 - explicitly provided reviewed project/user lexical rule files can be merged as
   additive policy layers above the built-in resources; no automatic discovery or
   promotion is implemented. Reviewed `persona_weak_tokens` are not OSS common
@@ -845,9 +848,13 @@ Auxiliary L3 note:
   interpretation. It includes a compact candidate index table, and its
   diagnostics may include capped token-level hints derived from candidate
   evidence and topic-summary display fields, for example shared keywords and
-  possible persona/address/generic overlap tokens. Low-confidence candidates are
-  detailed only when the low-confidence set is small; larger low-confidence sets
-  remain compact
+  possible persona/address/generic overlap tokens. Topic-summary candidate rows
+  may include diagnostic-only `evidence.overlap_diagnostics` buckets for generic,
+  persona weak, residue, and specific overlap. Suspicious/high-ratio buckets are
+  rendered only inside candidate-detail `#### Diagnostics`, not in the candidate
+  index, and do not affect scoring, admission, thresholds, or reason codes.
+  Low-confidence candidates are detailed only when the low-confidence set is
+  small; larger low-confidence sets remain compact
 - citation and tool residue tokens, for example `cite` and `turn0search*`, are
   non-semantic lexical markers and are suppressed from topic-summary admission
   evidence
