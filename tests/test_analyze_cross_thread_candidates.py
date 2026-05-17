@@ -5233,6 +5233,256 @@ def test_cross_thread_candidate_narrative_warns_for_suspicious_overlap_tokens(
     ) in narrative
 
 
+def test_cross_thread_candidate_narrative_renders_generic_overlap_diagnostics(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "generic-diag-a",
+        "target_conversation_id": "generic-diag-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "generic overlap",
+        "target_excerpt": "generic overlap",
+        "evidence": {
+            "reason_codes": ["explicit_conclusion_overlap"],
+            "shared_keywords": [],
+            "overlap_diagnostics": {
+                "shared_scoring_tokens": ["link", "request", "projectnoise"],
+                "generic_overlap_tokens": ["link", "projectnoise", "request"],
+                "persona_weak_overlap_tokens": [],
+                "residue_overlap_tokens": [],
+                "specific_overlap_tokens": [],
+                "generic_overlap_ratio": 1.0,
+                "persona_weak_overlap_ratio": 0.0,
+                "residue_overlap_ratio": 0.0,
+                "specific_overlap_ratio": 0.0,
+            },
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    assert (
+        "Overlap diagnostics: generic=1, persona=0, residue=0, specific=0."
+        in narrative
+    )
+    assert "Generic overlap tokens: projectnoise, request, link." in narrative
+    assert "Persona weak overlap tokens:" not in narrative
+    assert "Residue overlap tokens:" not in narrative
+
+
+def test_cross_thread_candidate_narrative_renders_persona_overlap_diagnostics(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "persona-diag-a",
+        "target_conversation_id": "persona-diag-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "persona overlap",
+        "target_excerpt": "persona overlap",
+        "evidence": {
+            "reason_codes": ["persona_weak_token_penalty"],
+            "shared_keywords": [],
+            "overlap_diagnostics": {
+                "shared_scoring_tokens": ["kitagawa", "reina"],
+                "generic_overlap_tokens": [],
+                "persona_weak_overlap_tokens": ["kitagawa", "reina"],
+                "residue_overlap_tokens": [],
+                "specific_overlap_tokens": [],
+                "generic_overlap_ratio": 0.0,
+                "persona_weak_overlap_ratio": 1.0,
+                "residue_overlap_ratio": 0.0,
+                "specific_overlap_ratio": 0.0,
+            },
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    assert (
+        "Overlap diagnostics: generic=0, persona=1, residue=0, specific=0."
+        in narrative
+    )
+    assert "Persona weak overlap tokens: kitagawa, reina." in narrative
+    assert "Generic overlap tokens:" not in narrative
+    assert "Residue overlap tokens:" not in narrative
+
+
+def test_cross_thread_candidate_narrative_renders_residue_overlap_diagnostics(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "residue-diag-a",
+        "target_conversation_id": "residue-diag-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "residue overlap",
+        "target_excerpt": "residue overlap",
+        "evidence": {
+            "reason_codes": ["explicit_conclusion_overlap"],
+            "shared_keywords": [],
+            "overlap_diagnostics": {
+                "shared_scoring_tokens": ["cite", "turn0search10", "market"],
+                "generic_overlap_tokens": [],
+                "persona_weak_overlap_tokens": [],
+                "residue_overlap_tokens": ["cite", "turn0search10"],
+                "specific_overlap_tokens": ["market"],
+                "generic_overlap_ratio": 0.0,
+                "persona_weak_overlap_ratio": 0.0,
+                "residue_overlap_ratio": 0.6667,
+                "specific_overlap_ratio": 0.3333,
+            },
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    assert (
+        "Overlap diagnostics: generic=0, persona=0, residue=0.6667, specific=0.3333."
+        in narrative
+    )
+    assert "Residue overlap tokens: turn0search10, cite." in narrative
+    assert "Generic overlap tokens:" not in narrative
+    assert "Persona weak overlap tokens:" not in narrative
+
+
+def test_cross_thread_candidate_narrative_omits_specific_dominant_overlap_diagnostics(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "specific-diag-a",
+        "target_conversation_id": "specific-diag-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "specific overlap",
+        "target_excerpt": "specific overlap",
+        "evidence": {
+            "reason_codes": ["topic_summary_keyword_overlap_high"],
+            "shared_keywords": [],
+            "overlap_diagnostics": {
+                "shared_scoring_tokens": ["allocation", "etf", "investment"],
+                "generic_overlap_tokens": [],
+                "persona_weak_overlap_tokens": [],
+                "residue_overlap_tokens": [],
+                "specific_overlap_tokens": ["allocation", "etf", "investment"],
+                "generic_overlap_ratio": 0.0,
+                "persona_weak_overlap_ratio": 0.0,
+                "residue_overlap_ratio": 0.0,
+                "specific_overlap_ratio": 1.0,
+            },
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    assert "Overlap diagnostics:" not in narrative
+    assert "Generic overlap tokens:" not in narrative
+    assert "Persona weak overlap tokens:" not in narrative
+    assert "Residue overlap tokens:" not in narrative
+
+
+def test_cross_thread_candidate_narrative_caps_overlap_diagnostic_token_lists(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    tokens = [f"generic-token-{index}" for index in range(12)]
+    row = {
+        "score": 0.8,
+        "source_conversation_id": "cap-diag-a",
+        "target_conversation_id": "cap-diag-b",
+        "source_segment_id": "seg-a",
+        "target_segment_id": "seg-b",
+        "source_excerpt": "capped overlap",
+        "target_excerpt": "capped overlap",
+        "evidence": {
+            "reason_codes": ["explicit_conclusion_overlap"],
+            "shared_keywords": [],
+            "overlap_diagnostics": {
+                "shared_scoring_tokens": tokens,
+                "generic_overlap_tokens": tokens,
+                "persona_weak_overlap_tokens": [],
+                "residue_overlap_tokens": [],
+                "specific_overlap_tokens": [],
+                "generic_overlap_ratio": 1.0,
+                "persona_weak_overlap_ratio": 0.0,
+                "residue_overlap_ratio": 0.0,
+                "specific_overlap_ratio": 0.0,
+            },
+        },
+    }
+    _write_jsonl(output_dir / "candidates.jsonl", [row])
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 1, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+    token_line = next(
+        line
+        for line in narrative.splitlines()
+        if line.startswith("- Generic overlap tokens:")
+    )
+    rendered_tokens = token_line.split(": ", 1)[1].rstrip(".").split(", ")
+
+    assert len(rendered_tokens) == 8
+    assert "generic-token-0" in token_line
+    assert "generic-token-9" not in token_line
+
+
 def test_cross_thread_candidate_narrative_caps_token_hints_and_degrades_gracefully(
     tmp_path: Path,
 ):
@@ -5277,6 +5527,59 @@ def test_cross_thread_candidate_narrative_caps_token_hints_and_degrades_graceful
     assert "Distinctive overlap token hints (derived):" in narrative
 
 
+def test_cross_thread_candidate_narrative_degrades_with_missing_or_malformed_overlap_diagnostics(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    output_dir = root / "l3" / "cross-thread-candidates"
+    rows = [
+        {
+            "score": 0.8,
+            "source_conversation_id": "missing-diag-a",
+            "target_conversation_id": "missing-diag-b",
+            "source_segment_id": "seg-a",
+            "target_segment_id": "seg-b",
+            "source_excerpt": "missing diagnostics",
+            "target_excerpt": "missing diagnostics",
+            "evidence": {
+                "reason_codes": ["explicit_conclusion_overlap"],
+                "shared_keywords": [],
+            },
+        },
+        {
+            "score": 0.7,
+            "source_conversation_id": "malformed-diag-a",
+            "target_conversation_id": "malformed-diag-b",
+            "source_segment_id": "seg-a",
+            "target_segment_id": "seg-b",
+            "source_excerpt": "malformed diagnostics",
+            "target_excerpt": "malformed diagnostics",
+            "evidence": {
+                "reason_codes": ["explicit_conclusion_overlap"],
+                "shared_keywords": [],
+                "overlap_diagnostics": "malformed",
+            },
+        },
+    ]
+    _write_jsonl(output_dir / "candidates.jsonl", rows)
+    _write_json(
+        output_dir / "summary.json",
+        {
+            "unit_source": "topic-summaries",
+            "score_band_counts": {"high": 2, "medium": 0, "low": 0},
+        },
+    )
+
+    narrative_path = write_cross_thread_candidate_narrative_artifact(root)
+    narrative = narrative_path.read_text(encoding="utf-8")
+
+    assert "# Cross-Thread Candidate Narrative" in narrative
+    assert "Overlap diagnostics:" not in narrative
+    assert "Generic overlap tokens:" not in narrative
+    assert "Persona weak overlap tokens:" not in narrative
+    assert "Residue overlap tokens:" not in narrative
+
+
 def test_cross_thread_candidate_narrative_diagnostics_are_deterministic_and_read_only(
     tmp_path: Path,
 ):
@@ -5296,6 +5599,17 @@ def test_cross_thread_candidate_narrative_diagnostics_are_deterministic_and_read
                 "topic_summary_distinctive_token_overlap",
             ],
             "shared_keywords": ["はい", "token"],
+            "overlap_diagnostics": {
+                "shared_scoring_tokens": ["はい", "token"],
+                "generic_overlap_tokens": ["はい"],
+                "persona_weak_overlap_tokens": [],
+                "residue_overlap_tokens": [],
+                "specific_overlap_tokens": ["token"],
+                "generic_overlap_ratio": 0.5,
+                "persona_weak_overlap_ratio": 0.0,
+                "residue_overlap_ratio": 0.0,
+                "specific_overlap_ratio": 0.5,
+            },
         },
     }
     _write_jsonl(output_dir / "candidates.jsonl", [row])

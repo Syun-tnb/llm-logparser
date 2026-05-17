@@ -4109,6 +4109,46 @@ def _narrative_broad_conversational_tokens(tokens: list[str]) -> list[str]:
     )
 
 
+def _narrative_overlap_diagnostics(row: dict[str, Any]) -> dict[str, Any] | None:
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    diagnostics = evidence.get("overlap_diagnostics")
+    return diagnostics if isinstance(diagnostics, dict) else None
+
+
+def _narrative_overlap_ratio(diagnostics: dict[str, Any], key: str) -> float:
+    value = diagnostics.get(key)
+    if not isinstance(value, int | float):
+        return 0.0
+    return max(0.0, min(1.0, float(value)))
+
+
+def _narrative_overlap_tokens(diagnostics: dict[str, Any], key: str) -> list[str]:
+    values = diagnostics.get(key)
+    if not isinstance(values, list):
+        return []
+    return _narrative_compact_token_list(
+        [str(value) for value in values if str(value)]
+    )
+
+
+def _narrative_should_render_overlap_diagnostics(
+    diagnostics: dict[str, Any],
+) -> bool:
+    shared_tokens = diagnostics.get("shared_scoring_tokens")
+    has_shared_tokens = isinstance(shared_tokens, list) and bool(shared_tokens)
+    return (
+        _narrative_overlap_ratio(diagnostics, "generic_overlap_ratio") >= 0.5
+        or _narrative_overlap_ratio(diagnostics, "persona_weak_overlap_ratio") >= 0.5
+        or _narrative_overlap_ratio(diagnostics, "residue_overlap_ratio") > 0.0
+        or (
+            _narrative_overlap_ratio(diagnostics, "specific_overlap_ratio") == 0.0
+            and has_shared_tokens
+        )
+    )
+
+
 def _narrative_summary_for_row(
     row: dict[str, Any],
     *,
@@ -4266,6 +4306,58 @@ def _narrative_diagnostics(
     conversational_tokens = _narrative_broad_conversational_tokens(overlap_hints)
     if shared_keywords:
         diagnostics.append(f"Shared keywords: {', '.join(shared_keywords)}.")
+    overlap_diagnostics = _narrative_overlap_diagnostics(row)
+    if (
+        overlap_diagnostics is not None
+        and _narrative_should_render_overlap_diagnostics(overlap_diagnostics)
+    ):
+        generic_ratio = _narrative_overlap_ratio(
+            overlap_diagnostics,
+            "generic_overlap_ratio",
+        )
+        persona_ratio = _narrative_overlap_ratio(
+            overlap_diagnostics,
+            "persona_weak_overlap_ratio",
+        )
+        residue_ratio = _narrative_overlap_ratio(
+            overlap_diagnostics,
+            "residue_overlap_ratio",
+        )
+        specific_ratio = _narrative_overlap_ratio(
+            overlap_diagnostics,
+            "specific_overlap_ratio",
+        )
+        diagnostics.append(
+            "Overlap diagnostics: "
+            f"generic={generic_ratio:g}, "
+            f"persona={persona_ratio:g}, "
+            f"residue={residue_ratio:g}, "
+            f"specific={specific_ratio:g}."
+        )
+        generic_tokens = _narrative_overlap_tokens(
+            overlap_diagnostics,
+            "generic_overlap_tokens",
+        )
+        persona_tokens = _narrative_overlap_tokens(
+            overlap_diagnostics,
+            "persona_weak_overlap_tokens",
+        )
+        residue_tokens = _narrative_overlap_tokens(
+            overlap_diagnostics,
+            "residue_overlap_tokens",
+        )
+        if generic_tokens:
+            diagnostics.append(
+                f"Generic overlap tokens: {', '.join(generic_tokens)}."
+            )
+        if persona_tokens:
+            diagnostics.append(
+                f"Persona weak overlap tokens: {', '.join(persona_tokens)}."
+            )
+        if residue_tokens:
+            diagnostics.append(
+                f"Residue overlap tokens: {', '.join(residue_tokens)}."
+            )
     if (
         any(code.startswith("topic_summary_distinctive_token") for code in reason_codes)
         and overlap_hints
