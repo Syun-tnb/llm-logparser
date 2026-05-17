@@ -1,215 +1,324 @@
 # AGENTS.md
 
-## 1. Purpose
+## Purpose
 
-This repository implements a local-first log analysis engine for exported LLM conversations.
+This repository builds deterministic, local-first tooling for parsing,
+normalizing, exporting, and analyzing LLM conversation logs.
 
-Its responsibilities include:
+Contributors should prioritize:
 
-- parsing provider exports into canonical normalized data
-- generating deterministic analysis artifacts
-- supporting optional higher-layer semantic analysis
+- correctness
+- determinism
+- rebuildability
+- explainability
+- local-first operation
+- stable contracts
+- low operational surprise
 
-The system is designed to be:
+The repository is not optimized for “clever” AI-agent behavior.
+It is optimized for long-term maintainability and interpretable outputs.
 
-- local-first
-- deterministic at its core
-- rebuildable from canonical data
-- dependency-minimal and predictable
+---
 
-The canonical source of truth is:
+# Core Principles
 
-- `parsed.jsonl`
+## 1. Canonical artifacts are the source of truth
 
-All other outputs are derived artifacts.
+`parsed.jsonl` is the canonical intermediate representation.
 
+All downstream layers must treat canonical artifacts as authoritative.
 
-## 2. Architectural Model
+Derived outputs:
 
-The system follows a layered architecture:
+- Markdown
+- metrics
+- token stats
+- narrative layers
+- semantic candidate layers
+- SQLite indexes
 
-- Canonical base: `parsed.jsonl`
-- L1: deterministic analysis artifacts
-- L2: optional deterministic index (SQLite)
-- L3: optional semantic analysis
-- L4: optional model-assisted or API-assisted analysis
+must remain rebuildable from canonical artifacts.
 
-Rules:
+Do not introduce hidden state.
 
-1. Canonical data must not be redefined by higher layers.
-2. L1/L2 must remain deterministic and rebuildable.
-3. L3/L4 must remain optional and additive.
-4. Derived artifacts must not silently become canonical.
+---
 
+## 2. Determinism over convenience
 
-## 3. Canonical Data Rules
-
-Contributors must not:
-
-- modify the meaning of canonical message text during parsing
-- inject semantic interpretation into canonical records
-- create alternative canonical representations outside defined contracts
-
-Canonical data must remain:
-
-- stable
-- provider-normalized
-- free of interpretation
-
-
-## 4. Deterministic Layer Rules (L1/L2)
-
-L1 and L2 must:
-
-- produce reproducible outputs from the same inputs
-- avoid dependence on LLMs or external APIs
-- remain valid in offline environments
-
-Changes must not:
-
-- introduce hidden non-determinism
-- require network access (except explicitly documented exceptions)
-- alter existing artifact contracts without explicit migration
-
-
-## 5. Higher-Layer Rules (L3/L4)
-
-Higher layers may include:
-
-- semantic grouping
-- topic tracking
-- summarization
-- model-assisted analysis
-
-They must:
-
-- remain optional
-- remain clearly separated from canonical data
-- include provenance where applicable
-- be safe to delete and rebuild
-
-They must not:
-
-- overwrite or redefine canonical data
-- become required for core functionality
-
-
-## 6. Dependency Principles
-
-Dependencies must be introduced cautiously.
-
-Preferred:
-
-- standard library
-- small, well-maintained libraries
-- permissive licenses (MIT, Apache)
+Prefer deterministic behavior whenever practical.
 
 Avoid:
 
-- large frameworks without clear architectural benefit
-- dependencies that introduce implicit network behavior
-- redundant abstractions over existing stable code
+- hidden randomness
+- unstable ordering
+- timestamp-dependent outputs
+- implicit mutation
+- silent fallback behavior
 
-When adding a dependency, contributors should consider:
+If nondeterminism is unavoidable, document it explicitly.
 
-- whether it reduces complexity or just shifts it
-- whether it affects determinism
-- whether it belongs in core or optional features
+---
 
+## 3. Preserve structure before interpretation
 
-## 7. Refactoring Principles
+Parser layers extract and normalize structure.
 
-Refactors should prioritize:
+They do not:
 
-1. removing duplication
-2. clarifying contracts
-3. improving determinism and reproducibility
-4. isolating optional functionality
+- summarize
+- flatten meaning
+- rewrite text
+- infer semantics
 
-Avoid:
+Semantic interpretation belongs in downstream layers.
 
-- large-scale rewrites without clear benefit
-- introducing new abstractions that obscure data flow
-- mixing deterministic and heuristic logic
+---
 
+## 4. Keep responsibilities separated
 
-## 8. Error Handling and Repair
+Maintain clear layer boundaries.
 
-The system should favor:
+### Provider adapters
 
-- clear validation errors
+Responsible for:
+
+- provider-specific structure expansion
+- normalization
+- schema mapping
+
+Not responsible for:
+
+- formatting
+- semantic interpretation
+- narrative generation
+
+### Parser layer
+
+Responsible for:
+
+- canonical JSONL generation
+- validation
+- thread segmentation
+- deterministic structure handling
+
+### Export layer
+
+Responsible for:
+
+- rendering
+- flattening
+- Markdown formatting
+- human-readable presentation
+
+### Semantic layers
+
+Responsible for:
+
+- topic summaries
+- recurrence candidates
+- semantic reconstruction
+- narrative diagnostics
+
+---
+
+# Contributor Working Style
+
+## 5. Prefer outcome-oriented implementation
+
+Focus on:
+
+- intended behavior
+- observable contracts
+- validation criteria
+- downstream impact
+
+Do not over-prescribe internal implementation steps unless necessary.
+
+---
+
+## 6. Minimize unnecessary complexity
+
+Prefer:
+
+- explicit logic
+- readable heuristics
+- inspectable data flow
+- simple contracts
+
+Avoid introducing abstraction layers without clear long-term value.
+
+---
+
+## 7. Do not prematurely generalize
+
+Design for extension,
+but avoid speculative architecture that is not yet required.
+
+Especially avoid:
+
+- framework-heavy rewrites
+- premature distributed systems patterns
+- unnecessary async complexity
+- over-engineered plugin systems
+
+---
+
+## 8. Diagnostics are first-class outputs
+
+Human-readable diagnostics are important.
+
+Semantic and heuristic systems must remain inspectable.
+
+Contributors should prefer:
+
 - explicit diagnostics
-- reproducible failure modes
+- evidence visibility
+- traceable scoring
+- explainable suppression behavior
 
-It should not:
+over opaque scoring systems.
 
-- modify parsing logic dynamically at runtime
-- silently recover in ways that hide data inconsistencies
+---
 
-Repair mechanisms should be:
+# Semantic Layer Guidance
 
-- explicit
-- reviewable
-- reproducible
+## 9. L3 is a candidate preparation layer
 
+L3 does not establish final semantic truth.
 
-## 9. Semantic Processing Constraints
+Its role is:
 
-Natural language inputs may include dialects, colloquialisms, and stylistic variation across languages.
+- segmentation
+- topic normalization
+- candidate preparation
+- semantic evidence surfacing
 
-To improve semantic consistency, the system may apply normalization strategies such as:
+Avoid pushing excessive semantic responsibility into segmentation logic.
 
-- dialect-insensitive representations
-- standard-language paraphrase overlays
-- embedding-oriented normalization
+---
 
-These techniques are intended to reduce surface-level variation while preserving meaning.
+## 10. Lexical policies must remain externalizable
 
-However, the following constraints must always be enforced:
+Avoid hardcoding project-specific lexical rules into Python constants.
 
-- canonical message text must remain unchanged
-- normalization must be non-destructive
-- normalization must not replace or overwrite canonical data
-- normalization must not introduce a secondary canonical representation
+Prefer resource-backed policies whenever possible.
 
-Normalization is strictly a downstream concern and must:
+Especially avoid embedding:
 
-- operate only in higher layers (L3/L4)
-- be optional and rebuildable
-- avoid persistent normalized overlays unless explicitly justified
+- user-specific names
+- project-private motifs
+- conversational rituals
+- persona-specific vocabulary
 
-The system must treat:
+into generic shared defaults.
 
-- canonical text as the source of truth
-- normalized representations as temporary or derived views
+---
 
-Meaning preservation takes priority over normalization convenience.
+## 11. Suppression systems must remain balanced
 
+Suppressing noise is important.
 
-## 10. Documentation Expectations
+Over-suppression is also dangerous.
 
-Changes should update documentation when they affect:
+World motifs, recurring narrative elements,
+and persistent semantic entities may carry legitimate continuity.
 
-- artifact structure
-- CLI behavior
-- configuration behavior
-- dependency expectations
-- layer boundaries
+Do not assume all recurring persona tokens are meaningless.
 
-Documentation should clearly state:
+---
 
-- whether behavior is deterministic or heuristic
-- whether artifacts are canonical or derived
-- whether changes are breaking or additive
+# Validation & Review
 
+## 12. Validation matters more than intuition
 
-## 11. Non-Goals
+Behavior changes should be validated against:
 
-This project does not aim to:
+- real artifacts
+- regression fixtures
+- diagnostics
+- narrative outputs
+- downstream semantic quality
 
-- depend on cloud services by default
-- introduce hidden telemetry
-- replace canonical data with derived indexes
-- prioritize trend-driven tooling over stability
+Do not rely purely on theoretical reasoning.
 
-The goal is long-term reliability, clarity, and local-first operation.
+---
+
+## 13. Preserve interpretability
+
+Contributors should prefer systems that humans can inspect and debug.
+
+If a scoring system becomes difficult to explain,
+it is likely too complex.
+
+---
+
+## 14. Keep outputs reviewable
+
+Generated artifacts should remain:
+
+- readable
+- diff-friendly
+- stable across runs
+- easy to inspect in git
+
+Avoid unnecessary churn in generated outputs.
+
+---
+
+# Safety & Privacy
+
+## 15. Local-first is non-negotiable
+
+Do not introduce hidden telemetry or silent external transmission.
+
+Network access must remain explicit and reviewable.
+
+---
+
+## 16. Treat user conversation data carefully
+
+Conversation logs may contain:
+
+- personal information
+- emotional discussions
+- credentials
+- proprietary material
+
+Contributors must avoid accidental leakage through:
+
+- diagnostics
+- logs
+- fixtures
+- example outputs
+- test artifacts
+
+---
+
+# Documentation
+
+## 17. Documentation is part of the system
+
+Major behavior changes should update relevant docs.
+
+Especially:
+
+- output contracts
+- schema expectations
+- semantic behavior
+- validation workflows
+- config behavior
+- diagnostics meaning
+
+---
+
+# Final Guideline
+
+Prefer systems that are:
+
+- understandable
+- rebuildable
+- inspectable
+- stable
+- explainable
+
+over systems that are merely impressive.
