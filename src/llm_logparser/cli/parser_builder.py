@@ -469,6 +469,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.recall.opt.context_after.help"),
     )
     analyze_recall_cmd.add_argument(
+        "--bookends",
+        type=int,
+        default=0,
+        help=_("cli.analyze.recall.opt.bookends.help"),
+    )
+    analyze_recall_cmd.add_argument(
         "--json",
         dest="json_output",
         action="store_true",

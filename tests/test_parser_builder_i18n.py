@@ -414,3 +414,4 @@ def test_analyze_recall_help_mentions_context_flags(capsys):
     help_text = capsys.readouterr().out
     assert "--context-before" in help_text
     assert "--context-after" in help_text
+    assert "--bookends" in help_text

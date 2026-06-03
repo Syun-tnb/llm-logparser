@@ -36,6 +36,8 @@ class RecallResult:
     anchor: RecallMessage
     context_before: tuple[RecallMessage, ...] = ()
     context_after: tuple[RecallMessage, ...] = ()
+    bookend_start: tuple[RecallMessage, ...] = ()
+    bookend_end: tuple[RecallMessage, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         payload = self.anchor.to_json()
@@ -45,6 +47,12 @@ class RecallResult:
         ]
         payload["context_after"] = [
             message.to_json() for message in self.context_after
+        ]
+        payload["bookend_start"] = [
+            message.to_json() for message in self.bookend_start
+        ]
+        payload["bookend_end"] = [
+            message.to_json() for message in self.bookend_end
         ]
         return payload
 
@@ -87,12 +95,14 @@ def search_recall_messages(
     conversation_id: str | None = None,
     context_before: int = 0,
     context_after: int = 0,
+    bookends: int = 0,
 ) -> list[RecallResult]:
     if not query.strip():
         raise RecallError("query must not be empty")
     limit = _validate_limit(limit)
     context_before = _validate_context_count(context_before, name="context_before")
     context_after = _validate_context_count(context_after, name="context_after")
+    bookends = _validate_context_count(bookends, name="bookends")
     db_path = _db_path(input_root)
 
     clauses = ["messages_fts MATCH ?"]
@@ -135,6 +145,7 @@ def search_recall_messages(
                 row,
                 context_before=context_before,
                 context_after=context_after,
+                bookends=bookends,
             )
             for row in rows
         ]
@@ -271,28 +282,132 @@ def _recall_result_from_row(
     *,
     context_before: int,
     context_after: int,
+    bookends: int,
 ) -> RecallResult:
     anchor = _message_from_row(row)
     anchor_rowid = int(row[6])
+    before = _context_before(
+        conn,
+        conversation_id=anchor.conversation_id,
+        anchor_rowid=anchor_rowid,
+        anchor_ts=anchor.ts,
+        anchor_message_id=anchor.message_id,
+        limit=context_before,
+    )
+    after = _context_after(
+        conn,
+        conversation_id=anchor.conversation_id,
+        anchor_rowid=anchor_rowid,
+        anchor_ts=anchor.ts,
+        anchor_message_id=anchor.message_id,
+        limit=context_after,
+    )
+    excluded = {_message_key(anchor)}
+    excluded.update(_message_key(message) for message in before)
+    excluded.update(_message_key(message) for message in after)
+    start = _bookend_start(
+        conn,
+        conversation_id=anchor.conversation_id,
+        limit=bookends,
+        exclude_keys=excluded,
+    )
+    excluded.update(_message_key(message) for message in start)
+    end = _bookend_end(
+        conn,
+        conversation_id=anchor.conversation_id,
+        limit=bookends,
+        exclude_keys=excluded,
+    )
     return RecallResult(
         anchor=anchor,
-        context_before=_context_before(
-            conn,
-            conversation_id=anchor.conversation_id,
-            anchor_rowid=anchor_rowid,
-            anchor_ts=anchor.ts,
-            anchor_message_id=anchor.message_id,
-            limit=context_before,
-        ),
-        context_after=_context_after(
-            conn,
-            conversation_id=anchor.conversation_id,
-            anchor_rowid=anchor_rowid,
-            anchor_ts=anchor.ts,
-            anchor_message_id=anchor.message_id,
-            limit=context_after,
-        ),
+        context_before=before,
+        context_after=after,
+        bookend_start=start,
+        bookend_end=end,
     )
+
+
+def _message_key(message: RecallMessage) -> tuple[object, ...]:
+    return (
+        message.provider_id,
+        message.conversation_id,
+        message.message_id,
+        message.role,
+        message.ts,
+        message.text,
+    )
+
+
+def _filter_excluded(
+    messages: tuple[RecallMessage, ...],
+    *,
+    exclude_keys: set[tuple[object, ...]],
+    limit: int,
+) -> tuple[RecallMessage, ...]:
+    kept: list[RecallMessage] = []
+    for message in messages:
+        key = _message_key(message)
+        if key in exclude_keys:
+            continue
+        kept.append(message)
+        if len(kept) >= limit:
+            break
+    return tuple(kept)
+
+
+def _bookend_start(
+    conn: sqlite3.Connection,
+    *,
+    conversation_id: str,
+    limit: int,
+    exclude_keys: set[tuple[object, ...]],
+) -> tuple[RecallMessage, ...]:
+    if limit == 0:
+        return ()
+    rows = conn.execute(
+        """
+        SELECT provider_id, conversation_id, message_id, role, ts, text
+        FROM messages
+        WHERE conversation_id = ?
+        ORDER BY COALESCE(ts, -9223372036854775808) ASC,
+                 message_id ASC,
+                 rowid ASC
+        """,
+        (conversation_id,),
+    ).fetchall()
+    return _filter_excluded(
+        tuple(_message_from_row(row) for row in rows),
+        exclude_keys=exclude_keys,
+        limit=limit,
+    )
+
+
+def _bookend_end(
+    conn: sqlite3.Connection,
+    *,
+    conversation_id: str,
+    limit: int,
+    exclude_keys: set[tuple[object, ...]],
+) -> tuple[RecallMessage, ...]:
+    if limit == 0:
+        return ()
+    rows = conn.execute(
+        """
+        SELECT provider_id, conversation_id, message_id, role, ts, text
+        FROM messages
+        WHERE conversation_id = ?
+        ORDER BY COALESCE(ts, -9223372036854775808) DESC,
+                 message_id DESC,
+                 rowid DESC
+        """,
+        (conversation_id,),
+    ).fetchall()
+    kept = _filter_excluded(
+        tuple(_message_from_row(row) for row in rows),
+        exclude_keys=exclude_keys,
+        limit=limit,
+    )
+    return tuple(reversed(kept))
 
 
 def _sort_ts(value: int | None) -> int:
@@ -312,14 +427,16 @@ def render_recall_json(
     conversation_id: str | None = None,
     context_before: int = 0,
     context_after: int = 0,
+    bookends: int = 0,
 ) -> str:
     payload = {
         "artifact_type": "recall_results",
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "query": query,
         "limit": limit,
         "context_before": context_before,
         "context_after": context_after,
+        "bookends": bookends,
         "filters": {
             "role": role,
             "conversation_id": conversation_id,
@@ -361,6 +478,14 @@ def render_recall_text(results: list[RecallResult], *, query: str) -> str:
             lines.append("   context_after:")
             for context_message in result.context_after:
                 lines.append(f"   - {_compact_message(context_message)}")
+        if result.bookend_start:
+            lines.append("   bookend_start:")
+            for bookend_message in result.bookend_start:
+                lines.append(f"   - {_compact_message(bookend_message)}")
+        if result.bookend_end:
+            lines.append("   bookend_end:")
+            for bookend_message in result.bookend_end:
+                lines.append(f"   - {_compact_message(bookend_message)}")
     return "\n".join(lines) + "\n"
 
 

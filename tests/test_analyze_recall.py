@@ -181,13 +181,16 @@ def test_analyze_recall_json_output_is_deterministic_and_excludes_rowid(
     assert first == second
     payload = json.loads(first)
     assert payload["artifact_type"] == "recall_results"
-    assert payload["schema_version"] == "0.2"
+    assert payload["schema_version"] == "0.3"
     assert payload["context_before"] == 0
     assert payload["context_after"] == 0
+    assert payload["bookends"] == 0
     assert [row["message_id"] for row in payload["results"]] == ["b2", "a2"]
     assert "rowid" not in first.lower()
     assert set(payload["results"][0]) == {
         "anchor",
+        "bookend_end",
+        "bookend_start",
         "context_after",
         "context_before",
         "provider_id",
@@ -200,6 +203,8 @@ def test_analyze_recall_json_output_is_deterministic_and_excludes_rowid(
     assert payload["results"][0]["anchor"]["message_id"] == payload["results"][0]["message_id"]
     assert payload["results"][0]["context_before"] == []
     assert payload["results"][0]["context_after"] == []
+    assert payload["results"][0]["bookend_start"] == []
+    assert payload["results"][0]["bookend_end"] == []
 
 
 def test_analyze_recall_limit_works(tmp_path: Path, capsys):
@@ -406,6 +411,178 @@ def test_analyze_recall_text_output_renders_anchor_and_context_compactly(
     assert "context_after:" in output
     assert "a3 role=user" in output
     assert "rowid" not in output.lower()
+
+
+def test_analyze_recall_bookends_include_first_and_last_same_conversation_messages(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "read",
+            "--bookends",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    assert result["message_id"] == "a2"
+    assert [row["message_id"] for row in result["bookend_start"]] == ["a1"]
+    assert [row["message_id"] for row in result["bookend_end"]] == ["a3"]
+
+
+def test_analyze_recall_bookends_do_not_cross_conversation_boundaries(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "boundary",
+            "--bookends",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    assert result["conversation_id"] == "conv-b"
+    bookend_ids = [
+        row["conversation_id"]
+        for row in [*result["bookend_start"], *result["bookend_end"]]
+    ]
+    assert set(bookend_ids) <= {"conv-b"}
+
+
+def test_analyze_recall_role_filter_applies_only_to_anchor_not_bookends(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "recall",
+            "--role",
+            "assistant",
+            "--bookends",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    b_result = next(row for row in payload["results"] if row["message_id"] == "b2")
+    assert b_result["role"] == "assistant"
+    assert [row["role"] for row in b_result["bookend_start"]] == ["user"]
+    assert [row["role"] for row in b_result["bookend_end"]] == ["tool"]
+
+
+def test_analyze_recall_bookends_dedupe_anchor_and_context_messages(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "read",
+            "--context-before",
+            "1",
+            "--context-after",
+            "1",
+            "--bookends",
+            "2",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    assert result["message_id"] == "a2"
+    assert [row["message_id"] for row in result["context_before"]] == ["a1"]
+    assert [row["message_id"] for row in result["context_after"]] == ["a3"]
+    assert result["bookend_start"] == []
+    assert result["bookend_end"] == []
+
+
+def test_analyze_recall_text_output_renders_bookends_compactly(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "read",
+            "--bookends",
+            "1",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "openai/conv-a/a2" in output
+    assert "bookend_start:" in output
+    assert "a1 role=user" in output
+    assert "bookend_end:" in output
+    assert "a3 role=user" in output
+    assert "rowid" not in output.lower()
+
+
+def test_analyze_recall_negative_bookends_fail_clearly(
+    tmp_path: Path,
+    caplog,
+):
+    provider_root = _build_provider_root(tmp_path)
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "analyze",
+                "recall",
+                "--input",
+                str(provider_root),
+                "--query",
+                "read",
+                "--bookends",
+                "-1",
+            ]
+        )
+
+    assert exc.value.code == 2
+    assert "bookends must be >= 0" in caplog.text
 
 
 def test_analyze_recall_negative_context_values_fail_clearly(

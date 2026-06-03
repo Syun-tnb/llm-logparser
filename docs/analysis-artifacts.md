@@ -600,6 +600,8 @@ Current thread-level SQLite correspondence includes:
   only
 - optional recall context windows selected around each FTS anchor within the
   same conversation; context selection does not affect anchor ranking
+- optional recall bookends containing first/last same-conversation messages as
+  compact evidence only
 
 L2 expectations:
 

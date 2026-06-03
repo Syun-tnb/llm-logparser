@@ -387,6 +387,9 @@ identity fields rather than SQLite row IDs.
 Recall results may optionally include anchored same-conversation context via
 `--context-before` and `--context-after`. These context messages are selected
 after the FTS anchor match is ranked and do not affect match ordering.
+`--bookends` can additionally include compact first/last same-conversation
+messages as evidence; bookends are deduplicated from the anchor/context display
+when practical and are not semantic identity.
 
 ---
 

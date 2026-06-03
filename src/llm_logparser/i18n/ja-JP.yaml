@@ -84,6 +84,7 @@ messages:
   cli.analyze.recall.opt.limit.help: 表示する recall match の最大数
   cli.analyze.recall.opt.context_before.help: 各 anchor の前に表示する同一 conversation 内 message 数
   cli.analyze.recall.opt.context_after.help: 各 anchor の後に表示する同一 conversation 内 message 数
+  cli.analyze.recall.opt.bookends.help: evidence として含める同一 conversation の先頭・末尾 message 数
   cli.analyze.recall.opt.role.help: 任意の canonical role filter
   cli.analyze.recall.opt.conversation_id.help: 任意の conversation ID filter
   cli.analyze.semantic_prototype.help: message_windows.jsonl または canonical な parsed.jsonl から実験的な window_embeddings.jsonl、window_neighbors.jsonl、window_clusters.jsonl を生成する
