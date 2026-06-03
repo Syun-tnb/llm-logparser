@@ -432,6 +432,45 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.sqlite_build.opt.overwrite.help"),
     )
 
+    analyze_recall_cmd = analyze_subparsers.add_parser(
+        "recall",
+        help=_("cli.analyze.recall.help"),
+        description=_("cli.analyze.recall.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.recall.opt.input.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--query",
+        required=True,
+        help=_("cli.analyze.recall.opt.query.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help=_("cli.analyze.recall.opt.limit.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help=_("cli.analyze.opt.json.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--role",
+        required=False,
+        help=_("cli.analyze.recall.opt.role.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--conversation-id",
+        required=False,
+        help=_("cli.analyze.recall.opt.conversation_id.help"),
+    )
+
     analyze_semantic_prototype_cmd = analyze_subparsers.add_parser(
         "semantic-prototype",
         help=_("cli.analyze.semantic_prototype.help"),

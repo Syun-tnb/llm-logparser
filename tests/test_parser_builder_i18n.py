@@ -369,6 +369,10 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
             "Input: directory only; root containing per-provider artifact directories",
         ),
         (
+            ["analyze", "recall", "--help"],
+            "Input: provider artifact root containing analysis.db",
+        ),
+        (
             ["analyze", "semantic-preview", "--help"],
             "Input: directory only; provider artifact root containing message_windows.jsonl, window_clusters.jsonl, and optional window_neighbors.jsonl files",
         ),

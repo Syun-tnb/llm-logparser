@@ -243,6 +243,41 @@ def run_analyze_sqlite_build(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_recall(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_recall import (
+        RecallError,
+        render_recall_json,
+        render_recall_text,
+        search_recall_messages,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        messages = search_recall_messages(
+            input_root,
+            query=args.query,
+            limit=args.limit,
+            role=args.role,
+            conversation_id=args.conversation_id,
+        )
+    except RecallError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    rendered = (
+        render_recall_json(
+            messages,
+            query=args.query,
+            limit=args.limit,
+            role=args.role,
+            conversation_id=args.conversation_id,
+        )
+        if args.json_output
+        else render_recall_text(messages, query=args.query)
+    )
+    write_or_print(rendered, None)
+
+
 def run_analyze_semantic_prototype(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_semantic_prototype import (
         SemanticPrototypeError,

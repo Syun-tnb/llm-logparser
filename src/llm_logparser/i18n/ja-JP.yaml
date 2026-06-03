@@ -78,6 +78,12 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: "入力: ディレクトリのみ。provider ごとの成果物ディレクトリを含むルート"
   cli.analyze.sqlite_build.opt.provider.help: "インデックス対象のプロバイダ ID (例: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: 既存の analysis.db を削除して再構築する
+  cli.analyze.recall.help: 既存の L2 analysis.db FTS index から canonical message text を検索する
+  cli.analyze.recall.opt.input.help: "入力: analysis.db を含む provider artifact root"
+  cli.analyze.recall.opt.query.help: canonical message text を検索する FTS query 文字列
+  cli.analyze.recall.opt.limit.help: 表示する recall match の最大数
+  cli.analyze.recall.opt.role.help: 任意の canonical role filter
+  cli.analyze.recall.opt.conversation_id.help: 任意の conversation ID filter
   cli.analyze.semantic_prototype.help: message_windows.jsonl または canonical な parsed.jsonl から実験的な window_embeddings.jsonl、window_neighbors.jsonl、window_clusters.jsonl を生成する
   cli.analyze.semantic_prototype.opt.input.help: "入力: message_windows.jsonl または parsed.jsonl ファイル、もしくはそれらを含むディレクトリ"
   cli.analyze.semantic_prototype.opt.backend.help: "使用する埋め込みバックエンド (`deterministic-hash` または `ollama`)"

@@ -27,6 +27,7 @@ from llm_logparser.cli.handlers import (
     run_analyze_intra_thread_topics,
     run_analyze_lexical_rule_candidates,
     run_analyze_metrics,
+    run_analyze_recall,
     run_analyze_semantic_normalization,
     run_analyze_semantic_preview,
     run_analyze_semantic_span_proposals,
@@ -196,9 +197,10 @@ def _prompt_missing_required(
             "timeline",
             "tokens",
             "metrics",
-        "token-dictionary",
-        "lexical-rule-candidates",
+            "token-dictionary",
+            "lexical-rule-candidates",
             "sqlite-build",
+            "recall",
             "semantic-prototype",
             "intra-thread-topics",
             "intra-thread-topic-summaries",
@@ -220,6 +222,7 @@ def _prompt_missing_required(
                     if args.analyze_command
                     in {
                         "sqlite-build",
+                        "recall",
                         "semantic-normalization",
                         "semantic-span-proposals",
                         "cross-thread-candidates",
@@ -272,6 +275,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_timeline(args, logger)
         elif args.analyze_command == "sqlite-build":
             run_analyze_sqlite_build(args, logger)
+        elif args.analyze_command == "recall":
+            run_analyze_recall(args, logger)
         elif args.analyze_command == "semantic-prototype":
             run_analyze_semantic_prototype(args, logger)
         elif args.analyze_command == "intra-thread-topics":

@@ -74,6 +74,12 @@ messages:
   cli.analyze.sqlite_build.opt.input.help: "Input: directory only; root containing per-provider artifact directories"
   cli.analyze.sqlite_build.opt.provider.help: "Provider ID to index (for example: openai)"
   cli.analyze.sqlite_build.opt.overwrite.help: Delete an existing analysis.db before rebuilding
+  cli.analyze.recall.help: Search canonical message text through an existing L2 analysis.db FTS index
+  cli.analyze.recall.opt.input.help: "Input: provider artifact root containing analysis.db"
+  cli.analyze.recall.opt.query.help: FTS query string to search in canonical message text
+  cli.analyze.recall.opt.limit.help: Maximum number of recall matches to display
+  cli.analyze.recall.opt.role.help: Optional canonical role filter
+  cli.analyze.recall.opt.conversation_id.help: Optional conversation ID filter
   cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl or canonical parsed.jsonl
   cli.analyze.semantic_prototype.opt.input.help: "Input: message_windows.jsonl or parsed.jsonl file, or directory containing those artifacts"
   cli.analyze.semantic_prototype.opt.backend.help: "Embedding backend to use (`deterministic-hash` or `ollama`)"

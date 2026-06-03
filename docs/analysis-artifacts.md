@@ -595,6 +595,9 @@ Current thread-level SQLite correspondence includes:
   `messages.text` rows during a full `sqlite-build` rebuild; this is a local
   search index only, and joins back to `messages` by SQLite rowid internally
   while canonical identity remains provider/conversation/message fields
+- `analyze recall`, a read-only L2 query path over the existing FTS index; it
+  does not write query artifacts and reports canonical message identity fields
+  only
 
 L2 expectations:
 

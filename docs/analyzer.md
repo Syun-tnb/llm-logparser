@@ -363,6 +363,7 @@ them.
 SQLite enables:
 
 - cross-thread searches
+- FTS-backed canonical message recall through `analyze recall`
 - date range queries
 - role-based filtering
 - provider statistics
@@ -380,6 +381,9 @@ top threads by size
 
 `analyze sqlite-build` writes `analysis.db` as a separate artifact. If the
 index is absent, canonical and deterministic analyzer workflows still work.
+`analyze recall` is a read-only query path over an existing `analysis.db`; it
+does not write query artifacts and reports canonical provider/conversation/message
+identity fields rather than SQLite row IDs.
 
 ---
 
@@ -546,6 +550,7 @@ llm-logparser analyze timeline ...
 llm-logparser analyze tokens ...
 llm-logparser analyze metrics ...
 llm-logparser analyze sqlite-build ...
+llm-logparser analyze recall ...
 llm-logparser analyze semantic-prototype ...
 llm-logparser analyze semantic-preview ...
 llm-logparser analyze semantic-topics ...
@@ -570,6 +575,7 @@ Possible modes:
 | tokens | L1 |
 | metrics | L1 |
 | sqlite-build | L2 |
+| recall | L2 read-only FTS query |
 | semantic-prototype | L3 prototype (experimental) |
 | intra-thread-topics | L3 intra-thread segmentation prototype (experimental) |
 | semantic-preview | L3 prototype viewer (experimental) |
@@ -598,8 +604,10 @@ Command boundary rule:
 The `analyze` CLI is designed to preserve a clear separation between
 deterministic and model-derived capabilities.
 
-- L1/L2 commands (`stats`, `timeline`, `tokens`, `metrics`, `sqlite-build`)
-  are deterministic, rebuildable, and safe for local-first workflows
+- L1/L2 commands (`stats`, `timeline`, `tokens`, `metrics`, `sqlite-build`,
+  `recall`) stay deterministic and safe for local-first workflows; builder
+  commands write rebuildable artifacts, while `recall` is read-only over an
+  existing L2 index
 
 - `semantic-prototype` is an experimental bridge into future L3 work: it
   reads deterministic candidate spans from either stored `message_windows.jsonl`
