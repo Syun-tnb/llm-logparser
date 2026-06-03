@@ -180,6 +180,9 @@ messages:
   cli.analyze.lexical_rule_candidates.opt.max_candidates_per_type.help: candidate type ごとに出力する inactive lexical-rule candidate の最大数
   cli.analyze.lexical_rule_candidates.opt.sample_limit.help: inactive candidate ごとに付与する sample reference の最大数
   cli.analyze.lexical_rule_candidates.opt.overwrite.help: 既存の l3/lexical-rules candidate artifact を置き換える
+  cli.analyze.review_candidates.help: 既存 candidate artifact から inactive な L3 review queue を構築する
+  cli.analyze.review_candidates.opt.input.help: "入力: 任意の l3/lexical-rules または l3/cross-thread-candidates 成果物を含む provider artifact root"
+  cli.analyze.review_candidates.opt.overwrite.help: 既存の l3/review-queue artifact を置き換える
   cli.analyze.cross_thread_intent_eval.help: 既存の cross-thread candidate pair が同じ意図 / event / task continuity を表すかを評価し、加算的な L4 sidecar を書き出す
   cli.analyze.cross_thread_intent_eval.opt.input.help: "入力: ディレクトリのみ。l3/cross-thread-candidates/candidates.jsonl を含む provider 成果物ルート"
   cli.analyze.cross_thread_intent_eval.opt.model.help: 出力済み candidate pair の same-intent continuity 判定に使うローカル Ollama model

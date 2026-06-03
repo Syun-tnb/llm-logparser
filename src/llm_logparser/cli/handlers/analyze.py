@@ -152,6 +152,29 @@ def run_analyze_lexical_rule_candidates(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_review_candidates(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_review_candidates import (
+        ReviewCandidateError,
+        write_review_candidate_artifacts,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_review_candidate_artifacts(
+            input_root,
+            overwrite=args.overwrite,
+        )
+    except ReviewCandidateError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "review queue artifacts written: "
+        f"{result['candidate_count']} candidate(s) -> "
+        f"{format_display_path(result['candidates_path'])}"
+    )
+
+
 def run_analyze_stats(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_stats import (
         analyze_stats,

@@ -589,6 +589,7 @@ Possible modes:
 | cross-thread-candidates | L3 experimental cross-thread continuity sidecar |
 | token-dictionary | L3 auxiliary token/bundle signal sidecar |
 | lexical-rule-candidates | L3 inactive lexical-rule candidate diagnostics |
+| review-candidates | L3 inactive review queue aggregator |
 | cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
 | cross-thread-memory-recall | L4 read-only memory recall presentation layer |
 | semantic-normalization | L3 sidecar batch job runner |
@@ -1109,6 +1110,14 @@ deterministic and model-derived capabilities.
   lexical memory contract. It is documented as a stub only and is not wired into
   scoring. Reviewed project/user lexical YAML remains the active editable policy
   surface today.
+
+- `review-candidates` is an inactive L3 review queue aggregator. It reads
+  existing `l3/lexical-rules/candidates.jsonl` and
+  `l3/cross-thread-candidates/candidates.jsonl` when present, then writes
+  `l3/review-queue/candidates.jsonl`, `report.json`, and `report.md`.
+  Missing source artifacts are warnings. The command does not regenerate source
+  candidates, edit reviewed policy, promote rules, merge topics, or change
+  candidate scoring.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

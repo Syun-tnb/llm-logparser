@@ -850,6 +850,13 @@ Auxiliary L3 note:
 - `lexical candidates list` / `inspect` provide read-only views of inactive
   `l3/lexical-rules/candidates.jsonl` rows and compact diagnostics. They do not
   promote, reject, edit, or activate reviewed lexical policy.
+- `analyze review-candidates` writes an inactive derived review queue under
+  `<provider-root>/l3/review-queue/` from existing
+  `l3/lexical-rules/candidates.jsonl` and
+  `l3/cross-thread-candidates/candidates.jsonl` when present. It writes
+  `candidates.jsonl`, `report.json`, and `report.md`; missing source artifacts
+  are warnings. It does not regenerate source candidates, modify reviewed
+  policy, promote rules, suppress topics, or change candidate scoring.
 - `user_lexical_profile` is reserved as a future provider-crossing user-level
   lexical memory contract. It is not implemented or wired into scoring; reviewed
   project/user lexical YAML remains the active human-reviewed policy surface

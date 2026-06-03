@@ -388,6 +388,10 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
             ["analyze", "lexical-rule-candidates", "--help"],
             "Input: directory only; provider artifact root containing l3/token-dictionary/observed_tokens.json",
         ),
+        (
+            ["analyze", "review-candidates", "--help"],
+            "Input: provider artifact root containing optional lexical or cross-thread candidate artifacts",
+        ),
     ],
 )
 def test_help_text_clarifies_input_semantics(capsys, argv, expected):

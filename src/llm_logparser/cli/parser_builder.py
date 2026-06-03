@@ -410,6 +410,24 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.lexical_rule_candidates.opt.overwrite.help"),
     )
 
+    analyze_review_candidates_cmd = analyze_subparsers.add_parser(
+        "review-candidates",
+        help=_("cli.analyze.review_candidates.help"),
+        description=_("cli.analyze.review_candidates.help"),
+    )
+    analyze_review_candidates_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.review_candidates.opt.input.help"),
+    )
+    analyze_review_candidates_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.review_candidates.opt.overwrite.help"),
+    )
+
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
         help=_("cli.analyze.sqlite_build.help"),
