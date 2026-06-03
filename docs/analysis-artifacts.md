@@ -591,6 +591,10 @@ Current thread-level SQLite correspondence includes:
   preferred canonical name going forward
 - `threads.other_role_breakdown`, which stores imported
   `thread_stats.json.other_role_breakdown` as JSON-serialized `TEXT`
+- `messages_fts`, an FTS5 virtual table populated from non-empty canonical
+  `messages.text` rows during a full `sqlite-build` rebuild; this is a local
+  search index only, and joins back to `messages` by SQLite rowid internally
+  while canonical identity remains provider/conversation/message fields
 
 L2 expectations:
 

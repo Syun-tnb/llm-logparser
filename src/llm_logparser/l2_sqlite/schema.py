@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SQLITE_SCHEMA_VERSION = "3"
+SQLITE_SCHEMA_VERSION = "4"
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -48,6 +48,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX idx_messages_role
         ON messages(role);
+
+        CREATE VIRTUAL TABLE messages_fts
+        USING fts5(text);
 
         CREATE TABLE message_windows (
             provider_id TEXT NOT NULL,

@@ -7,6 +7,11 @@ from pathlib import Path
 import pytest
 
 from llm_logparser.cli.cli import main
+from llm_logparser.core.analyzer_semantic_prototype import (
+    SqliteCandidateConfig,
+    WindowEmbeddingRecord,
+    build_sqlite_candidate_pools,
+)
 from llm_logparser.core.l1_derivation import ThreadMetrics, build_thread_stats_artifact
 from llm_logparser.core.message_windows import render_message_windows_jsonl
 from llm_logparser.l2_sqlite import build_analysis_db
@@ -119,6 +124,13 @@ def _dump_db(db_path: Path) -> dict[str, list[tuple]]:
                 ORDER BY conversation_id, ts, message_id
                 """
             ).fetchall(),
+            "messages_fts": conn.execute(
+                """
+                SELECT rowid, text
+                FROM messages_fts
+                ORDER BY rowid
+                """
+            ).fetchall(),
             "message_windows": conn.execute(
                 """
                 SELECT provider_id, conversation_id, window_id, message_ids,
@@ -186,6 +198,7 @@ def test_l2_sqlite_cli_builds_database_from_fixture_threads(tmp_path, monkeypatc
         assert _table_count(conn, "metadata") == 1
         assert _table_count(conn, "threads") == 2
         assert _table_count(conn, "messages") == 5
+        assert _table_count(conn, "messages_fts") == 5
         assert _table_count(conn, "message_windows") == 2
     finally:
         conn.close()
@@ -254,6 +267,75 @@ def test_l2_sqlite_builder_preserves_thread_and_window_fidelity(tmp_path):
         conn.close()
 
 
+def test_l2_sqlite_builder_creates_and_populates_message_fts_from_non_empty_text(
+    tmp_path,
+):
+    provider_dir = tmp_path / "openai"
+    provider_dir.mkdir(parents=True, exist_ok=True)
+    messages = [
+        _canonical_message(
+            "openai",
+            "conv-fts",
+            "m1",
+            "user",
+            1704067201000,
+            "searchable recall foundation",
+        ),
+        _canonical_message("openai", "conv-fts", "m2", "assistant", 1704067202000, ""),
+        _canonical_message(
+            "openai",
+            "conv-fts",
+            "m3",
+            "assistant",
+            1704067203000,
+            "another searchable answer",
+        ),
+    ]
+    _write_thread_artifacts(provider_dir, "conv-fts", messages)
+
+    result = build_analysis_db(tmp_path, "openai")
+    assert result["messages"] == 3
+    assert result["messages_fts"] == 2
+
+    conn = sqlite3.connect(result["db_path"])
+    try:
+        fts_tables = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'messages_fts'
+            """
+        ).fetchall()
+        assert fts_tables == [("messages_fts",)]
+        assert _table_count(conn, "messages_fts") == 2
+    finally:
+        conn.close()
+
+
+def test_l2_sqlite_message_fts_supports_basic_search_without_exposing_rowid(
+    tmp_path,
+):
+    root = _build_fixture_root(tmp_path)
+    result = build_analysis_db(root, "openai")
+
+    conn = sqlite3.connect(result["db_path"])
+    try:
+        rows = conn.execute(
+            """
+            SELECT m.provider_id, m.conversation_id, m.message_id, m.role, m.text
+            FROM messages_fts
+            JOIN messages AS m
+              ON m.rowid = messages_fts.rowid
+            WHERE messages_fts MATCH ?
+            ORDER BY m.conversation_id, m.ts, m.message_id
+            """,
+            ("hello",),
+        ).fetchall()
+        assert rows == [("openai", "conv-a", "m1", "user", "hello")]
+    finally:
+        conn.close()
+
+
 def test_l2_sqlite_builder_runs_analyze_and_restores_delete_journal_mode(tmp_path):
     root = _build_fixture_root(tmp_path)
 
@@ -288,6 +370,57 @@ def test_l2_sqlite_builder_is_deterministic(tmp_path):
     second_dump = _dump_db(second["db_path"])
 
     assert first_dump == second_dump
+
+
+def test_l2_sqlite_builder_remains_compatible_with_sqlite_candidate_generation(
+    tmp_path,
+):
+    root = _build_fixture_root(tmp_path)
+    result = build_analysis_db(root, "openai")
+
+    conn = sqlite3.connect(result["db_path"])
+    try:
+        window_rows = conn.execute(
+            """
+            SELECT provider_id, conversation_id, window_id, ts_start, ts_end,
+                   char_count, message_ids
+            FROM message_windows
+            ORDER BY conversation_id, window_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    embeddings = [
+        WindowEmbeddingRecord(
+            source_path=result["db_path"],
+            provider_id=provider_id,
+            conversation_id=conversation_id,
+            window_id=window_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            embedding_model="deterministic-test",
+            text_char_count=char_count,
+            embedding=(1.0, 0.0),
+            message_ids=tuple(json.loads(message_ids)),
+        )
+        for (
+            provider_id,
+            conversation_id,
+            window_id,
+            ts_start,
+            ts_end,
+            char_count,
+            message_ids,
+        ) in window_rows
+    ]
+
+    pools = build_sqlite_candidate_pools(
+        embeddings,
+        candidate_config=SqliteCandidateConfig(db_path=result["db_path"]),
+    )
+
+    assert pools == [(0, 1), (0, 1)]
 
 
 def test_l2_sqlite_builder_overwrite_behavior(tmp_path):

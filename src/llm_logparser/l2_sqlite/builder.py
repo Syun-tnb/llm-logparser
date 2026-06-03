@@ -9,7 +9,9 @@ from .ingest_threads import ingest_thread_stats
 from .ingest_windows import ingest_message_windows
 from .schema import SQLITE_SCHEMA_VERSION, create_schema, insert_metadata
 
-REQUIRED_TABLES = frozenset({"metadata", "threads", "messages", "message_windows"})
+REQUIRED_TABLES = frozenset(
+    {"metadata", "threads", "messages", "messages_fts", "message_windows"}
+)
 
 
 def _iter_thread_dirs(provider_dir: Path) -> list[Path]:
@@ -71,6 +73,19 @@ def _validate_completed_build(conn: sqlite3.Connection, *, provider_id: str) -> 
         )
 
 
+def _populate_message_fts(conn: sqlite3.Connection) -> int:
+    conn.execute("DELETE FROM messages_fts")
+    cursor = conn.execute(
+        """
+        INSERT INTO messages_fts(rowid, text)
+        SELECT rowid, text
+        FROM messages
+        WHERE COALESCE(text, '') != ''
+        """
+    )
+    return cursor.rowcount
+
+
 def build_analysis_db(
     input_root: Path,
     provider_id: str,
@@ -108,6 +123,10 @@ def build_analysis_db(
                 raise
             conn.commit()
 
+        conn.execute("BEGIN")
+        messages_fts_inserted = _populate_message_fts(conn)
+        conn.commit()
+
         conn.execute("ANALYZE")
         conn.commit()
         _validate_completed_build(conn, provider_id=provider_id)
@@ -118,6 +137,7 @@ def build_analysis_db(
             "provider_id": provider_id,
             "threads": threads_inserted,
             "messages": messages_inserted,
+            "messages_fts": messages_fts_inserted,
             "message_windows": windows_inserted,
         }
     finally:
