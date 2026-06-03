@@ -78,6 +78,8 @@ messages:
   cli.analyze.recall.opt.input.help: "Input: provider artifact root containing analysis.db"
   cli.analyze.recall.opt.query.help: FTS query string to search in canonical message text
   cli.analyze.recall.opt.limit.help: Maximum number of recall matches to display
+  cli.analyze.recall.opt.context_before.help: Number of previous same-conversation messages to show around each anchor
+  cli.analyze.recall.opt.context_after.help: Number of following same-conversation messages to show around each anchor
   cli.analyze.recall.opt.role.help: Optional canonical role filter
   cli.analyze.recall.opt.conversation_id.help: Optional conversation ID filter
   cli.analyze.semantic_prototype.help: Build experimental window_embeddings.jsonl, window_neighbors.jsonl, and window_clusters.jsonl artifacts from message_windows.jsonl or canonical parsed.jsonl

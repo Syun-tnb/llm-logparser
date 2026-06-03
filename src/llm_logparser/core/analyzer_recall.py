@@ -31,10 +31,34 @@ class RecallMessage:
         }
 
 
+@dataclass(frozen=True)
+class RecallResult:
+    anchor: RecallMessage
+    context_before: tuple[RecallMessage, ...] = ()
+    context_after: tuple[RecallMessage, ...] = ()
+
+    def to_json(self) -> dict[str, Any]:
+        payload = self.anchor.to_json()
+        payload["anchor"] = self.anchor.to_json()
+        payload["context_before"] = [
+            message.to_json() for message in self.context_before
+        ]
+        payload["context_after"] = [
+            message.to_json() for message in self.context_after
+        ]
+        return payload
+
+
 def _validate_limit(limit: int) -> int:
     if limit <= 0:
         raise RecallError("limit must be greater than 0")
     return limit
+
+
+def _validate_context_count(value: int, *, name: str) -> int:
+    if value < 0:
+        raise RecallError(f"{name} must be >= 0")
+    return value
 
 
 def _db_path(input_root: Path) -> Path:
@@ -61,10 +85,14 @@ def search_recall_messages(
     limit: int = 10,
     role: str | None = None,
     conversation_id: str | None = None,
-) -> list[RecallMessage]:
+    context_before: int = 0,
+    context_after: int = 0,
+) -> list[RecallResult]:
     if not query.strip():
         raise RecallError("query must not be empty")
     limit = _validate_limit(limit)
+    context_before = _validate_context_count(context_before, name="context_before")
+    context_after = _validate_context_count(context_after, name="context_after")
     db_path = _db_path(input_root)
 
     clauses = ["messages_fts MATCH ?"]
@@ -84,7 +112,8 @@ def search_recall_messages(
             m.message_id,
             m.role,
             m.ts,
-            m.text
+            m.text,
+            m.rowid
         FROM messages_fts
         JOIN messages AS m
           ON m.rowid = messages_fts.rowid
@@ -92,13 +121,23 @@ def search_recall_messages(
         ORDER BY bm25(messages_fts) ASC,
                  m.ts ASC,
                  m.conversation_id ASC,
-                 m.message_id ASC
+                 m.message_id ASC,
+                 m.rowid ASC
         LIMIT ?
     """
 
     conn = sqlite3.connect(db_path)
     try:
         rows = conn.execute(sql, params).fetchall()
+        results = [
+            _recall_result_from_row(
+                conn,
+                row,
+                context_before=context_before,
+                context_after=context_after,
+            )
+            for row in rows
+        ]
     except sqlite3.OperationalError as exc:
         message = str(exc)
         if "no such table: messages_fts" in message:
@@ -110,47 +149,193 @@ def search_recall_messages(
     finally:
         conn.close()
 
-    return [
-        RecallMessage(
-            provider_id=str(provider_id),
-            conversation_id=str(row_conversation_id),
-            message_id=message_id,
-            role=row_role,
-            ts=ts,
-            text=text or "",
+    return results
+
+
+def _message_from_row(row: tuple[Any, ...]) -> RecallMessage:
+    provider_id, conversation_id, message_id, role, ts, text = row[:6]
+    return RecallMessage(
+        provider_id=str(provider_id),
+        conversation_id=str(conversation_id),
+        message_id=message_id,
+        role=role,
+        ts=ts,
+        text=text or "",
+    )
+
+
+def _context_before(
+    conn: sqlite3.Connection,
+    *,
+    conversation_id: str,
+    anchor_rowid: int,
+    anchor_ts: int | None,
+    anchor_message_id: str | None,
+    limit: int,
+) -> tuple[RecallMessage, ...]:
+    if limit == 0:
+        return ()
+    rows = conn.execute(
+        """
+        SELECT provider_id, conversation_id, message_id, role, ts, text
+        FROM (
+            SELECT provider_id, conversation_id, message_id, role, ts, text,
+                   rowid
+            FROM messages
+            WHERE conversation_id = ?
+              AND (
+                COALESCE(ts, -9223372036854775808) < ?
+                OR (
+                  COALESCE(ts, -9223372036854775808) = ?
+                  AND COALESCE(message_id, '') < ?
+                )
+                OR (
+                  COALESCE(ts, -9223372036854775808) = ?
+                  AND COALESCE(message_id, '') = ?
+                  AND rowid < ?
+                )
+              )
+            ORDER BY COALESCE(ts, -9223372036854775808) DESC,
+                     message_id DESC,
+                     rowid DESC
+            LIMIT ?
         )
-        for provider_id, row_conversation_id, message_id, row_role, ts, text in rows
-    ]
+        ORDER BY COALESCE(ts, -9223372036854775808) ASC,
+                 message_id ASC,
+                 rowid ASC
+        """,
+        (
+            conversation_id,
+            _sort_ts(anchor_ts),
+            _sort_ts(anchor_ts),
+            _sort_message_id(anchor_message_id),
+            _sort_ts(anchor_ts),
+            _sort_message_id(anchor_message_id),
+            anchor_rowid,
+            limit,
+        ),
+    ).fetchall()
+    return tuple(_message_from_row(row) for row in rows)
+
+
+def _context_after(
+    conn: sqlite3.Connection,
+    *,
+    conversation_id: str,
+    anchor_rowid: int,
+    anchor_ts: int | None,
+    anchor_message_id: str | None,
+    limit: int,
+) -> tuple[RecallMessage, ...]:
+    if limit == 0:
+        return ()
+    rows = conn.execute(
+        """
+        SELECT provider_id, conversation_id, message_id, role, ts, text
+        FROM messages
+        WHERE conversation_id = ?
+          AND (
+            COALESCE(ts, -9223372036854775808) > ?
+            OR (
+              COALESCE(ts, -9223372036854775808) = ?
+              AND COALESCE(message_id, '') > ?
+            )
+            OR (
+              COALESCE(ts, -9223372036854775808) = ?
+              AND COALESCE(message_id, '') = ?
+              AND rowid > ?
+            )
+          )
+        ORDER BY COALESCE(ts, -9223372036854775808) ASC,
+                 message_id ASC,
+                 rowid ASC
+        LIMIT ?
+        """,
+        (
+            conversation_id,
+            _sort_ts(anchor_ts),
+            _sort_ts(anchor_ts),
+            _sort_message_id(anchor_message_id),
+            _sort_ts(anchor_ts),
+            _sort_message_id(anchor_message_id),
+            anchor_rowid,
+            limit,
+        ),
+    ).fetchall()
+    return tuple(_message_from_row(row) for row in rows)
+
+
+def _recall_result_from_row(
+    conn: sqlite3.Connection,
+    row: tuple[Any, ...],
+    *,
+    context_before: int,
+    context_after: int,
+) -> RecallResult:
+    anchor = _message_from_row(row)
+    anchor_rowid = int(row[6])
+    return RecallResult(
+        anchor=anchor,
+        context_before=_context_before(
+            conn,
+            conversation_id=anchor.conversation_id,
+            anchor_rowid=anchor_rowid,
+            anchor_ts=anchor.ts,
+            anchor_message_id=anchor.message_id,
+            limit=context_before,
+        ),
+        context_after=_context_after(
+            conn,
+            conversation_id=anchor.conversation_id,
+            anchor_rowid=anchor_rowid,
+            anchor_ts=anchor.ts,
+            anchor_message_id=anchor.message_id,
+            limit=context_after,
+        ),
+    )
+
+
+def _sort_ts(value: int | None) -> int:
+    return -9223372036854775808 if value is None else value
+
+
+def _sort_message_id(value: str | None) -> str:
+    return "" if value is None else value
 
 
 def render_recall_json(
-    messages: list[RecallMessage],
+    results: list[RecallResult],
     *,
     query: str,
     limit: int,
     role: str | None = None,
     conversation_id: str | None = None,
+    context_before: int = 0,
+    context_after: int = 0,
 ) -> str:
     payload = {
         "artifact_type": "recall_results",
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "query": query,
         "limit": limit,
+        "context_before": context_before,
+        "context_after": context_after,
         "filters": {
             "role": role,
             "conversation_id": conversation_id,
         },
-        "results": [message.to_json() for message in messages],
+        "results": [result.to_json() for result in results],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def render_recall_text(messages: list[RecallMessage], *, query: str) -> str:
-    lines = [f"Recall results for: {query}", f"Matches: {len(messages)}"]
-    if not messages:
+def render_recall_text(results: list[RecallResult], *, query: str) -> str:
+    lines = [f"Recall results for: {query}", f"Matches: {len(results)}"]
+    if not results:
         return "\n".join(lines) + "\n"
 
-    for index, message in enumerate(messages, start=1):
+    for index, result in enumerate(results, start=1):
+        message = result.anchor
         identity = (
             f"{message.provider_id}/{message.conversation_id}"
             f"/{message.message_id or 'unknown'}"
@@ -168,4 +353,21 @@ def render_recall_text(messages: list[RecallMessage], *, query: str) -> str:
                 f"   {text}",
             ]
         )
+        if result.context_before:
+            lines.append("   context_before:")
+            for context_message in result.context_before:
+                lines.append(f"   - {_compact_message(context_message)}")
+        if result.context_after:
+            lines.append("   context_after:")
+            for context_message in result.context_after:
+                lines.append(f"   - {_compact_message(context_message)}")
     return "\n".join(lines) + "\n"
+
+
+def _compact_message(message: RecallMessage) -> str:
+    role = message.role or "unknown"
+    message_id = message.message_id or "unknown"
+    text = " ".join(message.text.split())
+    if len(text) > 160:
+        text = text[:157].rstrip() + "..."
+    return f"{message_id} role={role} ts={message.ts if message.ts is not None else 'unknown'} {text}"

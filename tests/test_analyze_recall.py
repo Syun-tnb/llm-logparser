@@ -60,7 +60,7 @@ def _build_provider_root(tmp_path: Path) -> Path:
                 message_id="a1",
                 role="user",
                 ts=1704067201000,
-                text="Plan the recall index foundation",
+                text="Plan the index foundation",
             ),
             _message(
                 conversation_id="conv-a",
@@ -68,6 +68,13 @@ def _build_provider_root(tmp_path: Path) -> Path:
                 role="assistant",
                 ts=1704067202000,
                 text="The recall index should stay read only",
+            ),
+            _message(
+                conversation_id="conv-a",
+                message_id="a3",
+                role="user",
+                ts=1704067203000,
+                text="Confirm the implementation constraints",
             ),
         ],
     )
@@ -78,16 +85,23 @@ def _build_provider_root(tmp_path: Path) -> Path:
             _message(
                 conversation_id="conv-b",
                 message_id="b1",
+                role="user",
+                ts=1704067300000,
+                text="Conversation boundary setup",
+            ),
+            _message(
+                conversation_id="conv-b",
+                message_id="b2",
                 role="assistant",
                 ts=1704067301000,
                 text="Recall search can filter by conversation",
             ),
             _message(
                 conversation_id="conv-b",
-                message_id="b2",
-                role="user",
+                message_id="b3",
+                role="tool",
                 ts=1704067302000,
-                text="Unrelated export question",
+                text="Context tool output should remain visible",
             ),
         ],
     )
@@ -133,14 +147,14 @@ def test_analyze_recall_basic_search_outputs_canonical_identity(
             "--input",
             str(provider_root),
             "--query",
-            "foundation",
+            "index",
         ]
     )
 
     output = capsys.readouterr().out
     assert "openai/conv-a/a1" in output
     assert "role=user" in output
-    assert "Plan the recall index foundation" in output
+    assert "Plan the index foundation" in output
     assert "rowid" not in output.lower()
 
 
@@ -167,10 +181,15 @@ def test_analyze_recall_json_output_is_deterministic_and_excludes_rowid(
     assert first == second
     payload = json.loads(first)
     assert payload["artifact_type"] == "recall_results"
-    assert payload["schema_version"] == "0.1"
-    assert [row["message_id"] for row in payload["results"]] == ["a1", "b1", "a2"]
+    assert payload["schema_version"] == "0.2"
+    assert payload["context_before"] == 0
+    assert payload["context_after"] == 0
+    assert [row["message_id"] for row in payload["results"]] == ["b2", "a2"]
     assert "rowid" not in first.lower()
     assert set(payload["results"][0]) == {
+        "anchor",
+        "context_after",
+        "context_before",
         "provider_id",
         "conversation_id",
         "message_id",
@@ -178,6 +197,9 @@ def test_analyze_recall_json_output_is_deterministic_and_excludes_rowid(
         "ts",
         "text",
     }
+    assert payload["results"][0]["anchor"]["message_id"] == payload["results"][0]["message_id"]
+    assert payload["results"][0]["context_before"] == []
+    assert payload["results"][0]["context_after"] == []
 
 
 def test_analyze_recall_limit_works(tmp_path: Path, capsys):
@@ -199,7 +221,7 @@ def test_analyze_recall_limit_works(tmp_path: Path, capsys):
 
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["results"]) == 2
-    assert [row["message_id"] for row in payload["results"]] == ["a1", "b1"]
+    assert [row["message_id"] for row in payload["results"]] == ["b2", "a2"]
 
 
 def test_analyze_recall_role_filter_works(tmp_path: Path, capsys):
@@ -220,7 +242,7 @@ def test_analyze_recall_role_filter_works(tmp_path: Path, capsys):
     )
 
     payload = json.loads(capsys.readouterr().out)
-    assert [row["message_id"] for row in payload["results"]] == ["b1", "a2"]
+    assert [row["message_id"] for row in payload["results"]] == ["b2", "a2"]
     assert {row["role"] for row in payload["results"]} == {"assistant"}
 
 
@@ -242,5 +264,170 @@ def test_analyze_recall_conversation_filter_works(tmp_path: Path, capsys):
     )
 
     payload = json.loads(capsys.readouterr().out)
-    assert [row["message_id"] for row in payload["results"]] == ["b1"]
+    assert [row["message_id"] for row in payload["results"]] == ["b2"]
     assert {row["conversation_id"] for row in payload["results"]} == {"conv-b"}
+
+
+def test_analyze_recall_context_before_includes_previous_same_conversation_message(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "read",
+            "--context-before",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    assert result["message_id"] == "a2"
+    assert [row["message_id"] for row in result["context_before"]] == ["a1"]
+    assert result["context_after"] == []
+
+
+def test_analyze_recall_context_after_includes_next_same_conversation_message(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "read",
+            "--context-after",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    assert result["message_id"] == "a2"
+    assert result["context_before"] == []
+    assert [row["message_id"] for row in result["context_after"]] == ["a3"]
+
+
+def test_analyze_recall_context_does_not_cross_conversation_boundaries(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "boundary",
+            "--context-before",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    assert result["message_id"] == "b1"
+    assert result["conversation_id"] == "conv-b"
+    assert result["context_before"] == []
+
+
+def test_analyze_recall_role_filter_applies_only_to_anchor_not_context(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "recall",
+            "--role",
+            "assistant",
+            "--context-after",
+            "1",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    b_result = next(row for row in payload["results"] if row["message_id"] == "b2")
+    assert b_result["role"] == "assistant"
+    assert [row["message_id"] for row in b_result["context_after"]] == ["b3"]
+    assert [row["role"] for row in b_result["context_after"]] == ["tool"]
+
+
+def test_analyze_recall_text_output_renders_anchor_and_context_compactly(
+    tmp_path: Path,
+    capsys,
+):
+    provider_root = _build_provider_root(tmp_path)
+
+    main(
+        [
+            "analyze",
+            "recall",
+            "--input",
+            str(provider_root),
+            "--query",
+            "read",
+            "--context-before",
+            "1",
+            "--context-after",
+            "1",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "openai/conv-a/a2" in output
+    assert "context_before:" in output
+    assert "a1 role=user" in output
+    assert "context_after:" in output
+    assert "a3 role=user" in output
+    assert "rowid" not in output.lower()
+
+
+def test_analyze_recall_negative_context_values_fail_clearly(
+    tmp_path: Path,
+    caplog,
+):
+    provider_root = _build_provider_root(tmp_path)
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "analyze",
+                "recall",
+                "--input",
+                str(provider_root),
+                "--query",
+                "read",
+                "--context-before",
+                "-1",
+            ]
+        )
+
+    assert exc.value.code == 2
+    assert "context_before must be >= 0" in caplog.text

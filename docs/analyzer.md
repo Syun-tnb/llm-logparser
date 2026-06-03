@@ -384,6 +384,9 @@ index is absent, canonical and deterministic analyzer workflows still work.
 `analyze recall` is a read-only query path over an existing `analysis.db`; it
 does not write query artifacts and reports canonical provider/conversation/message
 identity fields rather than SQLite row IDs.
+Recall results may optionally include anchored same-conversation context via
+`--context-before` and `--context-after`. These context messages are selected
+after the FTS anchor match is ranked and do not affect match ordering.
 
 ---
 

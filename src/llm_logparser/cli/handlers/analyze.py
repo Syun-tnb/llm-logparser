@@ -259,6 +259,8 @@ def run_analyze_recall(args, logger: logging.Logger) -> None:
             limit=args.limit,
             role=args.role,
             conversation_id=args.conversation_id,
+            context_before=args.context_before,
+            context_after=args.context_after,
         )
     except RecallError as exc:
         logger.error(str(exc))
@@ -271,6 +273,8 @@ def run_analyze_recall(args, logger: logging.Logger) -> None:
             limit=args.limit,
             role=args.role,
             conversation_id=args.conversation_id,
+            context_before=args.context_before,
+            context_after=args.context_after,
         )
         if args.json_output
         else render_recall_text(messages, query=args.query)

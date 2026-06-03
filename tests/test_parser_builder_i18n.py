@@ -401,3 +401,16 @@ def test_help_text_clarifies_input_semantics(capsys, argv, expected):
     help_text = capsys.readouterr().out
     normalized_help_text = " ".join(help_text.split())
     assert expected in normalized_help_text
+
+
+def test_analyze_recall_help_mentions_context_flags(capsys):
+    set_locale("en-US")
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["analyze", "recall", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--context-before" in help_text
+    assert "--context-after" in help_text

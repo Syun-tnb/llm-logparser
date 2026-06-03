@@ -455,6 +455,20 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.recall.opt.limit.help"),
     )
     analyze_recall_cmd.add_argument(
+        "--context-before",
+        dest="context_before",
+        type=int,
+        default=0,
+        help=_("cli.analyze.recall.opt.context_before.help"),
+    )
+    analyze_recall_cmd.add_argument(
+        "--context-after",
+        dest="context_after",
+        type=int,
+        default=0,
+        help=_("cli.analyze.recall.opt.context_after.help"),
+    )
+    analyze_recall_cmd.add_argument(
         "--json",
         dest="json_output",
         action="store_true",

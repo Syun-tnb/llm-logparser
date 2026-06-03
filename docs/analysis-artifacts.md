@@ -598,6 +598,8 @@ Current thread-level SQLite correspondence includes:
 - `analyze recall`, a read-only L2 query path over the existing FTS index; it
   does not write query artifacts and reports canonical message identity fields
   only
+- optional recall context windows selected around each FTS anchor within the
+  same conversation; context selection does not affect anchor ranking
 
 L2 expectations:
 
