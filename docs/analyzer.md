@@ -559,6 +559,7 @@ llm-logparser analyze token-dictionary ...
 llm-logparser analyze lexical-rule-candidates ...
 llm-logparser analyze review-candidates ...
 llm-logparser analyze policy-effectiveness ...
+llm-logparser analyze topic-lifecycle ...
 llm-logparser analyze sqlite-build ...
 llm-logparser analyze recall ...
 llm-logparser analyze semantic-prototype ...
@@ -602,6 +603,7 @@ Possible modes:
 | lexical-rule-candidates | L3 inactive lexical-rule candidate diagnostics |
 | review-candidates | L3 inactive review queue aggregator |
 | policy-effectiveness | L3 inactive policy-effectiveness diagnostics |
+| topic-lifecycle | L3 inactive topic lifecycle proxy diagnostics |
 | cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
 | cross-thread-memory-recall | L4 read-only memory recall presentation layer |
 | semantic-normalization | L3 sidecar batch job runner |
@@ -1138,6 +1140,18 @@ deterministic and model-derived capabilities.
   counts, already-active lexical policy candidates, lexical token/persona/generic
   risk counts, and cross-thread low-score or continuity-mask counts. It does not
   edit reviewed policy, activate candidates, suppress topics, or change scoring.
+
+- `topic-lifecycle` is an inactive L3 diagnostics summarizer. It reads existing
+  `l3/cross-thread-candidates/candidates.jsonl`,
+  `l3/review-queue/candidates.jsonl`,
+  `l3/lexical-rules/candidates.jsonl`, and documented intra-thread topic summary
+  artifacts when present, then writes `l3/diagnostics/topic_lifecycle.json` and
+  `topic_lifecycle.md`. This first version reports conservative
+  candidate-lifecycle proxy signals only: recurring/resurfaced cross-thread
+  evidence when inferable from existing fields, stale/dormant or weak indicators,
+  continuity-mask and low-score counts, and candidate counts by source/type. It
+  does not infer authoritative topic lifecycle states, change segmentation,
+  scoring, suppression, review queue behavior, policy files, or L4 outputs.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

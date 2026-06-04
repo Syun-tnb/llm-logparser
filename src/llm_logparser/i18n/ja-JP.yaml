@@ -186,6 +186,9 @@ messages:
   cli.analyze.policy_effectiveness.help: 既存 candidate artifact から inactive な L3 policy-effectiveness diagnostics を要約する
   cli.analyze.policy_effectiveness.opt.input.help: "入力: 任意の lexical または cross-thread candidate artifact を含む provider artifact root"
   cli.analyze.policy_effectiveness.opt.overwrite.help: 既存の l3/diagnostics policy effectiveness artifact を置き換える
+  cli.analyze.topic_lifecycle.help: 既存 artifact から inactive な L3 topic lifecycle proxy diagnostics を要約する
+  cli.analyze.topic_lifecycle.opt.input.help: "入力: 任意の candidate と intra-thread topic artifact を含む provider artifact root"
+  cli.analyze.topic_lifecycle.opt.overwrite.help: 既存の l3/diagnostics topic lifecycle artifact を置き換える
   cli.analyze.cross_thread_intent_eval.help: 既存の cross-thread candidate pair が同じ意図 / event / task continuity を表すかを評価し、加算的な L4 sidecar を書き出す
   cli.analyze.cross_thread_intent_eval.opt.input.help: "入力: ディレクトリのみ。l3/cross-thread-candidates/candidates.jsonl を含む provider 成果物ルート"
   cli.analyze.cross_thread_intent_eval.opt.model.help: 出力済み candidate pair の same-intent continuity 判定に使うローカル Ollama model

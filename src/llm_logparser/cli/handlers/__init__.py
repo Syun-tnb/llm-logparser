@@ -20,6 +20,7 @@ from .analyze import (
     run_analyze_semantic_topics,
     run_analyze_sqlite_build,
     run_analyze_stats,
+    run_analyze_topic_lifecycle,
     run_analyze_tokens,
     run_analyze_timeline,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "run_analyze_semantic_topic_explore",
     "run_analyze_semantic_topics",
     "run_analyze_stats",
+    "run_analyze_topic_lifecycle",
     "run_analyze_tokens",
     "run_analyze_timeline",
     "run_analyze_sqlite_build",

@@ -182,6 +182,9 @@ messages:
   cli.analyze.policy_effectiveness.help: Summarize inactive L3 policy-effectiveness diagnostics from existing candidate artifacts
   cli.analyze.policy_effectiveness.opt.input.help: "Input: provider artifact root containing optional lexical or cross-thread candidate artifacts"
   cli.analyze.policy_effectiveness.opt.overwrite.help: Replace existing l3/diagnostics policy effectiveness artifacts
+  cli.analyze.topic_lifecycle.help: Summarize inactive L3 topic lifecycle proxy diagnostics from existing artifacts
+  cli.analyze.topic_lifecycle.opt.input.help: "Input: provider artifact root containing optional candidate and intra-thread topic artifacts"
+  cli.analyze.topic_lifecycle.opt.overwrite.help: Replace existing l3/diagnostics topic lifecycle artifacts
   cli.analyze.cross_thread_intent_eval.help: Evaluate whether existing cross-thread candidate pairs express the same underlying intent or task continuation and write an additive L4 sidecar
   cli.analyze.cross_thread_intent_eval.opt.input.help: "Input: directory only; provider artifact root containing l3/cross-thread-candidates/candidates.jsonl"
   cli.analyze.cross_thread_intent_eval.opt.model.help: Local Ollama model used to judge same-intent continuity for each emitted candidate pair

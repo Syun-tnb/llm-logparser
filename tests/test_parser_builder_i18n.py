@@ -396,6 +396,10 @@ def test_analyze_semantic_normalization_help_mentions_job_commands(capsys):
             ["analyze", "policy-effectiveness", "--help"],
             "Input: provider artifact root containing optional lexical or cross-thread candidate artifacts",
         ),
+        (
+            ["analyze", "topic-lifecycle", "--help"],
+            "Input: provider artifact root containing optional candidate and intra-thread topic artifacts",
+        ),
     ],
 )
 def test_help_text_clarifies_input_semantics(capsys, argv, expected):

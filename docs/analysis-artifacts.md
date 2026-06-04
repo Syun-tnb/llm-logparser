@@ -865,6 +865,17 @@ Auxiliary L3 note:
   candidates, lexical token/persona/generic risk counts, and cross-thread
   low-score or continuity-mask counts. It does not modify reviewed policy,
   source artifacts, suppression policy, or scoring behavior.
+- `analyze topic-lifecycle` writes inactive diagnostics under
+  `<provider-root>/l3/diagnostics/` from existing cross-thread candidates,
+  review queue rows, lexical candidates, and documented intra-thread topic
+  summaries when present. It writes `topic_lifecycle.json` and
+  `topic_lifecycle.md`; missing source artifacts are warnings. This first
+  version reports conservative candidate-lifecycle proxy signals only, such as
+  recurring/resurfaced evidence when inferable, stale/dormant or weak
+  indicators, continuity-mask and low-score counts, and candidate counts by
+  source/type. It does not infer authoritative topic lifecycle states, modify
+  segmentation, scoring, suppression, review queue behavior, policy files, or
+  L4 outputs.
 - `user_lexical_profile` is reserved as a future provider-crossing user-level
   lexical memory contract. It is not implemented or wired into scoring; reviewed
   project/user lexical YAML remains the active human-reviewed policy surface
