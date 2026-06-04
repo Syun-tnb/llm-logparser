@@ -61,12 +61,12 @@ def _cross_thread_candidate(
     }
 
 
-def _review_candidate() -> dict:
+def _review_candidate(*, candidate_type: str = "cross_thread_link") -> dict:
     return {
         "record_type": "review_candidate",
         "schema_version": "0.1",
         "candidate_id": "review_alpha",
-        "candidate_type": "cross_thread_link",
+        "candidate_type": candidate_type,
         "status": "candidate",
         "activation_state": "requires_review",
         "source_artifact": "l3/cross-thread-candidates/candidates.jsonl",
@@ -176,17 +176,71 @@ def test_topic_lifecycle_counts_review_queue_and_lexical_sources(tmp_path: Path)
     write_topic_lifecycle_artifacts(root)
 
     report = json.loads(topic_lifecycle_json_path(root).read_text(encoding="utf-8"))
-    assert report["candidate_count"] == 2
-    assert report["candidate_counts_by_type"] == {
+    assert report["candidate_count"] == 1
+    assert report["review_queue_row_count"] == 1
+    assert report["total_input_rows"] == 2
+    assert report["candidate_counts_by_type"] == {"generic_scoring_token": 1}
+    assert report["primary_candidate_counts_by_type"] == {"generic_scoring_token": 1}
+    assert report["candidate_counts_by_source_artifact"] == {
+        "l3/lexical-rules/candidates.jsonl": 1,
+    }
+    assert report["primary_candidate_counts_by_source_artifact"] == {
+        "l3/lexical-rules/candidates.jsonl": 1,
+    }
+    assert report["review_queue_candidates"]["candidate_count"] == 1
+    assert report["review_queue_candidates"]["candidate_counts_by_type"] == {
         "cross_thread_link": 1,
-        "generic_scoring_token": 1,
     }
     assert report["review_queue_candidates"]["risk_counts"] == {
         "continuity_masked": 1,
         "low_score": 1,
     }
+    assert report["review_queue_risk_counts"] == {
+        "continuity_masked": 1,
+        "low_score": 1,
+    }
+    assert report["risk_counts"] == {}
     assert report["lexical_candidates"]["reason_code_counts"] == {
         "high_conversation_spread": 1,
+    }
+
+
+def test_topic_lifecycle_candidate_count_excludes_derived_review_queue_rows(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_jsonl(
+        root / "l3" / "cross-thread-candidates" / "candidates.jsonl",
+        [_cross_thread_candidate(score=0.62) for _ in range(21)],
+    )
+    _write_jsonl(
+        root / "l3" / "lexical-rules" / "candidates.jsonl",
+        [_lexical_candidate() for _ in range(100)],
+    )
+    _write_jsonl(
+        root / "l3" / "review-queue" / "candidates.jsonl",
+        [_review_candidate(candidate_type="cross_thread_link") for _ in range(21)]
+        + [_review_candidate(candidate_type="lexical_rule") for _ in range(100)],
+    )
+
+    write_topic_lifecycle_artifacts(root)
+
+    report = json.loads(topic_lifecycle_json_path(root).read_text(encoding="utf-8"))
+    assert report["candidate_count"] == 121
+    assert report["review_queue_row_count"] == 121
+    assert report["total_input_rows"] == 242
+    assert report["candidate_counts_by_type"] == {
+        "cross_thread_link": 21,
+        "generic_scoring_token": 100,
+    }
+    assert report["review_queue_candidates"]["candidate_counts_by_type"] == {
+        "cross_thread_link": 21,
+        "lexical_rule": 100,
+    }
+    assert report["row_counts_by_source_artifact"] == {
+        "l3/cross-thread-candidates/candidates.jsonl": 21,
+        "l3/lexical-rules/candidates.jsonl": 100,
+        "l3/review-queue/candidates.jsonl": 121,
     }
 
 

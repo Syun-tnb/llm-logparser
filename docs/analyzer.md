@@ -1148,12 +1148,14 @@ deterministic and model-derived capabilities.
   artifacts when present, then writes `l3/diagnostics/topic_lifecycle.json` and
   `topic_lifecycle.md`. This first version reports conservative
   candidate-lifecycle proxy signals only. `candidate_count` and candidate type
-  counts cover candidate artifacts only; topic summaries are reported separately
-  through row counts and `total_input_rows`. Raw temporal/dormancy signals are
-  separated from stricter resurfaced/stale proxy buckets so generic timestamp or
-  dormancy reason codes do not classify every candidate as lifecycle-like. It
-  does not infer authoritative topic lifecycle states, change segmentation,
-  scoring, suppression, review queue behavior, policy files, or L4 outputs.
+  counts cover primary candidate artifacts only; review queue rows are reported
+  separately as a derived review surface, and topic summaries are reported
+  separately through row counts and `total_input_rows`. Raw temporal/dormancy
+  signals are separated from stricter resurfaced/stale proxy buckets so generic
+  timestamp or dormancy reason codes do not classify every candidate as
+  lifecycle-like. It does not infer authoritative topic lifecycle states, change
+  segmentation, scoring, suppression, review queue behavior, policy files, or L4
+  outputs.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

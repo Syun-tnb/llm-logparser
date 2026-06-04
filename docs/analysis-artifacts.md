@@ -871,8 +871,9 @@ Auxiliary L3 note:
   summaries when present. It writes `topic_lifecycle.json` and
   `topic_lifecycle.md`; missing source artifacts are warnings. This first
   version reports conservative candidate-lifecycle proxy signals only.
-  `candidate_count` and candidate type/source counts cover candidate artifacts
-  only; topic-summary rows are reported separately through row counts and
+  `candidate_count` and candidate type/source counts cover primary candidate
+  artifacts only; review queue rows are reported separately as a derived review
+  surface, and topic-summary rows are reported separately through row counts and
   `total_input_rows`. Raw temporal/dormancy signals are separated from stricter
   resurfaced/stale proxy buckets so generic timestamp or dormancy reason codes
   do not classify every candidate as lifecycle-like. It does not infer

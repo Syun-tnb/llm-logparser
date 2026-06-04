@@ -84,6 +84,7 @@ def build_topic_lifecycle_report(provider_root: Path) -> dict[str, Any]:
         provider_root / REVIEW_QUEUE_SOURCE,
         REVIEW_QUEUE_SOURCE,
     )
+    review_input["candidate_count"] = 0
     source_inputs.append(review_input)
     _warn_if_missing(warnings, review_input)
 
@@ -106,17 +107,17 @@ def build_topic_lifecycle_report(provider_root: Path) -> dict[str, Any]:
     lexical_summary = _summarize_lexical(lexical_rows)
     topic_summary_summary = _summarize_topic_summaries(topic_summary_rows)
 
-    candidate_count = len(cross_rows) + len(review_rows) + len(lexical_rows)
+    candidate_count = len(cross_rows) + len(lexical_rows)
+    review_queue_row_count = len(review_rows)
     topic_summary_row_count = len(topic_summary_rows)
-    total_input_rows = candidate_count + topic_summary_row_count
-    candidate_counts_by_source_artifact = {
+    total_input_rows = candidate_count + review_queue_row_count + topic_summary_row_count
+    primary_candidate_counts_by_source_artifact = {
         CROSS_THREAD_SOURCE: len(cross_rows),
-        REVIEW_QUEUE_SOURCE: len(review_rows),
         LEXICAL_SOURCE: len(lexical_rows),
     }
-    candidate_counts_by_source_artifact = {
+    primary_candidate_counts_by_source_artifact = {
         key: value
-        for key, value in sorted(candidate_counts_by_source_artifact.items())
+        for key, value in sorted(primary_candidate_counts_by_source_artifact.items())
         if value > 0
     }
     row_counts_by_source_artifact = {
@@ -132,18 +133,13 @@ def build_topic_lifecycle_report(provider_root: Path) -> dict[str, Any]:
     }
     candidate_counts_by_type = _merge_counts(
         cross_summary["candidate_counts_by_type"],
-        review_summary["candidate_counts_by_type"],
         lexical_summary["candidate_counts_by_type"],
     )
     lifecycle_proxy_counts = _merge_counts(
         cross_summary["lifecycle_proxy_counts"],
-        review_summary["lifecycle_proxy_counts"],
         topic_summary_summary["lifecycle_proxy_counts"],
     )
-    risk_counts = _merge_counts(
-        cross_summary["risk_counts"],
-        review_summary["risk_counts"],
-    )
+    risk_counts = _merge_counts(cross_summary["risk_counts"])
 
     return {
         "artifact_type": TOPIC_LIFECYCLE_ARTIFACT_TYPE,
@@ -160,18 +156,22 @@ def build_topic_lifecycle_report(provider_root: Path) -> dict[str, Any]:
             "existing candidate and topic-summary artifacts."
         ),
         "candidate_count": candidate_count,
+        "review_queue_row_count": review_queue_row_count,
         "topic_summary_row_count": topic_summary_row_count,
         "total_input_rows": total_input_rows,
-        "candidate_counts_by_source_artifact": candidate_counts_by_source_artifact,
+        "candidate_counts_by_source_artifact": primary_candidate_counts_by_source_artifact,
+        "primary_candidate_counts_by_source_artifact": primary_candidate_counts_by_source_artifact,
         "row_counts_by_source_artifact": row_counts_by_source_artifact,
         "candidate_counts_by_type": candidate_counts_by_type,
+        "primary_candidate_counts_by_type": candidate_counts_by_type,
         "lifecycle_proxy_counts": lifecycle_proxy_counts,
         "risk_counts": risk_counts,
         "reason_code_counts": _merge_counts(
             cross_summary["reason_code_counts"],
-            review_summary["reason_code_counts"],
             lexical_summary["reason_code_counts"],
         ),
+        "review_queue_reason_code_counts": review_summary["reason_code_counts"],
+        "review_queue_risk_counts": review_summary["risk_counts"],
         "source_inputs": source_inputs,
         "warnings": warnings,
         "cross_thread_candidates": cross_summary,
@@ -496,9 +496,10 @@ def render_topic_lifecycle_markdown(report: dict[str, Any]) -> str:
         "> or L4 outputs.",
         "",
         f"- diagnostics_mode: {report['diagnostics_mode']}",
-        f"- candidate_count: {report['candidate_count']} (candidate artifacts only)",
+        f"- candidate_count: {report['candidate_count']} (primary candidate artifacts only)",
+        f"- review_queue_row_count: {report['review_queue_row_count']} (derived review surface)",
         f"- topic_summary_row_count: {report['topic_summary_row_count']}",
-        f"- total_input_rows: {report['total_input_rows']}",
+        f"- total_input_rows: {report['total_input_rows']} (primary candidates + review rows + topic summary rows)",
         f"- limitation: {report['limitation']}",
         "",
         "## Diagnostic Thresholds",
@@ -507,12 +508,19 @@ def render_topic_lifecycle_markdown(report: dict[str, Any]) -> str:
     _append_count_lines(lines, report.get("diagnostic_thresholds", {}))
     lines.extend([
         "",
-        "## Candidate Types",
+        "## Primary Candidate Types",
         "",
     ])
     _append_count_lines(lines, report.get("candidate_counts_by_type", {}))
-    lines.extend(["", "## Candidate Source Artifacts", ""])
+    lines.extend(["", "## Primary Candidate Source Artifacts", ""])
     _append_count_lines(lines, report.get("candidate_counts_by_source_artifact", {}))
+    lines.extend(["", "## Review Queue Derived Surface", ""])
+    review_queue = report.get("review_queue_candidates", {})
+    lines.append(f"- row_count: {report['review_queue_row_count']}")
+    lines.append("- candidate_counts_by_type:")
+    _append_count_lines(lines, review_queue.get("candidate_counts_by_type", {}), indent="  ")
+    lines.append("- risk_counts:")
+    _append_count_lines(lines, report.get("review_queue_risk_counts", {}), indent="  ")
     lines.extend(["", "## Input Rows By Source Artifact", ""])
     _append_count_lines(lines, report.get("row_counts_by_source_artifact", {}))
     lines.extend(["", "## Lifecycle Proxy Counts", ""])
@@ -534,12 +542,17 @@ def render_topic_lifecycle_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _append_count_lines(lines: list[str], counts: dict[str, Any]) -> None:
+def _append_count_lines(
+    lines: list[str],
+    counts: dict[str, Any],
+    *,
+    indent: str = "",
+) -> None:
     if counts:
         for key, count in sorted(counts.items()):
-            lines.append(f"- {key}: {count}")
+            lines.append(f"{indent}- {key}: {count}")
     else:
-        lines.append("- none")
+        lines.append(f"{indent}- none")
 
 
 def _append_list_lines(lines: list[str], values: list[str]) -> None:
