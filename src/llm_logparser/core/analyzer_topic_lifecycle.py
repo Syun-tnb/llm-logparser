@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 TOPIC_LIFECYCLE_SCHEMA_VERSION = "0.1"
 TOPIC_LIFECYCLE_ARTIFACT_TYPE = "topic_lifecycle_diagnostics"
 LOW_SCORE_THRESHOLD = 0.45
+RESURFACED_MIN_SCORE = 0.6
+STALE_MAX_SCORE = 0.5
 CROSS_THREAD_SOURCE = "l3/cross-thread-candidates/candidates.jsonl"
 REVIEW_QUEUE_SOURCE = "l3/review-queue/candidates.jsonl"
 LEXICAL_SOURCE = "l3/lexical-rules/candidates.jsonl"
@@ -104,22 +106,34 @@ def build_topic_lifecycle_report(provider_root: Path) -> dict[str, Any]:
     lexical_summary = _summarize_lexical(lexical_rows)
     topic_summary_summary = _summarize_topic_summaries(topic_summary_rows)
 
+    candidate_count = len(cross_rows) + len(review_rows) + len(lexical_rows)
+    topic_summary_row_count = len(topic_summary_rows)
+    total_input_rows = candidate_count + topic_summary_row_count
     candidate_counts_by_source_artifact = {
         CROSS_THREAD_SOURCE: len(cross_rows),
         REVIEW_QUEUE_SOURCE: len(review_rows),
         LEXICAL_SOURCE: len(lexical_rows),
-        TOPIC_SUMMARIES_SOURCE: len(topic_summary_rows),
     }
     candidate_counts_by_source_artifact = {
         key: value
         for key, value in sorted(candidate_counts_by_source_artifact.items())
         if value > 0
     }
+    row_counts_by_source_artifact = {
+        CROSS_THREAD_SOURCE: len(cross_rows),
+        REVIEW_QUEUE_SOURCE: len(review_rows),
+        LEXICAL_SOURCE: len(lexical_rows),
+        TOPIC_SUMMARIES_SOURCE: topic_summary_row_count,
+    }
+    row_counts_by_source_artifact = {
+        key: value
+        for key, value in sorted(row_counts_by_source_artifact.items())
+        if value > 0
+    }
     candidate_counts_by_type = _merge_counts(
         cross_summary["candidate_counts_by_type"],
         review_summary["candidate_counts_by_type"],
         lexical_summary["candidate_counts_by_type"],
-        topic_summary_summary["candidate_counts_by_type"],
     )
     lifecycle_proxy_counts = _merge_counts(
         cross_summary["lifecycle_proxy_counts"],
@@ -135,13 +149,21 @@ def build_topic_lifecycle_report(provider_root: Path) -> dict[str, Any]:
         "artifact_type": TOPIC_LIFECYCLE_ARTIFACT_TYPE,
         "schema_version": TOPIC_LIFECYCLE_SCHEMA_VERSION,
         "diagnostics_mode": "candidate_lifecycle_proxy_only",
+        "diagnostic_thresholds": {
+            "low_score_threshold": LOW_SCORE_THRESHOLD,
+            "resurfaced_min_score": RESURFACED_MIN_SCORE,
+            "stale_max_score": STALE_MAX_SCORE,
+        },
         "limitation": (
             "True topic lifecycle states are not inferred in this version. "
             "Counts are conservative candidate-lifecycle proxy signals from "
             "existing candidate and topic-summary artifacts."
         ),
-        "candidate_count": len(cross_rows) + len(review_rows) + len(lexical_rows),
+        "candidate_count": candidate_count,
+        "topic_summary_row_count": topic_summary_row_count,
+        "total_input_rows": total_input_rows,
         "candidate_counts_by_source_artifact": candidate_counts_by_source_artifact,
+        "row_counts_by_source_artifact": row_counts_by_source_artifact,
         "candidate_counts_by_type": candidate_counts_by_type,
         "lifecycle_proxy_counts": lifecycle_proxy_counts,
         "risk_counts": risk_counts,
@@ -169,6 +191,7 @@ def _load_source_rows(
             "path": str(path),
             "status": "missing",
             "candidate_count": 0,
+            "row_count": 0,
         }
     rows = _read_jsonl(path)
     return rows, {
@@ -176,6 +199,7 @@ def _load_source_rows(
         "path": str(path),
         "status": "loaded",
         "candidate_count": len(rows),
+        "row_count": len(rows),
     }
 
 
@@ -190,6 +214,7 @@ def _load_globbed_source_rows(
             "path": str(provider_root / source_artifact),
             "status": "missing",
             "candidate_count": 0,
+            "row_count": 0,
             "files_found": 0,
         }
     rows: list[dict[str, Any]] = []
@@ -199,7 +224,8 @@ def _load_globbed_source_rows(
         "source_artifact": source_artifact,
         "path": source_artifact,
         "status": "loaded",
-        "candidate_count": len(rows),
+        "candidate_count": 0,
+        "row_count": len(rows),
         "files_found": len(paths),
         "files": [str(path) for path in paths],
     }
@@ -237,17 +263,21 @@ def _summarize_cross_thread(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         reason_codes = _reason_codes(row)
         reason_counts.update(reason_codes)
-        lifecycle_counts["cross_thread_link_candidate"] += 1
+        lifecycle_counts["cross_thread_candidate"] += 1
         if _is_low_score(row):
             risk_counts["low_score"] += 1
             lifecycle_counts["weak_candidate"] += 1
-        if row.get("continuity_mask") is True or _nested_get(row, "evidence", "continuity_mask") is True:
+        if _continuity_masked(row):
             risk_counts["continuity_mask"] += 1
             lifecycle_counts["continuity_masked"] += 1
-        if _is_recurring_proxy(row, reason_codes):
-            lifecycle_counts["recurring_or_resurfaced_proxy"] += 1
-        if _is_stale_proxy(row, reason_codes):
-            lifecycle_counts["stale_or_dormant_proxy"] += 1
+        if _has_temporal_gap_signal(row, reason_codes):
+            lifecycle_counts["temporal_gap_signal"] += 1
+        if _has_dormancy_signal(row, reason_codes):
+            lifecycle_counts["dormancy_signal"] += 1
+        if _is_resurfaced_candidate_proxy(row, reason_codes):
+            lifecycle_counts["resurfaced_candidate_proxy"] += 1
+        if _is_stale_candidate_proxy(row, reason_codes):
+            lifecycle_counts["stale_candidate_proxy"] += 1
 
     return {
         "source_artifact": CROSS_THREAD_SOURCE,
@@ -259,9 +289,18 @@ def _summarize_cross_thread(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "low_score_candidate_count": risk_counts.get("low_score", 0),
         "continuity_mask_candidate_count": risk_counts.get("continuity_mask", 0),
         "recurring_or_resurfaced_proxy_count": lifecycle_counts.get(
-            "recurring_or_resurfaced_proxy",
+            "resurfaced_candidate_proxy",
             0,
         ),
+        "resurfaced_candidate_proxy_count": lifecycle_counts.get(
+            "resurfaced_candidate_proxy",
+            0,
+        ),
+        "stale_or_dormant_proxy_count": lifecycle_counts.get(
+            "stale_candidate_proxy",
+            0,
+        ),
+        "stale_candidate_proxy_count": lifecycle_counts.get("stale_candidate_proxy", 0),
     }
 
 
@@ -354,26 +393,78 @@ def _is_low_score(row: dict[str, Any]) -> bool:
     return isinstance(score, (int, float)) and score < LOW_SCORE_THRESHOLD
 
 
-def _is_recurring_proxy(row: dict[str, Any], reason_codes: list[str]) -> bool:
-    if _positive_number(row.get("temporal_gap_seconds")):
-        return True
-    if _positive_number(_nested_get(row, "evidence", "temporal_gap_seconds")):
-        return True
-    return any(
-        "recurr" in code
-        or "resurface" in code
-        or "timestamp_distance" in code
-        or "dormant" in code
-        for code in reason_codes
+def _continuity_masked(row: dict[str, Any]) -> bool:
+    return (
+        row.get("continuity_mask") is True
+        or _nested_get(row, "evidence", "continuity_mask") is True
     )
 
 
-def _is_stale_proxy(row: dict[str, Any], reason_codes: list[str]) -> bool:
-    if _positive_number(row.get("dormancy_score")):
-        return True
-    if _positive_number(_nested_get(row, "evidence", "dormancy_score")):
-        return True
-    return any("dormant" in code or "stale" in code for code in reason_codes)
+def _has_temporal_gap_signal(row: dict[str, Any], reason_codes: list[str]) -> bool:
+    return (
+        _positive_number(row.get("temporal_gap_seconds"))
+        or _positive_number(_nested_get(row, "evidence", "temporal_gap_seconds"))
+        or any("timestamp_distance" in code for code in reason_codes)
+    )
+
+
+def _has_dormancy_signal(row: dict[str, Any], reason_codes: list[str]) -> bool:
+    return (
+        _positive_number(row.get("dormancy_score"))
+        or _positive_number(_nested_get(row, "evidence", "dormancy_score"))
+        or any("dormant" in code or "stale" in code for code in reason_codes)
+    )
+
+
+def _is_resurfaced_candidate_proxy(row: dict[str, Any], reason_codes: list[str]) -> bool:
+    has_lifecycle_signal = _has_temporal_gap_signal(
+        row,
+        reason_codes,
+    ) or _has_dormancy_signal(row, reason_codes)
+    return (
+        has_lifecycle_signal
+        and _has_meaningful_semantic_support(row, reason_codes)
+    )
+
+
+def _is_stale_candidate_proxy(row: dict[str, Any], reason_codes: list[str]) -> bool:
+    return (
+        _has_dormancy_signal(row, reason_codes)
+        and (
+            _is_low_score(row)
+            or _score_below(row, STALE_MAX_SCORE)
+            or _continuity_masked(row)
+        )
+        and not _has_meaningful_semantic_support(row, reason_codes)
+    )
+
+
+def _has_meaningful_semantic_support(row: dict[str, Any], reason_codes: list[str]) -> bool:
+    if not _score_at_least(row, RESURFACED_MIN_SCORE):
+        return False
+    strong_reasons = {
+        "anchor_overlap_strong",
+        "bundle_overlap_concentrated",
+        "dictionary_token_overlap_dense",
+        "explicit_conclusion_overlap",
+        "normalized_label_match",
+        "nucleus_overlap_specific",
+        "raw_label_match",
+        "shared_keywords_high",
+        "topic_summary_keyword_overlap_high",
+        "topic_summary_title_overlap_high",
+    }
+    return any(code in strong_reasons for code in reason_codes)
+
+
+def _score_at_least(row: dict[str, Any], threshold: float) -> bool:
+    score = row.get("score")
+    return isinstance(score, (int, float)) and score >= threshold
+
+
+def _score_below(row: dict[str, Any], threshold: float) -> bool:
+    score = row.get("score")
+    return isinstance(score, (int, float)) and score < threshold
 
 
 def _positive_number(value: Any) -> bool:
@@ -405,15 +496,25 @@ def render_topic_lifecycle_markdown(report: dict[str, Any]) -> str:
         "> or L4 outputs.",
         "",
         f"- diagnostics_mode: {report['diagnostics_mode']}",
-        f"- candidate_count: {report['candidate_count']}",
+        f"- candidate_count: {report['candidate_count']} (candidate artifacts only)",
+        f"- topic_summary_row_count: {report['topic_summary_row_count']}",
+        f"- total_input_rows: {report['total_input_rows']}",
         f"- limitation: {report['limitation']}",
+        "",
+        "## Diagnostic Thresholds",
+        "",
+    ]
+    _append_count_lines(lines, report.get("diagnostic_thresholds", {}))
+    lines.extend([
         "",
         "## Candidate Types",
         "",
-    ]
+    ])
     _append_count_lines(lines, report.get("candidate_counts_by_type", {}))
-    lines.extend(["", "## Source Artifacts", ""])
+    lines.extend(["", "## Candidate Source Artifacts", ""])
     _append_count_lines(lines, report.get("candidate_counts_by_source_artifact", {}))
+    lines.extend(["", "## Input Rows By Source Artifact", ""])
+    _append_count_lines(lines, report.get("row_counts_by_source_artifact", {}))
     lines.extend(["", "## Lifecycle Proxy Counts", ""])
     _append_count_lines(lines, report.get("lifecycle_proxy_counts", {}))
     lines.extend(["", "## Risk Counts", ""])
@@ -425,7 +526,8 @@ def render_topic_lifecycle_markdown(report: dict[str, Any]) -> str:
             suffix = f", files={source['files_found']}"
         lines.append(
             f"- {source['source_artifact']}: {source['status']} "
-            f"({source['candidate_count']} row(s){suffix})"
+            f"({source.get('row_count', source['candidate_count'])} row(s), "
+            f"{source['candidate_count']} candidate(s){suffix})"
         )
     lines.extend(["", "## Warnings", ""])
     _append_list_lines(lines, report.get("warnings", []))

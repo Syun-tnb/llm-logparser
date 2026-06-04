@@ -870,12 +870,14 @@ Auxiliary L3 note:
   review queue rows, lexical candidates, and documented intra-thread topic
   summaries when present. It writes `topic_lifecycle.json` and
   `topic_lifecycle.md`; missing source artifacts are warnings. This first
-  version reports conservative candidate-lifecycle proxy signals only, such as
-  recurring/resurfaced evidence when inferable, stale/dormant or weak
-  indicators, continuity-mask and low-score counts, and candidate counts by
-  source/type. It does not infer authoritative topic lifecycle states, modify
-  segmentation, scoring, suppression, review queue behavior, policy files, or
-  L4 outputs.
+  version reports conservative candidate-lifecycle proxy signals only.
+  `candidate_count` and candidate type/source counts cover candidate artifacts
+  only; topic-summary rows are reported separately through row counts and
+  `total_input_rows`. Raw temporal/dormancy signals are separated from stricter
+  resurfaced/stale proxy buckets so generic timestamp or dormancy reason codes
+  do not classify every candidate as lifecycle-like. It does not infer
+  authoritative topic lifecycle states, modify segmentation, scoring,
+  suppression, review queue behavior, policy files, or L4 outputs.
 - `user_lexical_profile` is reserved as a future provider-crossing user-level
   lexical memory contract. It is not implemented or wired into scoring; reviewed
   project/user lexical YAML remains the active human-reviewed policy surface

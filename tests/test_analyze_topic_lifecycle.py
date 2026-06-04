@@ -27,7 +27,14 @@ def _cross_thread_candidate(
     continuity_mask: bool = True,
     temporal_gap_seconds: int = 86400,
     dormancy_score: float = 0.5,
+    reason_codes: list[str] | None = None,
 ) -> dict:
+    if reason_codes is None:
+        reason_codes = [
+            "timestamp_distance_high",
+            "dormant_gap",
+            "shared_keywords_high",
+        ]
     return {
         "record_type": "cross_thread_candidate",
         "schema_version": "0.3",
@@ -46,7 +53,7 @@ def _cross_thread_candidate(
         "temporal_gap_seconds": temporal_gap_seconds,
         "dormancy_score": dormancy_score,
         "evidence": {
-            "reason_codes": ["timestamp_distance_high", "dormant_gap"],
+            "reason_codes": reason_codes,
             "continuity_mask": continuity_mask,
             "temporal_gap_seconds": temporal_gap_seconds,
             "dormancy_score": dormancy_score,
@@ -115,9 +122,16 @@ def test_topic_lifecycle_missing_inputs_warn(tmp_path: Path):
     markdown = topic_lifecycle_markdown_path(root).read_text(encoding="utf-8")
     assert result["candidate_count"] == 0
     assert report["candidate_count"] == 0
+    assert report["total_input_rows"] == 0
+    assert report["topic_summary_row_count"] == 0
     assert report["candidate_counts_by_type"] == {}
     assert len(report["warnings"]) == 4
     assert report["diagnostics_mode"] == "candidate_lifecycle_proxy_only"
+    assert report["diagnostic_thresholds"] == {
+        "low_score_threshold": 0.45,
+        "resurfaced_min_score": 0.6,
+        "stale_max_score": 0.5,
+    }
     assert "Diagnostics only" in markdown
     assert "candidate-lifecycle proxy" in markdown
 
@@ -126,7 +140,7 @@ def test_topic_lifecycle_counts_cross_thread_candidates_and_proxies(tmp_path: Pa
     root = tmp_path / "artifacts" / "openai"
     _write_jsonl(
         root / "l3" / "cross-thread-candidates" / "candidates.jsonl",
-        [_cross_thread_candidate()],
+        [_cross_thread_candidate(score=0.62)],
     )
 
     write_topic_lifecycle_artifacts(root)
@@ -137,19 +151,20 @@ def test_topic_lifecycle_counts_cross_thread_candidates_and_proxies(tmp_path: Pa
         "l3/cross-thread-candidates/candidates.jsonl": 1,
     }
     assert report["candidate_counts_by_type"] == {"cross_thread_link": 1}
-    assert cross["low_score_candidate_count"] == 1
+    assert cross["low_score_candidate_count"] == 0
     assert cross["continuity_mask_candidate_count"] == 1
     assert cross["recurring_or_resurfaced_proxy_count"] == 1
+    assert cross["resurfaced_candidate_proxy_count"] == 1
+    assert cross["stale_candidate_proxy_count"] == 0
     assert report["lifecycle_proxy_counts"] == {
         "continuity_masked": 1,
-        "cross_thread_link_candidate": 1,
-        "recurring_or_resurfaced_proxy": 1,
-        "stale_or_dormant_proxy": 1,
-        "weak_candidate": 1,
+        "cross_thread_candidate": 1,
+        "dormancy_signal": 1,
+        "resurfaced_candidate_proxy": 1,
+        "temporal_gap_signal": 1,
     }
     assert report["risk_counts"] == {
         "continuity_mask": 1,
-        "low_score": 1,
     }
 
 
@@ -185,11 +200,58 @@ def test_topic_lifecycle_counts_topic_summary_rows(tmp_path: Path):
     write_topic_lifecycle_artifacts(root)
 
     report = json.loads(topic_lifecycle_json_path(root).read_text(encoding="utf-8"))
+    assert report["candidate_count"] == 0
+    assert report["topic_summary_row_count"] == 1
+    assert report["total_input_rows"] == 1
+    assert report["candidate_counts_by_source_artifact"] == {}
+    assert report["row_counts_by_source_artifact"] == {
+        "thread-*/l3/intra-thread-topics/topic-summaries.jsonl": 1,
+    }
+    assert report["candidate_counts_by_type"] == {}
     assert report["topic_summaries"]["row_count"] == 1
     assert report["topic_summaries"]["conclusion_status_counts"] == {"unknown": 1}
     assert report["topic_summaries"]["lifecycle_proxy_counts"] == {
         "topic_summary_unknown": 1,
     }
+
+
+def test_topic_lifecycle_does_not_promote_generic_timestamp_or_dormant_reasons(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_jsonl(
+        root / "l3" / "cross-thread-candidates" / "candidates.jsonl",
+        [
+            _cross_thread_candidate(
+                score=0.62,
+                continuity_mask=False,
+                dormancy_score=0.0,
+                reason_codes=["timestamp_distance_high"],
+            ),
+            _cross_thread_candidate(
+                score=0.62,
+                continuity_mask=False,
+                temporal_gap_seconds=0,
+                reason_codes=["dormant_gap"],
+            ),
+            _cross_thread_candidate(
+                score=0.4,
+                continuity_mask=False,
+                temporal_gap_seconds=0,
+                reason_codes=["dormant_gap"],
+            ),
+        ],
+    )
+
+    write_topic_lifecycle_artifacts(root)
+
+    report = json.loads(topic_lifecycle_json_path(root).read_text(encoding="utf-8"))
+    lifecycle_counts = report["lifecycle_proxy_counts"]
+    assert lifecycle_counts["cross_thread_candidate"] == 3
+    assert lifecycle_counts["temporal_gap_signal"] == 1
+    assert lifecycle_counts["dormancy_signal"] == 2
+    assert "resurfaced_candidate_proxy" not in lifecycle_counts
+    assert lifecycle_counts["stale_candidate_proxy"] == 1
 
 
 def test_topic_lifecycle_requires_overwrite_for_existing_outputs(tmp_path: Path):
