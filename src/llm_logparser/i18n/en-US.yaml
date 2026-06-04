@@ -179,6 +179,9 @@ messages:
   cli.analyze.review_candidates.help: Build an inactive L3 review queue from existing candidate artifacts
   cli.analyze.review_candidates.opt.input.help: "Input: provider artifact root containing optional lexical or cross-thread candidate artifacts"
   cli.analyze.review_candidates.opt.overwrite.help: Replace existing l3/review-queue artifacts
+  cli.analyze.policy_effectiveness.help: Summarize inactive L3 policy-effectiveness diagnostics from existing candidate artifacts
+  cli.analyze.policy_effectiveness.opt.input.help: "Input: provider artifact root containing optional lexical or cross-thread candidate artifacts"
+  cli.analyze.policy_effectiveness.opt.overwrite.help: Replace existing l3/diagnostics policy effectiveness artifacts
   cli.analyze.cross_thread_intent_eval.help: Evaluate whether existing cross-thread candidate pairs express the same underlying intent or task continuation and write an additive L4 sidecar
   cli.analyze.cross_thread_intent_eval.opt.input.help: "Input: directory only; provider artifact root containing l3/cross-thread-candidates/candidates.jsonl"
   cli.analyze.cross_thread_intent_eval.opt.model.help: Local Ollama model used to judge same-intent continuity for each emitted candidate pair

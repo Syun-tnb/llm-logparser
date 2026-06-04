@@ -857,6 +857,14 @@ Auxiliary L3 note:
   `candidates.jsonl`, `report.json`, and `report.md`; missing source artifacts
   are warnings. It does not regenerate source candidates, modify reviewed
   policy, promote rules, suppress topics, or change candidate scoring.
+- `analyze policy-effectiveness` writes inactive diagnostics under
+  `<provider-root>/l3/diagnostics/` from the same existing candidate artifacts
+  when present. It writes `policy_effectiveness.json` and
+  `policy_effectiveness.md`; missing source artifacts are warnings. It only
+  summarizes emitted candidate types, reason codes, already-active lexical
+  candidates, lexical token/persona/generic risk counts, and cross-thread
+  low-score or continuity-mask counts. It does not modify reviewed policy,
+  source artifacts, suppression policy, or scoring behavior.
 - `user_lexical_profile` is reserved as a future provider-crossing user-level
   lexical memory contract. It is not implemented or wired into scoring; reviewed
   project/user lexical YAML remains the active human-reviewed policy surface

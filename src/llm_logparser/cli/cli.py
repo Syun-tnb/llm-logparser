@@ -27,6 +27,7 @@ from llm_logparser.cli.handlers import (
     run_analyze_intra_thread_topics,
     run_analyze_lexical_rule_candidates,
     run_analyze_metrics,
+    run_analyze_policy_effectiveness,
     run_analyze_recall,
     run_analyze_review_candidates,
     run_analyze_semantic_normalization,
@@ -201,6 +202,7 @@ def _prompt_missing_required(
             "token-dictionary",
             "lexical-rule-candidates",
             "review-candidates",
+            "policy-effectiveness",
             "sqlite-build",
             "recall",
             "semantic-prototype",
@@ -233,6 +235,7 @@ def _prompt_missing_required(
                         "token-dictionary",
                         "lexical-rule-candidates",
                         "review-candidates",
+                        "policy-effectiveness",
                         "semantic-topics",
                     }
                     else _("runtime.prompt.analyze_input")
@@ -276,6 +279,8 @@ def _dispatch(args, logger) -> None:
             run_analyze_lexical_rule_candidates(args, logger)
         elif args.analyze_command == "review-candidates":
             run_analyze_review_candidates(args, logger)
+        elif args.analyze_command == "policy-effectiveness":
+            run_analyze_policy_effectiveness(args, logger)
         elif args.analyze_command == "timeline":
             run_analyze_timeline(args, logger)
         elif args.analyze_command == "sqlite-build":

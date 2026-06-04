@@ -175,6 +175,29 @@ def run_analyze_review_candidates(args, logger: logging.Logger) -> None:
     )
 
 
+def run_analyze_policy_effectiveness(args, logger: logging.Logger) -> None:
+    from llm_logparser.core.analyzer_policy_effectiveness import (
+        PolicyEffectivenessError,
+        write_policy_effectiveness_artifacts,
+    )
+
+    input_root = validate_path(args.input, expect_dir=True)
+    try:
+        result = write_policy_effectiveness_artifacts(
+            input_root,
+            overwrite=args.overwrite,
+        )
+    except PolicyEffectivenessError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from None
+
+    logger.info(
+        "policy effectiveness diagnostics written: "
+        f"{result['candidate_count']} candidate(s) -> "
+        f"{format_display_path(result['json_path'])}"
+    )
+
+
 def run_analyze_stats(args, logger: logging.Logger) -> None:
     from llm_logparser.core.analyzer_stats import (
         analyze_stats,

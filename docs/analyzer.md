@@ -590,6 +590,7 @@ Possible modes:
 | token-dictionary | L3 auxiliary token/bundle signal sidecar |
 | lexical-rule-candidates | L3 inactive lexical-rule candidate diagnostics |
 | review-candidates | L3 inactive review queue aggregator |
+| policy-effectiveness | L3 inactive policy-effectiveness diagnostics |
 | cross-thread-intent-eval | L4 experimental same-intent evaluation sidecar |
 | cross-thread-memory-recall | L4 read-only memory recall presentation layer |
 | semantic-normalization | L3 sidecar batch job runner |
@@ -1118,6 +1119,14 @@ deterministic and model-derived capabilities.
   Missing source artifacts are warnings. The command does not regenerate source
   candidates, edit reviewed policy, promote rules, merge topics, or change
   candidate scoring.
+
+- `policy-effectiveness` is an inactive L3 diagnostics summarizer. It reads
+  existing lexical-rule and cross-thread candidate artifacts when present, then
+  writes `l3/diagnostics/policy_effectiveness.json` and
+  `policy_effectiveness.md`. It reports candidate type counts, reason-code
+  counts, already-active lexical policy candidates, lexical token/persona/generic
+  risk counts, and cross-thread low-score or continuity-mask counts. It does not
+  edit reviewed policy, activate candidates, suppress topics, or change scoring.
 
 - `cross-thread-intent-eval` is an experimental L4 sidecar builder on top of
   the stored L3 cross-thread candidates. It reads

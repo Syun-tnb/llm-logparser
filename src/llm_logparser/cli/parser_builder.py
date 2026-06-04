@@ -428,6 +428,24 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("cli.analyze.review_candidates.opt.overwrite.help"),
     )
 
+    analyze_policy_effectiveness_cmd = analyze_subparsers.add_parser(
+        "policy-effectiveness",
+        help=_("cli.analyze.policy_effectiveness.help"),
+        description=_("cli.analyze.policy_effectiveness.help"),
+    )
+    analyze_policy_effectiveness_cmd.add_argument(
+        "--input",
+        required=False,
+        type=Path,
+        help=_("cli.analyze.policy_effectiveness.opt.input.help"),
+    )
+    analyze_policy_effectiveness_cmd.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        help=_("cli.analyze.policy_effectiveness.opt.overwrite.help"),
+    )
+
     analyze_sqlite_build_cmd = analyze_subparsers.add_parser(
         "sqlite-build",
         help=_("cli.analyze.sqlite_build.help"),
