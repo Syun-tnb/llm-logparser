@@ -1129,9 +1129,11 @@ deterministic and model-derived capabilities.
   existing `l3/lexical-rules/candidates.jsonl` and
   `l3/cross-thread-candidates/candidates.jsonl` when present, then writes
   `l3/review-queue/candidates.jsonl`, `report.json`, and `report.md`.
-  Missing source artifacts are warnings. The command does not regenerate source
-  candidates, edit reviewed policy, promote rules, merge topics, or change
-  candidate scoring.
+  `report.md` summarizes priority, risk flags, candidate types, and source
+  artifacts, then renders deterministic capped top-candidate tables for
+  cross-thread links and lexical rules. Missing source artifacts are warnings.
+  The command does not regenerate source candidates, edit reviewed policy,
+  promote rules, merge topics, or change candidate scoring.
 
 - `policy-effectiveness` is an inactive L3 diagnostics summarizer. It reads
   existing lexical-rule and cross-thread candidate artifacts when present, then

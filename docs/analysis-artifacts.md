@@ -855,8 +855,10 @@ Auxiliary L3 note:
   `l3/lexical-rules/candidates.jsonl` and
   `l3/cross-thread-candidates/candidates.jsonl` when present. It writes
   `candidates.jsonl`, `report.json`, and `report.md`; missing source artifacts
-  are warnings. It does not regenerate source candidates, modify reviewed
-  policy, promote rules, suppress topics, or change candidate scoring.
+  are warnings. The Markdown report summarizes review priority, risks, types,
+  and sources, with deterministic capped tables for the major candidate types.
+  It does not regenerate source candidates, modify reviewed policy, promote
+  rules, suppress topics, or change candidate scoring.
 - `analyze policy-effectiveness` writes inactive diagnostics under
   `<provider-root>/l3/diagnostics/` from the same existing candidate artifacts
   when present. It writes `policy_effectiveness.json` and

@@ -32,18 +32,23 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def _lexical_candidate() -> dict:
+def _lexical_candidate(
+    *,
+    candidate_id: str = "lexcand_alpha",
+    value: str = "alpha",
+    score: float = 0.8,
+) -> dict:
     return {
         "record_type": "lexical_rule_candidate",
         "schema_version": "0.1",
         "provider_id": "openai",
-        "candidate_id": "lexcand_alpha",
+        "candidate_id": candidate_id,
         "candidate_type": "generic_scoring_token",
         "suggested_scope": "project",
         "suggested_rule_path": "rules.topic_summary.scoring.generic_tokens",
-        "value": "alpha",
+        "value": value,
         "value_kind": "token",
-        "normalized_value": "alpha",
+        "normalized_value": value,
         "status": "inactive",
         "activation_state": "requires_review",
         "source": {
@@ -51,7 +56,7 @@ def _lexical_candidate() -> dict:
             "inputs": ["l3/token-dictionary/observed_tokens.json"],
         },
         "evidence": {
-            "score": 0.8,
+            "score": score,
             "conversation_count": 10,
             "document_count": 12,
             "reason_codes": ["high_conversation_spread"],
@@ -217,6 +222,87 @@ def test_review_candidates_report_counts_sources_and_types(tmp_path: Path):
     }
     assert report["warnings"] == []
     assert {item["status"] for item in report["source_inputs"]} == {"loaded"}
+    assert report["review_priority_summary"] == {
+        "risk_flagged": 1,
+        "unflagged": 1,
+    }
+    assert report["risk_flag_counts"] == {
+        "review_for_persona_or_project_term": 1,
+    }
+    assert report["report_limits"] == {"candidates_per_major_type": 20}
+
+
+def test_review_candidates_markdown_is_practical_review_surface(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    _write_jsonl(root / "l3" / "lexical-rules" / "candidates.jsonl", [_lexical_candidate()])
+    _write_jsonl(
+        root / "l3" / "cross-thread-candidates" / "candidates.jsonl",
+        [_cross_thread_candidate()],
+    )
+
+    write_review_candidate_artifacts(root)
+
+    markdown = review_queue_markdown_path(root).read_text(encoding="utf-8")
+    for section in (
+        "## Review Priority Summary",
+        "## Risk Flags",
+        "## Candidate Types",
+        "## Source Artifacts",
+        "## Top Cross-Thread Link Candidates",
+        "## Top Lexical Rule Candidates",
+    ):
+        assert section in markdown
+    assert "cross_thread_" in markdown
+    assert "0.72" in markdown
+    assert "excerpt_similarity_medium" in markdown
+    assert "conv-a/span-a" in markdown
+    assert "conv-b/span-b" in markdown
+    assert "lexcand_alpha" in markdown
+    assert "alpha" in markdown
+    assert "generic_scoring_token" in markdown
+    assert "rules.topic_summary.scoring.generic_tokens" in markdown
+    assert "high_conversation_spread" in markdown
+    assert "review_for_persona_or_project_term" in markdown
+
+
+def test_review_candidates_markdown_caps_large_candidate_lists(tmp_path: Path):
+    root = tmp_path / "artifacts" / "openai"
+    lexical_rows = [
+        _lexical_candidate(
+            candidate_id=f"lexcand_{index:03d}",
+            value=f"token-{index:03d}",
+            score=1.0 - index / 100,
+        )
+        for index in range(25)
+    ]
+    _write_jsonl(root / "l3" / "lexical-rules" / "candidates.jsonl", lexical_rows)
+
+    write_review_candidate_artifacts(root)
+
+    markdown = review_queue_markdown_path(root).read_text(encoding="utf-8")
+    assert "_Showing top 20 of 25 candidates; list capped at 20._" in markdown
+    assert "token-000" in markdown
+    assert "token-019" in markdown
+    assert "token-020" not in markdown
+
+
+def test_review_candidates_overwrite_keeps_queue_rows_stable_inactive_and_traceable(
+    tmp_path: Path,
+):
+    root = tmp_path / "artifacts" / "openai"
+    _write_jsonl(root / "l3" / "lexical-rules" / "candidates.jsonl", [_lexical_candidate()])
+
+    write_review_candidate_artifacts(root)
+    first = review_queue_candidates_path(root).read_bytes()
+    write_review_candidate_artifacts(root, overwrite=True)
+    second = review_queue_candidates_path(root).read_bytes()
+    row = _read_jsonl(review_queue_candidates_path(root))[0]
+
+    assert first == second
+    assert row["status"] == "candidate"
+    assert row["activation_state"] == "requires_review"
+    assert row["source_artifact"] == "l3/lexical-rules/candidates.jsonl"
+    assert row["source_candidate_id"] == "lexcand_alpha"
 
 
 def test_review_candidates_does_not_modify_sources_or_reviewed_policy(tmp_path: Path):

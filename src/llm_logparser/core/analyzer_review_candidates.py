@@ -12,6 +12,7 @@ REVIEW_QUEUE_RECORD_TYPE = "review_candidate"
 REVIEW_QUEUE_ARTIFACT_TYPE = "review_queue"
 LEXICAL_SOURCE = "l3/lexical-rules/candidates.jsonl"
 CROSS_THREAD_SOURCE = "l3/cross-thread-candidates/candidates.jsonl"
+REPORT_CANDIDATE_LIMIT = 20
 
 
 class ReviewCandidateError(RuntimeError):
@@ -321,6 +322,12 @@ def _build_report(
     source_inputs: list[dict[str, Any]],
     warnings: list[str],
 ) -> dict[str, Any]:
+    risk_flag_counts = _counter_dict(
+        flag
+        for row in rows
+        for flag in _risk_flags(row)
+    )
+    risk_flagged_count = sum(1 for row in rows if _risk_flags(row))
     return {
         "artifact_type": REVIEW_QUEUE_ARTIFACT_TYPE,
         "schema_version": REVIEW_QUEUE_SCHEMA_VERSION,
@@ -329,6 +336,14 @@ def _build_report(
         "candidate_counts_by_source_artifact": _counter_dict(
             row.get("source_artifact") for row in rows
         ),
+        "review_priority_summary": {
+            "risk_flagged": risk_flagged_count,
+            "unflagged": len(rows) - risk_flagged_count,
+        },
+        "risk_flag_counts": risk_flag_counts,
+        "report_limits": {
+            "candidates_per_major_type": REPORT_CANDIDATE_LIMIT,
+        },
         "source_inputs": source_inputs,
         "warnings": warnings,
         "policy_effect": "inactive_review_queue_only",
@@ -349,14 +364,17 @@ def _render_report_markdown(report: dict[str, Any], rows: list[dict[str, Any]]) 
         "> authoritative for their own generation outputs.",
         "",
         f"- candidate_count: {report['candidate_count']}",
-        "- candidate_counts_by_type:",
+        "",
+        "## Review Priority Summary",
+        "",
     ]
-    counts_by_type = report.get("candidate_counts_by_type", {})
-    if counts_by_type:
-        for candidate_type, count in sorted(counts_by_type.items()):
-            lines.append(f"  - {candidate_type}: {count}")
-    else:
-        lines.append("  - none")
+    _append_count_lines(lines, report.get("review_priority_summary", {}))
+    lines.extend(["", "## Risk Flags", ""])
+    _append_count_lines(lines, report.get("risk_flag_counts", {}))
+    lines.extend(["", "## Candidate Types", ""])
+    _append_count_lines(lines, report.get("candidate_counts_by_type", {}))
+    lines.extend(["", "## Source Artifacts", ""])
+    _append_count_lines(lines, report.get("candidate_counts_by_source_artifact", {}))
     lines.extend(["", "## Source Inputs", ""])
     for source in report.get("source_inputs", []):
         lines.append(
@@ -370,30 +388,140 @@ def _render_report_markdown(report: dict[str, Any], rows: list[dict[str, Any]]) 
             lines.append(f"- {warning}")
     else:
         lines.append("- none")
-    lines.extend(["", "## Candidates", ""])
-    if not rows:
-        lines.append("_No review candidates._")
-    else:
-        lines.append("| candidate_id | type | source | source_candidate_id | scope |")
-        lines.append("| --- | --- | --- | --- | --- |")
-        for row in rows[:100]:
-            lines.append(
-                "| "
-                + " | ".join(
-                    _md_cell(row.get(key))
-                    for key in (
-                        "candidate_id",
-                        "candidate_type",
-                        "source_artifact",
-                        "source_candidate_id",
-                        "scope",
-                    )
-                )
-                + " |"
-            )
-        if len(rows) > 100:
-            lines.append(f"\n_Only first 100 of {len(rows)} candidates shown._")
+    cross_thread_rows = _prioritized_rows(rows, "cross_thread_link")
+    lexical_rows = _prioritized_rows(rows, "lexical_rule")
+    lines.extend(["", "## Top Cross-Thread Link Candidates", ""])
+    _render_cross_thread_table(lines, cross_thread_rows)
+    lines.extend(["", "## Top Lexical Rule Candidates", ""])
+    _render_lexical_table(lines, lexical_rows)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _append_count_lines(lines: list[str], counts: dict[str, Any]) -> None:
+    if counts:
+        for key, count in sorted(counts.items()):
+            lines.append(f"- {key}: {count}")
+    else:
+        lines.append("- none")
+
+
+def _risk_flags(row: dict[str, Any]) -> list[str]:
+    flags = row.get("risk_flags")
+    if not isinstance(flags, list):
+        return []
+    return sorted(str(flag) for flag in flags if str(flag))
+
+
+def _reason_codes(row: dict[str, Any]) -> list[str]:
+    diagnostics = row.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return []
+    values = diagnostics.get("reason_codes")
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if str(value)]
+
+
+def _diagnostic_score(row: dict[str, Any]) -> float:
+    diagnostics = row.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return 0.0
+    score = diagnostics.get("score")
+    if isinstance(score, (int, float)):
+        return float(score)
+    return 0.0
+
+
+def _prioritized_rows(rows: list[dict[str, Any]], candidate_type: str) -> list[dict[str, Any]]:
+    selected = [row for row in rows if row.get("candidate_type") == candidate_type]
+    return sorted(
+        selected,
+        key=lambda row: (
+            0 if _risk_flags(row) else 1,
+            -_diagnostic_score(row),
+            str(row.get("source_candidate_id") or ""),
+            str(row.get("candidate_id") or ""),
+        ),
+    )
+
+
+def _render_cross_thread_table(
+    lines: list[str],
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        lines.append("_No cross-thread link candidates._")
+        return
+    lines.append("| source_candidate_id | score | reasons | risks | source | target |")
+    lines.append("| --- | ---: | --- | --- | --- | --- |")
+    for row in rows[:REPORT_CANDIDATE_LIMIT]:
+        refs = row.get("evidence_refs") if isinstance(row.get("evidence_refs"), list) else []
+        source_ref = refs[0] if len(refs) > 0 and isinstance(refs[0], dict) else {}
+        target_ref = refs[1] if len(refs) > 1 and isinstance(refs[1], dict) else {}
+        values = [
+            row.get("source_candidate_id"),
+            _format_score(row),
+            _compact_list(_reason_codes(row)),
+            _compact_list(_risk_flags(row)),
+            _format_evidence_ref(source_ref),
+            _format_evidence_ref(target_ref),
+        ]
+        lines.append("| " + " | ".join(_md_cell(value) for value in values) + " |")
+    _append_cap_notice(lines, shown=min(len(rows), REPORT_CANDIDATE_LIMIT), total=len(rows))
+
+
+def _render_lexical_table(lines: list[str], rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        lines.append("_No lexical rule candidates._")
+        return
+    lines.append("| source_candidate_id | value | subtype | suggested_rule_path | score | reasons | risks |")
+    lines.append("| --- | --- | --- | --- | ---: | --- | --- |")
+    for row in rows[:REPORT_CANDIDATE_LIMIT]:
+        proposed = row.get("proposed_change") if isinstance(row.get("proposed_change"), dict) else {}
+        diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
+        values = [
+            row.get("source_candidate_id"),
+            proposed.get("value") or proposed.get("normalized_value"),
+            diagnostics.get("source_candidate_type"),
+            proposed.get("suggested_rule_path"),
+            _format_score(row),
+            _compact_list(_reason_codes(row)),
+            _compact_list(_risk_flags(row)),
+        ]
+        lines.append("| " + " | ".join(_md_cell(value) for value in values) + " |")
+    _append_cap_notice(lines, shown=min(len(rows), REPORT_CANDIDATE_LIMIT), total=len(rows))
+
+
+def _append_cap_notice(lines: list[str], *, shown: int, total: int) -> None:
+    if total > shown:
+        lines.append(f"\n_Showing top {shown} of {total} candidates; list capped at {REPORT_CANDIDATE_LIMIT}._")
+
+
+def _format_score(row: dict[str, Any]) -> str:
+    diagnostics = row.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return ""
+    score = diagnostics.get("score")
+    if not isinstance(score, (int, float)):
+        return ""
+    return f"{float(score):.4f}".rstrip("0").rstrip(".")
+
+
+def _compact_list(values: list[str], *, limit: int = 4) -> str:
+    if not values:
+        return "none"
+    rendered = ", ".join(values[:limit])
+    if len(values) > limit:
+        rendered += f" (+{len(values) - limit})"
+    return rendered
+
+
+def _format_evidence_ref(ref: dict[str, Any]) -> str:
+    conversation_id = str(ref.get("conversation_id") or "")
+    span_id = str(ref.get("span_id") or ref.get("segment_id") or "")
+    if conversation_id and span_id:
+        return f"{conversation_id}/{span_id}"
+    return conversation_id or span_id
 
 
 def _md_cell(value: Any) -> str:
